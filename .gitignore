@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+logs/
+.DS_Store
+.vscode/
+.idea/
+
+
+database_dumps/

@@ -1,0 +1,203 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum MemberRole {
+  PLAYER
+  COACH
+  ADMIN
+  ORGANIZER
+}
+
+model Member {
+  id        Int       @id @default(autoincrement()) // Primary key - ensures unique IDs
+  firstName String
+  lastName  String
+  birthDate DateTime? // Optional birth date for filtering and tournament selection
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // USATT-style rating (numeric rating like 1200, 1500, etc.)
+  rating Int?
+
+  // New required fields
+  email    String       @unique
+  gender   Gender
+  password String
+  roles    MemberRole[]
+
+  // New optional fields
+  picture String? // Image URL or path
+  phone   String?
+  address String?
+
+  // Password reset flag
+  mustResetPassword Boolean @default(false) // Set to true when admin resets password, forces password change on next login
+  
+  // Forgot password reset token
+  passwordResetToken String? // Token for password reset (forgot password flow)
+  passwordResetTokenExpiry DateTime? // Expiration time for reset token
+
+  // Rating history
+  ratingHistory RatingHistory[]
+
+  // Tournament participations
+  tournamentParticipants TournamentParticipant[]
+
+  @@index([email])
+  @@map("members")
+}
+
+model RatingHistory {
+  id           Int                @id @default(autoincrement())
+  memberId     Int
+  rating       Int? // Rating after this change
+  ratingChange Int? // Change in rating (+/-)
+  timestamp    DateTime           @default(now())
+  reason       RatingChangeReason
+  tournamentId Int? // Reference to tournament that caused this change
+  matchId      Int? // Reference to match that caused this change (for MATCH_COMPLETED)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([timestamp])
+  @@index([tournamentId])
+  @@index([matchId])
+  @@map("rating_history")
+}
+
+enum RatingChangeReason {
+  TOURNAMENT_COMPLETED
+  MATCH_COMPLETED
+  PLAYOFF_MATCH_COMPLETED
+  RESULT_CORRECTED
+  MANUAL_ADJUSTMENT
+  MEMBER_DEACTIVATED
+}
+
+model Tournament {
+  id         Int              @id @default(autoincrement())
+  name       String?
+  type       TournamentType   @default(ROUND_ROBIN)
+  status     TournamentStatus @default(ACTIVE)
+  cancelled  Boolean          @default(false) // True if tournament was cancelled (moved to COMPLETED but not finished)
+  createdAt  DateTime         @default(now())
+  recordedAt DateTime         @updatedAt
+
+  participants   TournamentParticipant[]
+  matches        Match[]
+  bracketMatches BracketMatch[] // Bracket structure for playoff tournaments
+
+  @@map("tournaments")
+}
+
+enum TournamentStatus {
+  ACTIVE
+  COMPLETED
+}
+
+enum TournamentType {
+  ROUND_ROBIN
+  PLAYOFF
+  MULTI
+  SINGLE_MATCH
+}
+
+model TournamentParticipant {
+  id                 Int  @id @default(autoincrement())
+  tournamentId       Int
+  memberId           Int
+  playerRatingAtTime Int? // Snapshot of rating when tournament started
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  member     Member     @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([tournamentId, memberId])
+  @@index([tournamentId])
+  @@index([memberId])
+  @@map("tournament_participants")
+}
+
+// Bracket structure table - stores the bracket layout for playoff tournaments
+// This table maintains the bracket structure from start to finish, including unplayed matches
+model BracketMatch {
+  id           Int      @id @default(autoincrement())
+  tournamentId Int // Foreign key to tournament
+  round        Int // Round number (1 = first round, 2 = semifinals, etc.)
+  position     Int // Position within the round (1, 2, 3, ...)
+  member1Id    Int? // Member 1 ID (null if not yet determined from previous round, 0 for BYE)
+  member2Id    Int? // Member 2 ID (null if not yet determined from previous round, 0 for BYE)
+  nextMatchId  Int? // ID of the BracketMatch in the next round that the winner advances to
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tournament      Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  nextMatch       BracketMatch?  @relation("BracketMatchAdvancement", fields: [nextMatchId], references: [id])
+  previousMatches BracketMatch[] @relation("BracketMatchAdvancement")
+  match           Match? // Link to actual match result when played
+
+  @@unique([tournamentId, round, position])
+  @@index([tournamentId])
+  @@index([tournamentId, round, position])
+  @@index([nextMatchId])
+  @@map("bracket_matches")
+}
+
+// Match table - stores actual match results (for all tournament types)
+// For playoff tournaments, this links to BracketMatch
+model Match {
+  id             Int      @id @default(autoincrement())
+  tournamentId   Int
+  bracketMatchId Int? // Link to BracketMatch for playoff tournaments (null for round-robin/single match)
+  member1Id      Int
+  member2Id      Int? // Nullable for BYE matches
+  player1Sets    Int      @default(0)
+  player2Sets    Int      @default(0)
+  player1Forfeit Boolean  @default(false)
+  player2Forfeit Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tournament   Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  bracketMatch BracketMatch? @relation(fields: [bracketMatchId], references: [id], onDelete: SetNull)
+
+  @@unique([bracketMatchId]) // One match result per bracket match
+  @@index([tournamentId])
+  @@index([bracketMatchId])
+  @@index([member1Id])
+  @@index([member2Id])
+  @@index([member1Id, member2Id])
+  @@map("matches")
+}
+
+model PointExchangeRule {
+  id             Int      @id @default(autoincrement())
+  minDiff        Int // Minimum rating difference (inclusive)
+  maxDiff        Int // Maximum rating difference (inclusive)
+  expectedPoints Int // Points for expected result (higher-rated player wins)
+  upsetPoints    Int // Points for upset (lower-rated player wins)
+  effectiveFrom  DateTime @default(now()) // When this rule becomes effective (allows future modifications)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([minDiff, maxDiff, effectiveFrom])
+  @@index([effectiveFrom])
+  @@map("point_exchange_rules")
+}

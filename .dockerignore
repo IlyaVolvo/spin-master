@@ -1,0 +1,11 @@
+# flyctl launch added from .gitignore
+node_modules
+server/node_modules
+client/node_modules
+.git
+.env
+.env.local
+*.log
+client/dist
+server/dist
+.DS_Store

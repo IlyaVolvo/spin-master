@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PingPong Tournament System - User Guide</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+            font-size: 36px;
+        }
+        
+        h2 {
+            color: #34495e;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #ecf0f1;
+            border-left: 5px solid #3498db;
+            font-size: 28px;
+        }
+        
+        h3 {
+            color: #555;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 22px;
+            border-bottom: 2px solid #bdc3c7;
+            padding-bottom: 5px;
+        }
+        
+        h4 {
+            color: #666;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        
+        .toc {
+            background: #ecf0f1;
+            padding: 25px;
+            border-radius: 6px;
+            margin-bottom: 30px;
+            border: 2px solid #bdc3c7;
+        }
+        
+        .toc h3 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            border: none;
+        }
+        
+        .toc ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .toc li {
+            margin: 10px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        .toc li:before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #3498db;
+        }
+        
+        .toc a {
+            color: #3498db;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .toc a:hover {
+            text-decoration: underline;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .feature-box {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3498db;
+        }
+        
+        .feature-box h4 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        
+        .step {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid #27ae60;
+        }
+        
+        .step-number {
+            display: inline-block;
+            background: #27ae60;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 28px;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 14px;
+        }
+        
+        .note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .note strong {
+            color: #856404;
+        }
+        
+        .warning {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .warning strong {
+            color: #721c24;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .info strong {
+            color: #0c5460;
+        }
+        
+        .code {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 12px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+        
+        .badge.admin {
+            background: #9b59b6;
+            color: white;
+        }
+        
+        .badge.organizer {
+            background: #e67e22;
+            color: white;
+        }
+        
+        .badge.player {
+            background: #3498db;
+            color: white;
+        }
+        
+        ul, ol {
+            margin-left: 25px;
+            margin-top: 10px;
+        }
+        
+        li {
+            margin: 8px 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        table th, table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        table tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .screenshot-placeholder {
+            background: #ecf0f1;
+            border: 2px dashed #bdc3c7;
+            padding: 40px;
+            text-align: center;
+            color: #7f8c8d;
+            border-radius: 6px;
+            margin: 20px 0;
+        }
+        
+        .icon {
+            font-size: 20px;
+            margin-right: 8px;
+        }
+        
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏓 PingPong Tournament System - User Guide</h1>
+        
+        <div class="toc">
+            <h3>Table of Contents</h3>
+            <ul>
+                <li><a href="#getting-started">Getting Started</a></li>
+                <li><a href="#login">Login & Authentication</a></li>
+                <li><a href="#players">Players Page</a></li>
+                <li><a href="#tournaments">Tournaments Page</a></li>
+                <li><a href="#statistics">Statistics Page</a></li>
+                <li><a href="#history">History Page</a></li>
+                <li><a href="#roles">User Roles & Permissions</a></li>
+                <li><a href="#common-tasks">Common Tasks</a></li>
+            </ul>
+        </div>
+        
+        <div class="section" id="getting-started">
+            <h2>🚀 Getting Started</h2>
+            
+            <div class="feature-box">
+                <h4>Welcome to PingPong Tournament System</h4>
+                <p>The PingPong Tournament System is a comprehensive platform for managing table tennis tournaments, players, matches, and statistics. This guide will help you navigate and use all the features available in the system.</p>
+            </div>
+            
+            <h3>System Overview</h3>
+            <p>The application consists of four main sections:</p>
+            <ul>
+                <li><strong>Players</strong> - View and manage player information, ratings, and profiles</li>
+                <li><strong>Tournaments</strong> - Create and manage tournaments, add match results, and track progress</li>
+                <li><strong>Statistics</strong> - View detailed statistics and analytics</li>
+                <li><strong>History</strong> - Review match history and past results</li>
+            </ul>
+        </div>
+        
+        <div class="section" id="login">
+            <h2>🔐 Login & Authentication</h2>
+            
+            <h3>Logging In</h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Enter Your Credentials</strong>
+                <p>On the login page, enter your email address and password.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Click Login</strong>
+                <p>Click the "Login" button to authenticate. If your credentials are correct, you'll be redirected to the Players page.</p>
+            </div>
+            
+            <div class="note">
+                <strong>Note:</strong> If an administrator has reset your password, you'll be prompted to set a new password on your first login.
+            </div>
+            
+            <h3>Password Reset</h3>
+            <p>If you've forgotten your password:</p>
+            <ol>
+                <li>Click "Forgot Password?" on the login page</li>
+                <li>Enter your email address</li>
+                <li>Check your email for reset instructions</li>
+                <li>Follow the link to reset your password</li>
+            </ol>
+            
+            <h3>Changing Your Password</h3>
+            <p>To change your password while logged in:</p>
+            <ol>
+                <li>Click the <span class="highlight">⚙️</span> (gear) icon in the top right corner next to your name</li>
+                <li>This opens your profile edit modal</li>
+                <li>Scroll to the "Change Password" section</li>
+                <li>Enter your current password and new password</li>
+                <li>Click "Change Password"</li>
+            </ol>
+            
+            <h3>Logging Out</h3>
+            <p>Click the "Logout" button in the top right corner of the header to securely log out of your session.</p>
+        </div>
+        
+        <div class="section" id="players">
+            <h2>👥 Players Page</h2>
+            
+            <p>The Players page is your main hub for viewing and managing player information. Here you can see all registered players, their ratings, ages, and other details.</p>
+            
+            <h3>Viewing Players</h3>
+            <div class="feature-box">
+                <h4>Player Table</h4>
+                <p>The main table displays all players with the following information:</p>
+                <ul>
+                    <li><strong>Name</strong> - Player's full name (clickable to view details)</li>
+                    <li><strong>Rating</strong> - Current USATT-style rating</li>
+                    <li><strong>Age</strong> - Calculated from birth date</li>
+                    <li><strong>Rank</strong> - Ranking based on rating</li>
+                    <li><strong>Games</strong> - Number of games played (configurable time period)</li>
+                    <li><strong>Roles</strong> - Player roles (P=Player, C=Coach, O=Organizer, A=Admin)</li>
+                </ul>
+            </div>
+            
+            <h3>Filtering Players</h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Access Filter Options</strong>
+                <p>Click the filter icon or use the filter controls at the top of the table.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Apply Filters</strong>
+                <p>You can filter by:</p>
+                <ul>
+                    <li><strong>Name</strong> - Search by first or last name</li>
+                    <li><strong>Rating Range</strong> - Set minimum and maximum ratings</li>
+                    <li><strong>Age Range</strong> - Filter by age</li>
+                    <li><strong>Games Count</strong> - Filter by number of games played</li>
+                    <li><strong>Roles</strong> - Show only players with specific roles</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Clear Filters</strong>
+                <p>Click "Clear Filters" to remove all active filters and show all players.</p>
+            </div>
+            
+            <h3>Sorting Players</h3>
+            <p>Click on any column header to sort by that column. Click again to reverse the sort order. You can sort by:</p>
+            <ul>
+                <li>Name (alphabetical)</li>
+                <li>Rating (numerical)</li>
+                <li>Age (numerical)</li>
+                <li>ID (numerical)</li>
+                <li>Games (numerical)</li>
+            </ul>
+            
+            <h3>Games Column</h3>
+            <div class="feature-box">
+                <h4>Time Period Selection</h4>
+                <p>The Games column shows the number of games played. You can select different time periods:</p>
+                <ul>
+                    <li><strong>Today</strong> - Games played today</li>
+                    <li><strong>Week</strong> - Games played in the last 7 days</li>
+                    <li><strong>Month</strong> - Games played in the last 30 days</li>
+                    <li><strong>Custom Range</strong> - Select a custom date range</li>
+                    <li><strong>All Games</strong> - All games regardless of date</li>
+                </ul>
+                <p>Use the dropdown in the Games column header to change the time period.</p>
+            </div>
+            
+            <h3>Column Visibility</h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Open Settings</strong>
+                <p>Click the settings icon (⚙️) in the table header to access column visibility options.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Toggle Columns</strong>
+                <p>Check or uncheck columns to show or hide them. Available columns include:</p>
+                <ul>
+                    <li>ID</li>
+                    <li>Age</li>
+                    <li>Status (Active/Inactive)</li>
+                    <li>Actions (Edit/Delete buttons)</li>
+                    <li>Games</li>
+                </ul>
+            </div>
+            
+            <h3>Editing Your Profile</h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Open Your Profile</strong>
+                <p>Click the <span class="highlight">⚙️</span> icon in the top right corner next to your name.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Edit Your Information</strong>
+                <p>As a regular member, you can edit:</p>
+                <ul>
+                    <li>Email address</li>
+                    <li>Phone number</li>
+                    <li>Address</li>
+                    <li>Profile picture URL</li>
+                    <li>Password</li>
+                </ul>
+                <p>Fields you <strong>cannot</strong> edit (shown greyed out):</p>
+                <ul>
+                    <li>First Name</li>
+                    <li>Last Name</li>
+                    <li>Gender</li>
+                    <li>Birth Date</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Save Changes</strong>
+                <p>Click "Save" to update your profile. Changes are saved immediately.</p>
+            </div>
+            
+            <div class="info">
+                <strong>Admin Note:</strong> Administrators can edit all fields for any member, including name, gender, birth date, rating, and roles.
+            </div>
+            
+            <h3>Editing Other Players <span class="badge admin">Admin Only</span></h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Find the Player</strong>
+                <p>Use the search or filters to find the player you want to edit.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Click Edit</strong>
+                <p>Click the "Edit" button (pencil icon) in the Actions column for that player.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Make Changes</strong>
+                <p>Update any fields you need to change. Admins can edit all fields including:</p>
+                <ul>
+                    <li>Name, Gender, Birth Date</li>
+                    <li>Rating</li>
+                    <li>Roles (PLAYER, COACH, ORGANIZER, ADMIN)</li>
+                    <li>Active/Inactive status</li>
+                    <li>Contact information</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Save or Cancel</strong>
+                <p>Click "Save" to apply changes or "Cancel" to discard them.</p>
+            </div>
+            
+            <h3>Creating New Players <span class="badge admin">Admin Only</span></h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Click Add Player</strong>
+                <p>Click the "Add Player" button at the top of the Players page.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Fill in Required Fields</strong>
+                <p>Enter the following required information:</p>
+                <ul>
+                    <li>First Name</li>
+                    <li>Last Name</li>
+                    <li>Email (must be unique)</li>
+                    <li>Gender (MALE, FEMALE, or OTHER)</li>
+                    <li>Birth Date</li>
+                    <li>Password (minimum 6 characters)</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Optional Fields</strong>
+                <p>You can also set:</p>
+                <ul>
+                    <li>Initial Rating</li>
+                    <li>Roles</li>
+                    <li>Phone number</li>
+                    <li>Address</li>
+                    <li>Profile picture URL</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Create Player</strong>
+                <p>Click "Create" to add the new player to the system.</p>
+            </div>
+            
+            <h3>Importing Players <span class="badge admin">Admin Only</span></h3>
+            <div class="feature-box">
+                <h4>CSV Import</h4>
+                <p>You can import multiple players at once using a CSV file:</p>
+                <ol>
+                    <li>Click the "📤 Import" button in the table header</li>
+                    <li>Select a CSV file from your computer</li>
+                    <li>The file should have the following columns (case-insensitive):</li>
+                </ol>
+                <div class="code">
+firstname,lastname,email,date of birth,gender,roles,phone,address,rating
+John,Doe,john@example.com,1990-01-01,MALE,P,555-1234,123 Main St,1500
+Jane,Smith,jane@example.com,1992-05-15,FEMALE,P C,555-5678,456 Oak Ave,1600
+                </div>
+                <ul>
+                    <li><strong>Required columns:</strong> firstname, lastname, email, date of birth (or birthdate)</li>
+                    <li><strong>Optional columns:</strong> gender, roles, phone, address, rating</li>
+                    <li><strong>Roles format:</strong> Use first letters (P=Player, C=Coach, O=Organizer, A=Admin), comma-separated</li>
+                    <li><strong>Comments:</strong> Lines starting with # are ignored</li>
+                </ul>
+            </div>
+            
+            <div class="note">
+                <strong>Tip:</strong> You can export the current player list to see the exact format, then modify it and import it back.
+            </div>
+            
+            <h3>Exporting Players</h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Select Players</strong>
+                <p>Check the boxes next to the players you want to export, or use "Select All" to export everyone.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Click Export</strong>
+                <p>Click the "📥 Export" button. A CSV file will be downloaded with the selected players' data.</p>
+            </div>
+            
+            <h3>Deleting Players <span class="badge admin">Admin Only</span></h3>
+            <div class="warning">
+                <strong>Important:</strong> Players can only be deleted if they have not played in any matches (excluding BYE matches). Administrators cannot delete themselves.
+            </div>
+            
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Open Edit Modal</strong>
+                <p>Click "Edit" for the player you want to delete.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Find Delete Section</strong>
+                <p>Scroll to the "Delete Member" section at the bottom of the edit modal.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Confirm Deletion</strong>
+                <p>Click "Delete Member" and confirm in the warning dialog. This action cannot be undone.</p>
+            </div>
+        </div>
+        
+        <div class="section" id="tournaments">
+            <h2>🏆 Tournaments Page</h2>
+            
+            <p>The Tournaments page allows you to create, manage, and track tournaments. Organizers can create tournaments, add match results, and complete tournaments.</p>
+            
+            <h3>Viewing Tournaments</h3>
+            <div class="feature-box">
+                <h4>Tournament List</h4>
+                <p>The tournaments are displayed in a list showing:</p>
+                <ul>
+                    <li><strong>Tournament Name</strong> - Click to view details</li>
+                    <li><strong>Type</strong> - ROUND_ROBIN, PLAYOFF, or SINGLE_MATCH</li>
+                    <li><strong>Status</strong> - ACTIVE or COMPLETED</li>
+                    <li><strong>Participants</strong> - Number of players</li>
+                    <li><strong>Matches</strong> - Number of matches played</li>
+                    <li><strong>Created Date</strong> - When the tournament was created</li>
+                </ul>
+            </div>
+            
+            <h3>Filtering Tournaments</h3>
+            <p>You can filter tournaments by:</p>
+            <ul>
+                <li><strong>Status</strong> - Show Active, Completed, or All tournaments</li>
+                <li><strong>Date Range</strong> - Filter by creation date (Today, Week, Month, Year, Custom)</li>
+                <li><strong>Name</strong> - Search by tournament name</li>
+            </ul>
+            
+            <h3>Creating a Tournament <span class="badge organizer">Organizer Only</span></h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Click Create Tournament</strong>
+                <p>Click the "Create Tournament" button at the top of the Tournaments page.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Select Participants</strong>
+                <p>Choose the players who will participate in the tournament. You need at least 2 players.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Choose Tournament Type</strong>
+                <p>Select one of the following types:</p>
+                <ul>
+                    <li><strong>Round Robin</strong> - Every player plays every other player once</li>
+                    <li><strong>Playoff</strong> - Single-elimination bracket tournament</li>
+                    <li><strong>Single Match</strong> - Just one match between two players</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Set Tournament Name (Optional)</strong>
+                <p>Enter a name for the tournament, or leave blank for an auto-generated name.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">5</span>
+                <strong>For Playoff Tournaments</strong>
+                <p>If creating a playoff tournament:</p>
+                <ul>
+                    <li>Players are automatically seeded by rating</li>
+                    <li>You can adjust bracket positions by dragging players</li>
+                    <li>You can specify the number of seeded players</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">6</span>
+                <strong>Create Tournament</strong>
+                <p>Click "Create Tournament" to finalize. The tournament will appear in your Active Tournaments list.</p>
+            </div>
+            
+            <h3>Adding Match Results <span class="badge organizer">Organizer Only</span></h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Open Tournament</strong>
+                <p>Click on a tournament name to view its details and matches.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Add Match</strong>
+                <p>For Round Robin tournaments, click "Add Match" and select the two players.</p>
+                <p>For Playoff tournaments, click on a bracket match to enter results.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Enter Scores</strong>
+                <p>Enter the sets won by each player (e.g., 3-1 means Player 1 won 3 sets, Player 2 won 1 set).</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Handle Forfeits (Optional)</strong>
+                <p>If a player forfeited, check the appropriate forfeit checkbox.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">5</span>
+                <strong>Save Match</strong>
+                <p>Click "Save" to record the match result. The match will appear in the tournament's match list.</p>
+            </div>
+            
+            <h3>Editing Match Results <span class="badge organizer">Organizer Only</span></h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Find the Match</strong>
+                <p>Locate the match in the tournament's match list or bracket view.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Click Edit</strong>
+                <p>Click the edit icon (pencil) next to the match result.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Update Scores</strong>
+                <p>Modify the sets won by each player and save. Ratings will be recalculated automatically.</p>
+            </div>
+            
+            <h3>Completing a Tournament <span class="badge organizer">Organizer Only</span></h3>
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Finish All Matches</strong>
+                <p>Ensure all matches in the tournament have been played and recorded.</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Click Complete Tournament</strong>
+                <p>Click the "Complete Tournament" button. This will:</p>
+                <ul>
+                    <li>Mark the tournament as COMPLETED</li>
+                    <li>Calculate and update player ratings based on match results</li>
+                    <li>Create rating history entries</li>
+                </ul>
+            </div>
+            
+            <div class="note">
+                <strong>Note:</strong> Once a tournament is completed, you cannot add or modify matches. You can still view the results and statistics.
+            </div>
+            
+            <h3>Playoff Tournament Features</h3>
+            <div class="feature-box">
+                <h4>Bracket View</h4>
+                <p>Playoff tournaments display a visual bracket showing:</p>
+                <ul>
+                    <li>All rounds (first round, semifinals, finals, etc.)</li>
+                    <li>Match pairings</li>
+                    <li>Winners advancing to next rounds</li>
+                    <li>Ratings at the time of each match</li>
+                    <li>Rating changes after each match</li>
+                </ul>
+            </div>
+            
+            <div class="feature-box">
+                <h4>Seeding</h4>
+                <p>Players are automatically seeded by rating (highest rated = #1 seed). You can:</p>
+                <ul>
+                    <li>Manually adjust bracket positions by dragging players</li>
+                    <li>Reseed the bracket based on current ratings</li>
+                    <li>Specify the number of seeded players</li>
+                </ul>
+            </div>
+            
+            <h3>Deleting Tournaments <span class="badge organizer">Organizer Only</span></h3>
+            <div class="warning">
+                <strong>Warning:</strong> Deleting a tournament will permanently remove it and all associated matches. This cannot be undone.
+            </div>
+            <p>To delete a tournament, open it and click the "Delete Tournament" button. Confirm the deletion in the warning dialog.</p>
+        </div>
+        
+        <div class="section" id="statistics">
+            <h2>📊 Statistics Page</h2>
+            
+            <p>The Statistics page provides detailed analytics and insights about players and tournaments.</p>
+            
+            <div class="feature-box">
+                <h4>Available Statistics</h4>
+                <p>The Statistics page may include:</p>
+                <ul>
+                    <li>Player rankings and ratings</li>
+                    <li>Win/loss records</li>
+                    <li>Tournament performance</li>
+                    <li>Head-to-head records</li>
+                    <li>Rating trends over time</li>
+                </ul>
+            </div>
+            
+            <div class="note">
+                <strong>Note:</strong> The specific statistics available may vary. Check the Statistics page for current features.
+            </div>
+        </div>
+        
+        <div class="section" id="history">
+            <h2>📜 History Page</h2>
+            
+            <p>The History page allows you to view past match results and tournament history.</p>
+            
+            <div class="feature-box">
+                <h4>Viewing Match History</h4>
+                <p>You can:</p>
+                <ul>
+                    <li>View all past matches</li>
+                    <li>Filter matches by date range</li>
+                    <li>View head-to-head records between players</li>
+                    <li>See rating changes over time</li>
+                </ul>
+            </div>
+            
+            <div class="note">
+                <strong>Note:</strong> The specific features available on the History page may vary. Check the History page for current functionality.
+            </div>
+        </div>
+        
+        <div class="section" id="roles">
+            <h2>👤 User Roles & Permissions</h2>
+            
+            <p>The system uses role-based access control. Different roles have different permissions:</p>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Role</th>
+                        <th>Permissions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="badge player">PLAYER</span></td>
+                        <td>
+                            <ul style="margin: 0;">
+                                <li>View all players and tournaments</li>
+                                <li>Edit own profile (email, phone, address, picture, password)</li>
+                                <li>View statistics and history</li>
+                            </ul>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge organizer">ORGANIZER</span></td>
+                        <td>
+                            <ul style="margin: 0;">
+                                <li>All Player permissions</li>
+                                <li>Create tournaments</li>
+                                <li>Add and edit match results</li>
+                                <li>Complete tournaments</li>
+                                <li>Delete tournaments and matches</li>
+                                <li>Modify tournament names and participants</li>
+                            </ul>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge admin">ADMIN</span></td>
+                        <td>
+                            <ul style="margin: 0;">
+                                <li>All Organizer permissions</li>
+                                <li>Create, edit, and delete players</li>
+                                <li>Edit all player fields (name, rating, roles, etc.)</li>
+                                <li>Import and export players</li>
+                                <li>Reset player passwords</li>
+                                <li>Activate/deactivate players</li>
+                                <li>View all members (not just players)</li>
+                                <li>Cannot delete themselves</li>
+                            </ul>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge organizer">COACH</span></td>
+                        <td>
+                            <ul style="margin: 0;">
+                                <li>Same as Player permissions</li>
+                                <li>May have additional coaching-specific features (if implemented)</li>
+                            </ul>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="info">
+                <strong>Multiple Roles:</strong> Users can have multiple roles. For example, a user can be both a PLAYER and an ORGANIZER, giving them the combined permissions of both roles.
+            </div>
+        </div>
+        
+        <div class="section" id="common-tasks">
+            <h2>✅ Common Tasks</h2>
+            
+            <h3>Quick Reference</h3>
+            
+            <div class="feature-box">
+                <h4>Updating Your Profile</h4>
+                <ol>
+                    <li>Click the ⚙️ icon next to your name in the header</li>
+                    <li>Edit your email, phone, address, or picture</li>
+                    <li>Click "Save"</li>
+                </ol>
+            </div>
+            
+            <div class="feature-box">
+                <h4>Finding a Player</h4>
+                <ol>
+                    <li>Go to the Players page</li>
+                    <li>Use the name search box at the top</li>
+                    <li>Or use filters to narrow down the list</li>
+                </ol>
+            </div>
+            
+            <div class="feature-box">
+                <h4>Viewing Player Games</h4>
+                <ol>
+                    <li>Go to the Players page</li>
+                    <li>Enable the Games column in settings</li>
+                    <li>Select a time period from the dropdown (Today, Week, Month, Custom, or All Games)</li>
+                </ol>
+            </div>
+            
+            <div class="feature-box">
+                <h4>Creating a Quick Tournament</h4>
+                <ol>
+                    <li>Go to Tournaments page (Organizer role required)</li>
+                    <li>Click "Create Tournament"</li>
+                    <li>Select 2 or more players</li>
+                    <li>Choose tournament type</li>
+                    <li>Click "Create Tournament"</li>
+                </ol>
+            </div>
+            
+            <div class="feature-box">
+                <h4>Recording a Match</h4>
+                <ol>
+                    <li>Open the tournament (Organizer role required)</li>
+                    <li>Click "Add Match" (Round Robin) or click a bracket match (Playoff)</li>
+                    <li>Select players and enter scores</li>
+                    <li>Click "Save"</li>
+                </ol>
+            </div>
+            
+            <h3>Tips & Best Practices</h3>
+            
+            <div class="note">
+                <strong>Tip:</strong> Use the column visibility settings to customize your view. Hide columns you don't need to see more information at once.
+            </div>
+            
+            <div class="note">
+                <strong>Tip:</strong> Save your filter preferences - they're automatically saved and will be restored when you return to the page.
+            </div>
+            
+            <div class="note">
+                <strong>Tip:</strong> When importing players, use the export feature first to see the exact format, then modify the CSV file and import it.
+            </div>
+            
+            <div class="warning">
+                <strong>Important:</strong> Always complete tournaments after all matches are finished. This ensures ratings are calculated correctly and the tournament is marked as finished.
+            </div>
+            
+            <div class="info">
+                <strong>Remember:</strong> Regular members can only edit their own contact information. If you need to change your name, birth date, or other restricted fields, contact an administrator.
+            </div>
+        </div>
+        
+        <div style="margin-top: 50px; padding: 20px; background: #ecf0f1; border-radius: 6px; border: 2px solid #bdc3c7;">
+            <h3 style="margin-top: 0; border: none;">Need Help?</h3>
+            <p>If you encounter any issues or have questions:</p>
+            <ul>
+                <li>Check that you have the appropriate role/permissions for the action you're trying to perform</li>
+                <li>Ensure all required fields are filled when creating or editing</li>
+                <li>Verify that email addresses are unique when creating new players</li>
+                <li>Contact your system administrator for assistance with account issues or permissions</li>
+            </ul>
+        </div>
+        
+        <div style="margin-top: 30px; text-align: center; color: #7f8c8d; font-size: 14px;">
+            <p>Generated: <span id="date"></span></p>
+            <p style="margin-top: 10px;">PingPong Tournament System User Guide v1.0</p>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('date').textContent = new Date().toLocaleString();
+    </script>
+</body>
+</html>

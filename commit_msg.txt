@@ -1,0 +1,10 @@
+Refactor rating system: remove unnecessary recalculations and improve UI
+
+- Replace RankingHistory with RatingHistory table structure
+- Remove recalculateAllRatings() calls - ratings now updated incrementally
+- Create calculateRatingsForRoundRobinTournament() for single tournament calculation
+- Update createRatingHistoryForRoundRobinTournament() to calculate ratings using 4-pass algorithm
+- Remove rating recalculation from rankingService (rankings are separate from ratings)
+- Update match creation/update to not call recalculateAllRatings for SINGLE_MATCH
+- Add bold separator line after schedule table header row for better visual separation
+
