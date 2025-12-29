@@ -398,7 +398,7 @@ router.post('/member/logout', async (req: Request, res: Response) => {
         return res.status(500).json({ error: 'Failed to logout' });
       }
       
-      res.clearCookie('pingpong.sid');
+      res.clearCookie('spin-master.sid');
       logger.info('Member logged out', { memberId });
       res.json({ message: 'Logged out successfully' });
     });

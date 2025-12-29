@@ -5500,7 +5500,7 @@ const Players: React.FC = () => {
                   style={isSelectingForHistory ? { cursor: 'pointer' } : {}}
                   onClick={isSelectingForHistory ? () => handleSelectPlayerForHistory(player.id) : undefined}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                     {!isCreatingTournament && !isSelectingForStats && !isSelectingForHistory && !isOrganizingBracket && (
                       <>
                         <button
@@ -5510,12 +5510,11 @@ const Players: React.FC = () => {
                           }}
                           title="Show statistics for a player"
                           aria-label="Show statistics for a player"
-                          className="button-3d"
                           style={{
-                            padding: '4px 8px',
+                            padding: '2px 3px',
                             border: 'none',
-                            background: '#3498db',
-                            color: 'white',
+                            background: 'transparent',
+                            color: 'inherit',
                             cursor: 'pointer',
                             fontSize: '14px',
                             display: 'inline-flex',
@@ -5533,12 +5532,11 @@ const Players: React.FC = () => {
                           }}
                           title="Game history for the player against selected group"
                           aria-label="Game history for the player against selected group"
-                          className="button-3d"
                           style={{
-                            padding: '4px 8px',
+                            padding: '2px 3px',
                             border: 'none',
-                            background: '#e67e22',
-                            color: 'white',
+                            background: 'transparent',
+                            color: 'inherit',
                             cursor: 'pointer',
                             fontSize: '14px',
                             display: 'inline-flex',
@@ -5551,7 +5549,7 @@ const Players: React.FC = () => {
                         </button>
                         {showAllPlayers && (
                           <>
-                            <span style={{ marginLeft: '8px' }}></span>
+                            <span style={{ marginLeft: '4px' }}></span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -5576,17 +5574,17 @@ const Players: React.FC = () => {
                         )}
                       </>
                     )}
-                    <span style={{ color: player.isActive ? '#000' : '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: player.isActive ? '#000' : '#666', display: 'flex', alignItems: 'center', gap: '2px' }}>
                       {formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}
                       {isSelectingForStats && player.rating !== null && (
-                        <span style={{ fontSize: '0.85em', color: '#666', marginLeft: '4px' }}>
+                        <span style={{ fontSize: '0.85em', color: '#666', marginLeft: '2px' }}>
                           ({player.rating})
                         </span>
                       )}
                       {!isSelectingForStats && (() => {
                         const ranking = playerRankings.get(player.id);
                         return ranking ? (
-                          <span style={{ fontSize: '0.85em', color: '#666', marginLeft: '4px' }}>
+                          <span style={{ fontSize: '0.85em', color: '#666', marginLeft: '2px' }}>
                             ({ranking})
                           </span>
                         ) : null;
@@ -5623,12 +5621,11 @@ const Players: React.FC = () => {
                         handleStartEdit(player.id);
                       }}
                       title="Edit member profile"
-                      className="button-3d"
                       style={{
-                        padding: '4px 8px',
+                        padding: '2px 3px',
                         border: 'none',
-                        background: '#3498db',
-                        color: 'white',
+                        background: 'transparent',
+                        color: 'inherit',
                         cursor: 'pointer',
                         fontSize: '16px',
                         display: 'inline-flex',

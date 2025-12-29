@@ -105,7 +105,7 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     sameSite: isCrossDomain ? 'none' : 'lax', // 'none' for cross-domain, 'lax' for same-domain
   },
-  name: 'pingpong.sid', // Custom session name
+  name: 'spin-master.sid', // Custom session name
 }));
 
 // Debug: Log session middleware setup

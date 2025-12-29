@@ -204,3 +204,4 @@ ALTER TABLE "matches" ADD CONSTRAINT "matches_tournamentId_fkey" FOREIGN KEY ("t
 -- AddForeignKey
 ALTER TABLE "matches" ADD CONSTRAINT "matches_bracketMatchId_fkey" FOREIGN KEY ("bracketMatchId") REFERENCES "bracket_matches"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
+
