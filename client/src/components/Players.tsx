@@ -309,6 +309,10 @@ const Players: React.FC = () => {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [showRoleFilter, setShowRoleFilter] = useState(false);
   const roleFilterButtonRef = useRef<HTMLButtonElement>(null);
+  const [filtersCollapsed, setFiltersCollapsed] = useState<boolean>(() => {
+    const saved = localStorage.getItem('players_filtersCollapsed');
+    return saved === 'true';
+  });
   const [isCreatingTournament, setIsCreatingTournament] = useState(false);
   const [tournamentCreationStep, setTournamentCreationStep] = useState<'type_selection' | 'player_selection' | 'rearrange' | 'confirmation' | 'organize_bracket' | 'completion'>('type_selection');
   const [selectedPlayersForTournament, setSelectedPlayersForTournament] = useState<number[]>([]);
@@ -2621,17 +2625,40 @@ const Players: React.FC = () => {
           top: 0, 
           backgroundColor: 'white', 
           zIndex: 100,
-          paddingTop: '10px',
-          paddingBottom: '15px',
+          paddingTop: '6px',
+          paddingBottom: '8px',
           marginTop: '-10px',
-          marginBottom: '10px',
+          marginBottom: '6px',
           borderBottom: '2px solid #ddd',
           boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)'
         }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto' }}>
-            {!isCreatingTournament && (
-              <h2 style={{ margin: 0 }}>Players</h2>
+            {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
+              <button
+                onClick={() => {
+                  const newState = !filtersCollapsed;
+                  setFiltersCollapsed(newState);
+                  localStorage.setItem('players_filtersCollapsed', String(newState));
+                }}
+                style={{
+                  padding: '5px 10px',
+                  fontSize: '13px',
+                  backgroundColor: '#e8e8e8',
+                  color: '#333',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 'bold',
+                  minWidth: '32px'
+                }}
+                title={filtersCollapsed ? 'Expand filters' : 'Collapse filters'}
+              >
+                {filtersCollapsed ? '▼' : '▲'}
+              </button>
             )}
             {!isCreatingTournament && showAddForm && (
                   <button 
@@ -2651,11 +2678,11 @@ const Players: React.FC = () => {
                 )}
           </div>
           {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 auto', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 auto', justifyContent: 'center' }}>
               {(() => {
                 const buttonStyle: React.CSSProperties = {
-                  padding: '6px 12px',
-                      fontSize: '14px',
+                  padding: '5px 10px',
+                      fontSize: '13px',
                   fontWeight: 'bold',
                   backgroundColor: '#3498db',
                       color: 'white',
@@ -2701,7 +2728,7 @@ const Players: React.FC = () => {
                       </>
                     )}
                     {hasButtonsBeforeSeparator && (
-                      <span style={{ color: '#666', fontSize: '18px', margin: '0 6px', fontWeight: 'bold' }}>|</span>
+                      <span style={{ color: '#666', fontSize: '16px', margin: '0 4px', fontWeight: 'bold' }}>|</span>
                     )}
                     <button 
                       onClick={handleStartStatsSelection}
@@ -2718,7 +2745,7 @@ const Players: React.FC = () => {
             </div>
           )}
           {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
               <button
                 onClick={async () => {
                   // Clear all caches
@@ -4352,6 +4379,7 @@ const Players: React.FC = () => {
         )}
 
         <div style={{ marginBottom: '0px' }}>
+          {!filtersCollapsed && (
           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div className="form-group" style={{ marginBottom: 0, flex: '1', minWidth: '150px' }}>
               <label htmlFor="nameFilter" style={{ display: 'inline-block', marginBottom: '6px', fontWeight: 'bold', fontSize: '13px', textAlign: 'center', backgroundColor: '#e8e8e8', padding: '4px 8px', borderRadius: '4px' }}>
@@ -4672,6 +4700,7 @@ const Players: React.FC = () => {
               </button>
             </div>
           </div>
+          )}
           {(nameFilter.trim() || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '') && (() => {
             const filteredCount = getSortedPlayers().filter(player => {
               // When selecting for history and a player is selected, exclude that player from the count

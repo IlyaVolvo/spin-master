@@ -316,8 +316,12 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
 
 function Header({ onLogout }: { onLogout: () => void }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [userName, setUserName] = useState<string>('');
   const [userRoles, setUserRoles] = useState<string[]>([]);
+  
+  const isPlayersActive = location.pathname === '/players';
+  const isTournamentsActive = location.pathname === '/tournaments';
   
   // Format roles as comma-separated first letters
   const formatRoles = (roles: string[]): string => {
@@ -389,9 +393,79 @@ function Header({ onLogout }: { onLogout: () => void }) {
         width: '100%',
         gap: '15px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <a href="/players" onClick={handlePlayersClick} style={{ color: 'white', textDecoration: 'none', padding: '8px 16px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', transition: 'background-color 0.2s', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}>Players</a>
-          <a href="/tournaments" onClick={handleTournamentsClick} style={{ color: 'white', textDecoration: 'none', padding: '8px 16px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', transition: 'background-color 0.2s', fontSize: '18px', fontWeight: 'bold', cursor: 'pointer' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}>Tournaments</a>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginBottom: '-1px' }}>
+          <a 
+            href="/players" 
+            onClick={handlePlayersClick} 
+            style={{ 
+              color: isPlayersActive ? '#333' : 'rgba(255, 255, 255, 0.8)', 
+              textDecoration: 'none', 
+              padding: '10px 24px 12px 24px', 
+              background: isPlayersActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+              borderTopLeftRadius: '8px',
+              borderTopRightRadius: '8px',
+              border: isPlayersActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+              borderBottom: isPlayersActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
+              transition: 'all 0.2s', 
+              fontSize: '16px', 
+              fontWeight: isPlayersActive ? '600' : '500', 
+              cursor: 'pointer',
+              position: 'relative',
+              zIndex: isPlayersActive ? 10 : 1,
+              boxShadow: isPlayersActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+              marginBottom: isPlayersActive ? '0' : '1px'
+            }} 
+            onMouseEnter={(e) => {
+              if (!isPlayersActive) {
+                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isPlayersActive) {
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+              }
+            }}
+          >
+            Players
+          </a>
+          <a 
+            href="/tournaments" 
+            onClick={handleTournamentsClick} 
+            style={{ 
+              color: isTournamentsActive ? '#333' : 'rgba(255, 255, 255, 0.8)', 
+              textDecoration: 'none', 
+              padding: '10px 24px 12px 24px', 
+              background: isTournamentsActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+              borderTopLeftRadius: '8px',
+              borderTopRightRadius: '8px',
+              border: isTournamentsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+              borderBottom: isTournamentsActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
+              transition: 'all 0.2s', 
+              fontSize: '16px', 
+              fontWeight: isTournamentsActive ? '600' : '500', 
+              cursor: 'pointer',
+              position: 'relative',
+              zIndex: isTournamentsActive ? 10 : 1,
+              boxShadow: isTournamentsActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+              marginBottom: isTournamentsActive ? '0' : '1px'
+            }} 
+            onMouseEnter={(e) => {
+              if (!isTournamentsActive) {
+                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isTournamentsActive) {
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+              }
+            }}
+          >
+            Tournaments
+          </a>
         </div>
         <h1 style={{ 
           margin: 0,
