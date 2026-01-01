@@ -2270,6 +2270,39 @@ const Tournaments: React.FC = () => {
                       ✓
                     </button>
                   )}
+                  {tournament.status === 'ACTIVE' && tournament.matches.length === 0 && isUserOrganizer && (
+                    <button
+                      onClick={() => {
+                        saveStateBeforeNavigate();
+                        navigate('/players', {
+                          state: {
+                            modifyTournament: true,
+                            tournamentId: tournament.id,
+                            tournamentName: tournament.name,
+                            tournamentType: tournament.type,
+                            participantIds: tournament.participants.map(p => p.memberId),
+                            from: 'tournaments'
+                          }
+                        });
+                      }}
+                      title="Modify tournament (change players, name, etc.)"
+                      style={{
+                        padding: '6px 12px',
+                        border: '1px solid #3498db',
+                        borderRadius: '4px',
+                        backgroundColor: '#3498db',
+                        color: 'white',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: 'bold',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      ✏️ Modify
+                    </button>
+                  )}
                   {tournament.type !== 'SINGLE_MATCH' && (
                     <button
                       onClick={() => handleDeleteTournament(tournament.id)}

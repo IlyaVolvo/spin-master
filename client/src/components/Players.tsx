@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -314,6 +315,8 @@ const Players: React.FC = () => {
     return saved === 'true';
   });
   const [isCreatingTournament, setIsCreatingTournament] = useState(false);
+  const [editingTournamentId, setEditingTournamentId] = useState<number | null>(null);
+  const [existingParticipantIds, setExistingParticipantIds] = useState<Set<number>>(new Set());
   const [tournamentCreationStep, setTournamentCreationStep] = useState<'type_selection' | 'player_selection' | 'rearrange' | 'confirmation' | 'organize_bracket' | 'completion'>('type_selection');
   const [selectedPlayersForTournament, setSelectedPlayersForTournament] = useState<number[]>([]);
   const [showTournamentConfirmation, setShowTournamentConfirmation] = useState(false);
@@ -518,6 +521,37 @@ const Players: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.editOwnProfile, location.state?.memberId, members.length, editingPlayerId]);
+
+  // Handle tournament modification from Tournaments component
+  useEffect(() => {
+    if (location.state?.modifyTournament === true && location.state?.tournamentId && !isCreatingTournament && members.length > 0) {
+      const tournamentId = location.state.tournamentId;
+      const participantIds = location.state.participantIds || [];
+      
+      setEditingTournamentId(tournamentId);
+      setExistingParticipantIds(new Set(participantIds));
+      setIsCreatingTournament(true);
+      setTournamentCreationStep('player_selection');
+      setSelectedPlayersForTournament(participantIds);
+      setTournamentName(location.state.tournamentName || '');
+      setTournamentType(location.state.tournamentType || 'ROUND_ROBIN');
+      
+      // Clear the state to prevent re-triggering
+      navigate('/players', { 
+        state: { ...location.state, modifyTournament: false },
+        replace: true 
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.modifyTournament, location.state?.tournamentId, members.length, isCreatingTournament]);
+
+  // Auto-expand filters when in player selection mode for tournaments
+  useEffect(() => {
+    if (isCreatingTournament && tournamentCreationStep === 'player_selection' && filtersCollapsed) {
+      setFiltersCollapsed(false);
+      // Don't save to localStorage - this is temporary for player selection
+    }
+  }, [isCreatingTournament, tournamentCreationStep, filtersCollapsed]);
 
   // Auto-dismiss success messages after 3 seconds
   useEffect(() => {
@@ -2121,6 +2155,8 @@ const Players: React.FC = () => {
     // Navigate back through steps
     if (tournamentCreationStep === 'type_selection') {
     setIsCreatingTournament(false);
+    setEditingTournamentId(null);
+    setExistingParticipantIds(new Set());
     setSelectedPlayersForTournament([]);
     setTournamentName('');
       setTournamentType('ROUND_ROBIN');
@@ -2152,6 +2188,8 @@ const Players: React.FC = () => {
   const handleConfirmCancelTournament = () => {
     setShowCancelConfirmation(false);
     setIsCreatingTournament(false);
+    setEditingTournamentId(null);
+    setExistingParticipantIds(new Set());
     setSelectedPlayersForTournament([]);
     setTournamentName('');
     setShowTournamentConfirmation(false);
@@ -2394,12 +2432,31 @@ const Players: React.FC = () => {
           tournamentData.name = tournamentName.trim();
         }
 
-        const response = await api.post('/tournaments', tournamentData);
-        setSuccess('Tournament created successfully');
+        if (editingTournamentId) {
+          // Update existing tournament
+          // First update participants
+          await api.patch(`/tournaments/${editingTournamentId}/participants`, {
+            participantIds: selectedPlayersForTournament
+          });
+          
+          // Then update name and creation date
+          await api.patch(`/tournaments/${editingTournamentId}/name`, {
+            name: tournamentData.name,
+            createdAt: new Date().toISOString()
+          });
+          
+          setSuccess('Tournament modified successfully');
+        } else {
+          // Create new tournament
+          const response = await api.post('/tournaments', tournamentData);
+          setSuccess('Tournament created successfully');
+        }
       }
       
       // Reset tournament creation state
       setIsCreatingTournament(false);
+      setEditingTournamentId(null);
+      setExistingParticipantIds(new Set());
       setTournamentCreationStep('type_selection');
       setSelectedPlayersForTournament([]);
       setTournamentName('');
@@ -2972,29 +3029,45 @@ const Players: React.FC = () => {
           {isCreatingTournament ? (
             <>
               {/* Step 1: Tournament Type Selection Modal (with Multi-tournament options) */}
-              {tournamentCreationStep === 'type_selection' && (
+              {tournamentCreationStep === 'type_selection' ? createPortal(
+                <div style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 100000
+                }}>
                   <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    backgroundColor: 'white',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                    minWidth: '400px',
+                    maxWidth: '500px',
+                    maxHeight: '90vh',
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 10001
+                    flexDirection: 'column'
                   }}>
+                    {/* Fixed Header */}
                     <div style={{
-                      backgroundColor: 'white',
-                      padding: '30px',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                      minWidth: '400px',
-                      maxWidth: '500px'
+                      padding: '20px 30px',
+                      borderBottom: '1px solid #e0e0e0',
+                      flexShrink: 0
                     }}>
-                      <h2 style={{ marginTop: 0, marginBottom: '20px', fontSize: '20px' }}>Tournament Type</h2>
-                      
+                      <h2 style={{ margin: 0, fontSize: '20px' }}>Tournament Type</h2>
+                    </div>
+                    
+                    {/* Scrollable Content */}
+                    <div style={{
+                      padding: '20px 30px',
+                      overflowY: 'auto',
+                      flex: '1 1 auto',
+                      maxHeight: 'calc(90vh - 140px)'
+                    }}>
                       {/* Tournament Name (optional) - First entry */}
                       <div style={{ marginBottom: '20px' }}>
                         <label style={{ 
@@ -3011,7 +3084,7 @@ const Players: React.FC = () => {
                           value={tournamentName}
                           onChange={(e) => setTournamentName(e.target.value)}
                           placeholder="Auto-generated if empty"
-                            style={{
+                          style={{
                             width: '100%',
                             padding: '10px',
                             fontSize: '14px',
@@ -3024,12 +3097,12 @@ const Players: React.FC = () => {
                       
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
                         <label style={{
-                              display: 'flex',
-                              alignItems: 'center',
+                          display: 'flex',
+                          alignItems: 'center',
                           gap: '10px',
                           padding: '12px',
                           border: tournamentType === 'ROUND_ROBIN' ? '2px solid #3498db' : '1px solid #ddd',
-                              borderRadius: '4px',
+                          borderRadius: '4px',
                           cursor: 'pointer',
                           backgroundColor: tournamentType === 'ROUND_ROBIN' ? '#e8f4f8' : 'white'
                         }}>
@@ -3056,21 +3129,21 @@ const Players: React.FC = () => {
                           cursor: 'pointer',
                           backgroundColor: tournamentType === 'PLAYOFF' ? '#e8f4f8' : 'white'
                         }}>
-                            <input
-                              type="radio"
-                              name="tournamentType"
+                          <input
+                            type="radio"
+                            name="tournamentType"
                             value="PLAYOFF"
                             checked={tournamentType === 'PLAYOFF'}
                             onChange={() => {
                               setTournamentType('PLAYOFF');
-                                setIsMultiTournamentMode(false);
+                              setIsMultiTournamentMode(false);
                             }}
                             style={{ cursor: 'pointer' }}
                           />
                           <span style={{ fontSize: '16px', fontWeight: '500' }}>Playoff</span>
                         </label>
-                    </div>
-                      
+                      </div>
+                        
                       {/* Multi-tournament checkbox and players per tournament (greyed out unless Round Robin is selected) */}
                       <div style={{ 
                         marginBottom: '20px',
@@ -3112,7 +3185,7 @@ const Players: React.FC = () => {
                           }}>
                             Multi-tournament
                           </span>
-                              </label>
+                        </label>
                         
                         {/* Players per tournament input (only shown when Round Robin is selected AND multi-tournament is checked) */}
                         {tournamentType === 'ROUND_ROBIN' && isMultiTournamentMode && (
@@ -3129,65 +3202,75 @@ const Players: React.FC = () => {
                             <input
                               type="number"
                               value={playersPerTournament}
-                                onChange={(e) => {
-                                  const value = e.target.value;
+                              onChange={(e) => {
+                                const value = e.target.value;
                                 const num = parseInt(value);
                                 if (value === '' || (num >= 3 && num <= 99)) {
                                   setMembersPerTournament(value);
                                 }
-                                }}
+                              }}
                               min="3"
                               max="99"
-                                style={{
+                              style={{
                                 width: '100%',
                                 padding: '10px',
                                 fontSize: '14px',
-                                  border: '1px solid #ddd',
-                                  borderRadius: '4px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
                                 backgroundColor: 'white'
                               }}
                             />
-                            </div>
+                          </div>
                         )}
                       </div>
-                      
-                      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={handleCancelTournamentCreation}
-                          style={{
-                            padding: '10px 20px',
-                            backgroundColor: '#95a5a6',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 'bold'
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => {
-                            setTournamentCreationStep('player_selection');
-                          }}
-                          style={{
-                            padding: '10px 20px',
-                            backgroundColor: '#3498db',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 'bold'
-                          }}
-                        >
-                          Next
-                        </button>
-                      </div>
                     </div>
-                      </div>
-                    )}
+                    
+                    {/* Fixed Footer */}
+                    <div style={{
+                      padding: '15px 30px',
+                      borderTop: '1px solid #e0e0e0',
+                      display: 'flex',
+                      gap: '10px',
+                      justifyContent: 'flex-end',
+                      flexShrink: 0
+                    }}>
+                      <button
+                        onClick={handleCancelTournamentCreation}
+                        style={{
+                          padding: '10px 20px',
+                          backgroundColor: '#95a5a6',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTournamentCreationStep('player_selection');
+                        }}
+                        style={{
+                          padding: '10px 20px',
+                          backgroundColor: '#3498db',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              ) : null}
 
                 {/* Step 3: Member Selection */}
                 {tournamentCreationStep === 'player_selection' && (
@@ -3195,6 +3278,43 @@ const Players: React.FC = () => {
                 {/* Players label with tournament count info */}
                 <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '10px', justifyContent: 'space-between', width: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto' }}>
+                    <button
+                      onClick={() => {
+                        // In player selection mode, only allow expanding, not collapsing
+                        if (isCreatingTournament && tournamentCreationStep === 'player_selection') {
+                          if (filtersCollapsed) {
+                            setFiltersCollapsed(false);
+                            // Don't save to localStorage - this is temporary
+                          }
+                          return;
+                        }
+                        const newState = !filtersCollapsed;
+                        setFiltersCollapsed(newState);
+                        localStorage.setItem('players_filtersCollapsed', String(newState));
+                      }}
+                      style={{
+                        padding: '5px 10px',
+                        fontSize: '13px',
+                        backgroundColor: '#e8e8e8',
+                        color: '#333',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                        cursor: (isCreatingTournament && tournamentCreationStep === 'player_selection' && !filtersCollapsed) ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 'bold',
+                        minWidth: '32px',
+                        opacity: (isCreatingTournament && tournamentCreationStep === 'player_selection' && !filtersCollapsed) ? 0.5 : 1
+                      }}
+                      title={
+                        isCreatingTournament && tournamentCreationStep === 'player_selection' && !filtersCollapsed
+                          ? 'Filters must stay expanded during player selection'
+                          : filtersCollapsed ? 'Expand filters' : 'Collapse filters'
+                      }
+                    >
+                      {filtersCollapsed ? '▼' : '▲'}
+                    </button>
                     <h3 style={{ margin: 0, fontSize: '20px' }}>Players</h3>
                     <span style={{ fontSize: '18px', color: '#2c3e50', fontWeight: 'bold' }}>
                       (<strong>{selectedPlayersForTournament.length}</strong> selected)
@@ -4702,6 +4822,7 @@ const Players: React.FC = () => {
           </div>
           )}
           {(() => {
+            // Always show filtered count (players matching selection criteria)
             const filteredCount = getSortedPlayers().filter(player => {
               // When selecting for history and a player is selected, exclude that player from the count
               if (isSelectingForHistory && selectedPlayerForHistory !== null) {
@@ -4823,12 +4944,17 @@ const Players: React.FC = () => {
               }
             }
           }}
-          style={{ maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}
+          style={isOrganizingBracket ? {} : { 
+            maxHeight: filtersCollapsed ? 'calc(100vh - 200px)' : 'calc(100vh - 300px)', 
+            overflowY: 'auto' 
+          }}
         >
         <table style={{ marginTop: 0, width: '100%', borderCollapse: 'collapse' }}>
           <thead 
             ref={tableHeaderRef}
-            style={{ 
+            style={isOrganizingBracket ? {
+              backgroundColor: '#f8f9fa'
+            } : {
               position: 'sticky', 
               top: 0, 
               backgroundColor: '#f8f9fa', 
@@ -5515,6 +5641,9 @@ const Players: React.FC = () => {
                             : selectedPlayersForStats.includes(player.id)
                       }
                       onChange={() => {
+                        if (isOrganizingBracket) {
+                          return; // Disable selection when organizing bracket
+                        }
                         if (tournamentType === 'SINGLE_MATCH') {
                           handleTogglePlayerForTournament(player.id);
                         } else if (isCreatingTournament) {
@@ -5524,6 +5653,7 @@ const Players: React.FC = () => {
                         }
                       }}
                       disabled={
+                        isOrganizingBracket ||
                         (tournamentType === 'SINGLE_MATCH' && (
                           showSingleMatchConfirmation ||
                           (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
@@ -5536,6 +5666,7 @@ const Players: React.FC = () => {
                       }
                       style={{ 
                         cursor: (
+                          isOrganizingBracket ||
                           (tournamentType === 'SINGLE_MATCH' && (
                             showSingleMatchConfirmation ||
                             (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
@@ -5547,6 +5678,7 @@ const Players: React.FC = () => {
                           ))
                         ) ? 'not-allowed' : 'pointer',
                         opacity: (
+                          isOrganizingBracket ||
                           (tournamentType === 'SINGLE_MATCH' && (
                             showSingleMatchConfirmation ||
                             (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
@@ -5643,6 +5775,19 @@ const Players: React.FC = () => {
                       </>
                     )}
                     <span style={{ color: player.isActive ? '#000' : '#666', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                      {editingTournamentId && existingParticipantIds.has(player.id) && (
+                        <span style={{ 
+                          fontSize: '10px', 
+                          backgroundColor: '#3498db', 
+                          color: 'white', 
+                          padding: '2px 4px', 
+                          borderRadius: '3px',
+                          marginRight: '4px',
+                          fontWeight: 'bold'
+                        }} title="Already registered in this tournament">
+                          REG
+                        </span>
+                      )}
                       {formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}
                       {isSelectingForStats && player.rating !== null && (
                         <span style={{ fontSize: '0.85em', color: '#666', marginLeft: '2px' }}>

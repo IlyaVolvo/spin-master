@@ -1200,10 +1200,11 @@ router.patch('/:tournamentId/matches/:matchId', [
   }
 });
 
-// Update tournament name
+// Update tournament name and creation date
 // Only Organizers can modify tournaments
 router.patch('/:id/name', [
   body('name').optional().trim(),
+  body('createdAt').optional().isISO8601(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     // Check if user has ORGANIZER role
@@ -1222,19 +1223,33 @@ router.patch('/:id/name', [
       return res.status(400).json({ error: 'Invalid tournament ID' });
     }
 
-    const { name } = req.body;
+    const { name, createdAt } = req.body;
 
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
+      include: { matches: true },
     });
 
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
     }
 
+    // Only allow updating createdAt if tournament has no matches
+    if (createdAt && tournament.matches.length > 0) {
+      return res.status(400).json({ error: 'Cannot update creation date of tournament with matches' });
+    }
+
+    const updateData: any = {};
+    if (name !== undefined) {
+      updateData.name = name || null;
+    }
+    if (createdAt && tournament.matches.length === 0) {
+      updateData.createdAt = new Date(createdAt);
+    }
+
     const updatedTournament = await prisma.tournament.update({
       where: { id: tournamentId },
-      data: { name: name || null },
+      data: updateData,
       include: {
         participants: {
           include: {
