@@ -60,7 +60,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
       border: '2px dashed #3498db',
       maxWidth: '600px',
       width: '90%',
-      zIndex: 1000,
+      zIndex: 10001,
       boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
     }}>
       <div style={{ display: 'flex', gap: '20px', justifyContent: 'space-between', alignItems: 'center' }}>

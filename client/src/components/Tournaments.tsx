@@ -2128,7 +2128,7 @@ const Tournaments: React.FC = () => {
           border: '2px solid #9c27b0',
           position: 'sticky',
           top: 0,
-          zIndex: 1001,
+          zIndex: 9999,
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)'
@@ -3125,7 +3125,7 @@ const Tournaments: React.FC = () => {
           border: '2px solid #2196f3',
           position: 'sticky',
           top: activeSectionCollapsed || !showActiveTournaments && !showActiveMatches ? 0 : 80,
-          zIndex: 1000,
+          zIndex: 9999,
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)'
@@ -3924,7 +3924,7 @@ const Tournaments: React.FC = () => {
               borderRadius: '6px',
               fontSize: '13px',
               maxWidth: '350px',
-              zIndex: 10000,
+              zIndex: 10001,
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
               pointerEvents: 'none',
               lineHeight: '1.5',
@@ -3947,7 +3947,7 @@ const Tournaments: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
+          zIndex: 10001,
         }}
         onClick={() => setShowCancelConfirmation(null)}
         >

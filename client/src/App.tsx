@@ -4,7 +4,7 @@ import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated } from './utils/auth';
 import api from './utils/api';
-import { clearAllScrollPosition, clearAllUIStates } from './utils/scrollPosition';
+import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPosition';
 import { getErrorMessage } from './utils/errorHandler';
 
 // Lazy load route components for code splitting
@@ -266,7 +266,7 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 1000,
+      zIndex: 10001,
     }}>
       <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
         <h2>Password Reset Required</h2>

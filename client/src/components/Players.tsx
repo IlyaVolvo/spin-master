@@ -2956,7 +2956,7 @@ const Players: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    zIndex: 1000
+                    zIndex: 10001
                   }}>
                     <div style={{
                       backgroundColor: 'white',
@@ -3840,10 +3840,10 @@ const Players: React.FC = () => {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            zIndex: 1000,
+            zIndex: 10001,
           }}>
-            <div className="card" style={{ maxWidth: '500px', width: '90%', position: 'relative' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div className="card" style={{ maxWidth: '500px', width: '90%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
                 <h3 style={{ margin: 0 }}>Add Player</h3>
                 <button
                   type="button"
@@ -3873,7 +3873,8 @@ const Players: React.FC = () => {
                   ×
                 </button>
               </div>
-              <form onSubmit={handleAddPlayer}>
+              <form onSubmit={handleAddPlayer} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                <div style={{ overflowY: 'auto', flex: 1, paddingRight: '10px' }}>
                 <div className="form-group">
                   <label>First Name</label>
                   <input
@@ -3972,7 +3973,8 @@ const Players: React.FC = () => {
                     placeholder="Image URL"
                   />
                 </div>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #eee', flexShrink: 0 }}>
                   <button
                     type="button"
                     onClick={() => {
@@ -4010,7 +4012,7 @@ const Players: React.FC = () => {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            zIndex: 1000,
+            zIndex: 10001,
           }}>
             <div className="card" style={{ maxWidth: '500px', width: '90%', position: 'relative' }}>
               <h3 style={{ marginBottom: '15px', color: '#e67e22' }}>⚠️ Similar Player Names Found</h3>
@@ -4064,7 +4066,7 @@ const Players: React.FC = () => {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            zIndex: 1000,
+            zIndex: 10001,
           }}>
             <div className="card" style={{ maxWidth: '700px', width: '90%', maxHeight: '80vh', overflow: 'auto', position: 'relative' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -4192,7 +4194,7 @@ const Players: React.FC = () => {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            zIndex: 1000,
+            zIndex: 10001,
           }}>
             <div className="card" style={{ maxWidth: '700px', width: '90%', maxHeight: '80vh', overflow: 'auto', position: 'relative' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -4564,7 +4566,7 @@ const Players: React.FC = () => {
                       right: 0,
                       bottom: 0,
                       backgroundColor: 'transparent',
-                      zIndex: 999
+                      zIndex: 10001
                     }}
                     onClick={() => setShowRoleFilter(false)}
                     />
@@ -4579,7 +4581,7 @@ const Players: React.FC = () => {
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                         minWidth: '200px',
-                        zIndex: 1000,
+                        zIndex: 10001,
                         border: '1px solid #ddd'
                       }}
                       onClick={(e) => e.stopPropagation()}
@@ -4764,7 +4766,7 @@ const Players: React.FC = () => {
               position: 'sticky', 
               top: 0, 
               backgroundColor: '#f8f9fa', 
-              zIndex: 50,
+              zIndex: 9999,
               boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
             }}>
             <tr>
@@ -4944,7 +4946,7 @@ const Players: React.FC = () => {
                         borderRadius: '4px',
                         padding: '10px',
                         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-                        zIndex: 1000,
+                        zIndex: 10001,
                         marginTop: '5px',
                         minWidth: '250px',
                       }}
@@ -5073,7 +5075,7 @@ const Players: React.FC = () => {
                           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                           padding: '10px',
                           minWidth: '200px',
-                          zIndex: 1000,
+                          zIndex: 10001,
                         }}
                       >
                         <div style={{ marginBottom: '6px', fontWeight: 'bold', borderBottom: '1px solid #ddd', paddingBottom: '4px', fontSize: '13px' }}>
@@ -5240,7 +5242,7 @@ const Players: React.FC = () => {
                 position: 'sticky', 
                 top: `${headerHeight}px`, // Position right below the main header row (dynamically calculated)
                 backgroundColor: '#e8f5e9',
-                zIndex: 49,
+                zIndex: 9999,
                 borderBottom: '2px solid #4caf50',
                 boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
               }}>
@@ -5688,7 +5690,7 @@ const Players: React.FC = () => {
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',
-              zIndex: 1000,
+              zIndex: 10001,
               overflow: 'auto',
               padding: '20px'
             }}
@@ -5705,7 +5707,8 @@ const Players: React.FC = () => {
                 maxWidth: '700px', 
                 width: '100%', 
                 maxHeight: '90vh',
-                overflow: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
                 position: 'relative'
               }}
               onClick={(e) => {
@@ -5713,10 +5716,10 @@ const Players: React.FC = () => {
                 e.stopPropagation();
               }}
             >
-              <h3 style={{ margin: '0 0 20px 0' }}>
+              <h3 style={{ margin: '0 0 20px 0', flexShrink: 0 }}>
                 Edit Member: {formatPlayerName(editFirstName || player.firstName, editLastName || player.lastName, nameDisplayOrder)}
               </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', flex: 1, minHeight: 0, paddingRight: '10px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                           {/* Name fields */}
                           <div>
@@ -6078,30 +6081,30 @@ const Players: React.FC = () => {
                   </div>
                 )}
                 
-                <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end', paddingTop: '16px', borderTop: '1px solid #eee', flexShrink: 0 }}>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                      handleCancelEdit();
-                    }}
-                    className="button-filter"
-                    style={{ fontSize: '13px', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
-                  >
-                    Cancel
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                      handleSaveEdit();
-                    }}
-                    className="button-3d success"
-                    style={{ fontSize: '13px', padding: '8px 16px' }}
-                  >
-                    Save
-                        </button>
-                  </div>
-        </div>
-      </div>
+                    handleCancelEdit();
+                  }}
+                  className="button-filter"
+                  style={{ fontSize: '13px', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSaveEdit();
+                  }}
+                  className="button-3d success"
+                  style={{ fontSize: '13px', padding: '8px 16px' }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
     </div>
           );
         } catch (error) {
@@ -6125,7 +6128,7 @@ const Players: React.FC = () => {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            zIndex: 1001,
+            zIndex: 10001,
           }}>
             <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
               <h3 style={{ marginBottom: '15px', color: '#f44336' }}>
@@ -6176,7 +6179,7 @@ const Players: React.FC = () => {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1000,
+          zIndex: 10001,
         }}>
           <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
             <h3 style={{ marginBottom: '15px', color: pendingActiveToggle.isActive ? '#e67e22' : '#27ae60' }}>
@@ -6224,7 +6227,7 @@ const Players: React.FC = () => {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1000,
+          zIndex: 10001,
         }}>
           <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
             <h3 style={{ marginBottom: '15px', color: '#e67e22' }}>
@@ -6273,7 +6276,7 @@ const Players: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
+          zIndex: 10001,
         }} onClick={() => setShowTournamentConfirmation(false)}>
           <div style={{
             backgroundColor: 'white',
@@ -6660,7 +6663,7 @@ const Players: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
+          zIndex: 10001,
         }} onClick={() => setShowSingleMatchConfirmation(false)}>
           <div style={{
             backgroundColor: 'white',

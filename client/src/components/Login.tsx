@@ -190,7 +190,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
+          zIndex: 10001,
         }}>
           <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
             <h2>Password Reset Required</h2>
@@ -240,7 +240,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
+          zIndex: 10001,
         }}>
           <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
             <h2>Forgot Password</h2>
@@ -371,7 +371,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
+          zIndex: 10001,
         }}>
           <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
             <h2>Reset Password</h2>
