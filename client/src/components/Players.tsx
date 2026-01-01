@@ -4701,7 +4701,7 @@ const Players: React.FC = () => {
             </div>
           </div>
           )}
-          {(nameFilter.trim() || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '') && (() => {
+          {(() => {
             const filteredCount = getSortedPlayers().filter(player => {
               // When selecting for history and a player is selected, exclude that player from the count
               if (isSelectingForHistory && selectedPlayerForHistory !== null) {
@@ -4709,9 +4709,46 @@ const Players: React.FC = () => {
               }
               return true;
             }).length;
+            
+            // Build filter description
+            const filterDescriptions: string[] = [];
+            if (nameFilter.trim()) {
+              filterDescriptions.push(`Names with "${nameFilter.trim()}"`);
+            }
+            if (minRating !== '' || (maxRating !== '' && maxRating !== '9999')) {
+              const min = minRating === '' ? '0' : minRating;
+              const max = maxRating === '' || maxRating === '9999' ? '9999' : maxRating;
+              if (min !== '0' || max !== '9999') {
+                filterDescriptions.push(`Rating [${min}-${max}]`);
+              }
+            }
+            if (minAge !== '' || maxAge !== '') {
+              const min = minAge === '' ? '0' : minAge;
+              const max = maxAge === '' ? '150' : maxAge;
+              if (min !== '0' || max !== '150') {
+                filterDescriptions.push(`Age [${min}-${max}]`);
+              }
+            }
+            if (minGames !== '' || maxGames !== '') {
+              const min = minGames === '' ? '0' : minGames;
+              const max = maxGames === '' ? '∞' : maxGames;
+              filterDescriptions.push(`Games [${min}-${max}]`);
+            }
+            if (selectedRoles.length > 0) {
+              filterDescriptions.push(`Roles: ${selectedRoles.join(', ')}`);
+            }
+            
+            const hasFilters = filterDescriptions.length > 0;
+            const filterText = hasFilters ? filterDescriptions.join(', ') : 'none';
+            
             return (
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#666' }}>
                 Showing {filteredCount} matching player{filteredCount !== 1 ? 's' : ''}
+                {filtersCollapsed && (
+                  <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>
+                    (Filters: {filterText})
+                  </span>
+                )}
               </div>
             );
           })()}
