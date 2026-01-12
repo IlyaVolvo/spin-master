@@ -6,6 +6,7 @@ import { recalculateRankings } from '../services/rankingService';
 import { logger } from '../utils/logger';
 import { invalidateCacheAfterTournament, invalidateTournamentCache } from '../services/cacheService';
 import { emitCacheInvalidation, emitTournamentUpdate, emitMatchUpdate } from '../services/socketService';
+import bcrypt from 'bcryptjs';
 
 const router = express.Router();
 
@@ -691,6 +692,186 @@ router.post('/bulk', [
     res.status(201).json({ tournaments: createdTournaments });
   } catch (error) {
     logger.error('Error creating bulk tournaments', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create a match directly with final scores (creates SINGLE_MATCH tournament with COMPLETED status)
+// Organizers can create matches for any pair of players
+// Non-organizers can create matches for themselves (need opponent's password confirmation)
+router.post('/matches/create', [
+  body('member1Id').toInt().isInt({ min: 1 }),
+  body('member2Id').toInt().isInt({ min: 1 }),
+  body('player1Sets').toInt().isInt({ min: 0 }),
+  body('player2Sets').toInt().isInt({ min: 0 }),
+  body('opponentPassword').optional().trim(), // Required for non-organizers
+  body('name').optional().trim(),
+], async (req: AuthRequest, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      logger.error('Match creation validation failed', { errors: errors.array(), body: req.body });
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { member1Id, member2Id, player1Sets, player2Sets, opponentPassword, name } = req.body;
+    const currentMemberId = req.memberId || req.member?.id;
+
+    if (!currentMemberId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Check if user is organizer
+    const hasOrganizerAccess = await isOrganizer(req);
+
+    // If not organizer, verify they're creating a match for themselves
+    if (!hasOrganizerAccess) {
+      const isPlayer1 = currentMemberId === member1Id;
+      const isPlayer2 = currentMemberId === member2Id;
+      
+      if (!isPlayer1 && !isPlayer2) {
+        return res.status(403).json({ error: 'You can only create matches for yourself' });
+      }
+
+      // Determine opponent ID
+      const opponentId = isPlayer1 ? member2Id : member1Id;
+      
+      // Verify opponent's password
+      if (!opponentPassword) {
+        return res.status(400).json({ error: 'Opponent password confirmation is required' });
+      }
+
+      const opponent = await prisma.member.findUnique({
+        where: { id: opponentId },
+        select: { password: true, isActive: true },
+      });
+
+      if (!opponent || !opponent.isActive) {
+        return res.status(404).json({ error: 'Opponent not found or inactive' });
+      }
+
+      // Verify password
+      const isValidPassword = await bcrypt.compare(opponentPassword, opponent.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: 'Invalid opponent password' });
+      }
+    }
+
+    // Validate players are different
+    if (member1Id === member2Id) {
+      return res.status(400).json({ error: 'Players must be different' });
+    }
+
+    // Validate scores - must have a winner (no ties)
+    if (player1Sets === player2Sets) {
+      return res.status(400).json({ error: 'Match cannot end in a tie' });
+    }
+
+    // Verify both players are active
+    const players = await prisma.member.findMany({
+      where: {
+        id: { in: [member1Id, member2Id] },
+        isActive: true,
+      },
+    });
+
+    if (players.length !== 2) {
+      return res.status(400).json({ error: 'Both players must be active' });
+    }
+
+    const player1 = players.find(p => p.id === member1Id);
+    const player2 = players.find(p => p.id === member2Id);
+
+    if (!player1 || !player2) {
+      return res.status(400).json({ error: 'Players not found' });
+    }
+
+    // Use provided scores
+    const finalPlayer1Sets = player1Sets ?? 0;
+    const finalPlayer2Sets = player2Sets ?? 0;
+
+    // Generate tournament name
+    let tournamentName = name;
+    if (!tournamentName) {
+      const dateStr = new Date().toLocaleDateString();
+      tournamentName = `${player1.firstName} ${player1.lastName} vs ${player2.firstName} ${player2.lastName} - ${dateStr}`;
+    }
+
+    // Create tournament with match in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Create tournament with COMPLETED status
+      const tournament = await tx.tournament.create({
+        data: {
+          name: tournamentName,
+          type: 'SINGLE_MATCH',
+          status: 'COMPLETED', // Never active, immediately completed
+          participants: {
+            create: [
+              {
+                memberId: member1Id,
+                playerRatingAtTime: player1.rating || null,
+              },
+              {
+                memberId: member2Id,
+                playerRatingAtTime: player2.rating || null,
+              },
+            ],
+          },
+        },
+      });
+
+      // Create match with final scores
+      const match = await tx.match.create({
+        data: {
+          tournamentId: tournament.id,
+          member1Id,
+          member2Id,
+          player1Sets: finalPlayer1Sets,
+          player2Sets: finalPlayer2Sets,
+          player1Forfeit: false,
+          player2Forfeit: false,
+        },
+      });
+
+      return { tournament, match };
+    });
+
+    // Process rating changes
+    const winnerId = finalPlayer1Sets > finalPlayer2Sets ? member1Id :
+                     finalPlayer2Sets > finalPlayer1Sets ? member2Id : null;
+    
+    if (winnerId && member1Id !== null && member2Id !== null) {
+      const { processMatchRating } = await import('../services/matchRatingService');
+      const player1Won = winnerId === member1Id;
+      // Use incremental rating (current rating, not playerRatingAtTime)
+      await processMatchRating(member1Id, member2Id, player1Won, result.tournament.id, result.match.id, false, true);
+    }
+
+    // Invalidate cache and emit notifications
+    await invalidateCacheAfterTournament(result.tournament.id);
+    emitTournamentUpdate(result.tournament);
+    emitMatchUpdate(result.match, result.tournament.id);
+    emitCacheInvalidation(result.tournament.id);
+
+    logger.info('Match created successfully', { 
+      tournamentId: result.tournament.id, 
+      matchId: result.match.id,
+      member1Id,
+      member2Id,
+      player1Sets: finalPlayer1Sets,
+      player2Sets: finalPlayer2Sets
+    });
+
+    res.status(201).json({
+      tournament: result.tournament,
+      match: result.match,
+    });
+  } catch (error) {
+    logger.error('Error creating match', { 
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      body: req.body
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

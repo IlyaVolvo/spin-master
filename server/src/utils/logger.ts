@@ -30,7 +30,9 @@ class Logger {
     this.logLevel = debugMode ? 'debug' : (process.env.LOG_LEVEL || 'info');
     this.debugEnabled = this.logLevel === 'debug';
     
-    this.logDir = path.join(process.cwd(), 'logs');
+    // Use __dirname to ensure logs are always in server/logs regardless of where the command is run from
+    const serverDir = path.resolve(__dirname, '..', '..');
+    this.logDir = path.join(serverDir, 'logs');
     this.logFile = path.join(this.logDir, `server-${new Date().toISOString().split('T')[0]}.log`);
 
     // Create logs directory if it doesn't exist (and logging is enabled)

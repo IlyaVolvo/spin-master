@@ -329,6 +329,10 @@ const Players: React.FC = () => {
   const [draggedPlayer, setDraggedPlayer] = useState<{ playerId: number; fromGroupIndex: number } | null>(null); // Track dragged player
   const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null); // Track which group is being dragged over
   const [showSingleMatchConfirmation, setShowSingleMatchConfirmation] = useState(false);
+  const [matchPlayer1Sets, setMatchPlayer1Sets] = useState<string>('0');
+  const [matchPlayer2Sets, setMatchPlayer2Sets] = useState<string>('0');
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
+  const [opponentPassword, setOpponentPassword] = useState('');
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
   const [isSelectingForHistory, setIsSelectingForHistory] = useState(false);
@@ -2139,9 +2143,20 @@ const Players: React.FC = () => {
   };
 
   const handleStartMatchCreation = () => {
-    setSelectedPlayersForTournament([]);
+    const currentMember = getMember();
+    const isOrganizerUser = isUserOrganizer;
+    
+    // For non-organizers, auto-select themselves as player 1
+    if (!isOrganizerUser && currentMember?.id) {
+      setSelectedPlayersForTournament([currentMember.id]);
+    } else {
+      setSelectedPlayersForTournament([]);
+    }
+    
     setTournamentType('SINGLE_MATCH');
     setShowSingleMatchConfirmation(false);
+    setShowPasswordConfirmation(false);
+    setOpponentPassword('');
     // Don't set isCreatingTournament - match creation is independent
   };
 
@@ -2149,6 +2164,10 @@ const Players: React.FC = () => {
     setSelectedPlayersForTournament([]);
     setTournamentType('ROUND_ROBIN');
     setShowSingleMatchConfirmation(false);
+    setMatchPlayer1Sets('0');
+    setMatchPlayer2Sets('0');
+    setOpponentPassword('');
+    setShowPasswordConfirmation(false);
   };
 
   const handleCancelTournamentCreation = () => {
@@ -2205,8 +2224,8 @@ const Players: React.FC = () => {
   };
 
   const handleTogglePlayerForTournament = (playerId: number) => {
-    // Disable selection during confirmation phase
-    if (showTournamentConfirmation || showSingleMatchConfirmation) {
+    // Disable selection during confirmation phase or password confirmation
+    if (showTournamentConfirmation || showSingleMatchConfirmation || showPasswordConfirmation) {
       return;
     }
     
@@ -2217,6 +2236,44 @@ const Players: React.FC = () => {
       return;
     }
     
+    const currentMember = getMember();
+    const isOrganizerUser = isUserOrganizer;
+    
+    // For non-organizers in SINGLE_MATCH mode, they can only select the opponent (not themselves)
+    if (!isOrganizerUser && tournamentType === 'SINGLE_MATCH') {
+      const currentMemberId = currentMember?.id;
+      
+      // Can't select themselves
+      if (playerId === currentMemberId) {
+        setError('You are already selected as Player 1. Please select your opponent.');
+        return;
+      }
+      
+      // If opponent is already selected, deselect them
+      if (selectedPlayersForTournament.includes(playerId)) {
+        // Keep only the current user (player 1)
+        setSelectedPlayersForTournament([currentMemberId!].filter(id => id !== undefined) as number[]);
+        setShowPasswordConfirmation(false);
+        setOpponentPassword('');
+        return;
+      }
+      
+      // Can only select one opponent
+      if (selectedPlayersForTournament.length >= 2) {
+        setError('You can only select one opponent. Please deselect the current opponent first.');
+        return;
+      }
+      
+      // Select opponent and show password confirmation (before score entry)
+      const newSelection = [currentMemberId!, playerId].filter(id => id !== undefined) as number[];
+      setSelectedPlayersForTournament(newSelection);
+      
+      // Show password confirmation for non-organizers
+      setShowPasswordConfirmation(true);
+      return;
+    }
+    
+    // Original logic for organizers or non-match creation
     if (selectedPlayersForTournament.includes(playerId)) {
       setSelectedPlayersForTournament(selectedPlayersForTournament.filter(id => id !== playerId));
       setShowSingleMatchConfirmation(false);
@@ -2230,8 +2287,8 @@ const Players: React.FC = () => {
       const newSelection = [...selectedPlayersForTournament, playerId];
       setSelectedPlayersForTournament(newSelection);
       
-      // For Single Match, show confirmation after 2nd player is selected
-      if (tournamentType === 'SINGLE_MATCH' && newSelection.length === 2) {
+      // For Single Match, show confirmation after 2nd player is selected (organizers only)
+      if (tournamentType === 'SINGLE_MATCH' && newSelection.length === 2 && isOrganizerUser) {
         setShowSingleMatchConfirmation(true);
       }
     }
@@ -2355,10 +2412,80 @@ const Players: React.FC = () => {
     setError('');
     setSuccess('');
 
+    // Store tournament type before any early returns
+    const currentTournamentType = tournamentType;
+
     // Validate based on tournament type
     if (tournamentType === 'SINGLE_MATCH') {
       if (selectedPlayersForTournament.length !== 2) {
         setError('Single Match requires exactly 2 players');
+        return;
+      }
+      
+      // Validate match scores
+      const player1Sets = parseInt(matchPlayer1Sets) || 0;
+      const player2Sets = parseInt(matchPlayer2Sets) || 0;
+      
+      if (player1Sets === 0 && player2Sets === 0) {
+        setError('Please enter match scores');
+        return;
+      }
+      if (player1Sets === player2Sets) {
+        setError('Match cannot end in a tie');
+        return;
+      }
+      
+      // Check if user is organizer
+      const currentMember = getMember();
+      const isOrganizerUser = isUserOrganizer;
+      
+      // If not organizer, check if creating match for themselves and need password
+      if (!isOrganizerUser) {
+        const currentMemberId = currentMember?.id;
+        const isPlayer1 = currentMemberId === selectedPlayersForTournament[0];
+        const isPlayer2 = currentMemberId === selectedPlayersForTournament[1];
+        
+        if (!isPlayer1 && !isPlayer2) {
+          setError('You can only create matches for yourself');
+          return;
+        }
+        
+        // Need opponent password confirmation
+        if (!opponentPassword) {
+          setShowPasswordConfirmation(true);
+          return;
+        }
+      }
+      
+      // Create match with final scores using new endpoint
+      try {
+        const matchData: any = {
+          member1Id: selectedPlayersForTournament[0],
+          member2Id: selectedPlayersForTournament[1],
+          player1Sets: player1Sets,
+          player2Sets: player2Sets,
+        };
+        
+        if (!isOrganizerUser && opponentPassword) {
+          matchData.opponentPassword = opponentPassword;
+        }
+        
+        await api.post('/tournaments/matches/create', matchData);
+        setSuccess('Match created successfully');
+        
+        // Reset state
+        setShowSingleMatchConfirmation(false);
+        setSelectedPlayersForTournament([]);
+        setMatchPlayer1Sets('0');
+        setMatchPlayer2Sets('0');
+        setOpponentPassword('');
+        setShowPasswordConfirmation(false);
+        fetchMembers(); // Refresh players to get updated data
+        
+        // Don't navigate to tournaments tab - stay on Players page
+        return;
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to create match');
         return;
       }
     } else if (selectedPlayersForTournament.length < 2) {
@@ -2415,17 +2542,10 @@ const Players: React.FC = () => {
         // Auto-generate name if not provided
         if (!tournamentName.trim()) {
           const dateStr = new Date().toLocaleDateString();
-          if (tournamentType === 'SINGLE_MATCH') {
-            const player1 = members.find(p => p.id === selectedPlayersForTournament[0]);
-            const player2 = members.find(p => p.id === selectedPlayersForTournament[1]);
-            if (player1 && player2) {
-              tournamentData.name = `${player1.firstName} ${player1.lastName} vs ${player2.firstName} ${player2.lastName} - ${dateStr}`;
-            } else {
-              tournamentData.name = `Match - ${dateStr}`;
-            }
-          } else if (tournamentType === 'PLAYOFF') {
+          if (tournamentType === 'PLAYOFF') {
             tournamentData.name = `Playoff ${dateStr}`;
-          } else if (tournamentType === 'ROUND_ROBIN') {
+          } else {
+            // Default to ROUND_ROBIN (SINGLE_MATCH is handled earlier in the function)
             tournamentData.name = `Tournament ${dateStr}`;
           }
         } else {
@@ -2470,10 +2590,12 @@ const Players: React.FC = () => {
       setNumSeedsForBracket(undefined);
       fetchMembers(); // Refresh players to get updated data
       
-      // Navigate to tournaments page
-      setTimeout(() => {
-        navigate('/tournaments');
-      }, 1000);
+      // Only navigate to tournaments page for non-SINGLE_MATCH tournaments
+      if (currentTournamentType !== 'SINGLE_MATCH') {
+        setTimeout(() => {
+          navigate('/tournaments');
+        }, 1000);
+      }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create tournament(s)');
     }
@@ -2750,7 +2872,7 @@ const Players: React.FC = () => {
                 
                 const hasAdminButton = isAdmin();
                 const hasOrganizerButtons = isUserOrganizer;
-                const hasButtonsBeforeSeparator = hasAdminButton || hasOrganizerButtons;
+                const hasButtonsBeforeSeparator = hasAdminButton || hasOrganizerButtons || true; // Match button is always available
                 
                 return (
                   <>
@@ -2765,8 +2887,7 @@ const Players: React.FC = () => {
                   </button>
                 )}
                     {hasOrganizerButtons && (
-                      <>
-                  <button 
+                      <button 
                     onClick={handleStartTournamentCreation}
                           className="button-3d"
                           style={buttonStyle}
@@ -2774,16 +2895,16 @@ const Players: React.FC = () => {
                         >
                           + Tournament
                   </button>
-                  <button 
-                    onClick={handleStartMatchCreation}
-                          className="button-3d"
-                          style={buttonStyle}
-                          title="Create match"
-                        >
-                          + Match
-                  </button>
-                      </>
                     )}
+                    {/* Match button is available to all players */}
+                    <button 
+                      onClick={handleStartMatchCreation}
+                      className="button-3d"
+                      style={buttonStyle}
+                      title="Record a match"
+                    >
+                      + Match
+                    </button>
                     {hasButtonsBeforeSeparator && (
                       <span style={{ color: '#666', fontSize: '16px', margin: '0 4px', fontWeight: 'bold' }}>|</span>
                     )}
@@ -4497,6 +4618,23 @@ const Players: React.FC = () => {
             {success}
           </div>
         )}
+        {tournamentType === 'SINGLE_MATCH' && !showSingleMatchConfirmation && !showPasswordConfirmation && (
+          <div style={{ 
+            backgroundColor: '#e3f2fd',
+            color: '#1976d2',
+            padding: '12px 16px',
+            borderRadius: '4px',
+            marginBottom: '15px',
+            border: '1px solid #90caf9',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            {isUserOrganizer 
+              ? 'Select 2 players for the match'
+              : 'Select the Opponent'
+            }
+          </div>
+        )}
 
         <div style={{ marginBottom: '0px' }}>
           {!filtersCollapsed && (
@@ -5656,12 +5794,18 @@ const Players: React.FC = () => {
                         isOrganizingBracket ||
                         (tournamentType === 'SINGLE_MATCH' && (
                           showSingleMatchConfirmation ||
-                          (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
+                          showPasswordConfirmation ||
+                          (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
+                          // For non-organizers, disable selection of themselves (they're already player 1)
+                          (!isUserOrganizer && player.id === currentMember?.id)
                         )) ||
                         (isCreatingTournament && (
                           showTournamentConfirmation || 
                           showSingleMatchConfirmation ||
-                          ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
+                          showPasswordConfirmation ||
+                          ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
+                          // For non-organizers, disable selection of themselves
+                          (!isUserOrganizer && (tournamentType as string) === 'SINGLE_MATCH' && player.id === currentMember?.id)
                         ))
                       }
                       style={{ 
@@ -5669,24 +5813,32 @@ const Players: React.FC = () => {
                           isOrganizingBracket ||
                           (tournamentType === 'SINGLE_MATCH' && (
                             showSingleMatchConfirmation ||
-                            (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
+                            showPasswordConfirmation ||
+                            (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
+                            (!isUserOrganizer && player.id === currentMember?.id)
                           )) ||
                           (isCreatingTournament && (
                             showTournamentConfirmation || 
                             showSingleMatchConfirmation ||
-                            ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
+                            showPasswordConfirmation ||
+                            ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
+                            (!isUserOrganizer && (tournamentType as string) === 'SINGLE_MATCH' && player.id === currentMember?.id)
                           ))
                         ) ? 'not-allowed' : 'pointer',
                         opacity: (
                           isOrganizingBracket ||
                           (tournamentType === 'SINGLE_MATCH' && (
                             showSingleMatchConfirmation ||
-                            (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
+                            showPasswordConfirmation ||
+                            (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
+                            (!isUserOrganizer && player.id === currentMember?.id)
                           )) ||
                           (isCreatingTournament && (
                             showTournamentConfirmation || 
                             showSingleMatchConfirmation ||
-                            ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id))
+                            showPasswordConfirmation ||
+                            ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
+                            (!isUserOrganizer && (tournamentType as string) === 'SINGLE_MATCH' && player.id === currentMember?.id)
                           ))
                         ) ? 0.5 : 1
                       }}
@@ -6916,10 +7068,144 @@ const Players: React.FC = () => {
             <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px', fontSize: '13px', color: '#666' }}>
               Match name will be auto-generated from player names and date
             </div>
+            
+            {/* Match Score Inputs */}
+            <div style={{ marginBottom: '20px' }}>
+              <h4 style={{ marginTop: 0, marginBottom: '15px', fontSize: '16px' }}>Enter Match Score</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '15px', alignItems: 'center', marginBottom: '15px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
+                    {(() => {
+                      const player1 = members.find(p => p.id === selectedPlayersForTournament[0]);
+                      return player1 ? formatPlayerName(player1.firstName, player1.lastName, nameDisplayOrder) : 'Player 1';
+                    })()} Sets
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={matchPlayer1Sets}
+                    onChange={(e) => setMatchPlayer1Sets(e.target.value)}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', textAlign: 'center' }}
+                  />
+                </div>
+                
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#666' }}>VS</div>
+                
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
+                    {(() => {
+                      const player2 = members.find(p => p.id === selectedPlayersForTournament[1]);
+                      return player2 ? formatPlayerName(player2.firstName, player2.lastName, nameDisplayOrder) : 'Player 2';
+                    })()} Sets
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={matchPlayer2Sets}
+                    onChange={(e) => setMatchPlayer2Sets(e.target.value)}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', textAlign: 'center' }}
+                  />
+                </div>
+              </div>
+            </div>
+            
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button onClick={handleCancelMatchCreation}>Cancel</button>
               <button onClick={handleCreateTournament} className="success">
-                Confirm & Create Match
+                Record the Match
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Confirmation Modal for Non-Organizers */}
+      {showPasswordConfirmation && selectedPlayersForTournament.length === 2 && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10002,
+        }} onClick={() => {
+          setShowPasswordConfirmation(false);
+          setOpponentPassword('');
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '8px',
+            maxWidth: '500px',
+            width: '90%',
+          }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, marginBottom: '20px', textAlign: 'center' }}>
+              Opponent Password Confirmation
+            </h3>
+            <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+              {(() => {
+                const currentMember = getMember();
+                const currentMemberId = currentMember?.id;
+                const isPlayer1 = currentMemberId === selectedPlayersForTournament[0];
+                const opponentId = isPlayer1 ? selectedPlayersForTournament[1] : selectedPlayersForTournament[0];
+                const opponent = members.find(p => p.id === opponentId);
+                return (
+                  <div>
+                    <p style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>
+                      To record this match, please enter your opponent's password for confirmation. You will then be able to enter the match scores.
+                    </p>
+                    <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '10px' }}>
+                      {opponent && formatPlayerName(opponent.firstName, opponent.lastName, nameDisplayOrder)}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
+                Opponent Password
+              </label>
+              <input
+                type="password"
+                value={opponentPassword}
+                onChange={(e) => setOpponentPassword(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && opponentPassword.trim()) {
+                    // After password is confirmed, show score entry modal
+                    setShowPasswordConfirmation(false);
+                    setShowSingleMatchConfirmation(true);
+                  }
+                }}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px' }}
+                placeholder="Enter opponent's password"
+                autoFocus
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => {
+                setShowPasswordConfirmation(false);
+                setOpponentPassword('');
+              }}>Cancel</button>
+              <button 
+                onClick={() => {
+                  if (opponentPassword.trim()) {
+                    // After password is confirmed, show score entry modal
+                    setShowPasswordConfirmation(false);
+                    setShowSingleMatchConfirmation(true);
+                  }
+                }}
+                className="success"
+                disabled={!opponentPassword.trim()}
+                style={{
+                  opacity: !opponentPassword.trim() ? 0.5 : 1,
+                  cursor: !opponentPassword.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Continue
               </button>
             </div>
           </div>
