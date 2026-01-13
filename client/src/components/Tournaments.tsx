@@ -77,7 +77,7 @@ interface BracketMatch {
 interface Tournament {
   id: number;
   name: string | null;
-  type?: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH';
+  type?: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' | 'PRELIMINARY_AND_PLAYOFF' | 'PRELIMINARY_AND_ROUND_ROBIN' | 'SWISS';
   createdAt: string;
   recordedAt?: string;
   status: 'ACTIVE' | 'COMPLETED';
@@ -85,6 +85,11 @@ interface Tournament {
   participants: TournamentParticipant[];
   matches: Match[];
   bracketMatches?: BracketMatch[]; // Bracket structure for playoff tournaments
+  parentTournamentId?: number | null; // For child tournaments (Round Robin groups or Playoff)
+  roundRobinSize?: number | null; // For PRELIMINARY_AND_PLAYOFF tournaments
+  playoffBracketSize?: number | null; // For PRELIMINARY_AND_PLAYOFF tournaments
+  groupNumber?: number | null; // For Round Robin child tournaments
+  childTournaments?: Tournament[]; // Child tournaments (Round Robin groups or Playoff)
 }
 
 const Tournaments: React.FC = () => {

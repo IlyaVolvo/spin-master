@@ -459,6 +459,103 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Helper function to create PRELIMINARY_AND_PLAYOFF tournament
+async function createRoundRobinPlayoffTournament(
+  name: string,
+  participantIds: number[],
+  players: any[],
+  roundRobinSize: number,
+  playoffBracketSize: number,
+  groups: number[][],
+  res: Response
+) {
+  try {
+    // Create main tournament
+    const mainTournament = await prisma.tournament.create({
+      data: {
+        name,
+        type: 'PRELIMINARY_AND_PLAYOFF',
+        status: 'ACTIVE',
+        roundRobinSize,
+        playoffBracketSize,
+        participants: {
+          create: participantIds.map((memberId: number) => {
+            const player = players.find(p => p.id === memberId);
+            return {
+              memberId,
+              playerRatingAtTime: player?.rating || null,
+            };
+          }),
+        },
+      },
+    });
+
+    // Create child Round Robin tournaments for each group
+    const childTournaments = await Promise.all(
+      groups.map(async (group, index) => {
+        const groupPlayers = players.filter(p => group.includes(p.id));
+        const groupName = `${name} - Group ${index + 1}`;
+        
+        return await prisma.tournament.create({
+          data: {
+            name: groupName,
+            type: 'ROUND_ROBIN',
+            status: 'ACTIVE',
+            parentTournamentId: mainTournament.id,
+            groupNumber: index + 1,
+            participants: {
+              create: group.map((memberId: number) => {
+                const player = groupPlayers.find(p => p.id === memberId);
+                return {
+                  memberId,
+                  playerRatingAtTime: player?.rating || null,
+                };
+              }),
+            },
+          },
+          include: {
+            participants: {
+              include: {
+                member: true,
+              },
+            },
+          },
+        });
+      })
+    );
+
+    // Reload main tournament with all data
+    const updatedTournament = await prisma.tournament.findUnique({
+      where: { id: mainTournament.id },
+      include: {
+        participants: {
+          include: {
+            member: true,
+          },
+        },
+        matches: true,
+        childTournaments: {
+          include: {
+            participants: {
+              include: {
+                member: true,
+              },
+            },
+            matches: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json(updatedTournament);
+  } catch (error) {
+    logger.error('Error creating Round Robin + Playoff tournament', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    throw error;
+  }
+}
+
 // Start a new tournament
 // Note: MULTI is not a valid tournament type. Multi-tournament mode creates multiple ROUND_ROBIN tournaments.
 // Only Organizers can create tournaments
@@ -466,8 +563,11 @@ router.post('/', [
   body('name').optional().trim(),
   body('participantIds').isArray({ min: 2 }),
   body('participantIds.*').isInt({ min: 1 }),
-  body('type').optional().isIn(['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH']),
+  body('type').optional().isIn(['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH', 'PRELIMINARY_AND_PLAYOFF', 'PRELIMINARY_AND_ROUND_ROBIN', 'SWISS']),
   body('bracketPositions').optional().isArray(), // For PLAYOFF tournaments
+  body('roundRobinSize').optional().isInt({ min: 3, max: 12 }), // For PRELIMINARY_AND_PLAYOFF
+  body('playoffBracketSize').optional().isInt({ min: 2 }), // For PRELIMINARY_AND_PLAYOFF
+  body('groups').optional().isArray(), // For PRELIMINARY_AND_PLAYOFF - array of player ID arrays
 ], async (req: AuthRequest, res: Response) => {
   try {
     // Check if user has ORGANIZER role
@@ -478,23 +578,76 @@ router.post('/', [
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.warn('Validation errors in tournament creation', { 
+        errors: errors.array(),
+        bodyType: req.body?.type,
+        bodyKeys: Object.keys(req.body || {})
+      });
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, participantIds, type, bracketPositions } = req.body;
+    const { name, participantIds, type, bracketPositions, roundRobinSize, playoffBracketSize, groups } = req.body;
     
-    // Strict validation: only allow ROUND_ROBIN, PLAYOFF, or SINGLE_MATCH
-    if (type && !['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH'].includes(type)) {
-      return res.status(400).json({ error: `Invalid tournament type: ${type}. Only ROUND_ROBIN, PLAYOFF, and SINGLE_MATCH are allowed.` });
+    // Log the received type for debugging
+    logger.debug('Tournament creation request', { 
+      type, 
+      typeValue: type,
+      typeType: typeof type,
+      validTypes: ['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH', 'PRELIMINARY_AND_PLAYOFF', 'PRELIMINARY_AND_ROUND_ROBIN', 'SWISS']
+    });
+    
+    // Strict validation: only allow valid tournament types
+    const validTypes = ['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH', 'PRELIMINARY_AND_PLAYOFF', 'PRELIMINARY_AND_ROUND_ROBIN', 'SWISS'];
+    if (type && !validTypes.includes(type)) {
+      return res.status(400).json({ error: `Invalid tournament type: ${type}. Only ${validTypes.join(', ')} are allowed.` });
     }
     
-    const tournamentType: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' = (type && ['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH'].includes(type))
-      ? (type as 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH')
+    const tournamentType: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' | 'PRELIMINARY_AND_PLAYOFF' | 'PRELIMINARY_AND_ROUND_ROBIN' | 'SWISS' = (type && validTypes.includes(type))
+      ? (type as 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' | 'PRELIMINARY_AND_PLAYOFF' | 'PRELIMINARY_AND_ROUND_ROBIN' | 'SWISS')
       : 'ROUND_ROBIN';
 
     // For Single Match, validate exactly 2 players
     if (tournamentType === 'SINGLE_MATCH' && participantIds.length !== 2) {
       return res.status(400).json({ error: 'Single Match requires exactly 2 players' });
+    }
+
+    // For PRELIMINARY_AND_PLAYOFF, validate required fields
+    if (tournamentType === 'PRELIMINARY_AND_PLAYOFF') {
+      if (!roundRobinSize || roundRobinSize < 3 || roundRobinSize > 12) {
+        return res.status(400).json({ error: 'Round Robin size must be between 3 and 12' });
+      }
+      if (!playoffBracketSize || playoffBracketSize < 2) {
+        return res.status(400).json({ error: 'Playoff bracket size is required and must be at least 2' });
+      }
+      if (!groups || !Array.isArray(groups) || groups.length === 0) {
+        return res.status(400).json({ error: 'Groups configuration is required' });
+      }
+      
+      // Validate playoff bracket size is a power of 2
+      if ((playoffBracketSize & (playoffBracketSize - 1)) !== 0) {
+        return res.status(400).json({ error: 'Playoff bracket size must be a power of 2' });
+      }
+      
+      // Validate playoff bracket size constraints
+      if (playoffBracketSize >= participantIds.length) {
+        return res.status(400).json({ error: 'Playoff bracket size must be less than the total number of players' });
+      }
+      if (playoffBracketSize < groups.length) {
+        return res.status(400).json({ error: 'Playoff bracket size must be greater than or equal to the number of groups' });
+      }
+      
+      // Validate all players are in groups
+      const allPlayersInGroups = groups.flat();
+      const uniquePlayers = new Set(allPlayersInGroups);
+      if (uniquePlayers.size !== participantIds.length || allPlayersInGroups.length !== participantIds.length) {
+        return res.status(400).json({ error: 'All players must be assigned to exactly one group' });
+      }
+      
+      // Validate all groups have at least 2 players
+      const invalidGroups = groups.filter((group: number[]) => group.length < 2);
+      if (invalidGroups.length > 0) {
+        return res.status(400).json({ error: 'Each Round Robin group must have at least 2 players' });
+      }
     }
 
     // Verify all participants are active
@@ -523,6 +676,19 @@ router.post('/', [
       }
     } else if (!tournamentName) {
       tournamentName = `Tournament ${new Date().toLocaleDateString()}`;
+    }
+
+    // For PRELIMINARY_AND_PLAYOFF, create main tournament and child Round Robin tournaments
+    if (tournamentType === 'PRELIMINARY_AND_PLAYOFF') {
+      return await createRoundRobinPlayoffTournament(
+        name || `Round Robin + Playoff ${new Date().toLocaleDateString()}`,
+        participantIds,
+        players,
+        roundRobinSize,
+        playoffBracketSize,
+        groups,
+        res
+      );
     }
 
     // Create tournament with participants

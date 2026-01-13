@@ -101,9 +101,19 @@ model Tournament {
   createdAt  DateTime         @default(now())
   recordedAt DateTime         @updatedAt
 
+  // For ROUND_ROBIN_PLAYOFF tournaments
+  parentTournamentId Int? // If this is a child Round Robin or Playoff tournament, link to parent
+  roundRobinSize     Int? // Size of each Round Robin group (for ROUND_ROBIN_PLAYOFF)
+  playoffBracketSize Int? // Size of playoff bracket (for ROUND_ROBIN_PLAYOFF)
+  groupNumber        Int? // Group number for Round Robin tournaments (1, 2, 3, etc.)
+
   participants   TournamentParticipant[]
   matches        Match[]
   bracketMatches BracketMatch[] // Bracket structure for playoff tournaments
+  
+  // Self-referential relationship for parent-child tournaments
+  parentTournament   Tournament?  @relation("TournamentHierarchy", fields: [parentTournamentId], references: [id], onDelete: Cascade)
+  childTournaments   Tournament[] @relation("TournamentHierarchy")
 
   @@map("tournaments")
 }
@@ -118,6 +128,9 @@ enum TournamentType {
   PLAYOFF
   MULTI
   SINGLE_MATCH
+  PRELIMINARY_AND_PLAYOFF
+  PRELIMINARY_AND_ROUND_ROBIN
+  SWISS
 }
 
 model TournamentParticipant {
