@@ -1,0 +1,38 @@
+# Spin Master Project Rules
+
+## Project Context
+This is a Table Tennis Tournament Management System. Key features:
+- Player management with USATT-style ratings
+- Multiple tournament types (Round Robin, Playoff, Preliminary + Playoff)
+- Match recording and scoring
+- Real-time updates via WebSocket
+
+## Code Style
+- TypeScript for type safety
+- React functional components with hooks
+- Prisma for database access
+- Express for API routes
+
+## Architecture Patterns
+- Component-based React architecture
+- RESTful API design
+- Real-time updates via Socket.io
+- JWT + Session authentication
+
+## Key Business Rules
+- Rating calculations based on point exchange rules
+- Tournament types have different creation flows
+- Organizers can create any match, Players can only create matches for themselves
+- Snake draft algorithm for group formation
+
+## Database Conventions
+- Use Prisma schema for database structure
+- Foreign keys with proper cascade rules
+- Timestamps (createdAt, updatedAt) on relevant models
+
+## UI Patterns
+- Modal-based forms for creation
+- Step-by-step flows for complex operations
+- Real-time updates for tournament/match changes
+- Role-based UI visibility
+
