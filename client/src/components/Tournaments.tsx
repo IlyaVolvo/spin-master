@@ -6,6 +6,7 @@ import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { isDateInRange } from '../utils/dateFormatter';
 import { formatActiveTournamentRating, formatCompletedTournamentRating } from '../utils/ratingFormatter';
 import { SingleMatchHeader } from './SingleMatchHeader';
+import { StandaloneMatchDisplay } from './StandaloneMatchDisplay';
 import { PlayoffBracket } from './PlayoffBracket';
 import { MatchEntryPopup } from './MatchEntryPopup';
 import { connectSocket, disconnectSocket, getSocket } from '../utils/socket';
@@ -156,13 +157,13 @@ const Tournaments: React.FC = () => {
   const [hoveredIcon, setHoveredIcon] = useState<{ type: string; tournamentId: number; x: number; y: number } | null>(null);
   const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
 
-  // Calculate maximum width for first player name across all single matches
+  // Calculate maximum width for first player name across all standalone matches
   const maxPlayerNameWidth = useMemo(() => {
-    const allSingleMatches = [...activeTournaments, ...tournaments].filter(t => t.type === 'SINGLE_MATCH');
+    const allStandaloneMatches = [...activeTournaments, ...tournaments].filter(t => (t as any).isStandaloneMatch === true);
     let maxWidth = 0;
     
-    allSingleMatches.forEach(tournament => {
-      tournament.participants.forEach(participant => {
+    allStandaloneMatches.forEach((tournament: any) => {
+      tournament.participants.forEach((participant: any) => {
         const name = formatPlayerName(participant.member.firstName, participant.member.lastName, getNameDisplayOrder());
         // Estimate width: approximately 8px per character for 16px font
         const estimatedWidth = name.length * 8;
@@ -326,9 +327,9 @@ const Tournaments: React.FC = () => {
     return filtered;
   }, [tournaments, effectiveDateRange, tournamentNameFilter]);
 
-  // Memoize completed matches (SINGLE_MATCH, with filters applied)
+  // Memoize completed matches (standalone matches, with filters applied)
   const completedMatches = useMemo(() => {
-    let matches = tournaments.filter(t => t.status === 'COMPLETED' && t.type === 'SINGLE_MATCH');
+    let matches = tournaments.filter(t => (t as any).isStandaloneMatch === true);
     
     // Filter by tournament name
     if (tournamentNameFilter.trim()) {
@@ -380,11 +381,8 @@ const Tournaments: React.FC = () => {
   // Filter active events based on checkboxes
   const filteredActiveEvents = useMemo(() => {
     return activeEvents.filter(event => {
-      if (event.type === 'SINGLE_MATCH') {
-        return showActiveMatches;
-      } else {
-        return showActiveTournaments;
-      }
+      // Standalone matches should not appear in active section
+      return showActiveTournaments;
     });
   }, [activeEvents, showActiveTournaments, showActiveMatches]);
 
@@ -618,14 +616,22 @@ const Tournaments: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [tournamentsRes, activeRes] = await Promise.all([
+      const [tournamentsRes, activeRes, standaloneMatchesRes] = await Promise.all([
         api.get('/tournaments'),
         api.get('/tournaments/active'),
+        api.get('/tournaments/matches/standalone'),
       ]);
+      
+      // Set regular tournaments and active tournaments separately
       setTournaments(tournamentsRes.data);
       setActiveTournaments(activeRes.data);
+      
+      // Add standalone matches to tournaments array for display in completed section
+      const allTournaments = [...tournamentsRes.data, ...standaloneMatchesRes.data];
+      setTournaments(allTournaments);
+      
       // Update cache
-      tournamentsCache.data = tournamentsRes.data;
+      tournamentsCache.data = allTournaments;
       tournamentsCache.activeData = activeRes.data;
       tournamentsCache.lastFetch = Date.now();
       setError(''); // Clear any previous errors on success
@@ -3372,16 +3378,11 @@ const Tournaments: React.FC = () => {
           <>
 
             {(() => {
-              // Filter completed events based on checkboxes
-              const filteredEvents = completedEvents.filter(event => {
-                if (event.type === 'SINGLE_MATCH') {
-                  return showCompletedMatches;
-                } else {
-                  return showCompletedTournaments;
-                }
-              });
+              // Separate matches and tournaments completely
+              const standaloneMatches = completedMatches.filter(match => showCompletedMatches);
+              const completedTournaments = filteredCompletedTournaments.filter(tournament => showCompletedTournaments);
 
-              if (filteredEvents.length === 0) {
+              if (standaloneMatches.length === 0 && completedTournaments.length === 0) {
                 const hasFilters = tournamentNameFilter.trim() || dateFilterType;
                 if (showCompletedTournaments && !showCompletedMatches) {
                   return <p>No completed tournaments{hasFilters ? ' found matching the filters' : ''}</p>;
@@ -3394,7 +3395,118 @@ const Tournaments: React.FC = () => {
 
               return (
                 <>
-                  {filteredEvents.map((tournament) => {
+                  {/* Render standalone matches with simple, clean display */}
+                  {standaloneMatches.map((match) => {
+                    const player1 = match.participants[0]?.member;
+                    const player2 = match.participants[1]?.member;
+                    const matchData = match.matches[0];
+                    
+                    if (!player1 || !player2 || !matchData) return null;
+
+                    return (
+                      <div key={`match-${match.id}`} style={{ 
+                        marginBottom: '20px', 
+                        padding: '16px', 
+                        border: '1px solid #3498db', 
+                        borderRadius: '8px',
+                        background: 'linear-gradient(135deg, #f5f9ff 0%, #e8f4fd 100%)',
+                        boxShadow: '0 4px 8px rgba(52, 152, 219, 0.15)'
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center',
+                          gap: '20px',
+                          marginBottom: '8px'
+                        }}>
+                          <div style={{ 
+                            fontSize: '18px', 
+                            fontWeight: '600',
+                            color: '#2c3e50',
+                            minWidth: '140px'
+                          }}>
+                            {player1.firstName} {player1.lastName}
+                          </div>
+                          <div style={{ 
+                            fontSize: '20px', 
+                            fontWeight: 'bold',
+                            color: '#3498db',
+                            minWidth: '50px',
+                            textAlign: 'center',
+                            padding: '4px 8px',
+                            backgroundColor: '#ecf0f1',
+                            borderRadius: '4px'
+                          }}>
+                            {matchData.player1Sets}:{matchData.player2Sets}
+                          </div>
+                          <div style={{ 
+                            fontSize: '18px', 
+                            fontWeight: '600',
+                            color: '#2c3e50',
+                            minWidth: '140px'
+                          }}>
+                            {player2.firstName} {player2.lastName}
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', marginLeft: 'auto' }}>
+                            <button
+                              onClick={() => {/* TODO: Add stats handler */}}
+                              style={{ 
+                                background: '#3498db', 
+                                border: 'none', 
+                                cursor: 'pointer', 
+                                fontSize: '16px',
+                                padding: '8px 12px',
+                                borderRadius: '4px',
+                                color: 'white',
+                                transition: 'background-color 0.2s'
+                              }}
+                              title="View Statistics"
+                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#2980b9'}
+                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#3498db'}
+                            >
+                              📊
+                            </button>
+                            <button
+                              onClick={() => {/* TODO: Add history handler */}}
+                              style={{ 
+                                background: '#27ae60', 
+                                border: 'none', 
+                                cursor: 'pointer', 
+                                fontSize: '16px',
+                                padding: '8px 12px',
+                                borderRadius: '4px',
+                                color: 'white',
+                                transition: 'background-color 0.2s'
+                              }}
+                              title="View History"
+                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#229954'}
+                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#27ae60'}
+                            >
+                              📜
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ 
+                          fontSize: '13px', 
+                          color: '#7f8c8d',
+                          fontStyle: 'italic',
+                          paddingLeft: '4px'
+                        }}>
+                          📅 {new Date(matchData.createdAt || match.createdAt).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                          })} at {new Date(matchData.createdAt || match.createdAt).toLocaleTimeString('en-US', { 
+                            hour: 'numeric', 
+                            minute: '2-digit',
+                            hour12: true 
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Render regular tournaments with existing complex logic */}
+                  {completedTournaments.map((tournament) => {
                 const { participants, participantData, matrix } = buildResultsMatrix(tournament);
                 const standings = tournament.type === 'ROUND_ROBIN' ? calculateStandings(tournament) : [];
                 const rankingMap = new Map(standings.map(s => [s.member.id, s.position]));
@@ -4054,5 +4166,3 @@ const Tournaments: React.FC = () => {
 };
 
 export default Tournaments;
-
-
