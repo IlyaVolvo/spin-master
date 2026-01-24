@@ -76,13 +76,19 @@ This document describes the branch structure and setup for the major refactoring
    # ... other variables
    ```
 
-4. Run Prisma migrations:
+4. Push schema to database (no migrations - clean start):
    ```bash
    cd server
-   npx prisma migrate dev --name init
-   # Or if you want to start fresh:
    npx prisma db push
+   npx prisma generate
    ```
+   
+   Or use the automated setup script:
+   ```bash
+   tsx scripts/setupNewDatabase.ts
+   ```
+   
+   See `server/SETUP_NEW_DATABASE.md` for detailed instructions.
 
 5. Run the application:
    ```bash

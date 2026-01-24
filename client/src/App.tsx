@@ -56,43 +56,55 @@ function App() {
     let timeoutCleared = false;
     
     const checkAuth = async () => {
-      // If we have a member in localStorage, verify session is still valid
-      if (getMember()) {
-        try {
-          const response = await api.get('/auth/member/me');
-          if (!isMounted) return;
-          if (response.data.member) {
-            setIsAuth(true);
-            // Check if password reset is required
-            if (response.data.member.mustResetPassword) {
-              setShowPasswordReset(true);
+      try {
+        // If we have a member in localStorage, verify session is still valid
+        const member = getMember();
+        if (member) {
+          try {
+            const response = await api.get('/auth/member/me');
+            if (!isMounted) return;
+            
+            if (response.data.member) {
+              setIsAuth(true);
+              // Check if password reset is required
+              if (response.data.member.mustResetPassword) {
+                setShowPasswordReset(true);
+              }
+              setIsCheckingAuth(false);
+              timeoutCleared = true;
+              return;
             }
+          } catch (err: any) {
+            // Session expired, invalid, or timeout - clear member and token
+            if (!isMounted) return;
+            console.error('Auth check failed:', err.message || err);
+            removeMember();
+            removeToken();
+            setIsAuth(false);
             setIsCheckingAuth(false);
             timeoutCleared = true;
             return;
           }
-        } catch (err: any) {
-          // Session expired, invalid, or timeout - clear member and token
-          if (!isMounted) return;
-          console.error('Auth check failed:', err.message || err);
-          removeMember();
-          removeToken();
-          setIsAuth(false);
-          setIsCheckingAuth(false);
-          timeoutCleared = true;
-          return;
         }
-      }
-      // Check token-based auth (for backward compatibility)
-      if (!isMounted) return;
-      const token = getToken();
-      if (token) {
-        setIsAuth(true);
-      } else {
+        
+        // Check token-based auth (for backward compatibility)
+        if (!isMounted) return;
+        const token = getToken();
+        if (token) {
+          setIsAuth(true);
+        } else {
+          setIsAuth(false);
+        }
+        setIsCheckingAuth(false);
+        timeoutCleared = true;
+        
+      } catch (error) {
+        if (!isMounted) return;
+        console.error('Unexpected error during auth check:', error);
         setIsAuth(false);
+        setIsCheckingAuth(false);
+        timeoutCleared = true;
       }
-      setIsCheckingAuth(false);
-      timeoutCleared = true;
     };
     
     // Add a timeout fallback in case the API call hangs
@@ -102,7 +114,7 @@ function App() {
         setIsCheckingAuth(false);
         setIsAuth(false);
       }
-    }, 12000); // 12 second fallback timeout (longer than axios timeout)
+    }, 8000); // Reduced timeout to 8 seconds
     
     checkAuth().finally(() => {
       if (timeoutId) {
@@ -115,6 +127,7 @@ function App() {
       isMounted = false;
       if (timeoutId) {
         clearTimeout(timeoutId);
+        timeoutCleared = true;
       }
     };
   }, []);

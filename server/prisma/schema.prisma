@@ -92,26 +92,34 @@ enum RatingChangeReason {
   MEMBER_DEACTIVATED
 }
 
+// Tournament table: Contains information pertinent to ALL tournaments
+// Basic tournaments: have players (TournamentParticipant) and matches (Match)
+// Compound tournaments: consist of 2+ basic/compound tournaments (via parentTournamentId hierarchy)
+// TournamentParticipants only exist for basic tournaments
 model Tournament {
   id         Int              @id @default(autoincrement())
-  name       String?
+  name       String?          // Tournament name
   type       TournamentType   @default(ROUND_ROBIN)
   status     TournamentStatus @default(ACTIVE)
-  cancelled  Boolean          @default(false) // True if tournament was cancelled (moved to COMPLETED but not finished)
+  cancelled  Boolean          @default(false) // True if tournament was cancelled
   createdAt  DateTime         @default(now())
   recordedAt DateTime         @updatedAt
 
-  // For ROUND_ROBIN_PLAYOFF tournaments
-  parentTournamentId Int? // If this is a child Round Robin or Playoff tournament, link to parent
-  roundRobinSize     Int? // Size of each Round Robin group (for ROUND_ROBIN_PLAYOFF)
-  playoffBracketSize Int? // Size of playoff bracket (for ROUND_ROBIN_PLAYOFF)
-  groupNumber        Int? // Group number for Round Robin tournaments (1, 2, 3, etc.)
+  // Hierarchical structure: compound tournaments reference parent
+  // If null, this is a root tournament (either basic or top-level compound)
+  parentTournamentId Int?
 
+  // Relations
+  // Participants: only for basic tournaments (enforced at application level)
   participants   TournamentParticipant[]
-  matches        Match[]
-  bracketMatches BracketMatch[] // Bracket structure for playoff tournaments
   
-  // Self-referential relationship for parent-child tournaments
+  // Matches: only for basic tournaments (each match references one basic tournament)
+  matches        Match[]
+  
+  // Bracket structure: only for PLAYOFF basic tournaments
+  bracketMatches BracketMatch[]
+  
+  // Self-referential relationship for parent-child tournaments (compound tournaments)
   parentTournament   Tournament?  @relation("TournamentHierarchy", fields: [parentTournamentId], references: [id], onDelete: Cascade)
   childTournaments   Tournament[] @relation("TournamentHierarchy")
 
@@ -123,16 +131,23 @@ enum TournamentStatus {
   COMPLETED
 }
 
+// Tournament types: Basic tournaments have players and matches
+// Compound tournaments consist of 2+ basic/compound tournaments
 enum TournamentType {
-  ROUND_ROBIN
-  PLAYOFF
-  MULTI
-  SINGLE_MATCH
-  PRELIMINARY_AND_PLAYOFF
-  PRELIMINARY_AND_ROUND_ROBIN
-  SWISS
+  // Basic tournaments
+  ROUND_ROBIN              // Round Robin tournament - no additional tables required
+  PLAYOFF                  // Playoff tournament - uses BracketMatch table
+  SWISS                    // Swiss tournament - uses SwissRound table (to be defined)
+  
+  // Compound tournaments
+  MULTI_ROUND_ROBINS                  // Compound: multiple round robin tournaments
+  PRELIMINARY_WITH_FINAL_PLAYOFF      // Compound: preliminary phase(s) + final playoff
+  PRELIMINARY_WITH_FINAL_ROUND_ROBIN  // Compound: preliminary phase(s) + final round robin
 }
 
+// TournamentParticipants: identifies players playing in a basic tournament only
+// Compound tournaments have no participants - participants are union of child tournaments
+// Enforced at application level: only basic tournaments (ROUND_ROBIN, PLAYOFF, SWISS) have participants
 model TournamentParticipant {
   id                 Int  @id @default(autoincrement())
   tournamentId       Int
@@ -148,39 +163,45 @@ model TournamentParticipant {
   @@map("tournament_participants")
 }
 
-// Bracket structure table - stores the bracket layout for playoff tournaments
-// This table maintains the bracket structure from start to finish, including unplayed matches
+// BracketMatch: Supporting table for PLAYOFF basic tournaments
+// Stores the bracket layout for playoff tournaments
+// Maintains bracket structure from start to finish, including unplayed matches
+// References Match when both players are determined and match is created
 model BracketMatch {
   id           Int      @id @default(autoincrement())
-  tournamentId Int // Foreign key to tournament
-  round        Int // Round number (1 = first round, 2 = semifinals, etc.)
-  position     Int // Position within the round (1, 2, 3, ...)
-  member1Id    Int? // Member 1 ID (null if not yet determined from previous round, 0 for BYE)
-  member2Id    Int? // Member 2 ID (null if not yet determined from previous round, 0 for BYE)
-  nextMatchId  Int? // ID of the BracketMatch in the next round that the winner advances to
+  tournamentId Int      // Foreign key to tournament (must be PLAYOFF basic tournament)
+  round        Int      // Round number (1 = first round, 2 = semifinals, etc.)
+  position     Int      // Position within the round (1, 2, 3, ...)
+  member1Id    Int?     // Member 1 ID (null if not yet determined from previous round, 0 for BYE)
+  member2Id    Int?     // Member 2 ID (null if not yet determined from previous round, 0 for BYE)
+  nextMatchId  Int?     // ID of the BracketMatch in the next round that the winner advances to
+  matchId      Int?     // Reference to Match when match is created (both players determined)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   tournament      Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   nextMatch       BracketMatch?  @relation("BracketMatchAdvancement", fields: [nextMatchId], references: [id])
   previousMatches BracketMatch[] @relation("BracketMatchAdvancement")
-  match           Match? // Link to actual match result when played
+  match           Match?         @relation(fields: [matchId], references: [id], onDelete: SetNull)
 
   @@unique([tournamentId, round, position])
+  @@unique([matchId]) // One BracketMatch per Match
   @@index([tournamentId])
   @@index([tournamentId, round, position])
   @@index([nextMatchId])
+  @@index([matchId])
   @@map("bracket_matches")
 }
 
-// Match table - stores actual match results (for all tournament types)
-// For playoff tournaments, this links to BracketMatch
+// Match: stores actual match results for basic tournaments and standalone matches
+// Each match references one basic tournament OR can be standalone (tournamentId = null)
+// Matches are not tournaments - they record results played as part of a basic tournament
+// BracketMatch references Match (via matchId) when match is created with both players determined
 model Match {
   id             Int      @id @default(autoincrement())
-  tournamentId   Int
-  bracketMatchId Int? // Link to BracketMatch for playoff tournaments (null for round-robin/single match)
+  tournamentId   Int?     // Foreign key to basic tournament (ROUND_ROBIN, PLAYOFF, or SWISS) - null for standalone matches
   member1Id      Int
-  member2Id      Int? // Nullable for BYE matches
+  member2Id      Int?     // Nullable for BYE matches
   player1Sets    Int      @default(0)
   player2Sets    Int      @default(0)
   player1Forfeit Boolean  @default(false)
@@ -188,12 +209,10 @@ model Match {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  tournament   Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  bracketMatch BracketMatch? @relation(fields: [bracketMatchId], references: [id], onDelete: SetNull)
+  tournament Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  bracketMatch BracketMatch? // Reverse relation: BracketMatch references this Match via matchId
 
-  @@unique([bracketMatchId]) // One match result per bracket match
   @@index([tournamentId])
-  @@index([bracketMatchId])
   @@index([member1Id])
   @@index([member2Id])
   @@index([member1Id, member2Id])

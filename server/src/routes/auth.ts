@@ -86,8 +86,7 @@ router.post('/member/login', [
       hasSession: !!req.session
     });
     
-    // Store member data in session - use a simple, serializable object
-    // Wrap in try-catch so login can still succeed even if session fails
+    // Store member data in session - ensure it's properly saved before proceeding
     let sessionStored = false;
     try {
       const sessionMemberData: any = {
@@ -98,14 +97,26 @@ router.post('/member/login', [
         roles: rolesArray,
       };
       
-      // Try to assign to session
+      // Ensure session exists and store data
       if (req.session) {
-        (req.session as any).member = sessionMemberData;
-        sessionStored = true;
-        logger.debug('Session data assigned successfully', { memberId: member.id });
+        req.session.member = sessionMemberData;
         
-        // Note: express-session will automatically save the session when the response is sent
-        // We don't need to manually save it here, but we can if needed for debugging
+        // Wait for session to be saved before proceeding
+        await new Promise<void>((resolve, reject) => {
+          req.session!.save((err) => {
+            if (err) {
+              logger.error('Session save failed', { 
+                error: err.message,
+                memberId: member.id
+              });
+              reject(err);
+            } else {
+              sessionStored = true;
+              logger.debug('Session saved successfully', { memberId: member.id });
+              resolve();
+            }
+          });
+        });
       } else {
         logger.warn('Session not available for storage', { memberId: member.id });
       }
@@ -116,8 +127,8 @@ router.post('/member/login', [
         stack: sessionError instanceof Error ? sessionError.stack : undefined,
         memberId: member.id
       });
-      // Continue - we'll still send the JWT token even if session fails
-      sessionStored = false;
+      // If session fails, we cannot continue with login
+      return res.status(500).json({ error: 'Session storage failed' });
     }
 
     // Also create a JWT token for backward compatibility (optional, can be removed later)

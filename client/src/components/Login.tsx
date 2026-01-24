@@ -48,8 +48,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       });
       
       if (response.data.member) {
+        // Store member data first
         setMember(response.data.member);
-        // Also store token for backward compatibility if provided
+        
+        // Store token for backward compatibility if provided
         if (response.data.token) {
           console.log('Storing token in localStorage:', response.data.token.substring(0, 20) + '...');
           setToken(response.data.token);
@@ -57,6 +59,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         } else {
           console.warn('No token in login response!');
         }
+        
+        // Small delay to ensure localStorage operations complete
+        await new Promise(resolve => setTimeout(resolve, 50));
         
         // Check if password reset is required
         if (response.data.member.mustResetPassword) {
