@@ -17,6 +17,7 @@ import { TournamentNameEditor } from './TournamentNameEditor';
 import { getMember, setMember } from '../utils/auth';
 import { updateMatchCountsCache, removeMatchFromCache } from './Players';
 import { isOrganizer } from '../utils/auth';
+import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 
 // Module-level cache to persist across component mounts/unmounts
 const tournamentsCache: {
@@ -1496,6 +1497,11 @@ const Tournaments: React.FC = () => {
   };
 
   const handlePrintSchedule = (tournament: Tournament) => {
+    // Use plugin system for schedule generation
+    const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type) : null;
+    if (!plugin) return;
+
+    // For now, keep the existing logic but this should be moved to plugins
     let scheduleRounds: any[] = [];
     if (tournament.type === 'ROUND_ROBIN') {
       scheduleRounds = generateRoundRobinSchedule(tournament);
@@ -2643,33 +2649,61 @@ const Tournaments: React.FC = () => {
 
                   {expandedDetails.has(tournament.id) && (
                     <div style={{ marginTop: '7.5px', padding: '0 15px 15px 15px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-                      {tournament.type === 'PLAYOFF' ? (
-                        <PlayoffBracket
-                          tournamentId={tournament.id}
-                          participants={tournament.participants}
-                          tournamentStatus={tournament.status}
-                          cancelled={tournament.cancelled}
-                          matches={((tournament.bracketMatches || []) as any).map((bm: any) => ({
-                            ...bm,
-                            member1Id: bm.member1Id ?? bm.player1Id,
-                            member2Id: bm.member2Id ?? bm.player2Id,
-                            player1Id: bm.player1Id ?? bm.member1Id,
-                            player2Id: bm.player2Id ?? bm.member2Id,
-                          })).map((bm: any) => {
-                            const match = bm.match;
-                            // Determine winner from match result if it exists
-                            let winnerId: number | null = null;
-                            if (match) {
-                              if (match.player1Sets > (match.player2Sets ?? 0)) {
-                                winnerId = match.member1Id;
-                              } else if ((match.player2Sets ?? 0) > match.player1Sets) {
-                                winnerId = match.member2Id;
-                              } else if (match.player1Forfeit) {
-                                winnerId = match.member2Id;
-                              } else if (match.player2Forfeit) {
-                                winnerId = match.member1Id;
-                              }
+                      {/* Use plugin system for tournament-specific active panels */}
+                      {(() => {
+                        const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type) : null;
+                        if (plugin && tournament.status === 'ACTIVE') {
+                          return plugin.createActivePanel({
+                            tournament,
+                            onTournamentUpdate: (updatedTournament) => {
+                              // Update tournament in state
+                              setTournaments(prev => 
+                                prev.map(t => t.id === updatedTournament.id ? updatedTournament : t)
+                              );
+                              setActiveTournaments(prev => 
+                                prev.map(t => t.id === updatedTournament.id ? updatedTournament : t)
+                              );
+                            },
+                            onError: (error) => setError(error),
+                            onSuccess: (message) => {
+                              // Could show success toast here
+                              console.log('Success:', message);
+                            },
+                            onMatchUpdate: (match) => {
+                              // Handle match updates
+                              fetchData();
                             }
+                          });
+                        }
+                        
+                        // Fallback to existing logic for now
+                        return tournament.type === 'PLAYOFF' ? (
+                          <PlayoffBracket
+                            tournamentId={tournament.id}
+                            participants={tournament.participants}
+                            tournamentStatus={tournament.status}
+                            cancelled={tournament.cancelled}
+                            matches={((tournament.bracketMatches || []) as any).map((bm: any) => ({
+                              ...bm,
+                              member1Id: bm.member1Id ?? bm.player1Id,
+                              member2Id: bm.member2Id ?? bm.player2Id,
+                              player1Id: bm.player1Id ?? bm.member1Id,
+                              player2Id: bm.player2Id ?? bm.member2Id,
+                            })).map((bm: any) => {
+                              const match = bm.match;
+                              // Determine winner from match result if it exists
+                              let winnerId: number | null = null;
+                              if (match) {
+                                if (match.player1Sets > (match.player2Sets ?? 0)) {
+                                  winnerId = match.member1Id;
+                                } else if ((match.player2Sets ?? 0) > match.player1Sets) {
+                                  winnerId = match.member2Id;
+                                } else if (match.player1Forfeit) {
+                                  winnerId = match.member2Id;
+                                } else if (match.player2Forfeit) {
+                                  winnerId = match.member1Id;
+                                }
+                              }
                             
                             // Check for BYEs: memberId === null or 0 means BYE
                             const player1IsBye = bm.member1Id === null || bm.member1Id === 0;
@@ -3051,7 +3085,34 @@ const Tournaments: React.FC = () => {
                       </div>
                     );
                   })()}
-                  {/* Playoff Schedule section - independent of details */}
+                  {/* Schedule section - use plugin system */}
+                  {expandedSchedules.has(tournament.id) && (() => {
+                    const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type as any) : null;
+                    if (plugin) {
+                      return plugin.createSchedulePanel({
+                        tournament: tournament as any,
+                        onTournamentUpdate: (updatedTournament) => {
+                          setTournaments(prev => 
+                            prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
+                          );
+                          setActiveTournaments(prev => 
+                            prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
+                          );
+                        },
+                        onError: (error) => setError(error),
+                        onSuccess: (message) => {
+                          console.log('Success:', message);
+                        },
+                        isExpanded: expandedSchedules.has(tournament.id),
+                        onToggleExpand: () => toggleSchedule(tournament.id)
+                      });
+                    }
+                    
+                    // Fallback to existing logic for now
+                    return null;
+                  })()}
+
+                  {/* Fallback schedule sections for backward compatibility */}
                   {tournament.type === 'PLAYOFF' && expandedSchedules.has(tournament.id) && (() => {
                     const scheduleRounds = generatePlayoffSchedule(tournament);
 
@@ -3505,12 +3566,45 @@ const Tournaments: React.FC = () => {
                     );
                   })}
 
-                  {/* Render regular tournaments with existing complex logic */}
+                  {/* Render regular tournaments using plugin system */}
                   {completedTournaments.map((tournament) => {
-                const { participants, participantData, matrix } = buildResultsMatrix(tournament);
-                const standings = tournament.type === 'ROUND_ROBIN' ? calculateStandings(tournament) : [];
-                const rankingMap = new Map(standings.map(s => [s.member.id, s.position]));
-                const isExpanded = expandedDetails.has(tournament.id) && tournament.status === 'COMPLETED';
+                    const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type as any) : null;
+                    const isExpanded = expandedDetails.has(tournament.id) && tournament.status === 'COMPLETED';
+                    
+                    // If plugin exists and tournament is completed, use plugin's completed panel
+                    if (plugin && tournament.status === 'COMPLETED') {
+                      return (
+                        <div key={tournament.id}>
+                          {plugin.createCompletedPanel({
+                            tournament: tournament as any,
+                            onTournamentUpdate: (updatedTournament) => {
+                              setTournaments(prev => 
+                                prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
+                              );
+                            },
+                            onError: (error) => setError(error),
+                            onSuccess: (message) => {
+                              console.log('Success:', message);
+                            },
+                            isExpanded,
+                            onToggleExpand: () => {
+                              const newSet = new Set(expandedDetails);
+                              if (newSet.has(tournament.id)) {
+                                newSet.delete(tournament.id);
+                              } else {
+                                newSet.add(tournament.id);
+                              }
+                              setExpandedDetails(newSet);
+                            }
+                          })}
+                        </div>
+                      );
+                    }
+                    
+                    // Fallback to existing logic for now
+                    const { participants, participantData, matrix } = buildResultsMatrix(tournament);
+                    const standings = tournament.type === 'ROUND_ROBIN' ? calculateStandings(tournament) : [];
+                    const rankingMap = new Map(standings.map(s => [s.member.id, s.position]));
               
               return (
                 <div 
