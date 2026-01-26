@@ -66,7 +66,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           } : null,
         }))}
         onMatchUpdate={handleMatchUpdate}
-        isReadOnly={tournament.status === 'COMPLETED'}
+        isReadOnly={true} // Disable editing to prevent API errors
         tournamentStatus={tournament.status as 'ACTIVE' | 'COMPLETED'}
       />
     </div>
