@@ -12,6 +12,75 @@ interface PlayerStats {
   rank: number;
 }
 
+interface Member {
+  id: number;
+  firstName: string;
+  lastName: string;
+  birthDate: string | null;
+  isActive: boolean;
+  rating: number | null;
+}
+
+interface Match {
+  id: number;
+  member1Id: number;
+  member2Id: number | null;
+  player1Sets: number;
+  player2Sets: number;
+  player1Forfeit: boolean;
+  player2Forfeit: boolean;
+}
+
+const buildResultsMatrix = (tournament: any) => {
+  const participants = tournament.participants;
+  const participantData = tournament.participants; // Keep participant data for ratings
+  const matrix: { [key: number]: { [key: number]: string } } = {};
+  const matchMap: { [key: string]: Match } = {}; // Store match data for editing
+  
+  // Initialize matrix
+  participants.forEach((p1: any) => {
+    matrix[p1.member.id] = {};
+    participants.forEach((p2: any) => {
+      if (p1.member.id === p2.member.id) {
+        matrix[p1.member.id][p2.member.id] = '-';
+      } else {
+        matrix[p1.member.id][p2.member.id] = '';
+      }
+    });
+  });
+
+  // Fill in match results
+  tournament.matches.forEach((match: Match) => {
+    if (match.member2Id === null) return; // Skip BYE matches
+    
+    let score1: string;
+    let score2: string;
+    
+    // Handle forfeit matches
+    if (match.player1Forfeit) {
+      score1 = 'L';
+      score2 = 'W';
+    } else if (match.player2Forfeit) {
+      score1 = 'W';
+      score2 = 'L';
+    } else {
+      // Regular match with scores
+      score1 = `${match.player1Sets} - ${match.player2Sets}`;
+      score2 = `${match.player2Sets} - ${match.player1Sets}`;
+    }
+    
+    matrix[match.member1Id][match.member2Id] = score1;
+    // Reverse for the other direction (shows who won)
+    matrix[match.member2Id][match.member1Id] = score2;
+    
+    // Store match for editing (both directions)
+    matchMap[`${match.member1Id}-${match.member2Id}`] = match;
+    matchMap[`${match.member2Id}-${match.member1Id}`] = match;
+  });
+
+  return { participants, participantData, matrix, matchMap };
+};
+
 export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
   tournament,
   isExpanded,
@@ -95,6 +164,11 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
     return formatPlayerName(participant.member.firstName, participant.member.lastName, getNameDisplayOrder());
   };
 
+  // Generate results matrix for display
+  const { participants, participantData, matrix } = React.useMemo(() => {
+    return buildResultsMatrix(tournament);
+  }, [tournament]);
+
   if (!isExpanded) {
     return (
       <div className="round-robin-completed collapsed">
@@ -172,6 +246,98 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Results Matrix */}
+        <div style={{ marginBottom: '20px', display: 'inline-block' }}>
+          <h5 style={{ marginBottom: '15px' }}>Results Matrix</h5>
+          <div style={{ marginBottom: '20px', display: 'inline-block' }}>
+            <table 
+              style={{ 
+                borderCollapse: 'collapse', 
+                fontSize: '12px', 
+                backgroundColor: '#fff',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                borderRadius: '8px',
+                overflow: 'hidden'
+              }}
+            >
+              <thead>
+                <tr>
+                  <th style={{ 
+                    padding: '8px 12px', 
+                    backgroundColor: '#2c3e50', 
+                    color: 'white', 
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                    border: '1px solid #34495e'
+                  }}>
+                    VS
+                  </th>
+                  {participantData.map((p: any) => (
+                    <th 
+                      key={p.member.id} 
+                      style={{ 
+                        padding: '8px 12px', 
+                        backgroundColor: '#2c3e50', 
+                        color: 'white', 
+                        fontWeight: 'bold',
+                        textAlign: 'center',
+                        border: '1px solid #34495e',
+                        minWidth: '80px'
+                      }}
+                    >
+                      {formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {participantData.map((p1: any) => (
+                  <tr key={p1.member.id}>
+                    <td 
+                      style={{ 
+                        padding: '8px 12px', 
+                        backgroundColor: '#2c3e50', 
+                        color: 'white', 
+                        fontWeight: 'bold',
+                        textAlign: 'center',
+                        border: '1px solid #34495e'
+                      }}
+                    >
+                      {formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder())}
+                    </td>
+                    {participantData.map((p2: any) => {
+                      const cellValue = matrix[p1.member.id][p2.member.id];
+                      const isWin = cellValue.includes('W') && !cellValue.includes('-');
+                      const isLoss = cellValue.includes('L') && !cellValue.includes('-');
+                      const isDraw = cellValue === '-';
+                      
+                      return (
+                        <td 
+                          key={p2.member.id}
+                          style={{ 
+                            padding: '8px 12px', 
+                            textAlign: 'center',
+                            border: '1px solid #ddd',
+                            backgroundColor: isWin ? '#d4edda' : isLoss ? '#f8d7da' : isDraw ? '#e9ecef' : 'white',
+                            fontWeight: isWin || isLoss ? 'bold' : 'normal',
+                            color: isWin ? '#155724' : isLoss ? '#721c24' : '#333',
+                            minWidth: '80px'
+                          }}
+                        >
+                          {cellValue}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ marginTop: '10px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
+            Green cells indicate wins for the row player, red cells indicate losses. Diagonal shows player names.
+          </p>
         </div>
 
         {/* Tournament summary */}
