@@ -1,0 +1,371 @@
+/* Swiss Active Panel Styles */
+.swiss-active {
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.swiss-active__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.swiss-active__header h4 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.tournament-info {
+  display: flex;
+  gap: 10px;
+}
+
+.info-badge {
+  background: #3498db;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.swiss-active__section {
+  margin-bottom: 25px;
+}
+
+.swiss-active__section h4 {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Standings Table */
+.standings-table {
+  overflow-x: auto;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.standings-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.standings-table th,
+.standings-table td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.standings-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+  white-space: nowrap;
+}
+
+.standings-table .player-name {
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.standings-table .points {
+  color: #27ae60;
+  font-weight: 600;
+}
+
+.standings-table .opponents {
+  font-size: 12px;
+  color: #6c757d;
+  max-width: 200px;
+}
+
+/* Round Navigation */
+.round-navigation {
+  margin-bottom: 20px;
+}
+
+.round-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.round-tab {
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.round-tab:hover {
+  background: #f8f9fa;
+  border-color: #3498db;
+}
+
+.round-tab.active {
+  background: #3498db;
+  color: white;
+  border-color: #3498db;
+}
+
+.round-tab.generate-next {
+  background: #27ae60;
+  color: white;
+  border-color: #27ae60;
+}
+
+.round-tab.generate-next:hover {
+  background: #229954;
+}
+
+/* Round Matches */
+.round-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.match-item {
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 15px;
+  transition: all 0.2s ease;
+}
+
+.match-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.match-item.completed {
+  border-left: 4px solid #27ae60;
+}
+
+.match-item.pending {
+  border-left: 4px solid #f39c12;
+}
+
+.match-players {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.match-players .player-name {
+  color: #2c3e50;
+}
+
+.match-players .vs {
+  color: #6c757d;
+  font-size: 14px;
+}
+
+/* Match Edit */
+.match-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.score-inputs {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.score-inputs input {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.score-inputs input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.forfeit-checkboxes {
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+}
+
+.forfeit-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.match-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-button {
+  background: #27ae60;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.save-button:hover {
+  background: #229954;
+}
+
+.cancel-button {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.cancel-button:hover {
+  background: #c0392b;
+}
+
+/* Match Display */
+.match-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.match-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.match-score .score {
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+.match-score .forfeit {
+  font-size: 11px;
+  color: #e74c3c;
+  background: #fdf2f2;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
+}
+
+.match-score .pending {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.edit-button {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.edit-button:hover {
+  background: #2980b9;
+}
+
+/* No Matches */
+.no-matches {
+  text-align: center;
+  padding: 30px;
+  color: #6c757d;
+}
+
+.no-matches p {
+  margin: 0 0 15px 0;
+  font-size: 14px;
+}
+
+.generate-first-round {
+  background: #27ae60;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.generate-first-round:hover {
+  background: #229954;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .swiss-active__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .tournament-info {
+    flex-wrap: wrap;
+  }
+  
+  .round-selector {
+    justify-content: center;
+  }
+  
+  .match-players {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  
+  .match-display {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .score-inputs {
+    flex-wrap: wrap;
+  }
+  
+  .standings-table .opponents {
+    max-width: 150px;
+    font-size: 11px;
+  }
+}

@@ -2653,11 +2653,44 @@ const Tournaments: React.FC = () => {
                     <div style={{ marginTop: '7.5px', padding: '0 15px 15px 15px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
                       {/* Use plugin system for tournament-specific active panels */}
                       {(() => {
+                        console.group(`🔌 Plugin Call: Active Panel for Tournament ${tournament.id} (${tournament.name || 'Unnamed'})`);
+                        console.log(`📋 Tournament Details:`, {
+                          id: tournament.id,
+                          name: tournament.name,
+                          type: tournament.type,
+                          status: tournament.status,
+                          participantCount: tournament.participants?.length || 0,
+                          matchCount: tournament.matches?.length || 0
+                        });
+                        
                         const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type as TournamentType) : null;
+                        console.log(`🔍 Plugin Lookup:`, {
+                          tournamentType: tournament.type,
+                          pluginFound: !!plugin,
+                          pluginName: plugin?.name || 'None',
+                          isBasic: plugin?.isBasic || false
+                        });
+                        
                         if (plugin && tournament.status === 'ACTIVE') {
-                          return plugin.createActivePanel({
+                          console.log(`✅ Rendering Active Panel:`, {
+                            pluginName: plugin.name,
+                            pluginType: plugin.type,
+                            tournamentStatus: tournament.status
+                          });
+                          
+                          const result = plugin.createActivePanel({
                             tournament: tournament as any,
                             onTournamentUpdate: (updatedTournament) => {
+                              console.log(`🔄 Tournament Update from Plugin:`, {
+                                tournamentId: updatedTournament.id,
+                                pluginName: plugin.name,
+                                changes: {
+                                  status: updatedTournament.status !== tournament.status ? updatedTournament.status : 'unchanged',
+                                  matchCount: updatedTournament.matches?.length || 0,
+                                  participantCount: updatedTournament.participants?.length || 0
+                                }
+                              });
+                              
                               // Update tournament in state
                               setTournaments(prev => 
                                 prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
@@ -2666,538 +2699,158 @@ const Tournaments: React.FC = () => {
                                 prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
                               );
                             },
-                            onError: (error) => setError(error),
+                            onError: (error) => {
+                              console.error(`❌ Plugin Error:`, {
+                                tournamentId: tournament.id,
+                                pluginName: plugin.name,
+                                error: String(error)
+                              });
+                              setError(error);
+                            },
                             onSuccess: (message) => {
-                              // Could show success toast here
-                              console.log('Success:', message);
+                              console.log(`✅ Plugin Success:`, {
+                                tournamentId: tournament.id,
+                                pluginName: plugin.name,
+                                message
+                              });
                             },
                             onMatchUpdate: (match) => {
+                              console.log(`🏓 Match Update from Plugin:`, {
+                                tournamentId: tournament.id,
+                                pluginName: plugin.name,
+                                matchId: match.id,
+                                member1Id: match.member1Id,
+                                member2Id: match.member2Id,
+                                score: `${match.player1Sets} - ${match.player2Sets}`
+                              });
                               // Handle match updates
                               fetchData();
                             }
                           });
+                          
+                          console.groupEnd();
+                          return result;
                         }
                         
-                        // Fallback to existing logic for now
-                        if (tournament.type === 'PLAYOFF') {
+                        // If no plugin is found for an active tournament, show a message
+                        if (tournament.status === 'ACTIVE') {
+                          console.warn(`⚠️ No Plugin Found:`, {
+                            tournamentId: tournament.id,
+                            tournamentType: tournament.type,
+                            tournamentStatus: tournament.status,
+                            availablePlugins: tournamentPluginRegistry.getTypes()
+                          });
+                          
+                          console.groupEnd();
                           return (
-                            <PlayoffBracket
-                              tournamentId={tournament.id}
-                              participants={tournament.participants}
-                              tournamentStatus={tournament.status}
-                              cancelled={tournament.cancelled}
-                              matches={((tournament.bracketMatches || []) as any).map((bm: any) => ({
-                                ...bm,
-                                member1Id: bm.member1Id ?? bm.player1Id,
-                                member2Id: bm.member2Id ?? bm.player2Id,
-                                player1Id: bm.player1Id ?? bm.member1Id,
-                                player2Id: bm.player2Id ?? bm.member2Id,
-                              })).map((bm: any) => {
-                                const match = bm.match;
-                                // Determine winner from match result if it exists
-                                let winnerId: number | null = null;
-                                if (match) {
-                                  if (match.player1Sets > (match.player2Sets ?? 0)) {
-                                    winnerId = bm.member1Id;
-                                  } else if ((match.player2Sets ?? 0) > match.player1Sets) {
-                                    winnerId = bm.member2Id;
-                                  } else if (match.player1Forfeit) {
-                                    winnerId = bm.member2Id;
-                                  } else if (match.player2Forfeit) {
-                                    winnerId = bm.member1Id;
-                                  }
-                                }
-                              
-                              // Check for BYEs: memberId === null or 0 means BYE
-                              const player1IsBye = bm.member1Id === null || bm.member1Id === 0;
-                              const player2IsBye = bm.member2Id === null || bm.member2Id === 0;
-                              
-                              return {
-                                id: bm.id, // BracketMatch ID - essential for tracking all bracket matches
-                                round: bm.round,
-                                position: bm.position,
-                                member1Id: bm.member1Id,
-                                member2Id: bm.member2Id,
-                                player1Id: player1IsBye ? null : bm.member1Id, // Convert 0/null to null for frontend
-                                player2Id: player2IsBye ? null : bm.member2Id, // Convert 0/null to null for frontend
-                                player1IsBye,
-                                player2IsBye,
-                                matchId: match?.id, // Match ID if match has been played, undefined otherwise
-                                winnerId: winnerId,
-                                nextMatchId: bm.nextMatchId || undefined,
-                                player1Sets: match?.player1Sets,
-                                player2Sets: match?.player2Sets,
-                                player1Forfeit: match?.player1Forfeit,
-                                player2Forfeit: match?.player2Forfeit,
-                                // Include match rating data if available
-                                match: match ? {
-                                  id: match.id,
-                                  player1RatingBefore: match.player1RatingBefore ?? null,
-                                  player1RatingChange: match.player1RatingChange ?? null,
-                                  player2RatingBefore: match.player2RatingBefore ?? null,
-                                  player2RatingChange: match.player2RatingChange ?? null,
-                                } : undefined,
-                              };
-                            })}
-                            onBracketUpdate={fetchData}
-                            isReadOnly={tournament.status === 'COMPLETED'}
-                            />
-                          );
-                        }
-                        
-                        if ((tournament.type as string) === 'SINGLE_MATCH') {
-                          return (
-                            <SingleMatchHeader
-                              participants={tournament.participants}
-                              match={tournament.matches.length > 0 ? tournament.matches[0] : null}
-                              isCompleted={tournament.status === 'COMPLETED'}
-                              firstPlayerMinWidth={maxPlayerNameWidth}
-                              />
-                          );
-                        }
-                        
-                        // Default fallback for other tournament types
-                        return (
-                          <>
-                            <div style={{ marginBottom: '20px', display: 'inline-block' }}>
-                              {(() => {
-                                const { participants, participantData, matrix } = buildResultsMatrix(tournament);
-                                const standings = calculateStandings(tournament);
-                                const rankingMap = new Map(standings.map(s => [s.member.id, s.position]));
-                                return (
-                                  <>
-                                    <table style={{ borderCollapse: 'collapse', fontSize: '14px', tableLayout: 'auto' }}>
-                                      <thead>
-                                        <tr>
-                                          <th style={{ padding: '6px 8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'left', whiteSpace: 'nowrap' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                              <span>Player</span>
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  handleQuickViewStats(tournament.id);
-                                                }}
-                                                title="View Statistics for All Players in This Tournament"
-                                                style={{
-                                                  padding: '2px 4px',
-                                                  border: 'none',
-                                                  background: 'transparent',
-                                                  cursor: 'pointer',
-                                                  fontSize: '14px',
-                                                  display: 'inline-flex',
-                                                  alignItems: 'center',
-                                                  justifyContent: 'center',
-                                                  color: '#3498db',
-                                                }}
-                                              >
-                                                📊
-                                              </button>
-                                            </div>
-                                          </th>
-                                          {participants.map((participant) => {
-                                            return (
-                                              <th
-                                                key={participant.member.id}
-                                                style={{
-                                                  padding: '8px',
-                                                  border: '1px solid #ddd',
-                                                  backgroundColor: '#f8f9fa',
-                                                  minWidth: '80px',
-                                                  textAlign: 'center',
-                                                  fontWeight: 'normal',
-                                                }}
-                                              >
-                                                <div>
-                                                  {formatPlayerName(participant.member.firstName, participant.member.lastName, getNameDisplayOrder())}
-                                                </div>
-                                              </th>
-                                            );
-                                          })}
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {participants.map((participant1) => {
-                                          const participantData1 = participantData.find(p => p.memberId === participant1.member.id);
-                                          const ratingDisplay1 = formatActiveTournamentRating(
-                                            participantData1?.playerRatingAtTime,
-                                            participant1.member.rating
-                                          );
-                                          const ranking1 = rankingMap.get(participant1.member.id);
-                                          return (
-                                            <tr key={participant1.member.id}>
-                                              <td
-                                                style={{
-                                                  padding: '6px 8px',
-                                                  border: '1px solid #ddd',
-                                                  backgroundColor: '#f8f9fa',
-                                                  fontWeight: 'bold',
-                                                  whiteSpace: 'nowrap',
-                                                }}
-                                              >
-                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                                                  <PlayerNameWithIcons member={participant1.member} tournament={tournament} />
-                                                  {ranking1 && ratingDisplay1 && (
-                                                    <span style={{ fontSize: '11px', color: '#666', fontWeight: 'normal' }}>
-                                                      ({ranking1}, {ratingDisplay1})
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </td>
-                                              {participants.map((participant2) => {
-                                                const score = matrix[participant1.member.id][participant2.member.id];
-                                                const isDiagonal = participant1.member.id === participant2.member.id;
-                                                const hasScore = score && score !== '';
-                                                const cellStyle: React.CSSProperties = {
-                                                  padding: '8px',
-                                                  border: '1px solid #ddd',
-                                                  textAlign: 'center',
-                                                  backgroundColor: isDiagonal ? '#e9ecef' : hasScore ? '#fff' : '#f9f9f9',
-                                                  fontWeight: isDiagonal ? 'normal' : 'bold',
-                                                  opacity: isDiagonal ? 1 : hasScore ? 1 : 0.7,
-                                                  minWidth: '80px',
-                                                  width: '80px',
-                                                };
-
-                                                // Highlight winner (higher score or W) for played matches
-                                                if (!isDiagonal && hasScore) {
-                                                  const isForfeit = score === 'W' || score === 'L';
-                                                  if (isForfeit) {
-                                                    if (score === 'W') {
-                                                      cellStyle.backgroundColor = '#d4edda';
-                                                    } else {
-                                                      cellStyle.backgroundColor = '#f8d7da';
-                                                    }
-                                                  } else {
-                                                    const [score1, score2] = score.split(' - ').map(Number);
-                                                    if (score1 > score2) {
-                                                      cellStyle.backgroundColor = '#d4edda';
-                                                    } else if (score2 > score1) {
-                                                      cellStyle.backgroundColor = '#f8d7da';
-                                                    }
-                                                  }
-                                                }
-
-                                                // Determine if this cell can be edited (organizer and not diagonal)
-                                                const canEditCell = isUserOrganizer && !isDiagonal;
-                                                
-                                                return (
-                                                  <td 
-                                                    key={participant2.member.id} 
-                                                    style={{...cellStyle, cursor: canEditCell ? 'pointer' : 'default', position: 'relative'}}
-                                                    onDoubleClick={() => canEditCell && handleCellDoubleClick(participant1.member.id, participant2.member.id, tournament)}
-                                                    title={canEditCell ? (hasScore ? 'Double-click to edit' : 'Double-click to record result') : (isUserOrganizer ? '' : 'Only Organizers can enter matches')}
-                                                  >
-                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                                      {hasScore ? (
-                                                        <span>{score}</span>
-                                                      ) : (
-                                                        isUserOrganizer ? (
-                                                          <button
-                                                            onClick={(e) => {
-                                                              e.stopPropagation();
-                                                              e.preventDefault();
-                                                              handleCellDoubleClick(participant1.member.id, participant2.member.id, tournament);
-                                                            }}
-                                                            onDoubleClick={(e) => {
-                                                              e.stopPropagation();
-                                                              e.preventDefault();
-                                                              handleCellDoubleClick(participant1.member.id, participant2.member.id, tournament);
-                                                            }}
-                                                            title="Click or double-click to enter score"
-                                                            style={{
-                                                              padding: '2px 4px',
-                                                              border: 'none',
-                                                              background: 'transparent',
-                                                              cursor: 'pointer',
-                                                              display: 'inline-flex',
-                                                              alignItems: 'center',
-                                                              justifyContent: 'center',
-                                                              color: '#27ae60',
-                                                            }}
-                                                          >
-                                                            <svg 
-                                                              width="16" 
-                                                              height="16" 
-                                                              viewBox="0 0 20 20" 
-                                                              fill="none" 
-                                                              xmlns="http://www.w3.org/2000/svg"
-                                                              style={{
-                                                                display: 'block',
-                                                                opacity: 0.8,
-                                                              }}
-                                                            >
-                                                              <rect 
-                                                                x="2" 
-                                                                y="3" 
-                                                                width="16" 
-                                                                height="14" 
-                                                                rx="2" 
-                                                                stroke="currentColor" 
-                                                                strokeWidth="1.5" 
-                                                                fill="none"
-                                                              />
-                                                              <line 
-                                                                x1="10" 
-                                                                y1="3" 
-                                                                x2="10" 
-                                                                y2="17" 
-                                                                stroke="currentColor" 
-                                                                strokeWidth="1.5"
-                                                              />
-                                                              <text 
-                                                                x="5.5" 
-                                                                y="12" 
-                                                                fontSize="7" 
-                                                                fontWeight="bold" 
-                                                                fill="currentColor" 
-                                                                textAnchor="middle"
-                                                                fontFamily="Arial, sans-serif"
-                                                              >
-                                                                ?
-                                                              </text>
-                                                              <text 
-                                                                x="14.5" 
-                                                                y="12" 
-                                                                fontSize="7" 
-                                                                fontWeight="bold" 
-                                                                fill="currentColor" 
-                                                                textAnchor="middle"
-                                                                fontFamily="Arial, sans-serif"
-                                                              >
-                                                                ?
-                                                              </text>
-                                                            </svg>
-                                                          </button>
-                                                        ) : null
-                                                      )}
-                                                    </div>
-                                                  </td>
-                                                );
-                                              })}
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
-                                    <p style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
-                                      Progress: {countNonForfeitedMatches(tournament)} / {getExpectedMatches(tournament)} matches played
-                                      {tournament.type === 'ROUND_ROBIN' && !areAllMatchesPlayed(tournament) && (
-                                        <span style={{ color: '#e67e22', marginLeft: '10px' }}>
-                                          ⚠️ All matches must be played before completing tournament
-                                        </span>
-                                      )}
-                                    </p>
-                                    <p style={{ fontSize: '12px', color: '#666', marginTop: '10px', fontStyle: 'italic' }}>
-                                      Green cells indicate wins for the row player, red cells indicate losses. Diagonal shows player names. Double-click any cell to add or edit a match.
-                                    </p>
-                                  </>
-                                );
-                              })()}
+                            <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+                              <p>No active panel available for tournament type: {tournament.type}</p>
+                              <p>Please ensure a plugin is registered for this tournament type.</p>
                             </div>
-                          </>
-                        );
-                      })()}</div>
+                          );
+                        }
+                        
+                        console.log(`ℹ️ Skipping Active Panel:`, {
+                          reason: 'Tournament not active',
+                          tournamentStatus: tournament.status,
+                          pluginFound: !!plugin
+                        });
+                        console.groupEnd();
+                        return null;
+                      })()}
+                    </div>
                   )}
-                  {/* Schedule section - independent of details */}
-                  {tournament.type === 'ROUND_ROBIN' && expandedSchedules.has(tournament.id) && (() => {
-                    const scheduleRounds = generateRoundRobinSchedule(tournament);
-                    // Create a set of played matches for quick lookup
-                    const playedMatches = new Set<string>();
-                    tournament.matches.forEach(match => {
-                      if (match.member2Id !== null && match.member2Id !== 0) {
-                        const key1 = `${match.member1Id}-${match.member2Id}`;
-                        const key2 = `${match.member2Id}-${match.member1Id}`;
-                        playedMatches.add(key1);
-                        playedMatches.add(key2);
-                      }
-                    });
 
-                    return (
-                      <div style={{ marginTop: '15px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-                        <h5 style={{ marginTop: 0, marginBottom: '15px' }}>Match Schedule</h5>
-                        <p style={{ fontSize: '12px', color: '#666', marginBottom: '15px', fontStyle: 'italic' }}>
-                          Matches are organized to maximize simultaneous play. All matches between thick lines can be played at the same time.
-                        </p>
-                        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '14px' }}>
-                          <thead>
-                            <tr style={{ backgroundColor: '#e9ecef' }}>
-                              <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center', width: '80px' }}>Match #</th>
-                              <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Player 1</th>
-                              <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Player 2</th>
-                            </tr>
-                            <tr>
-                              <td colSpan={3} style={{ padding: '0', border: 'none', height: '2px', backgroundColor: '#333' }}></td>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {scheduleRounds.map((round, roundIndex) => (
-                              <React.Fragment key={round.round}>
-                                {roundIndex > 0 && (
-                                  <tr>
-                                    <td colSpan={3} style={{ padding: '0', border: 'none', height: '3px', backgroundColor: '#333' }}></td>
-                                  </tr>
-                                )}
-                                {round.matches.map((match) => {
-                                  const matchKey = `${match.member1Id}-${match.member2Id}`;
-                                  const isPlayed = playedMatches.has(matchKey);
-                                  return (
-                                    <tr key={matchKey} style={isPlayed ? { opacity: 0.6 } : {}}>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center', fontWeight: 'bold', textDecoration: isPlayed ? 'line-through' : 'none' }}>
-                                        {match.matchNumber}
-                                      </td>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textDecoration: isPlayed ? 'line-through' : 'none' }}>
-                                        {match.member1Name}
-                                        {(() => {
-                                          const ratingDisplay = formatActiveTournamentRating(match.member1StoredRating, match.member1CurrentRating);
-                                          return ratingDisplay ? (
-                                            <span style={{ fontSize: '12px', color: '#666', marginLeft: '8px', textDecoration: isPlayed ? 'line-through' : 'none' }}>
-                                              ({ratingDisplay})
-                                            </span>
-                                          ) : null;
-                                        })()}
-                                      </td>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textDecoration: isPlayed ? 'line-through' : 'none' }}>
-                                        {match.member2Name}
-                                        {(() => {
-                                          const ratingDisplay = formatActiveTournamentRating(match.member2StoredRating, match.member2CurrentRating);
-                                          return ratingDisplay ? (
-                                            <span style={{ fontSize: '12px', color: '#666', marginLeft: '8px', textDecoration: isPlayed ? 'line-through' : 'none' }}>
-                                              ({ratingDisplay})
-                                            </span>
-                                          ) : null;
-                                        })()}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </React.Fragment>
-                            ))}
-                          </tbody>
-                        </table>
-                        <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-start', gap: '10px' }}>
-                          <button
-                            onClick={() => handlePrintSchedule(tournament)}
-                            style={{
-                              padding: '8px 16px',
-                              border: '1px solid #3498db',
-                              borderRadius: '4px',
-                              backgroundColor: '#fff',
-                              color: '#3498db',
-                              cursor: 'pointer',
-                              fontSize: '14px',
-                              fontWeight: 'bold',
-                              transition: 'all 0.2s ease',
-                            }}
-                            title="Print Schedule"
-                          >
-                            Print Schedule
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })()}
                   {/* Schedule section - use plugin system */}
                   {expandedSchedules.has(tournament.id) && (() => {
-                    const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type as any) : null;
+                    console.group(`🔌 Plugin Call: Schedule Panel for Tournament ${tournament.id} (${tournament.name || 'Unnamed'})`);
+                    console.log(`📋 Tournament Details:`, {
+                      id: tournament.id,
+                      name: tournament.name,
+                      type: tournament.type,
+                      status: tournament.status,
+                      participantCount: tournament.participants?.length || 0,
+                      matchCount: tournament.matches?.length || 0,
+                      isExpanded: expandedSchedules.has(tournament.id)
+                    });
+                    
+                    const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type as TournamentType) : null;
+                    console.log(`🔍 Plugin Lookup:`, {
+                      tournamentType: tournament.type,
+                      pluginFound: !!plugin,
+                      pluginName: plugin?.name || 'None',
+                      isBasic: plugin?.isBasic || false
+                    });
+                    
                     if (plugin) {
-                      return plugin.createSchedulePanel({
+                      console.log(`✅ Rendering Schedule Panel:`, {
+                        pluginName: plugin.name,
+                        pluginType: plugin.type,
+                        isExpanded: expandedSchedules.has(tournament.id)
+                      });
+                      
+                      const result = plugin.createSchedulePanel({
                         tournament: tournament as any,
+                        isExpanded: expandedSchedules.has(tournament.id),
+                        onToggleExpand: () => {
+                          console.log(`🔄 Schedule Toggle from Plugin:`, {
+                            tournamentId: tournament.id,
+                            pluginName: plugin.name,
+                            wasExpanded: expandedSchedules.has(tournament.id),
+                            willBeExpanded: !expandedSchedules.has(tournament.id)
+                          });
+                          toggleSchedule(tournament.id);
+                        },
                         onTournamentUpdate: (updatedTournament) => {
+                          console.log(`🔄 Tournament Update from Schedule Plugin:`, {
+                            tournamentId: updatedTournament.id,
+                            pluginName: plugin.name,
+                            changes: {
+                              status: updatedTournament.status !== tournament.status ? updatedTournament.status : 'unchanged',
+                              matchCount: updatedTournament.matches?.length || 0,
+                              participantCount: updatedTournament.participants?.length || 0
+                            }
+                          });
                           setTournaments(prev => 
-                            prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
+                            prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
                           );
                           setActiveTournaments(prev => 
-                            prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
+                            prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
                           );
                         },
-                        onError: (error) => setError(error),
-                        onSuccess: (message) => {
-                          console.log('Success:', message);
+                        onError: (error) => {
+                          console.error(`❌ Schedule Plugin Error:`, {
+                            tournamentId: tournament.id,
+                            pluginName: plugin.name,
+                            error: String(error)
+                          });
+                          setError(error);
                         },
-                        isExpanded: expandedSchedules.has(tournament.id),
-                        onToggleExpand: () => toggleSchedule(tournament.id)
+                        onSuccess: (message) => {
+                          console.log(`✅ Schedule Plugin Success:`, {
+                            tournamentId: tournament.id,
+                            pluginName: plugin.name,
+                            message
+                          });
+                        }
                       });
+                      
+                      console.groupEnd();
+                      return result;
                     }
                     
-                    // Fallback to existing logic for now
-                    return null;
-                  })()}
-
-                  {/* Fallback schedule sections for backward compatibility */}
-                  {tournament.type === 'PLAYOFF' && expandedSchedules.has(tournament.id) && (() => {
-                    const scheduleRounds = generatePlayoffSchedule(tournament);
-
+                    // If no plugin is found for schedule, show a message
+                    console.warn(`⚠️ No Schedule Plugin Found:`, {
+                      tournamentId: tournament.id,
+                      tournamentType: tournament.type,
+                      availablePlugins: tournamentPluginRegistry.getTypes()
+                    });
+                    
+                    console.groupEnd();
                     return (
-                      <div style={{ marginTop: '15px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-                        <h5 style={{ marginTop: 0, marginBottom: '15px' }}>Match Schedule</h5>
-                        <p style={{ fontSize: '12px', color: '#666', marginBottom: '15px', fontStyle: 'italic' }}>
-                          All pairs ready to play, organized by round.
-                        </p>
-                        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '14px' }}>
-                          <thead>
-                            <tr style={{ backgroundColor: '#e9ecef' }}>
-                              <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center', width: '80px' }}>Round</th>
-                              <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Player 1</th>
-                              <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Player 2</th>
-                            </tr>
-                            <tr>
-                              <td colSpan={3} style={{ padding: '0', border: 'none', height: '2px', backgroundColor: '#333' }}></td>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {scheduleRounds.map((round, roundIndex) => (
-                              <React.Fragment key={round.round}>
-                                {roundIndex > 0 && (
-                                  <tr>
-                                    <td colSpan={3} style={{ padding: '0', border: 'none', height: '3px', backgroundColor: '#333' }}></td>
-                                  </tr>
-                                )}
-                                {round.matches.map((match, matchIndex) => (
-                                  <tr key={`${round.round}-${matchIndex}`}>
-                                    <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center', fontWeight: 'bold' }}>
-                                      {match.roundLabel}
-                                    </td>
-                                    <td style={{ padding: '8px', border: '1px solid #ddd' }}>
-                                      {match.player1Name}
-                                      {match.player1Rating && (
-                                        <span style={{ fontSize: '12px', color: '#666', marginLeft: '8px' }}>
-                                          ({match.player1Rating})
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td style={{ padding: '8px', border: '1px solid #ddd' }}>
-                                      {match.player2Name}
-                                      {match.player2Rating && (
-                                        <span style={{ fontSize: '12px', color: '#666', marginLeft: '8px' }}>
-                                          ({match.player2Rating})
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </React.Fragment>
-                            ))}
-                          </tbody>
-                        </table>
-                        <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-start', gap: '10px' }}>
-                          <button
-                            onClick={() => handlePrintSchedule(tournament)}
-                            style={{
-                              padding: '8px 16px',
-                              border: '1px solid #3498db',
-                              borderRadius: '4px',
-                              backgroundColor: '#fff',
-                              color: '#3498db',
-                              cursor: 'pointer',
-                              fontSize: '14px',
-                              fontWeight: 'bold',
-                              transition: 'all 0.2s ease',
-                            }}
-                            title="Print Schedule"
-                          >
-                            Print Schedule
-                          </button>
-                        </div>
+                      <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+                        <p>No schedule panel available for tournament type: {tournament.type}</p>
+                        <p>Please ensure a plugin is registered for this tournament type.</p>
                       </div>
                     );
                   })()}
