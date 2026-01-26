@@ -698,49 +698,49 @@ const Tournaments: React.FC = () => {
       // Show statistics for all players in this tournament
       const tournament = tournaments.find(t => t.id === tournamentId);
       if (tournament) {
-        const allPlayerIds = tournament.participants.map(p => p.memberId);
+        const allMemberIds = tournament.participants.map(p => p.memberId);
         saveStateBeforeNavigate();
-        navigate('/statistics', { state: { playerIds: allPlayerIds, from: 'tournaments' } });
+        navigate('/statistics', { state: { playerIds: allMemberIds, from: 'tournaments' } });
       }
     } else {
       // Fallback: show statistics for all players from all tournaments
-      const allPlayerIds = tournaments.flatMap(t => t.participants.map(p => p.memberId));
-      const uniquePlayerIds = Array.from(new Set(allPlayerIds));
+      const allMemberIds = tournaments.flatMap(t => t.participants.map(p => p.memberId));
+      const uniqueMemberIds = Array.from(new Set(allMemberIds));
       saveStateBeforeNavigate();
-      navigate('/statistics', { state: { playerIds: uniquePlayerIds, from: 'tournaments' } });
+      navigate('/statistics', { state: { playerIds: uniqueMemberIds, from: 'tournaments' } });
     }
   };
 
 
-  const handleQuickViewHistory = (playerId: number, tournamentId?: number) => {
-    let allOtherPlayerIds: number[];
+  const handleQuickViewHistory = (memberId: number, tournamentId?: number) => {
+    let allOtherMemberIds: number[];
     
     if (tournamentId !== undefined) {
       // For round robin tournaments, only get opponents from the same tournament
       const tournament = tournaments.find(t => t.id === tournamentId);
       if (tournament && tournament.type === 'ROUND_ROBIN') {
         // Get only participants from this specific tournament
-        allOtherPlayerIds = tournament.participants
+        allOtherMemberIds = tournament.participants
           .map(p => p.memberId)
-          .filter(id => id !== playerId);
+          .filter(id => id !== memberId);
       } else {
         // For other tournament types, get all players from all tournaments
-        const allPlayers = tournaments.flatMap(t => t.participants.map(p => p.memberId));
-        allOtherPlayerIds = allPlayers
-          .filter((id, index, self) => id !== playerId && self.indexOf(id) === index);
+        const allMembers = tournaments.flatMap(t => t.participants.map(p => p.memberId));
+        allOtherMemberIds = allMembers
+          .filter((id, index, self) => id !== memberId && self.indexOf(id) === index);
       }
     } else {
       // No tournament specified, get all players from all tournaments
-      const allPlayers = tournaments.flatMap(t => t.participants.map(p => p.memberId));
-      allOtherPlayerIds = allPlayers
-        .filter((id, index, self) => id !== playerId && self.indexOf(id) === index);
+      const allMembers = tournaments.flatMap(t => t.participants.map(p => p.memberId));
+      allOtherMemberIds = allMembers
+        .filter((id, index, self) => id !== memberId && self.indexOf(id) === index);
     }
     
     saveStateBeforeNavigate();
     navigate('/history', { 
       state: { 
-        playerId: playerId, 
-        opponentIds: allOtherPlayerIds,
+      memberId: memberId, 
+        opponentIds: allOtherMemberIds,
         from: 'tournaments'
       } 
     });
@@ -957,22 +957,22 @@ const Tournaments: React.FC = () => {
   };
 
   // Handle double-click on match cell to add/edit
-  const handleCellDoubleClick = (player1Id: number, player2Id: number, tournament: Tournament) => {
+  const handleCellDoubleClick = (member1Id: number, member2Id: number, tournament: Tournament) => {
     // Only organizers can enter/edit matches
     if (!isUserOrganizer) {
       return;
     }
     
-    // Skip if trying to edit a BYE match (player2Id would be null)
-    if (player1Id === player2Id) return; // Can't edit diagonal
-    // Note: BYE matches have player2Id === null, so this check won't catch them
+    // Skip if trying to edit a BYE match (member2Id would be null)
+    if (member1Id === member2Id) return; // Can't edit diagonal
+    // Note: BYE matches have member2Id === null, so this check won't catch them
     
     // Set selected tournament so the popup can show
     setSelectedTournament(tournament);
     
       const match = tournament.matches.find(
-        m => (m.member1Id === player1Id && m.member2Id === player2Id) ||
-             (m.member1Id === player2Id && m.member2Id === player1Id)
+        m => (m.member1Id === member1Id && m.member2Id === member2Id) ||
+             (m.member1Id === member2Id && m.member2Id === member1Id)
       );
     
     if (match) {
@@ -990,8 +990,8 @@ const Tournaments: React.FC = () => {
       // Add new match - use the order from the cell (row player vs column player)
       setEditingMatch({
         matchId: 0, // 0 indicates new match
-        member1Id: player1Id,
-        member2Id: player2Id,
+        member1Id: member1Id,
+        member2Id: member2Id,
         player1Sets: '0',
         player2Sets: '0',
         player1Forfeit: false,
@@ -1243,14 +1243,14 @@ const Tournaments: React.FC = () => {
   interface ScheduleMatch {
     matchNumber: number;
     round: number;
-    player1Id: number;
-    player1Name: string;
-    player1StoredRating: number | null | undefined;
-    player1CurrentRating: number | null | undefined;
-    player2Id: number;
-    player2Name: string;
-    player2StoredRating: number | null | undefined;
-    player2CurrentRating: number | null | undefined;
+    member1Id: number;
+    member1Name: string;
+    member1StoredRating: number | null | undefined;
+    member1CurrentRating: number | null | undefined;
+    member2Id: number;
+    member2Name: string;
+    member2StoredRating: number | null | undefined;
+    member2CurrentRating: number | null | undefined;
   }
 
   interface ScheduleRound {
@@ -1356,14 +1356,14 @@ const Tournaments: React.FC = () => {
         roundMatches.push({
           matchNumber: matchNumber++,
           round: roundNumber,
-          player1Id: member1.id,
-          player1Name: formatPlayerName(member1.firstName, member1.lastName, getNameDisplayOrder()),
-          player1StoredRating: participant1.playerRatingAtTime,
-          player1CurrentRating: member1.rating ?? null,
-          player2Id: member2.id,
-          player2Name: formatPlayerName(member2.firstName, member2.lastName, getNameDisplayOrder()),
-          player2StoredRating: participant2.playerRatingAtTime,
-          player2CurrentRating: member2.rating ?? null,
+          member1Id: member1.id,
+          member1Name: formatPlayerName(member1.firstName, member1.lastName, getNameDisplayOrder()),
+          member1StoredRating: participant1.playerRatingAtTime,
+          member1CurrentRating: member1.rating ?? null,
+          member2Id: member2.id,
+          member2Name: formatPlayerName(member2.firstName, member2.lastName, getNameDisplayOrder()),
+          member2StoredRating: participant2.playerRatingAtTime,
+          member2CurrentRating: member2.rating ?? null,
         });
 
         // Mark this pair as used, mark players as in this round, and increment match counts
@@ -2408,13 +2408,13 @@ const Tournaments: React.FC = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const player1Id = tournament.participants[0].memberId;
-                            const player2Id = tournament.participants[1].memberId;
+                            const member1Id = tournament.participants[0].memberId;
+                            const member2Id = tournament.participants[1].memberId;
                             saveStateBeforeNavigate();
                             navigate('/history', { 
                               state: { 
-                                playerId: player1Id, 
-                                opponentIds: [player2Id],
+                                playerId: member1Id, 
+                                opponentIds: [member2Id],
                                 from: 'tournaments'
                               } 
                             });
@@ -2437,12 +2437,12 @@ const Tournaments: React.FC = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const player1Id = tournament.participants[0].memberId;
-                            const player2Id = tournament.participants[1].memberId;
+                            const member1Id = tournament.participants[0].memberId;
+                            const member2Id = tournament.participants[1].memberId;
                             saveStateBeforeNavigate();
                             navigate('/statistics', { 
                               state: { 
-                                playerIds: [player1Id, player2Id],
+                                playerIds: [member1Id, member2Id],
                                 from: 'tournaments'
                               } 
                             });
@@ -3037,7 +3037,7 @@ const Tournaments: React.FC = () => {
                                   </tr>
                                 )}
                                 {round.matches.map((match) => {
-                                  const matchKey = `${match.player1Id}-${match.player2Id}`;
+                                  const matchKey = `${match.member1Id}-${match.member2Id}`;
                                   const isPlayed = playedMatches.has(matchKey);
                                   return (
                                     <tr key={matchKey} style={isPlayed ? { opacity: 0.6 } : {}}>
@@ -3045,9 +3045,9 @@ const Tournaments: React.FC = () => {
                                         {match.matchNumber}
                                       </td>
                                       <td style={{ padding: '8px', border: '1px solid #ddd', textDecoration: isPlayed ? 'line-through' : 'none' }}>
-                                        {match.player1Name}
+                                        {match.member1Name}
                                         {(() => {
-                                          const ratingDisplay = formatActiveTournamentRating(match.player1StoredRating, match.player1CurrentRating);
+                                          const ratingDisplay = formatActiveTournamentRating(match.member1StoredRating, match.member1CurrentRating);
                                           return ratingDisplay ? (
                                             <span style={{ fontSize: '12px', color: '#666', marginLeft: '8px', textDecoration: isPlayed ? 'line-through' : 'none' }}>
                                               ({ratingDisplay})
@@ -3056,9 +3056,9 @@ const Tournaments: React.FC = () => {
                                         })()}
                                       </td>
                                       <td style={{ padding: '8px', border: '1px solid #ddd', textDecoration: isPlayed ? 'line-through' : 'none' }}>
-                                        {match.player2Name}
+                                        {match.member2Name}
                                         {(() => {
-                                          const ratingDisplay = formatActiveTournamentRating(match.player2StoredRating, match.player2CurrentRating);
+                                          const ratingDisplay = formatActiveTournamentRating(match.member2StoredRating, match.member2CurrentRating);
                                           return ratingDisplay ? (
                                             <span style={{ fontSize: '12px', color: '#666', marginLeft: '8px', textDecoration: isPlayed ? 'line-through' : 'none' }}>
                                               ({ratingDisplay})
@@ -3650,12 +3650,12 @@ const Tournaments: React.FC = () => {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const player1Id = tournament.matches[0].member1Id;
-                              const player2Id = tournament.matches[0].member2Id;
+                              const member1Id = tournament.matches[0].member1Id;
+                              const member2Id = tournament.matches[0].member2Id;
                               saveStateBeforeNavigate();
                               navigate('/statistics', { 
                                 state: { 
-                                  playerIds: [player1Id, player2Id].filter(id => id !== null) as number[],
+                                  playerIds: [member1Id, member2Id].filter(id => id !== null) as number[],
                                   from: 'tournaments'
                                 } 
                               });
@@ -3678,13 +3678,13 @@ const Tournaments: React.FC = () => {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const player1Id = tournament.matches[0].member1Id;
-                              const player2Id = tournament.matches[0].member2Id;
+                              const member1Id = tournament.matches[0].member1Id;
+                              const member2Id = tournament.matches[0].member2Id;
                               saveStateBeforeNavigate();
                               navigate('/history', { 
                                 state: { 
-                                  playerId: player1Id, 
-                                  opponentIds: player2Id ? [player2Id] : [],
+                                  playerId: member1Id, 
+                                  opponentIds: member2Id ? [member2Id] : [],
                                   from: 'tournaments'
                                 } 
                               });
