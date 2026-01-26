@@ -136,14 +136,6 @@ const Tournaments: React.FC = () => {
     return localStorage.getItem('tournaments_nameFilter') || '';
   });
   // Load sticky filter states from localStorage on mount
-  const [showActiveTournaments, setShowActiveTournaments] = useState<boolean>(() => {
-    const stored = localStorage.getItem('tournaments_showActiveTournaments');
-    return stored !== null ? stored === 'true' : true;
-  });
-  const [showActiveMatches, setShowActiveMatches] = useState<boolean>(() => {
-    const stored = localStorage.getItem('tournaments_showActiveMatches');
-    return stored !== null ? stored === 'true' : true;
-  });
   const [showCompletedTournaments, setShowCompletedTournaments] = useState<boolean>(() => {
     const stored = localStorage.getItem('tournaments_showCompletedTournaments');
     return stored !== null ? stored === 'true' : true;
@@ -381,13 +373,10 @@ const Tournaments: React.FC = () => {
     return events;
   }, [activeTournaments]);
 
-  // Filter active events based on checkboxes
+  // Filter active events - always show all active events
   const filteredActiveEvents = useMemo(() => {
-    return activeEvents.filter(event => {
-      // Standalone matches should not appear in active section
-      return showActiveTournaments;
-    });
-  }, [activeEvents, showActiveTournaments, showActiveMatches]);
+    return activeEvents; // No filtering needed - always show tournaments and matches
+  }, [activeEvents]);
 
   // Memoize combined completed events (tournaments + matches) sorted by time
   const completedEvents = useMemo(() => {
@@ -2170,36 +2159,8 @@ const Tournaments: React.FC = () => {
             {activeSectionCollapsed ? '▼' : '▲'}
           </button>
           <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 'bold', color: '#7b1fa2' }}>Active</h2>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}>
-            <input
-              type="checkbox"
-              checked={showActiveTournaments}
-              onChange={(e) => {
-                const value = e.target.checked;
-                setShowActiveTournaments(value);
-                // Save to localStorage to make filter sticky
-                localStorage.setItem('tournaments_showActiveTournaments', String(value));
-              }}
-              style={{ cursor: 'pointer' }}
-            />
-            <span>Tournaments</span>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}>
-            <input
-              type="checkbox"
-              checked={showActiveMatches}
-              onChange={(e) => {
-                const value = e.target.checked;
-                setShowActiveMatches(value);
-                // Save to localStorage to make filter sticky
-                localStorage.setItem('tournaments_showActiveMatches', String(value));
-              }}
-              style={{ cursor: 'pointer' }}
-            />
-            <span>Matches</span>
-          </label>
         </div>
-        {!activeSectionCollapsed && (showActiveTournaments || showActiveMatches) ? (
+        {!activeSectionCollapsed ? (
           filteredActiveEvents.length === 0 ? (
             <p>No active events</p>
           ) : (
@@ -2893,7 +2854,7 @@ const Tournaments: React.FC = () => {
           borderRadius: '8px',
           border: '2px solid #2196f3',
           position: 'sticky',
-          top: activeSectionCollapsed || !showActiveTournaments && !showActiveMatches ? 0 : 80,
+          top: activeSectionCollapsed ? 0 : 80,
           zIndex: 9999,
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
           backdropFilter: 'blur(10px)',
