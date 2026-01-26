@@ -19,6 +19,7 @@ import { updateMatchCountsCache, removeMatchFromCache } from './Players';
 import { isOrganizer } from '../utils/auth';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import { TournamentType } from '../types/tournament';
+import './tournaments/plugins'; // This will auto-register all plugins
 
 // Module-level cache to persist across component mounts/unmounts
 const tournamentsCache: {
