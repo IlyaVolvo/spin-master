@@ -2,8 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
-import api from '../../../utils/api';
-import { updateMatchCountsCache } from '../../Players';
+import { createMatchUpdater } from '../utils/matchUpdater';
 import './RoundRobinActivePanel.css';
 
 interface PlayerStats {
@@ -140,75 +139,39 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   const handleMatchSave = async () => {
     if (!editingMatch) return;
 
+    const matchUpdater = createMatchUpdater(tournament.id);
+
     try {
-      // Validate forfeit: only one player can forfeit
-      if (editingMatch.player1Forfeit && editingMatch.player2Forfeit) {
-        onError('Only one player can forfeit');
-        return;
-      }
-
-      // Validate scores: cannot be equal (including 0:0) unless it's a forfeit
-      if (!editingMatch.player1Forfeit && !editingMatch.player2Forfeit) {
-        const player1Sets = parseInt(editingMatch.player1Sets) || 0;
-        const player2Sets = parseInt(editingMatch.player2Sets) || 0;
-        // Disallow equal scores including 0:0
-        if (player1Sets === player2Sets) {
-          onError('Scores cannot be equal. One player must win.');
-          return;
-        }
-      }
-
-      const matchData: any = {
+      const matchData = {
         member1Id: editingMatch.member1Id,
         member2Id: editingMatch.member2Id,
+        player1Sets: parseInt(editingMatch.player1Sets) || 0,
+        player2Sets: parseInt(editingMatch.player2Sets) || 0,
+        player1Forfeit: editingMatch.player1Forfeit,
+        player2Forfeit: editingMatch.player2Forfeit,
       };
 
-      // If forfeit, send forfeit flags; otherwise send sets
-      if (editingMatch.player1Forfeit || editingMatch.player2Forfeit) {
-        matchData.player1Forfeit = editingMatch.player1Forfeit;
-        matchData.player2Forfeit = editingMatch.player2Forfeit;
-      } else {
-        matchData.player1Sets = parseInt(editingMatch.player1Sets) || 0;
-        matchData.player2Sets = parseInt(editingMatch.player2Sets) || 0;
-        matchData.player1Forfeit = false;
-        matchData.player2Forfeit = false;
-      }
-
-      let savedMatch: any;
       if (editingMatch.matchId === 0) {
-        // New match - create it
-        const response = await api.post(`/tournaments/${tournament.id}/matches`, matchData);
-        savedMatch = response.data;
-        onSuccess && onSuccess('Match result added successfully');
+        // Create new match
+        await matchUpdater.createMatch(matchData, {
+          onSuccess,
+          onError,
+          onTournamentUpdate,
+          onMatchUpdate,
+        });
       } else {
-        // Existing match - update it
-        const response = await api.patch(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`, matchData);
-        savedMatch = response.data;
-        onSuccess && onSuccess('Match result updated successfully');
-      }
-      
-      // Update match counts cache incrementally
-      if (savedMatch) {
-        updateMatchCountsCache({
-          id: savedMatch.id,
-          member1Id: savedMatch.member1Id,
-          member2Id: savedMatch.member2Id,
-          updatedAt: savedMatch.updatedAt || savedMatch.createdAt,
-          createdAt: savedMatch.createdAt,
-        }, editingMatch.matchId === 0);
+        // Update existing match
+        await matchUpdater.updateMatch(editingMatch.matchId, matchData, {
+          onSuccess,
+          onError,
+          onTournamentUpdate,
+          onMatchUpdate,
+        });
       }
       
       setEditingMatch(null);
-      onMatchUpdate && onMatchUpdate(savedMatch);
-      
-      // Update tournament data
-      if (onTournamentUpdate) {
-        const updatedTournament = await api.get(`/tournaments/${tournament.id}`);
-        onTournamentUpdate(updatedTournament.data);
-      }
-    } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      onError(apiError || 'Failed to save match result');
+    } catch (error) {
+      // Error is already handled by the MatchUpdater callbacks
     }
   };
 
@@ -221,28 +184,25 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   const handleMatchClear = async () => {
     if (!editingMatch || editingMatch.matchId === 0) return;
 
+    const matchUpdater = createMatchUpdater(tournament.id);
+
     try {
-      await api.delete(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`);
+      await matchUpdater.deleteMatch(editingMatch.matchId, {
+        onSuccess,
+        onError,
+        onTournamentUpdate,
+        onMatchUpdate,
+      });
+      
       setEditingMatch(null);
-      onSuccess && onSuccess('Match result cleared successfully');
-      
-      // Update tournament data
-      if (onTournamentUpdate) {
-        const updatedTournament = await api.get(`/tournaments/${tournament.id}`);
-        onTournamentUpdate(updatedTournament.data);
-      }
-      
-      onMatchUpdate && onMatchUpdate({} as any);
-    } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      onError(apiError || 'Failed to clear match result');
+    } catch (error) {
+      // Error is already handled by the MatchUpdater callbacks
     }
   };
 
   return (
     <div className="round-robin-active">
       <div className="round-robin-active__section">
-        <h4>Results Matrix</h4>
         <div style={{ marginBottom: '20px', display: 'inline-block' }}>
           <table 
             style={{ 
