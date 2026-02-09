@@ -638,7 +638,7 @@ async function generateMatches(players: any[], targetMatches: number = 150, time
     const tournament = await prisma.tournament.create({
       data: {
         name: `${player1.firstName} ${player1.lastName} vs ${player2.firstName} ${player2.lastName}`,
-        type: 'SINGLE_MATCH',
+        type: 'ROUND_ROBIN',
         status: 'COMPLETED', // Tournament is COMPLETED
         createdAt: tournamentCreatedAt,
         recordedAt: tournamentRecordedAt,
@@ -670,7 +670,7 @@ async function generateMatches(players: any[], targetMatches: number = 150, time
       },
     });
     
-    // Process rating changes for SINGLE_MATCH tournament
+    // Process rating changes for individual match tournament
     const matchRecord = tournament.matches[0];
     if (matchRecord) {
       const player1Won = match.player1Sets > match.player2Sets;
@@ -682,7 +682,7 @@ async function generateMatches(players: any[], targetMatches: number = 150, time
         tournament.id,
         matchRecord.id,
         false, // isForfeit
-        true   // useIncrementalRating (SINGLE_MATCH should use incremental ratings to build on previous matches)
+        true   // useIncrementalRating (individual matches should use incremental ratings to build on previous matches)
       );
     }
     
@@ -1231,8 +1231,7 @@ async function createTournaments(timestampTracker: TimestampTracker) {
       // Create match result
       const match = await prisma.match.create({
         data: {
-          tournamentId: playoffTournament.id,
-          bracketMatchId: bracketMatch.id,
+          tournament: { connect: { id: playoffTournament.id } },
           member1Id: member1Id,
           member2Id: member2Id,
           player1Sets: result.player1Sets,
@@ -1240,6 +1239,12 @@ async function createTournaments(timestampTracker: TimestampTracker) {
           createdAt: matchCreatedAt,
           updatedAt: matchCreatedAt,
         },
+      });
+      
+      // Update bracket match to link to the created match
+      await prisma.bracketMatch.update({
+        where: { id: bracketMatch.id },
+        data: { matchId: match.id },
       });
       
       // Track winner for next round
@@ -1554,8 +1559,7 @@ async function createTournaments(timestampTracker: TimestampTracker) {
       // Create match result
       const match = await prisma.match.create({
         data: {
-          tournamentId: activePlayoffTournament.id,
-          bracketMatchId: bracketMatch.id,
+          tournament: { connect: { id: activePlayoffTournament.id } },
           member1Id: member1Id,
           member2Id: member2Id,
           player1Sets: result.player1Sets,
@@ -1563,6 +1567,12 @@ async function createTournaments(timestampTracker: TimestampTracker) {
           createdAt: matchCreatedAt,
           updatedAt: matchCreatedAt,
         },
+      });
+      
+      // Update bracket match to link to the created match
+      await prisma.bracketMatch.update({
+        where: { id: bracketMatch.id },
+        data: { matchId: match.id },
       });
       
       // Track winner for next round

@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
+import { TournamentType } from '../types/tournament';
 
 interface Player {
   id: number;
@@ -21,7 +22,7 @@ interface MatchEntryPopupProps {
   editingMatch: EditingMatch;
   player1: Player;
   player2: Player;
-  tournamentType?: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH';
+  tournamentType?: TournamentType;
   onSetEditingMatch: (match: EditingMatch) => void;
   onSave: () => void;
   onCancel: () => void;

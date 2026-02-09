@@ -15,7 +15,7 @@ const SwissIcon: React.FC<{ size: number; color: string }> = ({ size, color }) =
 );
 
 export const SwissPlugin: TournamentPlugin = {
-  type: TournamentType.SWISS,
+  type: 'SWISS',
   isBasic: true,
   name: 'Swiss System',
   description: 'Swiss tournament with progressive pairings based on performance',

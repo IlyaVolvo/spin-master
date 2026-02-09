@@ -7,8 +7,12 @@ class TournamentPluginRegistry {
     this.plugins.set(plugin.type, plugin);
   }
 
-  get(type: TournamentType): TournamentPlugin | undefined {
-    return this.plugins.get(type);
+  get(type: TournamentType): TournamentPlugin {
+    const plugin = this.plugins.get(type);
+    if (!plugin) {
+      throw new Error(`No plugin registered for tournament type: ${type}`);
+    }
+    return plugin;
   }
 
   getAll(): TournamentPlugin[] {

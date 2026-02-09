@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
-import { createMatchUpdater } from '../utils/matchUpdater';
+import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
 import './RoundRobinActivePanel.css';
 
 interface PlayerStats {
@@ -139,7 +139,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   const handleMatchSave = async () => {
     if (!editingMatch) return;
 
-    const matchUpdater = createMatchUpdater(tournament.id);
+    const roundRobinUpdater = createRoundRobinMatchUpdater(tournament.id);
 
     try {
       const matchData = {
@@ -153,25 +153,33 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
 
       if (editingMatch.matchId === 0) {
         // Create new match
-        await matchUpdater.createMatch(matchData, {
+        await roundRobinUpdater.createMatch(matchData, {
           onSuccess,
           onError,
           onTournamentUpdate,
           onMatchUpdate,
+          onTournamentComplete: () => {
+            // Tournament was completed - could show a notification
+            onSuccess?.('Tournament completed successfully!');
+          },
         });
       } else {
         // Update existing match
-        await matchUpdater.updateMatch(editingMatch.matchId, matchData, {
+        await roundRobinUpdater.updateMatch(editingMatch.matchId, matchData, {
           onSuccess,
           onError,
           onTournamentUpdate,
           onMatchUpdate,
+          onTournamentComplete: () => {
+            // Tournament was completed - could show a notification
+            onSuccess?.('Tournament completed successfully!');
+          },
         });
       }
       
       setEditingMatch(null);
     } catch (error) {
-      // Error is already handled by the MatchUpdater callbacks
+      // Error is already handled by the RoundRobinMatchUpdater callbacks
     }
   };
 
@@ -184,10 +192,10 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   const handleMatchClear = async () => {
     if (!editingMatch || editingMatch.matchId === 0) return;
 
-    const matchUpdater = createMatchUpdater(tournament.id);
+    const roundRobinUpdater = createRoundRobinMatchUpdater(tournament.id);
 
     try {
-      await matchUpdater.deleteMatch(editingMatch.matchId, {
+      await roundRobinUpdater.deleteMatch(editingMatch.matchId, {
         onSuccess,
         onError,
         onTournamentUpdate,
@@ -196,7 +204,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
       
       setEditingMatch(null);
     } catch (error) {
-      // Error is already handled by the MatchUpdater callbacks
+      // Error is already handled by the RoundRobinMatchUpdater callbacks
     }
   };
 

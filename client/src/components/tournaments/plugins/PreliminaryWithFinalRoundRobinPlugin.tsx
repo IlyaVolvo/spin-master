@@ -32,7 +32,7 @@ const PreliminaryWithFinalRoundRobinCompletedPanel: React.FC<TournamentCompleted
 );
 
 export const PreliminaryWithFinalRoundRobinPlugin: TournamentPlugin = {
-  type: TournamentType.PRELIMINARY_WITH_FINAL_ROUND_ROBIN,
+  type: 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN',
   isBasic: false, // This is a compound tournament
   name: 'Preliminary + Final Round Robin',
   description: 'Preliminary rounds followed by a final round-robin stage',

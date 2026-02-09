@@ -1,15 +1,15 @@
 import { MatchData, MatchUpdateCallbacks } from './matchUpdater';
 import api from '../../../utils/api';
 
-export interface PlayoffMatchUpdateCallbacks extends MatchUpdateCallbacks {
-  onBracketUpdate?: () => void;
+export interface RoundRobinMatchUpdateCallbacks extends MatchUpdateCallbacks {
+  onTournamentComplete?: () => void;
 }
 
 /**
- * Playoff-specific match updater that handles bracket match creation/updates
- * Uses bracketMatchId as the matchId parameter - server handles the linkage automatically
+ * Round Robin-specific match updater that handles matrix-specific logic
+ * Uses round robin-specific API endpoints for proper tournament management
  */
-export class PlayoffMatchUpdater {
+export class RoundRobinMatchUpdater {
   constructor(private tournamentId: number) {}
 
   /**
@@ -35,13 +35,11 @@ export class PlayoffMatchUpdater {
   }
 
   /**
-   * Create a new match for a bracket match
-   * Uses bracketMatchId as the matchId parameter - server handles the linkage
+   * Create a new match for round robin tournament
    */
   async createMatch(
     matchData: MatchData, 
-    bracketMatchId: number,
-    callbacks: PlayoffMatchUpdateCallbacks = {}
+    callbacks: RoundRobinMatchUpdateCallbacks = {}
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -66,9 +64,9 @@ export class PlayoffMatchUpdater {
         apiData.player2Forfeit = false;
       }
 
-      // For playoff tournaments, use the dedicated playoff endpoint
-      // The server will create the match and link it to the bracket match
-      const response = await api.patch(`/tournaments/${this.tournamentId}/playoff-matches/${bracketMatchId}`, apiData);
+      // For round robin tournaments, use the dedicated round robin endpoint
+      // Use matchId = 0 for new matches (server will create with new ID)
+      const response = await api.patch(`/tournaments/${this.tournamentId}/round-robin-matches/0`, apiData);
       const savedMatch = response.data;
       
       callbacks.onSuccess?.('Match result added successfully');
@@ -77,8 +75,10 @@ export class PlayoffMatchUpdater {
       // Update tournament data
       await this.refreshTournament(callbacks.onTournamentUpdate);
       
-      // Trigger bracket update callback
-      callbacks.onBracketUpdate?.();
+      // Check if tournament was completed
+      if (savedMatch.tournamentCompleted) {
+        callbacks.onTournamentComplete?.();
+      }
       
       return savedMatch;
     } catch (err: unknown) {
@@ -95,7 +95,7 @@ export class PlayoffMatchUpdater {
   async updateMatch(
     matchId: number, 
     matchData: MatchData, 
-    callbacks: PlayoffMatchUpdateCallbacks = {}
+    callbacks: RoundRobinMatchUpdateCallbacks = {}
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -120,7 +120,7 @@ export class PlayoffMatchUpdater {
         apiData.player2Forfeit = false;
       }
 
-      const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
+      const response = await api.patch(`/tournaments/${this.tournamentId}/round-robin-matches/${matchId}`, apiData);
       const savedMatch = response.data;
       
       callbacks.onSuccess?.('Match result updated successfully');
@@ -128,6 +128,11 @@ export class PlayoffMatchUpdater {
       
       // Update tournament data
       await this.refreshTournament(callbacks.onTournamentUpdate);
+      
+      // Check if tournament was completed
+      if (savedMatch.tournamentCompleted) {
+        callbacks.onTournamentComplete?.();
+      }
       
       return savedMatch;
     } catch (err: unknown) {
@@ -143,7 +148,7 @@ export class PlayoffMatchUpdater {
    */
   async deleteMatch(
     matchId: number, 
-    callbacks: PlayoffMatchUpdateCallbacks = {}
+    callbacks: RoundRobinMatchUpdateCallbacks = {}
   ): Promise<void> {
     try {
       await api.delete(`/tournaments/${this.tournamentId}/matches/${matchId}`);
@@ -153,9 +158,6 @@ export class PlayoffMatchUpdater {
       
       // Update tournament data
       await this.refreshTournament(callbacks.onTournamentUpdate);
-      
-      // Trigger bracket update callback
-      callbacks.onBracketUpdate?.();
     } catch (err: unknown) {
       const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       const errorMessage = apiError || 'Failed to clear match result';
@@ -180,8 +182,8 @@ export class PlayoffMatchUpdater {
 }
 
 /**
- * Create a playoff match updater instance for a tournament
+ * Create a round robin match updater instance for a tournament
  */
-export function createPlayoffMatchUpdater(tournamentId: number): PlayoffMatchUpdater {
-  return new PlayoffMatchUpdater(tournamentId);
+export function createRoundRobinMatchUpdater(tournamentId: number): RoundRobinMatchUpdater {
+  return new RoundRobinMatchUpdater(tournamentId);
 }

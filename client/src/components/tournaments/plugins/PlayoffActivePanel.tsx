@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { TraditionalBracket } from '../../TraditionalBracket';
+import { MatchEntryPopup } from '../../MatchEntryPopup';
+import { createPlayoffMatchUpdater } from '../utils/playoffMatchUpdater';
 import './PlayoffActivePanel.css';
 
 export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
@@ -10,17 +12,121 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
   onError,
   onSuccess,
 }) => {
-  const handleMatchUpdate = () => {
-    // Refresh tournament data when matches are updated
-    if (onTournamentUpdate) {
-      fetch(`/api/tournaments/${tournament.id}`)
-        .then(res => res.json())
-        .then(updatedTournament => {
-          onTournamentUpdate(updatedTournament);
-        })
-        .catch(err => {
-          console.error('Failed to refresh tournament:', err);
+  const [editingMatch, setEditingMatch] = useState<any>(null);
+  const [editingBracketMatchId, setEditingBracketMatchId] = useState<number | null>(null);
+
+  const playoffUpdater = createPlayoffMatchUpdater(tournament.id);
+
+  // Helper function to find bracket match ID for a given match
+  const findBracketMatchId = (matchId: number): number | null => {
+    const bracketMatch = tournament.bracketMatches?.find(bm => bm.match?.id === matchId);
+    return bracketMatch?.id || null;
+  };
+
+  const handleSetEditingMatch = (match: any, bracketMatchId?: number) => {
+    setEditingMatch(match);
+    setEditingBracketMatchId(bracketMatchId || findBracketMatchId(match.matchId) || null);
+  };
+
+  const handleSaveMatchEdit = async () => {
+    if (!editingMatch) return;
+
+    try {
+      const matchData = {
+        member1Id: editingMatch.member1Id,
+        member2Id: editingMatch.member2Id,
+        player1Sets: parseInt(editingMatch.player1Sets) || 0,
+        player2Sets: parseInt(editingMatch.player2Sets) || 0,
+        player1Forfeit: editingMatch.player1Forfeit,
+        player2Forfeit: editingMatch.player2Forfeit,
+      };
+
+      if (editingMatch.matchId === 0) {
+        // Create new match - use bracketMatchId as the matchId for playoff tournaments
+        if (!editingBracketMatchId) {
+          onError('Bracket match ID is required for playoff matches');
+          return;
+        }
+
+        // For playoff tournaments, we use PATCH with bracketMatchId to create/link match
+        const matchData = {
+          member1Id: editingMatch.member1Id,
+          member2Id: editingMatch.member2Id,
+          player1Sets: parseInt(editingMatch.player1Sets) || 0,
+          player2Sets: parseInt(editingMatch.player2Sets) || 0,
+          player1Forfeit: editingMatch.player1Forfeit,
+          player2Forfeit: editingMatch.player2Forfeit,
+        };
+
+        await playoffUpdater.createMatch(matchData, editingBracketMatchId, {
+          onSuccess,
+          onError,
+          onTournamentUpdate,
+          onMatchUpdate,
+          onBracketUpdate: () => {
+            // Refresh tournament data to update bracket display
+            if (onTournamentUpdate) {
+              fetch(`/api/tournaments/${tournament.id}`)
+                .then(res => res.json())
+                .then(updatedTournament => {
+                  onTournamentUpdate(updatedTournament);
+                })
+                .catch(err => {
+                  console.error('Failed to refresh tournament:', err);
+                });
+            }
+          },
         });
+      } else {
+        // Update existing match
+        await playoffUpdater.updateMatch(editingMatch.matchId, matchData, {
+          onSuccess,
+          onError,
+          onTournamentUpdate,
+          onMatchUpdate,
+        });
+      }
+      
+      setEditingMatch(null);
+      setEditingBracketMatchId(null);
+    } catch (error) {
+      // Error is already handled by the PlayoffMatchUpdater callbacks
+    }
+  };
+
+  const handleCancel = () => {
+    setEditingMatch(null);
+    setEditingBracketMatchId(null);
+  };
+
+  const handleClearMatch = async () => {
+    if (!editingMatch || editingMatch.matchId === 0) return;
+
+    try {
+      await playoffUpdater.deleteMatch(editingMatch.matchId, {
+        onSuccess,
+        onError,
+        onTournamentUpdate,
+        onMatchUpdate,
+        onBracketUpdate: () => {
+          // Refresh tournament data to update bracket display
+          if (onTournamentUpdate) {
+            fetch(`/api/tournaments/${tournament.id}`)
+              .then(res => res.json())
+              .then(updatedTournament => {
+                onTournamentUpdate(updatedTournament);
+              })
+              .catch(err => {
+                console.error('Failed to refresh tournament:', err);
+              });
+          }
+        },
+      });
+      
+      setEditingMatch(null);
+      setEditingBracketMatchId(null);
+    } catch (error) {
+      // Error is already handled by the PlayoffMatchUpdater callbacks
     }
   };
 
@@ -28,6 +134,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
     <div className="playoff-active">
       <TraditionalBracket
         tournamentId={tournament.id}
+        tournamentType={tournament.type}
         participants={tournament.participants.map(p => ({
           id: p.memberId,
           member: {
@@ -65,10 +172,24 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
             player2RatingChange: bm.match.player2RatingChange ?? null,
           } : null,
         }))}
-        onMatchUpdate={handleMatchUpdate}
-        isReadOnly={true} // Disable editing to prevent API errors
+        onMatchUpdate={() => onMatchUpdate && onMatchUpdate({} as any)}
+        isReadOnly={tournament.status === 'COMPLETED'}
         tournamentStatus={tournament.status as 'ACTIVE' | 'COMPLETED'}
       />
+      
+      {editingMatch && (
+        <MatchEntryPopup
+          editingMatch={editingMatch}
+          player1={tournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member!}
+          player2={tournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member!}
+          tournamentType="PLAYOFF"
+          onSetEditingMatch={handleSetEditingMatch}
+          onSave={handleSaveMatchEdit}
+          onCancel={handleCancel}
+          onClear={handleClearMatch}
+          showClearButton={editingMatch.matchId !== 0}
+        />
+      )}
     </div>
   );
 };

@@ -6,7 +6,7 @@ import { PlayoffSchedulePanel } from './PlayoffSchedulePanel';
 import { PlayoffCompletedPanel } from './PlayoffCompletedPanel';
 
 export const PlayoffPlugin: TournamentPlugin = {
-  type: TournamentType.PLAYOFF,
+  type: 'PLAYOFF',
   isBasic: true,
   name: 'Playoff/Bracket',
   description: 'Single or double elimination tournament bracket',
@@ -74,6 +74,54 @@ export const PlayoffPlugin: TournamentPlugin = {
   createCompletedPanel: (props: TournamentCompletedProps) => (
     <PlayoffCompletedPanel {...props} />
   ),
+
+  // Tournament-specific calculations
+  calculateExpectedMatches: (tournament) => {
+    // Playoff (single elimination): numParticipants - 1 matches
+    // Each match eliminates one player, need to eliminate all but one
+    return tournament.participants.length - 1;
+  },
+
+  countPlayedMatches: (tournament) => {
+    // For playoff, count matches that have winners (or forfeits)
+    return tournament.matches.filter(match => {
+      const hasWinner = match.player1Sets > match.player2Sets || match.player2Sets > match.player1Sets;
+      const hasForfeit = match.player1Forfeit || match.player2Forfeit;
+      return hasWinner || hasForfeit;
+    }).length;
+  },
+
+  countNonForfeitedMatches: (tournament) => {
+    // For playoff, count matches that have been played (have a winner or forfeit)
+    return tournament.matches.filter(match => {
+      const hasForfeit = match.player1Forfeit || match.player2Forfeit;
+      const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
+      return hasForfeit || hasScore;
+    }).length;
+  },
+
+  areAllMatchesPlayed: (tournament) => {
+    const expectedMatches = tournament.participants.length - 1;
+    // For playoff, check if all matches have winners (or forfeits)
+    const playedMatches = tournament.matches.filter(match => {
+      const hasWinner = match.player1Sets > match.player2Sets || match.player2Sets > match.player1Sets;
+      const hasForfeit = match.player1Forfeit || match.player2Forfeit;
+      return hasWinner || hasForfeit;
+    }).length;
+    return tournament.matches.length >= expectedMatches && playedMatches >= expectedMatches;
+  },
+
+  canDeleteTournament: (tournament) => {
+    // Playoff tournaments with matches should be cancelled, not deleted
+    return tournament.matches.length === 0;
+  },
+
+  getDeleteConfirmationMessage: (tournament) => {
+    if (tournament.matches.length > 0) {
+      return 'Cancel Tournament: This will move the tournament to Completed state. All completed matches will be kept and recorded. All completed matches will affect players\' ratings. The tournament will show "NOT COMPLETED" instead of a champion name.';
+    }
+    return 'Delete Tournament: Permanently removes the tournament and all its data. This action cannot be undone.';
+  },
 
   canPrintResults: true,
 };

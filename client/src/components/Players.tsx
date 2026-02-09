@@ -9,6 +9,9 @@ import { BracketPreview } from './BracketPreview';
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
 import { getMember, isOrganizer, isAdmin } from '../utils/auth';
 import { connectSocket } from '../utils/socket';
+import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
+import type { TournamentType } from '../types/tournament';
+import './tournaments/plugins';
 
 // Module-level cache to persist across component mounts/unmounts
 const membersCache: {
@@ -317,12 +320,15 @@ const Players: React.FC = () => {
   const [isCreatingTournament, setIsCreatingTournament] = useState(false);
   const [editingTournamentId, setEditingTournamentId] = useState<number | null>(null);
   const [existingParticipantIds, setExistingParticipantIds] = useState<Set<number>>(new Set());
-  const [tournamentCreationStep, setTournamentCreationStep] = useState<'type_selection' | 'player_selection' | 'rearrange' | 'confirmation' | 'organize_bracket' | 'completion' | 'confirm_groups' | 'select_playoff_size'>('type_selection');
+  const [tournamentCreationStep, setTournamentCreationStep] = useState<'type_selection' | 'player_selection' | 'plugin_wizard' | 'rearrange' | 'confirmation' | 'organize_bracket' | 'completion' | 'confirm_groups' | 'select_playoff_size'>('type_selection');
   const [selectedPlayersForTournament, setSelectedPlayersForTournament] = useState<number[]>([]);
   const [showTournamentConfirmation, setShowTournamentConfirmation] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [tournamentName, setTournamentName] = useState('');
-  const [tournamentType, setTournamentType] = useState<'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' | 'PRELIMINARY_AND_PLAYOFF'>('ROUND_ROBIN');
+  const [tournamentType, setTournamentType] = useState<TournamentType>('ROUND_ROBIN');
+  const [creationTournamentType, setCreationTournamentType] = useState<TournamentType | null>(null);
+  const [creationStepIndex, setCreationStepIndex] = useState(0);
+  const [creationData, setCreationData] = useState<Record<string, any>>({});
   const [roundRobinSize, setRoundRobinSize] = useState<string>('6'); // Size of each Round Robin group
   const [playoffBracketSize, setPlayoffBracketSize] = useState<number | null>(null); // Playoff bracket size (power of 2)
   const [isMultiTournamentMode, setIsMultiTournamentMode] = useState(false);
@@ -889,6 +895,62 @@ const Players: React.FC = () => {
       setError(err.response?.data?.error || 'Failed to fetch members');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateTournamentViaPlugin = async () => {
+    if (!creationPlugin) {
+      setError('No plugin selected');
+      return;
+    }
+    setError('');
+    setSuccess('');
+
+    const participants = selectedPlayersForTournament
+      .map((id) => members.find((m) => m.id === id))
+      .filter((m): m is Member => Boolean(m));
+
+    if (participants.length !== selectedPlayersForTournament.length) {
+      setError('Some selected players could not be found');
+      return;
+    }
+
+    const dateStr = new Date().toLocaleDateString();
+    const resolvedName = tournamentName.trim() || `${creationPlugin.name} ${dateStr}`;
+
+    try {
+      await creationPlugin.createTournament({
+        name: resolvedName,
+        participants,
+        ...creationData,
+      });
+
+      setSuccess('Tournament created successfully');
+
+      setIsCreatingTournament(false);
+      setEditingTournamentId(null);
+      setExistingParticipantIds(new Set());
+      setTournamentCreationStep('type_selection');
+      setSelectedPlayersForTournament([]);
+      setTournamentName('');
+      setTournamentType('ROUND_ROBIN');
+      setCreationTournamentType(null);
+      setCreationStepIndex(0);
+      setCreationData({});
+      setIsMultiTournamentMode(false);
+      setShowSingleMatchConfirmation(false);
+      setShowTournamentConfirmation(false);
+      setPlayerGroups([]);
+      setIsOrganizingBracket(false);
+      setBracketPositions([]);
+      setNumSeedsForBracket(undefined);
+      fetchMembers();
+
+      setTimeout(() => {
+        navigate('/tournaments');
+      }, 1000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to create tournament');
     }
   };
 
@@ -2140,9 +2202,28 @@ const Players: React.FC = () => {
     setSelectedPlayersForTournament([]);
     setTournamentName('');
     setTournamentType('ROUND_ROBIN');
+    const plugins = tournamentPluginRegistry.getAll();
+    setCreationTournamentType(plugins.length > 0 ? plugins[0].type : null);
+    setCreationStepIndex(0);
+    setCreationData({});
     setIsMultiTournamentMode(false);
     setShowSingleMatchConfirmation(false);
   };
+
+  const creationPlugin = useMemo(() => {
+    if (!creationTournamentType) return null;
+    try {
+      return tournamentPluginRegistry.get(creationTournamentType);
+    } catch {
+      return null;
+    }
+  }, [creationTournamentType]);
+
+  const creationFlow = useMemo(() => {
+    return creationPlugin?.getCreationFlow?.();
+  }, [creationPlugin]);
+
+  const isUsingPluginWizard = Boolean(creationPlugin && creationFlow && creationFlow.steps.length > 0);
 
   const handleStartMatchCreation = () => {
     const currentMember = getMember();
@@ -2191,6 +2272,12 @@ const Players: React.FC = () => {
       setNumSeedsForBracket(undefined);
     } else if (tournamentCreationStep === 'player_selection') {
       setTournamentCreationStep('type_selection');
+    } else if (tournamentCreationStep === 'plugin_wizard') {
+      if (creationStepIndex > 0) {
+        setCreationStepIndex(creationStepIndex - 1);
+      } else {
+        setTournamentCreationStep('player_selection');
+      }
     } else if (tournamentCreationStep === 'rearrange') {
       setTournamentCreationStep('player_selection');
     } else if (tournamentCreationStep === 'organize_bracket') {
@@ -2451,15 +2538,25 @@ const Players: React.FC = () => {
 
   const handleFinishPlayerSelection = () => {
     if (tournamentType === 'ROUND_ROBIN') {
-      const minPlayers = isMultiTournamentMode ? 3 : 3;
+      const minPlayers = isMultiTournamentMode ? 3 : (creationFlow?.minPlayers ?? 3);
       if (selectedPlayersForTournament.length < minPlayers) {
         setError(`Select at least ${minPlayers} players`);
+        return;
+      }
+
+      if (!isMultiTournamentMode && creationFlow?.maxPlayers && selectedPlayersForTournament.length > creationFlow.maxPlayers) {
+        setError(`Select at most ${creationFlow.maxPlayers} players`);
         return;
       }
       if (isMultiTournamentMode) {
         setTournamentCreationStep('rearrange');
       } else {
-        setTournamentCreationStep('confirmation');
+        if (isUsingPluginWizard) {
+          setCreationStepIndex(0);
+          setTournamentCreationStep('plugin_wizard');
+        } else {
+          setTournamentCreationStep('confirmation');
+        }
       }
     } else if (tournamentType === 'PLAYOFF') {
       if (selectedPlayersForTournament.length < 4) {
@@ -2479,6 +2576,23 @@ const Players: React.FC = () => {
       const groups = generateSnakeDraftGroups(selectedPlayersForTournament, groupSize);
       setPlayerGroups(groups);
       setTournamentCreationStep('confirm_groups');
+    } else {
+      // Generic plugin-driven flow for non-legacy types
+      if (creationFlow?.minPlayers && selectedPlayersForTournament.length < creationFlow.minPlayers) {
+        setError(`Select at least ${creationFlow.minPlayers} players`);
+        return;
+      }
+      if (creationFlow?.maxPlayers && selectedPlayersForTournament.length > creationFlow.maxPlayers) {
+        setError(`Select at most ${creationFlow.maxPlayers} players`);
+        return;
+      }
+
+      if (isUsingPluginWizard) {
+        setCreationStepIndex(0);
+        setTournamentCreationStep('plugin_wizard');
+      } else {
+        setTournamentCreationStep('confirmation');
+      }
     }
   };
 
@@ -3384,75 +3498,36 @@ const Players: React.FC = () => {
                       </div>
                       
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
-                        <label style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '12px',
-                          border: tournamentType === 'ROUND_ROBIN' ? '2px solid #3498db' : '1px solid #ddd',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          backgroundColor: tournamentType === 'ROUND_ROBIN' ? '#e8f4f8' : 'white'
-                        }}>
-                          <input
-                            type="radio"
-                            name="tournamentType"
-                            value="ROUND_ROBIN"
-                            checked={tournamentType === 'ROUND_ROBIN'}
-                            onChange={() => {
-                              setTournamentType('ROUND_ROBIN');
-                              setIsMultiTournamentMode(false);
-                            }}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          <span style={{ fontSize: '16px', fontWeight: '500' }}>Round Robin</span>
-                        </label>
-                        <label style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '12px',
-                          border: tournamentType === 'PLAYOFF' ? '2px solid #3498db' : '1px solid #ddd',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          backgroundColor: tournamentType === 'PLAYOFF' ? '#e8f4f8' : 'white'
-                        }}>
-                          <input
-                            type="radio"
-                            name="tournamentType"
-                            value="PLAYOFF"
-                            checked={tournamentType === 'PLAYOFF'}
-                            onChange={() => {
-                              setTournamentType('PLAYOFF');
-                              setIsMultiTournamentMode(false);
-                            }}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          <span style={{ fontSize: '16px', fontWeight: '500' }}>Playoff</span>
-                        </label>
-                        <label style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '12px',
-                          border: tournamentType === 'PRELIMINARY_AND_PLAYOFF' ? '2px solid #3498db' : '1px solid #ddd',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          backgroundColor: tournamentType === 'PRELIMINARY_AND_PLAYOFF' ? '#e8f4f8' : 'white'
-                        }}>
-                          <input
-                            type="radio"
-                            name="tournamentType"
-                            value="PRELIMINARY_AND_PLAYOFF"
-                            checked={tournamentType === 'PRELIMINARY_AND_PLAYOFF'}
-                            onChange={() => {
-                              setTournamentType('PRELIMINARY_AND_PLAYOFF');
-                              setIsMultiTournamentMode(false);
-                            }}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          <span style={{ fontSize: '16px', fontWeight: '500' }}>Round Robin + Playoff</span>
-                        </label>
+                        {tournamentPluginRegistry.getAll().map((plugin) => {
+                          const selected = creationTournamentType === plugin.type;
+
+                          return (
+                            <label key={plugin.type} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              padding: '12px',
+                              border: selected ? '2px solid #3498db' : '1px solid #ddd',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              backgroundColor: selected ? '#e8f4f8' : 'white'
+                            }}>
+                              <input
+                                type="radio"
+                                name="tournamentType"
+                                value={plugin.type}
+                                checked={selected}
+                                onChange={() => {
+                                  setCreationTournamentType(plugin.type);
+                                  setTournamentType(plugin.type);
+                                  setIsMultiTournamentMode(false);
+                                }}
+                                style={{ cursor: 'pointer' }}
+                              />
+                              <span style={{ fontSize: '16px', fontWeight: '500' }}>{plugin.name}</span>
+                            </label>
+                          );
+                        })}
                       </div>
                       
                       {/* Round Robin size selection for PRELIMINARY_AND_PLAYOFF */}
@@ -3612,6 +3687,20 @@ const Players: React.FC = () => {
                       </button>
                       <button
                         onClick={() => {
+                          const selectedType = creationTournamentType;
+                          if (!selectedType) {
+                            setError('Please select a tournament type');
+                            return;
+                          }
+
+                          // Keep legacy flow stable: only these types are currently wired into Players.tsx
+                          const supportedLegacyTypes = new Set<TournamentType>(['ROUND_ROBIN', 'PLAYOFF']);
+                          if (!supportedLegacyTypes.has(selectedType)) {
+                            setError('This tournament type is not yet supported in the Players creation flow.');
+                            return;
+                          }
+
+                          setTournamentType(selectedType);
                           setTournamentCreationStep('player_selection');
                         }}
                         style={{
@@ -3829,624 +3918,463 @@ const Players: React.FC = () => {
                           </div>
                         )}
                 
-                {/* Organize Bracket UI (shown when step is organize_bracket) */}
-                {tournamentCreationStep === 'organize_bracket' && isOrganizingBracket && tournamentType === 'PLAYOFF' && (
-                  <div style={{ marginTop: '20px' }}>
-                    <BracketPreview
-                      players={selectedPlayersForTournament.map(id => members.find(p => p.id === id)).filter((p): p is Member => p !== undefined)}
-                      bracketPositions={bracketPositions}
-                      onBracketChange={setBracketPositions}
-                      onReseed={handleReseedBracket}
-                      onDragStateChange={setIsDraggingInBracket}
-                      onTempZoneChange={setHasPlayerInTempZone}
-                      initialNumSeeds={numSeedsForBracket}
-                    />
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
-                      <button 
-                        onClick={() => setTournamentCreationStep('completion')}
-                        disabled={isDraggingInBracket || hasPlayerInTempZone}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: (isDraggingInBracket || hasPlayerInTempZone) ? '#95a5a6' : '#27ae60',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: (isDraggingInBracket || hasPlayerInTempZone) ? 'not-allowed' : 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                          opacity: (isDraggingInBracket || hasPlayerInTempZone) ? 0.7 : 1,
-                        }}
-                        title={isDraggingInBracket ? 'Finish dragging player to enable tournament creation' : hasPlayerInTempZone ? 'Clear temporary drop zone to enable tournament creation' : 'Continue'}
-                      >
-                        Continue
-                      </button>
-                      <button 
-                        onClick={handleCancelTournamentCreation}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: '#95a5a6',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Group Confirmation Screen (for PRELIMINARY_AND_PLAYOFF) */}
-                {tournamentCreationStep === 'confirm_groups' && tournamentType === 'PRELIMINARY_AND_PLAYOFF' && playerGroups.length > 0 && (
-                  <div style={{ marginTop: '20px' }}>
-                    <h3 style={{ 
-                      marginBottom: '15px', 
-                      fontSize: '18px', 
-                      fontWeight: 'bold',
-                      position: 'sticky',
+                {isCreatingTournament && tournamentCreationStep !== 'type_selection' && tournamentCreationStep !== 'player_selection' ? createPortal(
+                  <div
+                    style={{
+                      position: 'fixed',
                       top: 0,
-                      backgroundColor: 'white',
-                      zIndex: 10,
-                      padding: '10px 0',
-                      borderBottom: '1px solid #e0e0e0'
-                    }}>
-                      Round Robin Groups ({playerGroups.length} groups)
-                    </h3>
-                    <div style={{
-                      border: '1px solid #ddd',
-                      borderRadius: '8px',
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      zIndex: 100000,
                       padding: '20px',
-                      backgroundColor: 'white',
-                      maxHeight: '500px',
-                      overflowY: 'auto',
-                      marginTop: '10px'
-                    }}>
-                      {playerGroups.map((group, groupIndex) => {
-                        const sortedGroup = [...group]
-                          .map(id => {
-                            const player = members.find(p => p.id === id);
-                            return { id, player, rating: player?.rating ?? 0 };
-                          })
-                          .sort((a, b) => b.rating - a.rating);
-                        
-                        return (
-                          <div
-                            key={groupIndex}
-                            style={{
-                              marginBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
-                              paddingBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
-                              borderBottom: groupIndex < playerGroups.length - 1 ? '2px solid #3498db' : 'none'
-                            }}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setDragOverGroupIndex(groupIndex);
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              if (draggedPlayer && dragOverGroupIndex === groupIndex) {
-                                const newGroups = [...playerGroups];
-                                // Remove from old group
-                                newGroups[draggedPlayer.fromGroupIndex] = newGroups[draggedPlayer.fromGroupIndex].filter(id => id !== draggedPlayer.playerId);
-                                // Add to new group
-                                newGroups[groupIndex] = [...newGroups[groupIndex], draggedPlayer.playerId];
-                                setPlayerGroups(newGroups);
-                                setDraggedPlayer(null);
-                                setDragOverGroupIndex(null);
-                              }
-                            }}
-                          >
-                            <h5 style={{ margin: '0 0 10px 0', color: '#3498db' }}>
-                              Group {groupIndex + 1} ({group.length} players)
-                            </h5>
-                            {sortedGroup.map(({ id, player, rating }) => {
-                              if (!player) return null;
-                              return (
-                                <div
-                                  key={id}
-                                  draggable
-                                  onDragStart={() => setDraggedPlayer({ playerId: id, fromGroupIndex: groupIndex })}
-                                  onDragEnd={() => {
-                                    setDraggedPlayer(null);
-                                    setDragOverGroupIndex(null);
-                                  }}
-                                  style={{
-                                    padding: '8px 12px',
-                                    margin: '4px 0',
-                                    border: '1px solid #e0e0e0',
-                                    borderRadius: '4px',
-                                    backgroundColor: dragOverGroupIndex === groupIndex ? '#e8f4f8' : '#f9f9f9',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    cursor: 'move'
-                                  }}
-                                >
-                                  <span>{formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}</span>
-                                  {rating > 0 && <span style={{ color: '#27ae60', fontWeight: 'bold' }}>{rating}</span>}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
-                      <button 
-                        onClick={() => {
-                          // Calculate valid playoff bracket sizes
-                          const numGroups = playerGroups.length;
-                          const totalPlayers = selectedPlayersForTournament.length;
-                          const validSizes: number[] = [];
-                          
-                          // Find powers of 2 that are >= numGroups and < totalPlayers
-                          let powerOf2 = 2;
-                          while (powerOf2 < totalPlayers) {
-                            if (powerOf2 >= numGroups) {
-                              validSizes.push(powerOf2);
-                            }
-                            powerOf2 *= 2;
-                          }
-                          
-                          if (validSizes.length > 0) {
-                            setPlayoffBracketSize(validSizes[0]); // Default to smallest valid size
-                            setTournamentCreationStep('select_playoff_size');
-                          } else {
-                            setError('Cannot determine valid playoff bracket size');
-                          }
-                        }}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: '#27ae60',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        Continue
-                      </button>
-                      <button 
-                        onClick={handleCancelTournamentCreation}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: '#95a5a6',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Playoff Bracket Size Selection (for PRELIMINARY_AND_PLAYOFF) */}
-                {tournamentCreationStep === 'select_playoff_size' && tournamentType === 'PRELIMINARY_AND_PLAYOFF' && (
-                  <div style={{ marginTop: '20px' }}>
-                    <h3 style={{ marginBottom: '15px', fontSize: '18px', fontWeight: 'bold' }}>
-                      Select Playoff Bracket Size
-                    </h3>
-                    <div style={{
-                      border: '1px solid #ddd',
-                      borderRadius: '8px',
-                      padding: '20px',
-                      backgroundColor: 'white'
-                    }}>
-                      <p style={{ marginBottom: '15px', color: '#666' }}>
-                        Choose the size of the playoff bracket. Must be a power of 2, greater than or equal to the number of groups ({playerGroups.length}), and less than the total number of players ({selectedPlayersForTournament.length}).
-                      </p>
-                      {(() => {
-                        const numGroups = playerGroups.length;
-                        const totalPlayers = selectedPlayersForTournament.length;
-                        const validSizes: number[] = [];
-                        
-                        // Find powers of 2 that are >= numGroups and < totalPlayers
-                        let powerOf2 = 2;
-                        while (powerOf2 < totalPlayers) {
-                          if (powerOf2 >= numGroups) {
-                            validSizes.push(powerOf2);
-                          }
-                          powerOf2 *= 2;
-                        }
-                        
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {validSizes.map(size => (
-                              <label
-                                key={size}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '10px',
-                                  padding: '12px',
-                                  border: playoffBracketSize === size ? '2px solid #3498db' : '1px solid #ddd',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  backgroundColor: playoffBracketSize === size ? '#e8f4f8' : 'white'
-                                }}
-                              >
-                                <input
-                                  type="radio"
-                                  name="playoffBracketSize"
-                                  value={size}
-                                  checked={playoffBracketSize === size}
-                                  onChange={() => setPlayoffBracketSize(size)}
-                                  style={{ cursor: 'pointer' }}
-                                />
-                                <span style={{ fontSize: '16px', fontWeight: '500' }}>
-                                  {size} players
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
-                      <button 
-                        onClick={() => setTournamentCreationStep('confirm_groups')}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: '#95a5a6',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        Back
-                      </button>
-                      <button 
-                        onClick={() => setTournamentCreationStep('confirmation')}
-                        disabled={playoffBracketSize === null}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: playoffBracketSize === null ? '#95a5a6' : '#27ae60',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: playoffBracketSize === null ? 'not-allowed' : 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                          opacity: playoffBracketSize === null ? 0.6 : 1,
-                        }}
-                      >
-                        Continue
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Completion Screen (for Playoff tournaments) */}
-                {tournamentCreationStep === 'completion' && tournamentType === 'PLAYOFF' && bracketPositions.length > 0 && (
-                  <div style={{ marginTop: '20px' }}>
-                    <h3 style={{ marginBottom: '15px', fontSize: '18px', fontWeight: 'bold' }}>First Round Matches</h3>
-                    <div style={{
-                      border: '1px solid #ddd',
-                      borderRadius: '8px',
-                      padding: '20px',
-                      backgroundColor: 'white',
-                      maxHeight: '500px',
-                      overflowY: 'auto'
-                    }}>
-                      {(() => {
-                        const firstRoundMatches: Array<{ player1: number | null, player2: number | null }> = [];
-                        // Pair up adjacent positions for first round matches
-                        for (let i = 0; i < bracketPositions.length; i += 2) {
-                          firstRoundMatches.push({
-                            player1: bracketPositions[i] ?? null,
-                            player2: bracketPositions[i + 1] ?? null
-                          });
-                        }
-                        
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {firstRoundMatches.map((match, index) => {
-                              const player1 = match.player1 ? members.find(p => p.id === match.player1) : null;
-                              const player2 = match.player2 ? members.find(p => p.id === match.player2) : null;
-                              
-                              return (
-                                <div
-                                  key={index}
-                                  style={{
-                                    padding: '12px 16px',
-                                    border: '1px solid #e0e0e0',
-                                    borderRadius: '6px',
-                                    backgroundColor: '#f9f9f9',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    gap: '20px'
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-                                    <span style={{ 
-                                      fontWeight: 'bold', 
-                                      color: '#666',
-                                      minWidth: '30px',
-                                      fontSize: '14px'
-                                    }}>
-                                      Match {index + 1}:
-                                    </span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                                      {player1 ? (
-                                        <>
-                                          <span style={{ fontWeight: '500' }}>
-                                            {player1.firstName} {player1.lastName}
-                                          </span>
-                                          <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '12px' }}>
-                                            ({player1.rating})
-                                          </span>
-                                        </>
-                                      ) : (
-                                        <span style={{ color: '#999', fontStyle: 'italic' }}>BYE</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span style={{ color: '#999', fontSize: '18px', fontWeight: 'bold' }}>vs</span>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
-                                    {player2 ? (
-                                      <>
-                                        <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '12px' }}>
-                                          ({player2.rating})
-                                        </span>
-                                        <span style={{ fontWeight: '500' }}>
-                                          {player2.firstName} {player2.lastName}
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <span style={{ color: '#999', fontStyle: 'italic' }}>BYE</span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
-                      <button 
-                        onClick={handleCreateTournament}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: '#27ae60',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        Create a Tournament
-                      </button>
-                      <button
-                        onClick={() => setTournamentCreationStep('organize_bracket')}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: '#95a5a6',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Rearrange UI (for Multi-tournament Round Robin) */}
-                {tournamentCreationStep === 'rearrange' && isMultiTournamentMode && tournamentType === 'ROUND_ROBIN' && (
-                  <div style={{ marginTop: '20px' }}>
-                    <h3 style={{ marginBottom: '15px' }}>Rearrangement Players</h3>
-                    <p style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>
-                      Players are listed with their ratings. Drag and drop players between tournaments to reorganize them.
-                    </p>
-                    <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', backgroundColor: '#fafafa', maxHeight: '500px', overflowY: 'auto' }}>
-                      {playerGroups.map((group, groupIndex) => {
-                        const sortedGroup = [...group].sort((a, b) => {
-                          const playerA = members.find(p => p.id === a);
-                          const playerB = members.find(p => p.id === b);
-                          const ratingA = playerA?.rating ?? 0;
-                          const ratingB = playerB?.rating ?? 0;
-                          return ratingB - ratingA;
-                        });
-                        
-                        return (
-                          <div 
-                            key={groupIndex}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (draggedPlayer && draggedPlayer.fromGroupIndex !== groupIndex) {
-                                setDragOverGroupIndex(groupIndex);
-                              }
-                            }}
-                            onDragLeave={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDragOverGroupIndex(null);
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (draggedPlayer && draggedPlayer.fromGroupIndex !== groupIndex) {
-                                movePlayerToGroup(draggedPlayer.playerId, draggedPlayer.fromGroupIndex, groupIndex);
-                                setDraggedPlayer(null);
-                                setDragOverGroupIndex(null);
-                              }
-                            }}
-                            style={{
-                              padding: '10px',
-                              marginBottom: '10px',
-                              marginTop: groupIndex > 0 ? '20px' : '0',
-                              paddingTop: groupIndex > 0 ? '20px' : '10px',
-                              borderTop: groupIndex > 0 ? '3px solid #3498db' : 'none',
-                              backgroundColor: dragOverGroupIndex === groupIndex ? '#e8f4f8' : 'transparent',
-                              borderRadius: '4px',
-                              transition: 'background-color 0.2s',
-                            }}
-                          >
-                            <div style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '10px', 
-                              marginBottom: '10px',
-                            }}>
-                              <h5 style={{ margin: 0, color: '#3498db' }}>
-                                Tournament {groupIndex + 1} ({group.length} players)
-                              </h5>
-                              {dragOverGroupIndex === groupIndex && (
-                                <span style={{ fontSize: '12px', color: '#3498db', fontStyle: 'italic' }}>
-                                  Drop here to move player
-                                </span>
-                    )}
-                  </div>
-                            
-                            {sortedGroup.map((playerId) => {
-                              const player = members.find(p => p.id === playerId);
-                              if (!player) return null;
-                              
-                              const isDragging = draggedPlayer?.playerId === playerId;
-                              
-                              return (
-                                <div
-                                  key={playerId}
-                                  draggable
-                                  onDragStart={(e) => {
-                                    setDraggedPlayer({ playerId, fromGroupIndex: groupIndex });
-                                    e.dataTransfer.effectAllowed = 'move';
-                                  }}
-                                  onDragEnd={() => {
-                                    setDraggedPlayer(null);
-                                    setDragOverGroupIndex(null);
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    padding: '6px 8px',
-                                    marginBottom: '4px',
-                                    backgroundColor: isDragging ? '#e0e0e0' : 'white',
-                                    borderRadius: '4px',
-                                    border: '1px solid #e0e0e0',
-                                    cursor: 'grab',
-                                    opacity: isDragging ? 0.5 : 1,
-                                    transition: 'opacity 0.2s, background-color 0.2s',
-                                    userSelect: 'none',
-                                  }}
-                                  title="Drag to move to another tournament"
-                                >
-                                  <span style={{ fontSize: '16px', color: '#999' }}>⋮⋮</span>
-                                  <span style={{ flex: 1, fontSize: '14px' }}>
-                                    {formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}
-                                  </span>
-                                  {player.rating !== null && player.rating !== undefined && (
-                                    <span style={{ fontSize: '13px', color: '#666', minWidth: '60px', textAlign: 'right', fontWeight: 'bold' }}>
-                                      {player.rating}
-                                    </span>
-                )}
-              </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-                      <button
-                        onClick={handleCancelTournamentCreation}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: '#95a5a6',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() => {
-                          setTournamentCreationStep('confirmation');
-                        }}
-                        disabled={hasPlayerInTempZone}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: hasPlayerInTempZone ? '#95a5a6' : '#27ae60',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: hasPlayerInTempZone ? 'not-allowed' : 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 'bold',
-                          opacity: hasPlayerInTempZone ? 0.7 : 1
-                        }}
-                      >
-                        Continue
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Confirmation Screen (for Round Robin and PRELIMINARY_AND_PLAYOFF - Playoff creates directly from Completion) */}
-                {tournamentCreationStep === 'confirmation' && tournamentType !== 'PLAYOFF' && (
-                  <div style={{ marginTop: '20px' }}>
-                    <div style={{
-                      backgroundColor: 'white',
-                      padding: '20px',
-                      borderRadius: '8px',
-                      border: '1px solid #ddd',
-                      maxHeight: '90vh',
-                      overflowY: 'auto',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
-                    }}>
-                      <h3 style={{ marginTop: 0, marginBottom: '20px' }}>
-                        {isMultiTournamentMode ? 'Confirm Multi-Tournament Creation' : 'Confirm Tournament Creation'}
-                      </h3>
-                      
-                      {!isMultiTournamentMode && tournamentType === 'ROUND_ROBIN' && (
-                        <div style={{ marginBottom: '20px' }}>
-                          <h4>Selected Players ({selectedPlayersForTournament.length}):</h4>
-                          <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', maxHeight: '300px', overflowY: 'auto' }}>
-                            {selectedPlayersForTournament.map(playerId => {
-                              const player = members.find(p => p.id === playerId);
-                              if (!player) return null;
-                              return (
-                                <div key={playerId} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between' }}>
-                                  <span>{formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}</span>
-                                  {player.rating !== null && <span style={{ color: '#666' }}>{player.rating}</span>}
-                                </div>
-                              );
-                            })}
+                    }}
+                  >
+                    <div
+                      style={{
+                        backgroundColor: 'white',
+                        borderRadius: '8px',
+                        border: '1px solid #ddd',
+                        width: 'min(1000px, 95vw)',
+                        maxHeight: '90vh',
+                        overflowY: 'auto',
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+                        padding: '20px',
+                      }}
+                    >
+                      {/* Organize Bracket UI (shown when step is organize_bracket) */}
+                      {tournamentCreationStep === 'organize_bracket' && isOrganizingBracket && tournamentType === 'PLAYOFF' && (
+                        <div>
+                          <BracketPreview
+                            players={selectedPlayersForTournament.map(id => members.find(p => p.id === id)).filter((p): p is Member => p !== undefined)}
+                            bracketPositions={bracketPositions}
+                            onBracketChange={setBracketPositions}
+                            onReseed={handleReseedBracket}
+                            onDragStateChange={setIsDraggingInBracket}
+                            onTempZoneChange={setHasPlayerInTempZone}
+                            initialNumSeeds={numSeedsForBracket}
+                          />
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
+                            <button 
+                              onClick={() => setTournamentCreationStep('completion')}
+                              disabled={isDraggingInBracket || hasPlayerInTempZone}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: (isDraggingInBracket || hasPlayerInTempZone) ? '#95a5a6' : '#27ae60',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: (isDraggingInBracket || hasPlayerInTempZone) ? 'not-allowed' : 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                                opacity: (isDraggingInBracket || hasPlayerInTempZone) ? 0.7 : 1,
+                              }}
+                              title={isDraggingInBracket ? 'Finish dragging player to enable tournament creation' : hasPlayerInTempZone ? 'Clear temporary drop zone to enable tournament creation' : 'Continue'}
+                            >
+                              Continue
+                            </button>
+                            <button 
+                              onClick={handleCancelTournamentCreation}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#95a5a6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              Cancel
+                            </button>
                           </div>
                         </div>
                       )}
-                      
-                      {isMultiTournamentMode && (
-                        <div style={{ marginBottom: '20px' }}>
-                          <h4 style={{ marginBottom: '10px' }}>
-                            {playerGroups.length} Tournament{playerGroups.length !== 1 ? 's' : ''} will be created
-                          </h4>
-                          <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', backgroundColor: '#fafafa', maxHeight: '400px', overflowY: 'auto' }}>
+
+                      {/* Group Confirmation Screen (for PRELIMINARY_AND_PLAYOFF) */}
+                      {tournamentCreationStep === 'confirm_groups' && tournamentType === 'PRELIMINARY_AND_PLAYOFF' && playerGroups.length > 0 && (
+                        <div>
+                          <h3 style={{ 
+                            marginBottom: '15px', 
+                            fontSize: '18px', 
+                            fontWeight: 'bold',
+                            position: 'sticky',
+                            top: 0,
+                            backgroundColor: 'white',
+                            zIndex: 10,
+                            padding: '10px 0',
+                            borderBottom: '1px solid #e0e0e0'
+                          }}>
+                            Round Robin Groups ({playerGroups.length} groups)
+                          </h3>
+                          <div style={{
+                            border: '1px solid #ddd',
+                            borderRadius: '8px',
+                            padding: '20px',
+                            backgroundColor: 'white',
+                            maxHeight: '500px',
+                            overflowY: 'auto',
+                            marginTop: '10px'
+                          }}>
+                            {playerGroups.map((group, groupIndex) => {
+                              const sortedGroup = [...group]
+                                .map(id => {
+                                  const player = members.find(p => p.id === id);
+                                  return { id, player, rating: player?.rating ?? 0 };
+                                })
+                                .sort((a, b) => b.rating - a.rating);
+                              
+                              return (
+                                <div
+                                  key={groupIndex}
+                                  style={{
+                                    marginBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
+                                    paddingBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
+                                    borderBottom: groupIndex < playerGroups.length - 1 ? '2px solid #3498db' : 'none'
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    setDragOverGroupIndex(groupIndex);
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (draggedPlayer && dragOverGroupIndex === groupIndex) {
+                                      const newGroups = [...playerGroups];
+                                      // Remove from old group
+                                      newGroups[draggedPlayer.fromGroupIndex] = newGroups[draggedPlayer.fromGroupIndex].filter(id => id !== draggedPlayer.playerId);
+                                      // Add to new group
+                                      newGroups[groupIndex] = [...newGroups[groupIndex], draggedPlayer.playerId];
+                                      setPlayerGroups(newGroups);
+                                      setDraggedPlayer(null);
+                                      setDragOverGroupIndex(null);
+                                    }
+                                  }}
+                                >
+                                  <h5 style={{ margin: '0 0 10px 0', color: '#3498db' }}>
+                                    Group {groupIndex + 1} ({group.length} players)
+                                  </h5>
+                                  {sortedGroup.map(({ id, player, rating }) => {
+                                    if (!player) return null;
+                                    return (
+                                      <div
+                                        key={id}
+                                        draggable
+                                        onDragStart={() => setDraggedPlayer({ playerId: id, fromGroupIndex: groupIndex })}
+                                        onDragEnd={() => {
+                                          setDraggedPlayer(null);
+                                          setDragOverGroupIndex(null);
+                                        }}
+                                        style={{
+                                          padding: '8px 12px',
+                                          margin: '4px 0',
+                                          border: '1px solid #e0e0e0',
+                                          borderRadius: '4px',
+                                          backgroundColor: dragOverGroupIndex === groupIndex ? '#e8f4f8' : '#f9f9f9',
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          cursor: 'move'
+                                        }}
+                                      >
+                                        <span>{formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}</span>
+                                        {rating > 0 && <span style={{ color: '#27ae60', fontWeight: 'bold' }}>{rating}</span>}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
+                            <button 
+                              onClick={() => {
+                                // Calculate valid playoff bracket sizes
+                                const numGroups = playerGroups.length;
+                                const totalPlayers = selectedPlayersForTournament.length;
+                                const validSizes: number[] = [];
+                                
+                                // Find powers of 2 that are >= numGroups and < totalPlayers
+                                let powerOf2 = 2;
+                                while (powerOf2 < totalPlayers) {
+                                  if (powerOf2 >= numGroups) {
+                                    validSizes.push(powerOf2);
+                                  }
+                                  powerOf2 *= 2;
+                                }
+                                
+                                if (validSizes.length > 0) {
+                                  setPlayoffBracketSize(validSizes[0]); // Default to smallest valid size
+                                  setTournamentCreationStep('select_playoff_size');
+                                } else {
+                                  setError('Cannot determine valid playoff bracket size');
+                                }
+                              }}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#27ae60',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              Continue
+                            </button>
+                            <button 
+                              onClick={handleCancelTournamentCreation}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#95a5a6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Playoff Bracket Size Selection (for PRELIMINARY_AND_PLAYOFF) */}
+                      {tournamentCreationStep === 'select_playoff_size' && tournamentType === 'PRELIMINARY_AND_PLAYOFF' && (
+                        <div>
+                          <h3 style={{ marginBottom: '15px', fontSize: '18px', fontWeight: 'bold' }}>
+                            Select Playoff Bracket Size
+                          </h3>
+                          <div style={{
+                            border: '1px solid #ddd',
+                            borderRadius: '8px',
+                            padding: '20px',
+                            backgroundColor: 'white'
+                          }}>
+                            <p style={{ marginBottom: '15px', color: '#666' }}>
+                              Choose the size of the playoff bracket. Must be a power of 2, greater than or equal to the number of groups ({playerGroups.length}), and less than the total number of players ({selectedPlayersForTournament.length}).
+                            </p>
+                            {(() => {
+                              const numGroups = playerGroups.length;
+                              const totalPlayers = selectedPlayersForTournament.length;
+                              const validSizes: number[] = [];
+                              
+                              // Find powers of 2 that are >= numGroups and < totalPlayers
+                              let powerOf2 = 2;
+                              while (powerOf2 < totalPlayers) {
+                                if (powerOf2 >= numGroups) {
+                                  validSizes.push(powerOf2);
+                                }
+                                powerOf2 *= 2;
+                              }
+                              
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                  {validSizes.map(size => (
+                                    <label
+                                      key={size}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '10px',
+                                        padding: '12px',
+                                        border: playoffBracketSize === size ? '2px solid #3498db' : '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        backgroundColor: playoffBracketSize === size ? '#e8f4f8' : 'white'
+                                      }}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name="playoffBracketSize"
+                                        value={size}
+                                        checked={playoffBracketSize === size}
+                                        onChange={() => setPlayoffBracketSize(size)}
+                                        style={{ cursor: 'pointer' }}
+                                      />
+                                      <span style={{ fontSize: '16px', fontWeight: '500' }}>
+                                        {size} players
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
+                            <button 
+                              onClick={() => setTournamentCreationStep('confirm_groups')}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#95a5a6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              Back
+                            </button>
+                            <button 
+                              onClick={() => setTournamentCreationStep('confirmation')}
+                              disabled={playoffBracketSize === null}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: playoffBracketSize === null ? '#95a5a6' : '#27ae60',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: playoffBracketSize === null ? 'not-allowed' : 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                                opacity: playoffBracketSize === null ? 0.6 : 1,
+                              }}
+                            >
+                              Continue
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Completion Screen (for Playoff tournaments) */}
+                      {tournamentCreationStep === 'completion' && tournamentType === 'PLAYOFF' && bracketPositions.length > 0 && (
+                        <div>
+                          <h3 style={{ marginBottom: '15px', fontSize: '18px', fontWeight: 'bold' }}>First Round Matches</h3>
+                          <div style={{
+                            border: '1px solid #ddd',
+                            borderRadius: '8px',
+                            padding: '20px',
+                            backgroundColor: 'white',
+                            maxHeight: '500px',
+                            overflowY: 'auto'
+                          }}>
+                            {(() => {
+                              const firstRoundMatches: Array<{ player1: number | null, player2: number | null }> = [];
+                              // Pair up adjacent positions for first round matches
+                              for (let i = 0; i < bracketPositions.length; i += 2) {
+                                firstRoundMatches.push({
+                                  player1: bracketPositions[i] ?? null,
+                                  player2: bracketPositions[i + 1] ?? null
+                                });
+                              }
+                              
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                  {firstRoundMatches.map((match, index) => {
+                                    const player1 = match.player1 ? members.find(p => p.id === match.player1) : null;
+                                    const player2 = match.player2 ? members.find(p => p.id === match.player2) : null;
+                                    
+                                    return (
+                                      <div
+                                        key={index}
+                                        style={{
+                                          padding: '12px 16px',
+                                          border: '1px solid #e0e0e0',
+                                          borderRadius: '6px',
+                                          backgroundColor: '#f9f9f9',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          gap: '20px'
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                                          <span style={{ 
+                                            fontWeight: 'bold', 
+                                            color: '#666',
+                                            minWidth: '30px',
+                                            fontSize: '14px'
+                                          }}>
+                                            Match {index + 1}:
+                                          </span>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                                            {player1 ? (
+                                              <>
+                                                <span style={{ fontWeight: '500' }}>
+                                                  {player1.firstName} {player1.lastName}
+                                                </span>
+                                                <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '12px' }}>
+                                                  ({player1.rating})
+                                                </span>
+                                              </>
+                                            ) : (
+                                              <span style={{ color: '#999', fontStyle: 'italic' }}>BYE</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <span style={{ color: '#999', fontSize: '18px', fontWeight: 'bold' }}>vs</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
+                                          {player2 ? (
+                                            <>
+                                              <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '12px' }}>
+                                                ({player2.rating})
+                                              </span>
+                                              <span style={{ fontWeight: '500' }}>
+                                                {player2.firstName} {player2.lastName}
+                                              </span>
+                                            </>
+                                          ) : (
+                                            <span style={{ color: '#999', fontStyle: 'italic' }}>BYE</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
+                            <button 
+                              onClick={handleCreateTournament}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#27ae60',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              Create a Tournament
+                            </button>
+                            <button
+                              onClick={() => setTournamentCreationStep('organize_bracket')}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#95a5a6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Rearrange UI (for Multi-tournament Round Robin) */}
+                      {tournamentCreationStep === 'rearrange' && isMultiTournamentMode && tournamentType === 'ROUND_ROBIN' && (
+                        <div>
+                          <h3 style={{ marginBottom: '15px' }}>Rearrangement Players</h3>
+                          <p style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>
+                            Players are listed with their ratings. Drag and drop players between tournaments to reorganize them.
+                          </p>
+                          <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', backgroundColor: '#fafafa', maxHeight: '500px', overflowY: 'auto' }}>
                             {playerGroups.map((group, groupIndex) => {
                               const sortedGroup = [...group].sort((a, b) => {
                                 const playerA = members.find(p => p.id === a);
@@ -4457,114 +4385,379 @@ const Players: React.FC = () => {
                               });
                               
                               return (
-                                <div key={groupIndex} style={{
-                                  marginBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
-                                  paddingBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
-                                  borderBottom: groupIndex < playerGroups.length - 1 ? '2px solid #3498db' : 'none'
-                                }}>
-                                  <h5 style={{ margin: '0 0 10px 0', color: '#3498db' }}>
-                                    Tournament {groupIndex + 1} ({group.length} players)
-                                  </h5>
+                                <div 
+                                  key={groupIndex}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (draggedPlayer && draggedPlayer.fromGroupIndex !== groupIndex) {
+                                      setDragOverGroupIndex(groupIndex);
+                                    }
+                                  }}
+                                  onDragLeave={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setDragOverGroupIndex(null);
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (draggedPlayer && draggedPlayer.fromGroupIndex !== groupIndex) {
+                                      movePlayerToGroup(draggedPlayer.playerId, draggedPlayer.fromGroupIndex, groupIndex);
+                                      setDraggedPlayer(null);
+                                      setDragOverGroupIndex(null);
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '10px',
+                                    marginBottom: '10px',
+                                    marginTop: groupIndex > 0 ? '20px' : '0',
+                                    paddingTop: groupIndex > 0 ? '20px' : '10px',
+                                    borderTop: groupIndex > 0 ? '3px solid #3498db' : 'none',
+                                    backgroundColor: dragOverGroupIndex === groupIndex ? '#e8f4f8' : 'transparent',
+                                    borderRadius: '4px',
+                                    transition: 'background-color 0.2s',
+                                  }}
+                                >
+                                  <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '10px', 
+                                    marginBottom: '10px',
+                                  }}>
+                                    <h5 style={{ margin: 0, color: '#3498db' }}>
+                                      Tournament {groupIndex + 1} ({group.length} players)
+                                    </h5>
+                                    {dragOverGroupIndex === groupIndex && (
+                                      <span style={{ fontSize: '12px', color: '#3498db', fontStyle: 'italic' }}>
+                                        Drop here to move player
+                                      </span>
+                                    )}
+                                  </div>
+                                  
                                   {sortedGroup.map((playerId) => {
+                                    const player = members.find(p => p.id === playerId);
+                                    if (!player) return null;
+                                    
+                                    const isDragging = draggedPlayer?.playerId === playerId;
+                                    
+                                    return (
+                                      <div
+                                        key={playerId}
+                                        draggable
+                                        onDragStart={(e) => {
+                                          setDraggedPlayer({ playerId, fromGroupIndex: groupIndex });
+                                          e.dataTransfer.effectAllowed = 'move';
+                                        }}
+                                        onDragEnd={() => {
+                                          setDraggedPlayer(null);
+                                          setDragOverGroupIndex(null);
+                                        }}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '8px',
+                                          padding: '6px 8px',
+                                          marginBottom: '4px',
+                                          backgroundColor: isDragging ? '#e0e0e0' : 'white',
+                                          borderRadius: '4px',
+                                          border: '1px solid #e0e0e0',
+                                          cursor: 'grab',
+                                          opacity: isDragging ? 0.5 : 1,
+                                          transition: 'opacity 0.2s, background-color 0.2s',
+                                          userSelect: 'none',
+                                        }}
+                                        title="Drag to move to another tournament"
+                                      >
+                                        <span style={{ fontSize: '16px', color: '#999' }}>⋮⋮</span>
+                                        <span style={{ flex: 1, fontSize: '14px' }}>
+                                          {formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}
+                                        </span>
+                                        {player.rating !== null && player.rating !== undefined && (
+                                          <span style={{ fontSize: '13px', color: '#666', minWidth: '60px', textAlign: 'right', fontWeight: 'bold' }}>
+                                            {player.rating}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                            <button
+                              onClick={handleCancelTournamentCreation}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#95a5a6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                setTournamentCreationStep('confirmation');
+                              }}
+                              disabled={hasPlayerInTempZone}
+                              style={{
+                                padding: '10px 20px',
+                                backgroundColor: hasPlayerInTempZone ? '#95a5a6' : '#27ae60',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: hasPlayerInTempZone ? 'not-allowed' : 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                                opacity: hasPlayerInTempZone ? 0.7 : 1
+                              }}
+                            >
+                              Continue
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {tournamentCreationStep === 'plugin_wizard' && creationPlugin && creationFlow && (
+                        <div>
+                          <div style={{
+                            backgroundColor: 'white',
+                            padding: '20px',
+                            borderRadius: '8px',
+                            border: '1px solid #ddd',
+                            maxHeight: '90vh',
+                            overflowY: 'auto',
+                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                          }}>
+                            <h3 style={{ marginTop: 0, marginBottom: '10px' }}>
+                              {creationFlow.steps[creationStepIndex]?.title || creationPlugin.name}
+                            </h3>
+                            <div style={{ marginBottom: '20px' }}>
+                              {creationFlow.steps[creationStepIndex]?.render({
+                                tournamentName,
+                                setTournamentName,
+                                selectedPlayerIds: selectedPlayersForTournament,
+                                data: creationData,
+                                setData: (updater) => setCreationData((prev) => updater(prev)),
+                              })}
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                              <button
+                                onClick={handleCancelTournamentCreation}
+                                style={{
+                                  padding: '10px 20px',
+                                  backgroundColor: '#95a5a6',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '14px',
+                                  fontWeight: 'bold'
+                                }}
+                              >
+                                Back
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const nextIndex = creationStepIndex + 1;
+                                  if (nextIndex >= creationFlow.steps.length) {
+                                    setTournamentCreationStep('confirmation');
+                                  } else {
+                                    setCreationStepIndex(nextIndex);
+                                  }
+                                }}
+                                style={{
+                                  padding: '10px 20px',
+                                  backgroundColor: '#27ae60',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '14px',
+                                  fontWeight: 'bold'
+                                }}
+                              >
+                                {creationStepIndex >= creationFlow.steps.length - 1 ? 'Continue' : 'Next'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Confirmation Screen (for Round Robin and PRELIMINARY_AND_PLAYOFF - Playoff creates directly from Completion) */}
+                      {tournamentCreationStep === 'confirmation' && tournamentType !== 'PLAYOFF' && (
+                        <div>
+                          <div style={{
+                            backgroundColor: 'white',
+                            padding: '20px',
+                            borderRadius: '8px',
+                            border: '1px solid #ddd',
+                            maxHeight: '90vh',
+                            overflowY: 'auto',
+                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                          }}>
+                            <h3 style={{ marginTop: 0, marginBottom: '20px' }}>
+                              {isMultiTournamentMode ? 'Confirm Multi-Tournament Creation' : 'Confirm Tournament Creation'}
+                            </h3>
+                            
+                            {!isMultiTournamentMode && tournamentType === 'ROUND_ROBIN' && (
+                              <div style={{ marginBottom: '20px' }}>
+                                <h4>Selected Players ({selectedPlayersForTournament.length}):</h4>
+                                <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', maxHeight: '300px', overflowY: 'auto' }}>
+                                  {selectedPlayersForTournament.map(playerId => {
                                     const player = members.find(p => p.id === playerId);
                                     if (!player) return null;
                                     return (
                                       <div key={playerId} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between' }}>
                                         <span>{formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}</span>
-                                        {player.rating !== null && <span style={{ color: '#666', fontWeight: 'bold' }}>{player.rating}</span>}
+                                        {player.rating !== null && <span style={{ color: '#666' }}>{player.rating}</span>}
                                       </div>
                                     );
                                   })}
                                 </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {tournamentType === 'PRELIMINARY_AND_PLAYOFF' && (
-                        <div style={{ marginBottom: '20px' }}>
-                          <h4>Tournament Configuration:</h4>
-                          <div style={{ marginBottom: '15px', padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
-                            <div style={{ marginBottom: '8px' }}>
-                              <strong>Round Robin Groups:</strong> {playerGroups.length} groups &lt;= {roundRobinSize} players
-                            </div>
-                            <div>
-                              <strong>Playoff Bracket Size:</strong> {playoffBracketSize} players
-                            </div>
-                          </div>
-                          <h4>Round Robin Groups:</h4>
-                          <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', backgroundColor: '#fafafa', maxHeight: '400px', overflowY: 'auto' }}>
-                            {playerGroups.map((group, groupIndex) => {
-                              const sortedGroup = [...group]
-                                .map(id => {
-                                  const player = members.find(p => p.id === id);
-                                  return { id, player, rating: player?.rating ?? 0 };
-                                })
-                                .sort((a, b) => b.rating - a.rating);
-                              
-                              return (
-                                <div key={groupIndex} style={{
-                                  marginBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
-                                  paddingBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
-                                  borderBottom: groupIndex < playerGroups.length - 1 ? '2px solid #3498db' : 'none'
-                                }}>
-                                  <h5 style={{ margin: '0 0 10px 0', color: '#3498db' }}>
-                                    Group {groupIndex + 1} ({group.length} players)
-                                  </h5>
-                                  {sortedGroup.map(({ id, player, rating }) => {
-                                    if (!player) return null;
+                              </div>
+                            )}
+                            
+                            {isMultiTournamentMode && (
+                              <div style={{ marginBottom: '20px' }}>
+                                <h4 style={{ marginBottom: '10px' }}>
+                                  {playerGroups.length} Tournament{playerGroups.length !== 1 ? 's' : ''} will be created
+                                </h4>
+                                <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', backgroundColor: '#fafafa', maxHeight: '400px', overflowY: 'auto' }}>
+                                  {playerGroups.map((group, groupIndex) => {
+                                    const sortedGroup = [...group].sort((a, b) => {
+                                      const playerA = members.find(p => p.id === a);
+                                      const playerB = members.find(p => p.id === b);
+                                      const ratingA = playerA?.rating ?? 0;
+                                      const ratingB = playerB?.rating ?? 0;
+                                      return ratingB - ratingA;
+                                    });
+                                    
                                     return (
-                                      <div key={id} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between' }}>
-                                        <span>{formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}</span>
-                                        {rating > 0 && <span style={{ color: '#666', fontWeight: 'bold' }}>{rating}</span>}
+                                      <div key={groupIndex} style={{
+                                        marginBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
+                                        paddingBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
+                                        borderBottom: groupIndex < playerGroups.length - 1 ? '2px solid #3498db' : 'none'
+                                      }}>
+                                        <h5 style={{ margin: '0 0 10px 0', color: '#3498db' }}>
+                                          Tournament {groupIndex + 1} ({group.length} players)
+                                        </h5>
+                                        {sortedGroup.map((playerId) => {
+                                          const player = members.find(p => p.id === playerId);
+                                          if (!player) return null;
+                                          return (
+                                            <div key={playerId} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between' }}>
+                                              <span>{formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}</span>
+                                              {player.rating !== null && <span style={{ color: '#666', fontWeight: 'bold' }}>{player.rating}</span>}
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     );
                                   })}
                                 </div>
-                              );
-                            })}
+                              </div>
+                            )}
+                            
+                            {tournamentType === 'PRELIMINARY_AND_PLAYOFF' && (
+                              <div style={{ marginBottom: '20px' }}>
+                                <h4>Tournament Configuration:</h4>
+                                <div style={{ marginBottom: '15px', padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
+                                  <div style={{ marginBottom: '8px' }}>
+                                    <strong>Round Robin Groups:</strong> {playerGroups.length} groups &lt;= {roundRobinSize} players
+                                  </div>
+                                  <div>
+                                    <strong>Playoff Bracket Size:</strong> {playoffBracketSize} players
+                                  </div>
+                                </div>
+                                <h4>Round Robin Groups:</h4>
+                                <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '15px', backgroundColor: '#fafafa', maxHeight: '400px', overflowY: 'auto' }}>
+                                  {playerGroups.map((group, groupIndex) => {
+                                    const sortedGroup = [...group]
+                                      .map(id => {
+                                        const player = members.find(p => p.id === id);
+                                        return { id, player, rating: player?.rating ?? 0 };
+                                      })
+                                      .sort((a, b) => b.rating - a.rating);
+                                    
+                                    return (
+                                      <div key={groupIndex} style={{
+                                        marginBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
+                                        paddingBottom: groupIndex < playerGroups.length - 1 ? '20px' : '0',
+                                        borderBottom: groupIndex < playerGroups.length - 1 ? '2px solid #3498db' : 'none'
+                                      }}>
+                                        <h5 style={{ margin: '0 0 10px 0', color: '#3498db' }}>
+                                          Group {groupIndex + 1} ({group.length} players)
+                                        </h5>
+                                        {sortedGroup.map(({ id, player, rating }) => {
+                                          if (!player) return null;
+                                          return (
+                                            <div key={id} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between' }}>
+                                              <span>{formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}</span>
+                                              {rating > 0 && <span style={{ color: '#666', fontWeight: 'bold' }}>{rating}</span>}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                            
+                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                              <button
+                                onClick={handleCancelTournamentCreation}
+                                style={{
+                                  padding: '10px 20px',
+                                  backgroundColor: '#95a5a6',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '14px',
+                                  fontWeight: 'bold'
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (creationPlugin && tournamentType === (creationTournamentType || tournamentType) && !isMultiTournamentMode && tournamentType !== 'PRELIMINARY_AND_PLAYOFF') {
+                                    handleCreateTournamentViaPlugin();
+                                    return;
+                                  }
+                                  handleCreateTournament();
+                                }}
+                                disabled={hasPlayerInTempZone}
+                                style={{
+                                  padding: '10px 20px',
+                                  backgroundColor: hasPlayerInTempZone ? '#95a5a6' : '#27ae60',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: hasPlayerInTempZone ? 'not-allowed' : 'pointer',
+                                  fontSize: '14px',
+                                  fontWeight: 'bold',
+                                  opacity: hasPlayerInTempZone ? 0.7 : 1
+                                }}
+                              >
+                                Create a Tournament
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
-                      
-                      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-                        <button
-                          onClick={handleCancelTournamentCreation}
-                          style={{
-                            padding: '10px 20px',
-                            backgroundColor: '#95a5a6',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 'bold'
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleCreateTournament}
-                          disabled={hasPlayerInTempZone}
-                          style={{
-                            padding: '10px 20px',
-                            backgroundColor: hasPlayerInTempZone ? '#95a5a6' : '#27ae60',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: hasPlayerInTempZone ? 'not-allowed' : 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 'bold',
-                            opacity: hasPlayerInTempZone ? 0.7 : 1
-                          }}
-                        >
-                          Create a Tournament
-                        </button>
-                      </div>
                     </div>
-                  </div>
-                )}
+                  </div>,
+                  document.body
+                ) : null}
               </>
             ) : isSelectingForStats ? (
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>

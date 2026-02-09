@@ -99,13 +99,14 @@ export const RoundRobinSetupPanel: React.FC<TournamentSetupProps> = ({
 
     setLoading(true);
     try {
-      const response = await fetch('/api/tournaments/round-robin', {
+      const response = await fetch('/api/tournaments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           name: setupData.name,
+          type: 'ROUND_ROBIN',
           participantIds: setupData.participants.map(p => p.id),
         }),
       });

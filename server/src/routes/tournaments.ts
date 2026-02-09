@@ -2,11 +2,13 @@ import express, { Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
+import { TournamentType } from '@prisma/client';
 import { recalculateRankings } from '../services/rankingService';
 import { logger } from '../utils/logger';
 import { invalidateCacheAfterTournament, invalidateTournamentCache } from '../services/cacheService';
 import { emitCacheInvalidation, emitTournamentUpdate, emitMatchUpdate } from '../services/socketService';
 import bcrypt from 'bcryptjs';
+import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 
 const router = express.Router();
 
@@ -282,81 +284,34 @@ router.get('/', async (req, res) => {
         postRatingMap.set(key, rating ?? null);
       });
 
-      // Apply post-ratings to completed tournaments and include bracketMatches for PLAYOFF tournaments
+      // Apply post-ratings to completed tournaments and include type-specific data using plugins
       const tournamentsWithPostRatings = await Promise.all(tournaments.map(async (tournament) => {
-        if (tournament.status !== 'COMPLETED') {
-          // For non-completed tournaments, just include bracketMatches if PLAYOFF
-          if (tournament.type === 'PLAYOFF') {
-            const bracketMatches = await (prisma as any).bracketMatch.findMany({
-              where: { tournamentId: tournament.id },
-              include: {
-                match: true,
-              },
-              orderBy: [
-                { round: 'asc' },
-                { position: 'asc' },
-              ],
+        const plugin = tournamentPluginRegistry.get(tournament.type);
+
+        return tournament.status !== 'COMPLETED'
+          ? await plugin.enrichActiveTournament({
+              tournament,
+              prisma,
+            })
+          : await plugin.enrichCompletedTournament({
+              tournament,
+              postRatingMap,
+              prisma,
             });
-            await attachRatingHistoryToBracketMatches(bracketMatches, tournament.participants, tournament.id);
-            return { ...tournament, bracketMatches } as any;
-          }
-          return { ...tournament, bracketMatches: [] } as any;
-        }
-
-        const participantsWithPostRating = tournament.participants.map(participant => {
-          const key = `${tournament.id}-${participant.memberId}`;
-          const postRating = postRatingMap.get(key) ?? participant.member.rating;
-          return {
-            ...participant,
-            postRatingAtTime: postRating,
-          };
-        });
-
-        const baseTournament = {
-          ...tournament,
-          participants: participantsWithPostRating,
-        } as any;
-
-        // Include bracketMatches for PLAYOFF tournaments
-        if (tournament.type === 'PLAYOFF') {
-          const bracketMatches = await (prisma as any).bracketMatch.findMany({
-            where: { tournamentId: tournament.id },
-            include: {
-              match: true,
-            },
-            orderBy: [
-              { round: 'asc' },
-              { position: 'asc' },
-            ],
-          });
-          await attachRatingHistoryToBracketMatches(bracketMatches, participantsWithPostRating, tournament.id);
-          return { ...baseTournament, bracketMatches } as any;
-        }
-
-        return { ...baseTournament, bracketMatches: [] } as any;
       }));
 
       res.json(tournamentsWithPostRatings);
     } else {
-      // No completed tournaments - still need to include bracketMatches for PLAYOFF tournaments
-      const tournamentsWithBrackets = await Promise.all(tournaments.map(async (tournament) => {
-        if (tournament.type === 'PLAYOFF') {
-          const bracketMatches = await (prisma as any).bracketMatch.findMany({
-            where: { tournamentId: tournament.id },
-            include: {
-              match: true,
-            },
-            orderBy: [
-              { round: 'asc' },
-              { position: 'asc' },
-            ],
-          });
-          await attachRatingHistoryToBracketMatches(bracketMatches, tournament.participants, tournament.id);
-          return { ...tournament, bracketMatches } as any;
-        }
-        return { ...tournament, bracketMatches: [] } as any;
+      // No completed tournaments - use plugin enrichment for active tournaments
+      const enrichedTournaments = await Promise.all(tournaments.map(async (tournament) => {
+        const plugin = tournamentPluginRegistry.get(tournament.type);
+        
+        return await plugin.enrichActiveTournament({
+          tournament,
+          prisma,
+        });
       }));
-      res.json(tournamentsWithBrackets);
+      res.json(enrichedTournaments);
     }
   } catch (error) {
     logger.error('Error fetching tournaments', { error: error instanceof Error ? error.message : String(error) });
@@ -380,26 +335,17 @@ router.get('/active', async (req, res) => {
       },
     });
 
-    // Only include bracketMatches for playoff tournaments
-    const tournamentsWithBrackets = await Promise.all(tournaments.map(async (tournament) => {
-      if (tournament.type === 'PLAYOFF') {
-        const bracketMatches = await (prisma as any).bracketMatch.findMany({
-          where: { tournamentId: tournament.id },
-          include: {
-            match: true,
-          },
-          orderBy: [
-            { round: 'asc' },
-            { position: 'asc' },
-          ],
-        });
-        await attachRatingHistoryToBracketMatches(bracketMatches, tournament.participants);
-        return { ...tournament, bracketMatches } as any;
-      }
-      return { ...tournament, bracketMatches: [] } as any;
+    // Use plugin-based enrichment for active tournaments
+    const enrichedTournaments = await Promise.all(tournaments.map(async (tournament) => {
+      const plugin = tournamentPluginRegistry.get(tournament.type);
+      
+      return await plugin.enrichActiveTournament({
+        tournament,
+        prisma,
+      });
     }));
 
-    res.json(tournamentsWithBrackets);
+    res.json(enrichedTournaments);
   } catch (error) {
     logger.error('Error fetching active tournaments', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
@@ -430,144 +376,27 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Tournament not found' });
     }
 
-    // Only include bracketMatches for playoff tournaments
-    let tournamentWithBrackets: any = tournament;
-    if (tournament.type === 'PLAYOFF') {
-      const bracketMatches = await (prisma as any).bracketMatch.findMany({
-        where: { tournamentId: tournament.id },
-        include: {
-          match: true,
-        },
-        orderBy: [
-          { round: 'asc' },
-          { position: 'asc' },
-        ],
-      });
-      
-      // Attach rating history to matches
-      await attachRatingHistoryToBracketMatches(bracketMatches, tournament.participants, tournament.id);
-      
-      tournamentWithBrackets = { ...tournament, bracketMatches };
-    } else {
-      tournamentWithBrackets = { ...tournament, bracketMatches: [] };
-    }
+    // Use plugin-based enrichment
+    const plugin = tournamentPluginRegistry.get(tournament.type);
+    const enrichedTournament = await plugin.enrichActiveTournament({ tournament, prisma });
 
-    res.json(tournamentWithBrackets);
+    res.json(enrichedTournament);
   } catch (error) {
     logger.error('Error fetching tournament', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Helper function to create PRELIMINARY_AND_PLAYOFF tournament
-async function createRoundRobinPlayoffTournament(
-  name: string,
-  participantIds: number[],
-  players: any[],
-  roundRobinSize: number,
-  playoffBracketSize: number,
-  groups: number[][],
-  res: Response
-) {
-  try {
-    // Create main tournament
-    const mainTournament = await prisma.tournament.create({
-      data: {
-        name,
-        type: 'PRELIMINARY_AND_PLAYOFF',
-        status: 'ACTIVE',
-        roundRobinSize,
-        playoffBracketSize,
-        participants: {
-          create: participantIds.map((memberId: number) => {
-            const player = players.find(p => p.id === memberId);
-            return {
-              memberId,
-              playerRatingAtTime: player?.rating || null,
-            };
-          }),
-        },
-      },
-    });
-
-    // Create child Round Robin tournaments for each group
-    const childTournaments = await Promise.all(
-      groups.map(async (group, index) => {
-        const groupPlayers = players.filter(p => group.includes(p.id));
-        const groupName = `${name} - Group ${index + 1}`;
-        
-        return await prisma.tournament.create({
-          data: {
-            name: groupName,
-            type: 'ROUND_ROBIN',
-            status: 'ACTIVE',
-            parentTournamentId: mainTournament.id,
-            groupNumber: index + 1,
-            participants: {
-              create: group.map((memberId: number) => {
-                const player = groupPlayers.find(p => p.id === memberId);
-                return {
-                  memberId,
-                  playerRatingAtTime: player?.rating || null,
-                };
-              }),
-            },
-          },
-          include: {
-            participants: {
-              include: {
-                member: true,
-              },
-            },
-          },
-        });
-      })
-    );
-
-    // Reload main tournament with all data
-    const updatedTournament = await prisma.tournament.findUnique({
-      where: { id: mainTournament.id },
-      include: {
-        participants: {
-          include: {
-            member: true,
-          },
-        },
-        matches: true,
-        childTournaments: {
-          include: {
-            participants: {
-              include: {
-                member: true,
-              },
-            },
-            matches: true,
-          },
-        },
-      },
-    });
-
-    res.status(201).json(updatedTournament);
-  } catch (error) {
-    logger.error('Error creating Round Robin + Playoff tournament', { 
-      error: error instanceof Error ? error.message : String(error) 
-    });
-    throw error;
-  }
-}
-
 // Start a new tournament
-// Note: MULTI is not a valid tournament type. Multi-tournament mode creates multiple ROUND_ROBIN tournaments.
 // Only Organizers can create tournaments
+// Validation is kept generic - type-specific validation delegated to plugins
 router.post('/', [
   body('name').optional().trim(),
   body('participantIds').isArray({ min: 2 }),
   body('participantIds.*').isInt({ min: 1 }),
-  body('type').optional().isIn(['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH', 'PRELIMINARY_AND_PLAYOFF', 'PRELIMINARY_AND_ROUND_ROBIN', 'SWISS']),
-  body('bracketPositions').optional().isArray(), // For PLAYOFF tournaments
-  body('roundRobinSize').optional().isInt({ min: 3, max: 12 }), // For PRELIMINARY_AND_PLAYOFF
-  body('playoffBracketSize').optional().isInt({ min: 2 }), // For PRELIMINARY_AND_PLAYOFF
-  body('groups').optional().isArray(), // For PRELIMINARY_AND_PLAYOFF - array of player ID arrays
+  body('type').optional().isString(), // Type validated against plugin registry in route handler
+  // Type-specific fields (bracketPositions, roundRobinSize, etc.) are not validated here
+  // Plugins validate their own required fields via plugin.validateSetup() or plugin.createTournament()
 ], async (req: AuthRequest, res: Response) => {
   try {
     // Check if user has ORGANIZER role
@@ -588,67 +417,29 @@ router.post('/', [
 
     const { name, participantIds, type, bracketPositions, roundRobinSize, playoffBracketSize, groups } = req.body;
     
+    // Get valid types from plugin registry
+    const validTypes = tournamentPluginRegistry.getTypes();
+    
     // Log the received type for debugging
     logger.debug('Tournament creation request', { 
       type, 
       typeValue: type,
       typeType: typeof type,
-      validTypes: ['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH', 'PRELIMINARY_AND_PLAYOFF', 'PRELIMINARY_AND_ROUND_ROBIN', 'SWISS']
+      validTypes
     });
     
-    // Strict validation: only allow valid tournament types
-    const validTypes = ['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH', 'PRELIMINARY_AND_PLAYOFF', 'PRELIMINARY_AND_ROUND_ROBIN', 'SWISS'];
-    if (type && !validTypes.includes(type)) {
+    // Tournament type is required
+    if (!type) {
+      return res.status(400).json({ error: 'Tournament type is required' });
+    }
+    
+    // Validate tournament type using plugin registry
+    if (!tournamentPluginRegistry.isRegistered(type)) {
       return res.status(400).json({ error: `Invalid tournament type: ${type}. Only ${validTypes.join(', ')} are allowed.` });
     }
     
-    const tournamentType: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' | 'PRELIMINARY_AND_PLAYOFF' | 'PRELIMINARY_AND_ROUND_ROBIN' | 'SWISS' = (type && validTypes.includes(type))
-      ? (type as 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' | 'PRELIMINARY_AND_PLAYOFF' | 'PRELIMINARY_AND_ROUND_ROBIN' | 'SWISS')
-      : 'ROUND_ROBIN';
-
-    // For Single Match, validate exactly 2 players
-    if (tournamentType === 'SINGLE_MATCH' && participantIds.length !== 2) {
-      return res.status(400).json({ error: 'Single Match requires exactly 2 players' });
-    }
-
-    // For PRELIMINARY_AND_PLAYOFF, validate required fields
-    if (tournamentType === 'PRELIMINARY_AND_PLAYOFF') {
-      if (!roundRobinSize || roundRobinSize < 3 || roundRobinSize > 12) {
-        return res.status(400).json({ error: 'Round Robin size must be between 3 and 12' });
-      }
-      if (!playoffBracketSize || playoffBracketSize < 2) {
-        return res.status(400).json({ error: 'Playoff bracket size is required and must be at least 2' });
-      }
-      if (!groups || !Array.isArray(groups) || groups.length === 0) {
-        return res.status(400).json({ error: 'Groups configuration is required' });
-      }
-      
-      // Validate playoff bracket size is a power of 2
-      if ((playoffBracketSize & (playoffBracketSize - 1)) !== 0) {
-        return res.status(400).json({ error: 'Playoff bracket size must be a power of 2' });
-      }
-      
-      // Validate playoff bracket size constraints
-      if (playoffBracketSize >= participantIds.length) {
-        return res.status(400).json({ error: 'Playoff bracket size must be less than the total number of players' });
-      }
-      if (playoffBracketSize < groups.length) {
-        return res.status(400).json({ error: 'Playoff bracket size must be greater than or equal to the number of groups' });
-      }
-      
-      // Validate all players are in groups
-      const allPlayersInGroups = groups.flat();
-      const uniquePlayers = new Set(allPlayersInGroups);
-      if (uniquePlayers.size !== participantIds.length || allPlayersInGroups.length !== participantIds.length) {
-        return res.status(400).json({ error: 'All players must be assigned to exactly one group' });
-      }
-      
-      // Validate all groups have at least 2 players
-      const invalidGroups = groups.filter((group: number[]) => group.length < 2);
-      if (invalidGroups.length > 0) {
-        return res.status(400).json({ error: 'Each Round Robin group must have at least 2 players' });
-      }
-    }
+    // Get plugin for validation and creation
+    const plugin = tournamentPluginRegistry.get(type);
 
     // Verify all participants are active
     const players = await prisma.member.findMany({
@@ -664,8 +455,7 @@ router.post('/', [
 
     // Generate tournament name
     let tournamentName = name;
-    if (!tournamentName && tournamentType === 'SINGLE_MATCH') {
-      // Auto-generate name from player names and date
+    if (!tournamentName) {
       const player1 = players.find(p => p.id === participantIds[0]);
       const player2 = players.find(p => p.id === participantIds[1]);
       const dateStr = new Date().toLocaleDateString();
@@ -678,90 +468,19 @@ router.post('/', [
       tournamentName = `Tournament ${new Date().toLocaleDateString()}`;
     }
 
-    // For PRELIMINARY_AND_PLAYOFF, create main tournament and child Round Robin tournaments
-    if (tournamentType === 'PRELIMINARY_AND_PLAYOFF') {
-      return await createRoundRobinPlayoffTournament(
-        name || `Round Robin + Playoff ${new Date().toLocaleDateString()}`,
-        participantIds,
-        players,
-        roundRobinSize,
-        playoffBracketSize,
-        groups,
-        res
-      );
-    }
-
-    // Create tournament with participants
-    const tournament = await prisma.tournament.create({
-      data: {
-        name: tournamentName,
-        type: tournamentType,
-        status: 'ACTIVE',
-        participants: {
-          create: participantIds.map((memberId: number) => {
-            const player = players.find(p => p.id === memberId);
-            return {
-              memberId,
-              playerRatingAtTime: player?.rating || null, // Store rating when tournament started
-            };
-          }),
-        },
-      },
-      include: {
-        participants: {
-          include: {
-            member: true,
-          },
-        },
-        matches: true,
-      },
+    // Delegate tournament creation to plugin
+    const createdTournament = await plugin.createTournament({
+      name: tournamentName,
+      participantIds,
+      players,
+      bracketPositions,
+      roundRobinSize,
+      playoffBracketSize,
+      groups,
+      prisma,
     });
 
-    // For PLAYOFF tournaments, generate initial bracket
-    if (tournamentType === 'PLAYOFF') {
-      try {
-
-        const { createPlayoffBracketWithPositions } = await import('../services/playoffBracketService');
-        // Use provided bracket positions if available, otherwise generate automatically
-        const result = await createPlayoffBracketWithPositions(tournament.id, participantIds, bracketPositions);
-
-      } catch (error) {
-        logger.error('Error creating playoff bracket', { error: error instanceof Error ? error.message : String(error), tournamentId: tournament.id });
-        // Continue anyway - tournament is created, bracket can be fixed later
-      }
-      
-      // Reload tournament - bracketMatches are only for playoff tournaments
-      const updatedTournament = await prisma.tournament.findUnique({
-        where: { id: tournament.id },
-        include: {
-          participants: {
-            include: {
-              member: true,
-            },
-          },
-          matches: true,
-        },
-      });
-      
-      if (updatedTournament) {
-        // Load bracketMatches for playoff tournaments only
-        const bracketMatches = await (prisma as any).bracketMatch.findMany({
-          where: { tournamentId: tournament.id },
-          include: {
-            match: true,
-          },
-          orderBy: [
-            { round: 'asc' },
-            { position: 'asc' },
-          ],
-        });
-        return res.status(201).json({ ...updatedTournament, bracketMatches } as any);
-      }
-      
-      return res.status(201).json(tournament);
-    }
-
-    res.status(201).json(tournament);
+    res.status(201).json(createdTournament);
   } catch (error) {
     logger.error('Error creating tournament', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
@@ -769,15 +488,14 @@ router.post('/', [
 });
 
 // Create multiple tournaments at once
-// Used by multi-tournament mode which creates multiple ROUND_ROBIN tournaments.
-// Note: MULTI is not a valid tournament type - each tournament must be explicitly ROUND_ROBIN, PLAYOFF, or SINGLE_MATCH.
 // Bulk create tournaments - Only Organizers can create tournaments
+// Type validation delegated to plugin registry in route handler
 router.post('/bulk', [
   body('tournaments').isArray({ min: 1 }),
   body('tournaments.*.name').optional().trim(),
   body('tournaments.*.participantIds').isArray({ min: 2 }),
   body('tournaments.*.participantIds.*').isInt({ min: 1 }),
-  body('tournaments.*.type').optional().isIn(['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH']),
+  body('tournaments.*.type').optional().isString(), // Type validated against plugin registry in handler
 ], async (req: AuthRequest, res: Response) => {
   try {
     // Check if user has ORGANIZER role
@@ -818,21 +536,16 @@ router.post('/bulk', [
 
     // Create all tournaments in a transaction
     const createdTournaments = await prisma.$transaction(
-      tournaments.map((tournamentData: { name?: string; participantIds: number[]; type?: string }) => {
-        // Strict validation: only allow ROUND_ROBIN, PLAYOFF, or SINGLE_MATCH
-        // The validation middleware should catch invalid types, but this provides an extra check
-        if (tournamentData.type && !['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH'].includes(tournamentData.type)) {
-          throw new Error(`Invalid tournament type: ${tournamentData.type}. Only ROUND_ROBIN, PLAYOFF, and SINGLE_MATCH are allowed.`);
+      tournaments.map((tournamentData: { name?: string; participantIds: number[]; type: TournamentType }) => {
+        // Validate tournament type using plugin registry
+        if (!tournamentPluginRegistry.isRegistered(tournamentData.type)) {
+          throw new Error(`Invalid tournament type: ${tournamentData.type}. Only registered types are allowed.`);
         }
-        
-        const tournamentType: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' = (tournamentData.type && ['ROUND_ROBIN', 'PLAYOFF', 'SINGLE_MATCH'].includes(tournamentData.type))
-          ? (tournamentData.type as 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH')
-          : 'ROUND_ROBIN'; // Default to ROUND_ROBIN
         
         return prisma.tournament.create({
           data: {
             name: tournamentData.name || `Tournament ${new Date().toLocaleDateString()}`,
-            type: tournamentType,
+            type: tournamentData.type,
             status: 'ACTIVE',
             participants: {
               create: tournamentData.participantIds.map((memberId: number) => {
@@ -1138,8 +851,7 @@ router.post('/:id/matches', [
     });
 
     // Adjust ratings immediately after match is created
-    // ROUND_ROBIN: Don't calculate per match - ratings calculated on tournament completion
-    // PLAYOFF: Calculate per match with incremental ratings (using current player rating)
+    // Delegate rating calculation to plugin
     // SINGLE_MATCH: Calculate per match using playerRatingAtTime (rating when tournament started)
     // Forfeited matches should not change ratings
     // Note: BYE matches are already rejected above, so we know this is not a BYE match
@@ -1151,20 +863,21 @@ router.post('/:id/matches', [
       
       if (winnerId && member1Id !== null && member2Id !== null && 
           member1Id !== 0 && member2Id !== 0) {
-        const { processMatchRating } = await import('../services/matchRatingService');
-        const player1Won = winnerId === member1Id;
-        
-        if (tournament.type === 'PLAYOFF') {
-          // For PLAYOFF tournaments, use incremental calculation (current player rating)
-          // useIncrementalRating = true for PLAYOFF (uses current rating, not playerRatingAtTime)
-          await processMatchRating(member1Id, member2Id, player1Won, tournamentId, match.id, false, true);
+        // Notify plugin of match rating calculation - plugin decides if/how to handle it
+        const plugin = tournamentPluginRegistry.get(tournament.type);
+        if (plugin.onMatchRatingCalculation) {
+          await plugin.onMatchRatingCalculation({
+            tournament,
+            match,
+            winnerId,
+            prisma,
+          });
         } else if (tournament.type === 'SINGLE_MATCH') {
-          // For SINGLE_MATCH tournaments, use incremental ratings (current rating)
-          // This ensures ratings build on each other when multiple single matches are played
-          // useIncrementalRating = true for SINGLE_MATCH (uses current rating)
+          // SINGLE_MATCH: Legacy handling (will be refactored separately)
+          const { processMatchRating } = await import('../services/matchRatingService');
+          const player1Won = winnerId === member1Id;
           await processMatchRating(member1Id, member2Id, player1Won, tournamentId, match.id, false, true);
         }
-        // ROUND_ROBIN: Skip per-match rating calculation - will be calculated on tournament completion
       }
     }
 
@@ -1223,316 +936,60 @@ router.patch('/:tournamentId/matches/:matchId', [
       return res.status(400).json({ error: 'Invalid tournament or match ID' });
     }
 
-    let match = await prisma.match.findUnique({
-      where: { id: matchId },
-      include: { tournament: true },
-    });
-
-    // For playoff tournaments, if match doesn't exist, check if matchId is actually a bracketMatchId
-    let bracketMatchId: number | null = null;
-    let isBracketMatchId = false;
-    if (!match) {
-      const bracketMatch = await (prisma as any).bracketMatch.findUnique({
-        where: { id: matchId },
-        include: { tournament: true },
-      });
-      
-      if (bracketMatch && bracketMatch.tournamentId === tournamentId && bracketMatch.tournament.type === 'PLAYOFF') {
-        // Check if this is a BYE match BEFORE processing
-        const isByeMatch = bracketMatch.member1Id === 0 || bracketMatch.member2Id === 0 || 
-                          bracketMatch.member2Id === null ||
-                          (bracketMatch as any).player1IsBye || (bracketMatch as any).player2IsBye;
-        
-        if (isByeMatch) {
-          return res.status(400).json({ error: 'Cannot create or update match for BYE - BYE players are automatically promoted' });
-        }
-        
-        bracketMatchId = matchId;
-        isBracketMatchId = true;
-        // Get tournament for later use
-        const tournament = await prisma.tournament.findUnique({
-          where: { id: tournamentId },
-        });
-        if (!tournament) {
-          return res.status(404).json({ error: 'Tournament not found' });
-        }
-        // Create a temporary match object structure for processing
-        match = {
-          id: matchId, // Will use bracketMatchId for creation
-          tournamentId,
-          member1Id: bracketMatch.member1Id!,
-          member2Id: bracketMatch.member2Id,
-          player1Sets: 0,
-          player2Sets: 0,
-          player1Forfeit: false,
-          player2Forfeit: false,
-          tournament: { ...tournament, type: tournament.type as any },
-        } as any;
-      } else {
-        return res.status(404).json({ error: 'Match not found' });
-      }
-    } else {
-      // Match exists, check if it has a bracketMatchId
-      bracketMatchId = (match as any).bracketMatchId;
-      
-      // For playoff tournaments, if match doesn't belong to this tournament, 
-      // check if matchId is actually a bracketMatchId for this tournament
-      if (match.tournamentId !== tournamentId) {
-        const tournament = await prisma.tournament.findUnique({
-          where: { id: tournamentId },
-        });
-        
-        if (tournament && tournament.type === 'PLAYOFF') {
-          // First check if matchId is actually a bracketMatchId for this tournament
-          const bracketMatch = await (prisma as any).bracketMatch.findUnique({
-            where: { id: matchId },
-            include: { tournament: true, match: true },
-          });
-          
-          if (bracketMatch && bracketMatch.tournamentId === tournamentId) {
-            // Check if this is a BYE match BEFORE processing
-            const isByeMatch = bracketMatch.member1Id === 0 || bracketMatch.member2Id === 0 || 
-                              bracketMatch.member2Id === null ||
-                              (bracketMatch as any).player1IsBye || (bracketMatch as any).player2IsBye;
-            
-            if (isByeMatch) {
-              return res.status(400).json({ error: 'Cannot create or update match for BYE - BYE players are automatically promoted' });
-            }
-            
-            // matchId is actually a bracketMatchId for this tournament
-            bracketMatchId = matchId;
-            isBracketMatchId = true;
-            // Use existing match if it exists, otherwise create temporary structure
-            if (bracketMatch.match) {
-              match = bracketMatch.match as any;
-            } else {
-              match = {
-                id: matchId, // Will use bracketMatchId for creation
-                tournamentId,
-                member1Id: bracketMatch.member1Id!,
-                member2Id: bracketMatch.member2Id,
-                player1Sets: 0,
-                player2Sets: 0,
-                player1Forfeit: false,
-                player2Forfeit: false,
-                tournament: { ...tournament, type: tournament.type as any },
-              } as any;
-            }
-          } else if (bracketMatchId) {
-            // Match has a bracketMatchId, check if that bracketMatch belongs to this tournament
-            const linkedBracketMatch = await (prisma as any).bracketMatch.findUnique({
-              where: { id: bracketMatchId },
-              include: { tournament: true },
-            });
-            
-            if (linkedBracketMatch && linkedBracketMatch.tournamentId === tournamentId) {
-              // The match's bracketMatch belongs to this tournament, so allow the update
-              // match object is already correct, just continue
-            } else {
-            logger.error('Match does not belong to this tournament', { 
-              matchTournamentId: match.tournamentId, 
-              requestedTournamentId: tournamentId,
-              matchId: matchId,
-              bracketMatchId: bracketMatchId,
-              matchObject: JSON.stringify(match, null, 2)
-            });
-              return res.status(400).json({ error: 'Match does not belong to this tournament' });
-            }
-          } else {
-            logger.error('Match does not belong to this tournament', { 
-              matchTournamentId: match.tournamentId, 
-              requestedTournamentId: tournamentId,
-              matchId: matchId
-            });
-            return res.status(400).json({ error: 'Match does not belong to this tournament' });
-          }
-        } else {
-          logger.error('Match does not belong to this tournament', { 
-            matchTournamentId: match.tournamentId, 
-            requestedTournamentId: tournamentId,
-            matchId: matchId,
-            matchObject: JSON.stringify(match, null, 2)
-          });
-          return res.status(400).json({ error: 'Match does not belong to this tournament' });
-        }
-      }
-    }
-
-    if (!match) {
-      return res.status(404).json({ error: 'Match not found' });
-    }
-
     // Validate forfeit logic: exactly one player must forfeit
-    const forfeit1 = player1Forfeit === true;
-    const forfeit2 = player2Forfeit === true;
-    if (forfeit1 && forfeit2) {
+    if (player1Forfeit === true && player2Forfeit === true) {
       return res.status(400).json({ error: 'Only one player can forfeit' });
     }
 
-    // If forfeit, set scores appropriately
-    let finalPlayer1Sets = player1Sets ?? match.player1Sets;
-    let finalPlayer2Sets = player2Sets ?? match.player2Sets;
-    let finalPlayer1Forfeit = forfeit1;
-    let finalPlayer2Forfeit = forfeit2;
-
-    if (forfeit1) {
-      finalPlayer1Sets = 0;
-      finalPlayer2Sets = 1;
-      finalPlayer1Forfeit = true;
-      finalPlayer2Forfeit = false;
-    } else if (forfeit2) {
-      finalPlayer1Sets = 1;
-      finalPlayer2Sets = 0;
-      finalPlayer1Forfeit = false;
-      finalPlayer2Forfeit = true;
-    } else if (player1Forfeit === false && player2Forfeit === false) {
-      // Explicitly clearing forfeit flags
-      finalPlayer1Forfeit = false;
-      finalPlayer2Forfeit = false;
-    }
-
-    // Check if match is being completed (scores are being set for the first time)
-    const wasCompleted = match.player1Sets > 0 || match.player2Sets > 0 || match.player1Forfeit || match.player2Forfeit;
-    const isBeingCompleted = finalPlayer1Sets > 0 || finalPlayer2Sets > 0 || finalPlayer1Forfeit || finalPlayer2Forfeit;
+    // Get tournament and plugin
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+    });
     
-    // Check if this is a BYE match (memberId === 0) - BYE matches should not have Match records
-    const isByeMatch = match.member1Id === 0 || match.member2Id === 0 || match.member2Id === null;
-    if (isByeMatch) {
-      return res.status(400).json({ error: 'Cannot create or update match for BYE - BYE players are automatically promoted' });
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
     }
     
-    let updatedMatch;
-    if (isBracketMatchId && bracketMatchId) {
-      // Create new Match record linked to bracketMatch
-      updatedMatch = await prisma.match.create({
-        data: {
-          tournamentId,
-          bracketMatchId: bracketMatchId,
-          member1Id: match.member1Id,
-          member2Id: match.member2Id,
-          player1Sets: finalPlayer1Sets,
-          player2Sets: finalPlayer2Sets,
-          player1Forfeit: finalPlayer1Forfeit,
-          player2Forfeit: finalPlayer2Forfeit,
-        } as any, // Type assertion needed for bracketMatchId
-      });
-    } else {
-      // Update existing match
-      updatedMatch = await prisma.match.update({
-        where: { id: matchId },
-        data: {
-          player1Sets: finalPlayer1Sets,
-          player2Sets: finalPlayer2Sets,
-          player1Forfeit: finalPlayer1Forfeit,
-          player2Forfeit: finalPlayer2Forfeit,
-        },
+    const plugin = tournamentPluginRegistry.get(tournament.type);
+    
+    // Delegate match update to plugin
+    const result = await plugin.updateMatch({
+      matchId,
+      tournamentId,
+      player1Sets: player1Sets ?? 0,
+      player2Sets: player2Sets ?? 0,
+      player1Forfeit: player1Forfeit || false,
+      player2Forfeit: player2Forfeit || false,
+      prisma,
+      userId: req.userId,
+    });
+    
+    const updatedMatch = result.match;
+    
+    // Handle tournament state changes
+    if (result.tournamentStateChange?.shouldMarkComplete) {
+      await prisma.tournament.update({
+        where: { id: tournamentId },
+        data: { status: 'COMPLETED' },
       });
     }
-
-    // Adjust ratings when match is completed or updated
-    // ROUND_ROBIN: Don't calculate per match - ratings calculated on tournament completion
-    // PLAYOFF: Calculate per match with incremental ratings (using current player rating)
-    // Forfeited matches should not change ratings
-    // IMPORTANT: Ratings are ONLY calculated when a Match record is created/updated with actual scores
-    // NOT when players are just placed in bracket positions (that happens in advanceWinner)
-    const isForfeit = finalPlayer1Forfeit || finalPlayer2Forfeit;
     
-    // Only process ratings for PLAYOFF tournaments (ROUND_ROBIN handled on completion, SINGLE_MATCH already handled per match)
-    if (match.tournament.type === 'PLAYOFF' && !isForfeit) {
-      // If match was already completed and is being updated, we need to recalculate ratings
-      // because the previous rating change was based on the old result
-      if (wasCompleted && isBeingCompleted) {
-        // Match result changed - recalculate this match's rating
-        // The new change will be added to RatingHistory (previous change remains for history)
-        const player1Won = finalPlayer1Sets > finalPlayer2Sets;
-        const { processMatchRating } = await import('../services/matchRatingService');
-        const actualMatchId = updatedMatch?.id ?? matchId;
-        await processMatchRating(match.member1Id!, match.member2Id!, player1Won, tournamentId, actualMatchId, false, true);
-      } else if (isBeingCompleted && !wasCompleted) {
-        // Match is being completed for the first time - calculate ratings for THIS match only
-        // Check if this is a BYE match - BYE matches should not affect ratings
-        const isByeMatch = match.member1Id === 0 || match.member2Id === 0 || 
-                          match.member2Id === null || 
-                          (match as any).player1IsBye || (match as any).player2IsBye;
-        
-        if (!isByeMatch) {
-          // Determine winner - must have valid scores and scores must be different
-          if (finalPlayer1Sets === finalPlayer2Sets) {
-            // Equal scores - cannot determine winner, skip rating calculation
-            logger.warn('Match has equal scores, skipping rating calculation', { 
-              tournamentId, 
-              matchId, 
-              player1Sets: finalPlayer1Sets, 
-              player2Sets: finalPlayer2Sets 
-            });
-          } else {
-            const winnerId = finalPlayer1Sets > finalPlayer2Sets ? match.member1Id :
-                             finalPlayer2Sets > finalPlayer1Sets ? match.member2Id : null;
-            
-            if (winnerId && match.member1Id !== null && match.member2Id !== null && 
-                match.member1Id !== 0 && match.member2Id !== 0) {
-              // Calculate ratings for THIS match only using incremental calculation
-              const { processMatchRating } = await import('../services/matchRatingService');
-              const member1Id = match.member1Id!;
-              const member2Id = match.member2Id!;
-              const player1Won = winnerId === member1Id;
-              
-              // Verify winner determination is correct
-              if ((player1Won && finalPlayer1Sets <= finalPlayer2Sets) || 
-                  (!player1Won && finalPlayer2Sets <= finalPlayer1Sets)) {
-                logger.error('Winner determination mismatch', {
-                  tournamentId,
-                  matchId,
-                  member1Id,
-                  member2Id,
-                  player1Sets: finalPlayer1Sets,
-                  player2Sets: finalPlayer2Sets,
-                  winnerId,
-                  player1Won
-                });
-                // Don't process rating if winner determination is wrong
-              } else {
-                // Process rating for THIS match only with incremental calculation
-                // useIncrementalRating = true for PLAYOFF (uses current rating, not playerRatingAtTime)
-                // Use the actual match ID (not bracketMatchId)
-                const actualMatchId = updatedMatch?.id ?? matchId;
-                await processMatchRating(member1Id, member2Id, player1Won, tournamentId, actualMatchId, false, true);
-              }
-            }
-          }
-        }
+    // Calculate ratings if match has winner and tournament is active
+    if (tournament.status === 'ACTIVE' && updatedMatch.winnerId) {
+      if (plugin.onMatchRatingCalculation) {
+        await plugin.onMatchRatingCalculation({
+          tournament,
+          match: updatedMatch,
+          winnerId: updatedMatch.winnerId,
+          prisma,
+        });
       }
     }
-    // ROUND_ROBIN: Skip per-match rating calculation - will be calculated on tournament completion
-
-    // For PLAYOFF tournaments, handle auto-advancement when match is completed
-    if (match.tournament.type === 'PLAYOFF' && isBeingCompleted && !wasCompleted) {
-      // Determine winner
-      const winnerId = finalPlayer1Forfeit ? match.member2Id :
-                       finalPlayer2Forfeit ? match.member1Id :
-                       finalPlayer1Sets > finalPlayer2Sets ? match.member1Id :
-                       finalPlayer2Sets > finalPlayer1Sets ? match.member2Id : null;
-      
-      if (winnerId && match.member1Id !== null && match.member2Id !== null) {
-        // Advance winner to next round - use bracketMatchId
-        const finalBracketMatchId = bracketMatchId || (updatedMatch as any).bracketMatchId;
-        if (finalBracketMatchId && match.tournament.type === 'PLAYOFF') {
-          const { advanceWinner } = await import('../services/playoffBracketService');
-          const { tournamentCompleted } = await advanceWinner(tournamentId, finalBracketMatchId, winnerId);
-          
-          if (tournamentCompleted) {
-            // Tournament is complete, recalculate rankings
-            const { recalculateRankings } = await import('../services/rankingService');
-            await recalculateRankings(tournamentId);
-          }
-        }
-      }
-    }
-
+    
     // If tournament is completed, recalculate rankings
-    if (match.tournament.status === 'COMPLETED') {
+    if (result.tournamentStateChange?.shouldMarkComplete) {
       const { recalculateRankings } = await import('../services/rankingService');
-      await recalculateRankings(match.tournamentId);
+      await recalculateRankings(tournamentId);
     }
 
     // Invalidate cache and emit notifications
@@ -1644,9 +1101,10 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Cannot delete completed tournaments' });
     }
 
-    // For playoff tournaments, only allow deletion if no matches have been played
-    if (tournament.type === 'PLAYOFF' && tournament.matches.length > 0) {
-      return res.status(400).json({ error: 'Cannot delete playoff tournament with matches. Use cancel instead.' });
+    // Check if plugin allows deletion
+    const plugin = tournamentPluginRegistry.get(tournament.type);
+    if (!plugin.canDelete(tournament)) {
+      return res.status(400).json({ error: 'Cannot delete tournament with matches. Use cancel instead.' });
     }
 
     // Delete tournament (matches and participants will be cascade deleted)
@@ -1759,10 +1217,10 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
     // Recalculate rankings for all players (rankings are separate from ratings)
     await recalculateRankings(tournamentId);
 
-    // For ROUND_ROBIN tournaments, calculate ratings and create rating history entries once after completion
-    if (updatedTournament.type === 'ROUND_ROBIN') {
-      const { createRatingHistoryForRoundRobinTournament } = await import('../services/usattRatingService');
-      await createRatingHistoryForRoundRobinTournament(tournamentId);
+    // Notify plugin of tournament completion - plugin decides if/how to calculate ratings
+    const plugin = tournamentPluginRegistry.get(updatedTournament.type);
+    if (plugin.onTournamentCompletionRatingCalculation) {
+      await plugin.onTournamentCompletionRatingCalculation({ tournament: updatedTournament, prisma });
     }
 
     res.json(updatedTournament);
@@ -1797,8 +1255,10 @@ router.patch('/:id/cancel', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Tournament not found' });
     }
 
-    if (tournament.type !== 'PLAYOFF') {
-      return res.status(400).json({ error: 'Only playoff tournaments can be cancelled' });
+    // Check if plugin allows cancellation
+    const plugin = tournamentPluginRegistry.get(tournament.type);
+    if (!plugin.canCancel(tournament)) {
+      return res.status(400).json({ error: 'This tournament type cannot be cancelled' });
     }
 
     if (tournament.status === 'COMPLETED') {
@@ -1836,117 +1296,6 @@ router.patch('/:id/cancel', async (req: AuthRequest, res) => {
     res.json(updatedTournament);
   } catch (error) {
     logger.error('Error cancelling tournament', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Get bracket structure for a playoff tournament
-router.get('/:id/bracket', async (req: AuthRequest, res: Response) => {
-  try {
-    const tournamentId = parseInt(req.params.id);
-    if (isNaN(tournamentId)) {
-      return res.status(400).json({ error: 'Invalid tournament ID' });
-    }
-
-    const { getBracketStructure } = await import('../services/playoffBracketService');
-    const bracket = await getBracketStructure(tournamentId);
-    
-    res.json(bracket);
-  } catch (error: any) {
-    logger.error('Error fetching bracket', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
-    res.status(500).json({ error: error.message || 'Internal server error' });
-  }
-});
-
-// Update bracket positions (for drag-and-drop)
-// Only Organizers can modify tournaments
-router.patch('/:id/bracket', [
-  body('positions').isArray(),
-  body('positions.*.round').isInt({ min: 1 }),
-  body('positions.*.position').isInt({ min: 1 }),
-  body('positions.*.memberId').optional().isInt({ min: 1 }),
-], async (req: AuthRequest, res: Response) => {
-  try {
-    // Check if user has ORGANIZER role
-    const hasOrganizerAccess = await isOrganizer(req);
-    if (!hasOrganizerAccess) {
-      return res.status(403).json({ error: 'Only Organizers can modify tournaments' });
-    }
-
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const tournamentId = parseInt(req.params.id);
-    if (isNaN(tournamentId)) {
-      return res.status(400).json({ error: 'Invalid tournament ID' });
-    }
-
-    const tournament = await prisma.tournament.findUnique({
-      where: { id: tournamentId },
-    });
-
-    if (!tournament) {
-      return res.status(404).json({ error: 'Tournament not found' });
-    }
-
-    if (tournament.type !== 'PLAYOFF') {
-      return res.status(400).json({ error: 'Tournament is not a playoff tournament' });
-    }
-
-    const { positions } = req.body;
-
-    // Batch fetch all bracket matches first
-    const bracketMatches = await (prisma as any).bracketMatch.findMany({
-        where: {
-          tournamentId,
-        OR: positions.map((pos: any) => ({
-          round: pos.round,
-          position: pos.position,
-        })),
-        },
-      });
-
-    // Create a map: `${round}-${position}` -> bracketMatch
-    const bracketMatchMap = new Map<string, any>();
-    bracketMatches.forEach((bm: any) => {
-      bracketMatchMap.set(`${bm.round}-${bm.position}`, bm);
-    });
-
-    // Prepare all updates
-    const updates: Array<Promise<any>> = [];
-    for (const pos of positions) {
-      const bracketMatch = bracketMatchMap.get(`${pos.round}-${pos.position}`);
-      if (bracketMatch) {
-        // Determine if player should be player1 or player2
-        // For round 1, position 1 = player1, position 2 = player2, etc.
-        const isPlayer1 = (pos.position - 1) % 2 === 0;
-        
-        if (isPlayer1) {
-          updates.push(
-            prisma.bracketMatch.update({
-            where: { id: bracketMatch.id },
-            data: { member1Id: pos.memberId || 0 },
-            })
-          );
-        } else {
-          updates.push(
-            prisma.bracketMatch.update({
-            where: { id: bracketMatch.id },
-            data: { member2Id: pos.memberId || 0 },
-            })
-          );
-        }
-      }
-    }
-
-    // Execute all updates in parallel
-    await Promise.all(updates);
-
-    res.json({ message: 'Bracket positions updated successfully' });
-  } catch (error) {
-    logger.error('Error updating bracket positions', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2029,105 +1378,26 @@ router.patch('/:id/participants', [
       }),
     });
 
-    // Check if this is a PLAYOFF tournament and seeding has occurred (matches exist)
-    const hasSeeding = tournament.type === 'PLAYOFF' && tournament.matches.length > 0;
-
-    // If participants changed and seeding has occurred, automatically reseed
-    if (participantsChanged && hasSeeding) {
+    // If participants changed, delegate to plugin for any necessary updates (e.g., reseeding)
+    if (participantsChanged) {
       try {
-        // Import reseed logic
-        const { generateSeeding, generateBracketPositions, calculateBracketSize } = await import('../services/playoffBracketService');
-        const updatedTournament = await prisma.tournament.findUnique({
-          where: { id: tournamentId },
-          include: {
-            participants: {
-              include: {
-                member: true,
-              },
-            },
-            matches: true,
-          },
-        }) as any;
-
-        if (updatedTournament) {
-          const seededPlayers = generateSeeding(updatedTournament.participants);
-          const bracketSize = calculateBracketSize(updatedTournament.participants.length);
-          const bracketPositions = generateBracketPositions(seededPlayers, bracketSize);
-
-          // Update first round matches
-          const firstRoundMatches = (updatedTournament.matches || []).filter((m: any) => (m.round || 1) === 1);
-          firstRoundMatches.sort((a: any, b: any) => (a.position || 0) - (b.position || 0));
-
-          const matchesToUpdate: Array<{ matchId: number; member1Id: number; member2Id: number }> = [];
-          const matchesToDelete: number[] = [];
-          const matchesToCreate: Array<{ member1Id: number; member2Id: number; position: number }> = [];
-
-          for (let i = 0; i < bracketSize; i += 2) {
-            const member1Id = bracketPositions[i];
-            const member2Id = bracketPositions[i + 1];
-            const matchPosition = (i / 2) + 1;
-            const match = firstRoundMatches.find((m: any) => (m.position || 0) === matchPosition);
-
-            if (member1Id !== null && member2Id !== null) {
-              if (match) {
-                matchesToUpdate.push({
-                  matchId: match.id,
-                  member1Id: member1Id,
-                  member2Id: member2Id,
-                });
-              } else {
-                matchesToCreate.push({
-                  member1Id: member1Id,
-                  member2Id: member2Id,
-                  position: matchPosition,
-                });
-              }
-            } else {
-              if (match) {
-                matchesToDelete.push(match.id);
-              }
-            }
-          }
-
-          // Execute updates
-          for (const matchUpdate of matchesToUpdate) {
-            await prisma.match.update({
-              where: { id: matchUpdate.matchId },
-              data: {
-                member1Id: matchUpdate.member1Id,
-                member2Id: matchUpdate.member2Id,
-              },
-            });
-          }
-
-          for (const matchCreate of matchesToCreate) {
-            const nextRoundPosition = Math.floor((matchCreate.position - 1) / 2) + 1;
-            await prisma.match.create({
-              data: {
-                tournamentId,
-                member1Id: matchCreate.member1Id,
-                member2Id: matchCreate.member2Id,
-                player1Sets: 0,
-                player2Sets: 0,
-                round: 1,
-                position: matchCreate.position,
-                nextMatchPosition: nextRoundPosition,
-              } as any,
-            });
-          }
-
-          for (const matchId of matchesToDelete) {
-            await prisma.match.delete({
-              where: { id: matchId },
-            });
-          }
+        const plugin = tournamentPluginRegistry.get(tournament.type);
+        if (plugin.handlePluginRequest) {
+          await plugin.handlePluginRequest({
+            method: 'POST',
+            resource: 'participants-updated',
+            tournamentId,
+            data: { participantIds },
+            prisma,
+          });
         }
-      } catch (reseedError) {
-        logger.error('Error auto-reseeding after participant change', { 
-          error: reseedError instanceof Error ? reseedError.message : String(reseedError), 
-          tournamentId 
+      } catch (pluginError) {
+        logger.error('Error handling participant update in plugin', { 
+          error: pluginError instanceof Error ? pluginError.message : String(pluginError), 
+          tournamentId,
+          tournamentType: tournament.type
         });
-        // Continue anyway - participants are updated, reseeding can be done manually
+        // Continue anyway - participants are updated, plugin-specific updates can be done manually
       }
     }
 
@@ -2157,19 +1427,29 @@ router.patch('/:id/participants', [
   }
 });
 
-// Preview bracket positions (for client-side preview before tournament creation)
-// Preview bracket - Only Organizers can preview brackets (as part of tournament creation)
-router.post('/preview-bracket', async (req: AuthRequest, res: Response) => {
+// Preview tournament setup (for client-side preview before tournament creation)
+// Generic endpoint that delegates to tournament type plugins
+router.post('/preview', async (req: AuthRequest, res: Response) => {
   try {
     // Check if user has ORGANIZER role
     const hasOrganizerAccess = await isOrganizer(req);
     if (!hasOrganizerAccess) {
-      return res.status(403).json({ error: 'Only Organizers can preview brackets' });
+      return res.status(403).json({ error: 'Only Organizers can preview tournament setup' });
     }
-    const { participantIds, numSeeds } = req.body;
+    
+    const { tournamentType, participantIds, ...additionalData } = req.body;
+
+    if (!tournamentType) {
+      return res.status(400).json({ error: 'tournamentType is required' });
+    }
 
     if (!Array.isArray(participantIds) || participantIds.length < 2) {
       return res.status(400).json({ error: 'participantIds must be an array with at least 2 player IDs' });
+    }
+
+    // Validate tournament type
+    if (!tournamentPluginRegistry.isRegistered(tournamentType)) {
+      return res.status(400).json({ error: `Invalid tournament type: ${tournamentType}` });
     }
 
     // Fetch players with their ratings
@@ -2187,23 +1467,23 @@ router.post('/preview-bracket', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Some player IDs not found' });
     }
 
-    // Convert to format expected by generateSeeding
-    const participants = players.map(p => ({
-      memberId: p.id,
-      playerRatingAtTime: p.rating,
-    }));
+    // Delegate to plugin
+    const plugin = tournamentPluginRegistry.get(tournamentType);
+    if (!plugin.handlePluginRequest) {
+      return res.status(400).json({ error: `Tournament type ${tournamentType} does not support preview` });
+    }
 
-    // Generate bracket positions using server-side logic
-    const { generateSeeding, generateBracketPositions, calculateBracketSize } = await import('../services/playoffBracketService');
-    const seededPlayers = generateSeeding(participants);
-    const bracketSize = calculateBracketSize(participants.length);
-    const numSeedsToUse = numSeeds !== undefined ? parseInt(numSeeds) : undefined;
-    
-    const bracketPositions = generateBracketPositions(seededPlayers, bracketSize, numSeedsToUse);
+    const result = await plugin.handlePluginRequest({
+      method: 'POST',
+      resource: 'preview',
+      tournamentId: 0, // No tournament ID for preview
+      data: { participantIds, players, ...additionalData },
+      prisma,
+    });
 
-    res.json({ bracketPositions, bracketSize });
+    res.json(result);
   } catch (error) {
-    logger.error('Error generating bracket preview', { 
+    logger.error('Error generating tournament preview', { 
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });
@@ -2213,274 +1493,67 @@ router.post('/preview-bracket', async (req: AuthRequest, res: Response) => {
     });
   }
 });
-
-// Re-seed bracket by ratings
-// Only Organizers can reseed brackets
-router.post('/:id/reseed', async (req: AuthRequest, res: Response) => {
+// Generic plugin-specific resource handler
+// Allows tournament types to define their own custom endpoints
+// Examples: GET /tournaments/:id/plugin/bracket, POST /tournaments/:id/plugin/reseed
+const handlePluginRequest = async (
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  req: AuthRequest,
+  res: Response
+) => {
   try {
-    // Check if user has ORGANIZER role
-    const hasOrganizerAccess = await isOrganizer(req);
-    if (!hasOrganizerAccess) {
-      return res.status(403).json({ error: 'Only Organizers can reseed brackets' });
-    }
-
     const tournamentId = parseInt(req.params.id);
+    const resource = req.params.resource;
+    
     if (isNaN(tournamentId)) {
       return res.status(400).json({ error: 'Invalid tournament ID' });
     }
-
+    
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
-      include: {
-        participants: {
-          include: {
-            member: true,
-          },
-        },
-        matches: true, // Get all matches to understand structure
-      },
-    }) as any;
-
+    });
+    
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
     }
-
-    if (tournament.type !== 'PLAYOFF') {
-      return res.status(400).json({ error: 'Tournament is not a playoff tournament' });
-    }
-
-    if (tournament.status === 'COMPLETED') {
-      return res.status(400).json({ error: 'Cannot reseed completed tournament' });
-    }
-
-    // Get numSeeds from request body, or calculate default
-    const numSeeds = req.body.numSeeds !== undefined ? parseInt(req.body.numSeeds) : undefined;
-
-    // Generate new seeding
-    const { generateSeeding, generateBracketPositions, calculateBracketSize } = await import('../services/playoffBracketService');
-    const seededPlayers = generateSeeding(tournament.participants);
-    const bracketSize = calculateBracketSize(tournament.participants.length);
-    let bracketPositions = generateBracketPositions(seededPlayers, bracketSize, numSeeds);
     
-    // CRITICAL: Validate and fix any double BYEs before proceeding
-    // Run validation multiple times to catch all edge cases
-    for (let validationPass = 0; validationPass < 5; validationPass++) {
-      let foundDoubleBye = false;
-      for (let i = 0; i < bracketSize; i += 2) {
-        const pos1 = i;
-        const pos2 = i + 1;
-        if (bracketPositions[pos1] === null && bracketPositions[pos2] === null) {
-          // Both are BYEs - this is invalid! We MUST fix this
-          foundDoubleBye = true;
-          
-          // Find the lowest unplaced player and place them in pos1
-          let playerToPlace: number | null = null;
-          
-          // First, check if there are any unplaced players
-          for (let j = seededPlayers.length - 1; j >= 0; j--) {
-            const memberId = seededPlayers[j];
-            if (!bracketPositions.includes(memberId)) {
-              playerToPlace = memberId;
-              break;
-            }
-          }
-          
-          // If no unplaced players, find the lowest rated player who is not in a BYE-protected position
-          const numByes = bracketSize - seededPlayers.length;
-          if (playerToPlace === null) {
-            for (let j = seededPlayers.length - 1; j >= 0; j--) {
-              const memberId = seededPlayers[j];
-              const playerPos = bracketPositions.indexOf(memberId);
-              if (playerPos !== -1 && playerPos !== pos1 && playerPos !== pos2) {
-                // Check if this player is in a BYE-protected position (top numByes)
-                if (j >= numByes) {
-                  // This is not a BYE-protected player, we can move them
-                  playerToPlace = memberId;
-                  // Remove them from their current position
-                  bracketPositions[playerPos] = null;
-                  break;
-                }
-              }
-            }
-          }
-          
-          // If still no player found, find ANY player to break the double BYE
-          if (playerToPlace === null) {
-            for (let j = 0; j < seededPlayers.length; j++) {
-              const memberId = seededPlayers[j];
-              const playerPos = bracketPositions.indexOf(memberId);
-              if (playerPos !== -1 && playerPos !== pos1 && playerPos !== pos2) {
-                // Move this player to pos1
-                bracketPositions[playerPos] = null;
-                playerToPlace = memberId;
-                break;
-              }
-            }
-          }
-          
-          // Place the player in pos1 to break the double BYE
-          if (playerToPlace !== null) {
-            bracketPositions[pos1] = playerToPlace;
-          }
-        }
-      }
-      
-      // If no double BYEs were found in this pass, we're done
-      if (!foundDoubleBye) {
-        break;
-      }
+    const plugin = tournamentPluginRegistry.get(tournament.type);
+    
+    if (!plugin.handlePluginRequest) {
+      return res.status(404).json({ 
+        error: `Tournament type '${tournament.type}' does not support custom resources` 
+      });
     }
     
-    // Final check - if there are still double BYEs, log an error and fix it
-    for (let i = 0; i < bracketSize; i += 2) {
-      const pos1 = i;
-      const pos2 = i + 1;
-      if (bracketPositions[pos1] === null && bracketPositions[pos2] === null) {
-        logger.warn('CRITICAL: Double BYE found in reseed', { pos1, pos2, tournamentId: tournament.id });
-        // Emergency fix: place the first available player
-        for (let j = 0; j < seededPlayers.length; j++) {
-          const memberId = seededPlayers[j];
-          if (!bracketPositions.includes(memberId)) {
-            bracketPositions[pos1] = memberId;
-            break;
-          }
-        }
-        // If all players are placed, move the last player
-        if (bracketPositions[pos1] === null && bracketPositions[pos2] === null && seededPlayers.length > 0) {
-          const lastPlayer = seededPlayers[seededPlayers.length - 1];
-          const lastPlayerPos = bracketPositions.indexOf(lastPlayer);
-          if (lastPlayerPos !== -1 && lastPlayerPos !== pos1 && lastPlayerPos !== pos2) {
-            bracketPositions[lastPlayerPos] = null;
-            bracketPositions[pos1] = lastPlayer;
-          }
-        }
-      }
-    }
-
-    // Get all first round bracket matches
-    const firstRoundBracketMatches = await (prisma as any).bracketMatch.findMany({
-      where: {
-        tournamentId,
-        round: 1,
-      },
-      include: {
-        match: true,
-      },
-      orderBy: {
-        position: 'asc',
-      },
+    const result = await plugin.handlePluginRequest({
+      method,
+      resource,
+      tournamentId,
+      data: req.body,
+      query: req.query,
+      prisma,
+      userId: req.userId,
     });
     
-    // Update first round bracket matches
-    // BYEs are represented as memberId = 0 in bracketMatches (no Match records created)
-    for (let i = 0; i < bracketSize; i += 2) {
-      let member1Id: number | null = bracketPositions[i];
-      let member2Id: number | null = bracketPositions[i + 1];
-      const matchPosition = (i / 2) + 1;
-
-      // CRITICAL: Never allow both players to be null (double BYE)
-      // This should have been fixed in the validation above, but double-check here
-      if (member1Id === null && member2Id === null) {
-        logger.warn('CRITICAL: Double BYE detected during reseed update', { matchPosition, bracketPosition1: i, bracketPosition2: i+1, tournamentId: tournament.id });
-        // Find a player to place - this should never happen if validation worked
-        for (let j = 0; j < seededPlayers.length; j++) {
-          const memberId = seededPlayers[j];
-          // Check if this player is already in the bracket
-          const playerIndex = bracketPositions.indexOf(memberId);
-          if (playerIndex === -1) {
-            // This player is not in the bracket, place them in member1Id
-            member1Id = memberId;
-            bracketPositions[i] = memberId;
-            break;
-          } else if (playerIndex !== i && playerIndex !== i + 1) {
-            // This player is elsewhere, move them here as emergency fix
-            bracketPositions[playerIndex] = null;
-            member1Id = memberId;
-            bracketPositions[i] = memberId;
-            break;
-          }
-        }
-      }
-
-      const bracketMatch = firstRoundBracketMatches.find((bm: any) => bm.position === matchPosition);
-      
-      if (!bracketMatch) {
-        logger.error('BracketMatch not found for position', { matchPosition, tournamentId });
-        continue;
-      }
-
-      // Convert null to 0 for BYEs in bracketMatch
-      const updatePlayer1Id = member1Id === null ? 0 : member1Id;
-      const updatePlayer2Id = member2Id === null ? 0 : member2Id;
-      
-      // Check if this is a BYE match (member2Id === 0 or member1Id === 0)
-      const isBye = updatePlayer1Id === 0 || updatePlayer2Id === 0;
-      
-      // Update the bracketMatch
-      await (prisma as any).bracketMatch.update({
-        where: { id: bracketMatch.id },
-        data: {
-          member1Id: updatePlayer1Id === 0 ? 0 : updatePlayer1Id, // Store 0 for BYE
-          member2Id: updatePlayer2Id === 0 ? 0 : updatePlayer2Id, // Store 0 for BYE
-        },
-      });
-      
-      // If there's an existing Match record and this became a BYE, delete it
-      if (bracketMatch.match && isBye) {
-        await prisma.match.delete({
-          where: { id: bracketMatch.match.id },
-        });
-      }
-      
-      // If both players exist and there's no Match record, we'll need to create one later
-      // But for reseed, we just update the bracket structure, not create matches
-      // Matches are created when scores are entered
-    }
-    
-    // Handle BYE promotions: if a BYE was created, promote the player to next round
-    // This replicates the logic from createPlayoffBracketWithPositions
-    for (let i = 0; i < bracketSize; i += 2) {
-      const member1Id = bracketPositions[i];
-      const member2Id = bracketPositions[i + 1];
-      const hasBye = member2Id === null && member1Id !== null;
-      
-      if (hasBye && member1Id) {
-        const matchPosition = (i / 2) + 1;
-        const bracketMatch = firstRoundBracketMatches.find((bm: any) => bm.position === matchPosition);
-        
-        if (bracketMatch && bracketMatch.nextMatchId) {
-          // Get the next bracket match
-          const nextBracketMatch = await (prisma as any).bracketMatch.findUnique({
-            where: { id: bracketMatch.nextMatchId },
-          });
-          
-          if (nextBracketMatch) {
-            // Determine if winner goes to player1 or player2 slot in next match
-            const isPlayer1Slot = (matchPosition - 1) % 2 === 0;
-            
-            // Directly update the next round's BracketMatch - no Match record needed for BYEs
-            if (isPlayer1Slot) {
-              await (prisma as any).bracketMatch.update({
-                where: { id: nextBracketMatch.id },
-                data: { member1Id: member1Id },
-              });
-            } else {
-              await (prisma as any).bracketMatch.update({
-                where: { id: nextBracketMatch.id },
-                data: { member2Id: member1Id },
-              });
-            }
-          }
-        }
-      }
-    }
-
-    res.json({ message: 'Bracket reseeded successfully' });
+    res.json(result);
   } catch (error) {
-    logger.error('Error reseeding bracket', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
-    res.status(500).json({ error: 'Internal server error' });
+    logger.error('Error handling plugin request', { 
+      error: error instanceof Error ? error.message : String(error),
+      tournamentId: req.params.id,
+      resource: req.params.resource,
+      method,
+    });
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Internal server error' 
+    });
   }
-});
+};
+
+// Register generic plugin resource routes
+router.get('/:id/plugin/:resource', (req, res) => handlePluginRequest('GET', req, res));
+router.post('/:id/plugin/:resource', (req, res) => handlePluginRequest('POST', req, res));
+router.patch('/:id/plugin/:resource', (req, res) => handlePluginRequest('PATCH', req, res));
+router.delete('/:id/plugin/:resource', (req, res) => handlePluginRequest('DELETE', req, res));
 
 export default router;
 

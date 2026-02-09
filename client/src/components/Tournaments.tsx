@@ -18,8 +18,9 @@ import { getMember, setMember } from '../utils/auth';
 import { updateMatchCountsCache, removeMatchFromCache } from './Players';
 import { isOrganizer } from '../utils/auth';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
-import { TournamentType } from '../types/tournament';
+import { Tournament, TournamentType } from '../types/tournament';
 import './tournaments/plugins'; // This will auto-register all plugins
+import { calculateStandings, buildResultsMatrix, generateRoundRobinSchedule } from './tournaments/plugins/roundRobinUtils';
 
 // Module-level cache to persist across component mounts/unmounts
 const tournamentsCache: {
@@ -60,40 +61,22 @@ interface Match {
   player2RatingChange?: number | null;
 }
 
+interface BracketMatch {
+  id: number;
+  round: number;
+  position: number;
+  player1Id: number | null;
+  player2Id: number | null;
+  winnerId: number | null;
+  player1Sets: number;
+  player2Sets: number;
+}
+
 interface TournamentParticipant {
   id: number;
   memberId: number;
   member: Member;
   playerRatingAtTime: number | null;
-  postRatingAtTime?: number | null; // Rating after tournament completion (for completed tournaments)
-}
-
-interface BracketMatch {
-  id: number;
-  round: number;
-  position: number;
-  member1Id: number | null;
-  member2Id: number | null;
-  nextMatchId: number | null;
-  match?: Match | null; // Link to actual match result if played (includes rating fields)
-}
-
-interface Tournament {
-  id: number;
-  name: string | null;
-  type?: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH' | 'PRELIMINARY_AND_PLAYOFF' | 'PRELIMINARY_AND_ROUND_ROBIN' | 'SWISS';
-  createdAt: string;
-  recordedAt?: string;
-  status: 'ACTIVE' | 'COMPLETED';
-  cancelled?: boolean; // True if tournament was cancelled (moved to COMPLETED but not finished)
-  participants: TournamentParticipant[];
-  matches: Match[];
-  bracketMatches?: BracketMatch[]; // Bracket structure for playoff tournaments
-  parentTournamentId?: number | null; // For child tournaments (Round Robin groups or Playoff)
-  roundRobinSize?: number | null; // For PRELIMINARY_AND_PLAYOFF tournaments
-  playoffBracketSize?: number | null; // For PRELIMINARY_AND_PLAYOFF tournaments
-  groupNumber?: number | null; // For Round Robin child tournaments
-  childTournaments?: Tournament[]; // Child tournaments (Round Robin groups or Playoff)
 }
 
 const Tournaments: React.FC = () => {
@@ -140,10 +123,6 @@ const Tournaments: React.FC = () => {
     const stored = localStorage.getItem('tournaments_showCompletedTournaments');
     return stored !== null ? stored === 'true' : true;
   });
-  const [showCompletedMatches, setShowCompletedMatches] = useState<boolean>(() => {
-    const stored = localStorage.getItem('tournaments_showCompletedMatches');
-    return stored !== null ? stored === 'true' : true;
-  });
   const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
   const [expandedParticipants, setExpandedParticipants] = useState<Set<number>>(new Set());
   const [activeSectionCollapsed, setActiveSectionCollapsed] = useState<boolean>(false);
@@ -151,26 +130,6 @@ const Tournaments: React.FC = () => {
   const [showCancelConfirmation, setShowCancelConfirmation] = useState<{ tournamentId: number; matchCount: number } | null>(null);
   const [hoveredIcon, setHoveredIcon] = useState<{ type: string; tournamentId: number; x: number; y: number } | null>(null);
   const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
-
-  // Calculate maximum width for first player name across all standalone matches
-  const maxPlayerNameWidth = useMemo(() => {
-    const allStandaloneMatches = [...activeTournaments, ...tournaments].filter(t => (t as any).isStandaloneMatch === true);
-    let maxWidth = 0;
-    
-    allStandaloneMatches.forEach((tournament: any) => {
-      tournament.participants.forEach((participant: any) => {
-        const name = formatPlayerName(participant.member.firstName, participant.member.lastName, getNameDisplayOrder());
-        // Estimate width: approximately 8px per character for 16px font
-        const estimatedWidth = name.length * 8;
-        if (estimatedWidth > maxWidth) {
-          maxWidth = estimatedWidth;
-        }
-      });
-    });
-    
-    // Add some padding and ensure minimum width
-    return Math.max(maxWidth + 20, 150);
-  }, [activeTournaments, tournaments]);
 
   // Calculate date range based on filter type
   const getDateRangeForType = (type: string): { start: string; end: string } => {
@@ -258,15 +217,13 @@ const Tournaments: React.FC = () => {
   };
 
   // Get tooltip text based on icon type and tournament state
+  // Uses plugin to get appropriate message
   const getTooltipText = (type: string, tournament: Tournament): string => {
     if (type === 'complete') {
       return 'Complete Tournament: Marks the tournament as completed. All matches must be finished. Rankings will be recalculated.';
     } else if (type === 'delete') {
-      if (tournament.type === 'PLAYOFF' && tournament.matches.length > 0) {
-        return 'Cancel Tournament: This will move the tournament to Completed state. All completed matches will be kept and recorded. All completed matches will affect players\' ratings. The tournament will show "NOT COMPLETED" instead of a champion name.';
-      } else {
-        return 'Delete Tournament: Permanently removes the tournament and all its data. This action cannot be undone.';
-      }
+      // Delegate to plugin for delete confirmation message
+      return getDeleteConfirmationMessage(tournament);
     }
     return '';
   };
@@ -280,9 +237,10 @@ const Tournaments: React.FC = () => {
     };
   }, [hoverTimeout]);
 
-  // Memoize filtered completed tournaments (only PLAYOFF/ROUND_ROBIN, with filters applied)
+  // Memoize filtered completed tournaments (all types, with filters applied)
+  // No type-based filtering - plugins handle type-specific display
   const filteredCompletedTournaments = useMemo(() => {
-    let filtered = tournaments.filter(t => t.status === 'COMPLETED' && (t.type === 'PLAYOFF' || t.type === 'ROUND_ROBIN'));
+    let filtered = tournaments.filter(t => t.status === 'COMPLETED');
     
     // Filter by tournament name
     if (tournamentNameFilter.trim()) {
@@ -322,44 +280,6 @@ const Tournaments: React.FC = () => {
     return filtered;
   }, [tournaments, effectiveDateRange, tournamentNameFilter]);
 
-  // Memoize completed matches (standalone matches, with filters applied)
-  const completedMatches = useMemo(() => {
-    let matches = tournaments.filter(t => (t as any).isStandaloneMatch === true);
-    
-    // Filter by tournament name
-    if (tournamentNameFilter.trim()) {
-      // Normalize spaces: replace multiple spaces with single space, trim
-      const nameFilterLower = tournamentNameFilter.trim().replace(/\s+/g, ' ').toLowerCase();
-      matches = matches.filter(tournament => {
-        const tournamentName = (tournament.name || '').trim().replace(/\s+/g, ' ');
-        return tournamentName.toLowerCase().includes(nameFilterLower);
-      });
-    }
-    
-    // Filter by date range
-    if (effectiveDateRange.start || effectiveDateRange.end) {
-      matches = matches.filter(tournament => {
-        const createdDate = new Date(tournament.createdAt);
-        const createdAtMatches = isDateInRange(createdDate, effectiveDateRange.start, effectiveDateRange.end);
-        
-        let recordedAtMatches = false;
-        if (tournament.recordedAt) {
-          const recordedDate = new Date(tournament.recordedAt);
-          recordedAtMatches = isDateInRange(recordedDate, effectiveDateRange.start, effectiveDateRange.end);
-        }
-        
-        return createdAtMatches || recordedAtMatches;
-      });
-    }
-    
-    // Sort by time: use recordedAt if available, otherwise createdAt (most recent first)
-    matches.sort((a, b) => {
-      const timeA = a.recordedAt ? new Date(a.recordedAt).getTime() : new Date(a.createdAt).getTime();
-      const timeB = b.recordedAt ? new Date(b.recordedAt).getTime() : new Date(b.createdAt).getTime();
-      return timeB - timeA; // Most recent first
-    });
-    return matches;
-  }, [tournaments, effectiveDateRange, tournamentNameFilter]);
 
   // Memoize combined active events (tournaments + matches) sorted by time
   // Note: Filters only apply to completed tournaments, not active ones
@@ -378,17 +298,10 @@ const Tournaments: React.FC = () => {
     return activeEvents; // No filtering needed - always show tournaments and matches
   }, [activeEvents]);
 
-  // Memoize combined completed events (tournaments + matches) sorted by time
+  // Memoize completed events (tournaments only, standalone matches will have separate code path)
   const completedEvents = useMemo(() => {
-    const events = [...filteredCompletedTournaments, ...completedMatches];
-    // Sort by time: use recordedAt if available, otherwise createdAt (most recent first)
-    events.sort((a, b) => {
-      const timeA = a.recordedAt ? new Date(a.recordedAt).getTime() : new Date(a.createdAt).getTime();
-      const timeB = b.recordedAt ? new Date(b.recordedAt).getTime() : new Date(b.createdAt).getTime();
-      return timeB - timeA; // Most recent first
-    });
-    return events;
-  }, [filteredCompletedTournaments, completedMatches]);
+    return filteredCompletedTournaments;
+  }, [filteredCompletedTournaments]);
 
   // Restore scroll position and UI state when component mounts (if returning from History/Statistics)
   useEffect(() => {
@@ -608,22 +521,17 @@ const Tournaments: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [tournamentsRes, activeRes, standaloneMatchesRes] = await Promise.all([
+      const [tournamentsRes, activeRes] = await Promise.all([
         api.get('/tournaments'),
         api.get('/tournaments/active'),
-        api.get('/tournaments/matches/standalone'),
       ]);
       
-      // Set regular tournaments and active tournaments separately
+      // Set tournaments and active tournaments
       setTournaments(tournamentsRes.data);
       setActiveTournaments(activeRes.data);
       
-      // Add standalone matches to tournaments array for display in completed section
-      const allTournaments = [...tournamentsRes.data, ...standaloneMatchesRes.data];
-      setTournaments(allTournaments);
-      
       // Update cache
-      tournamentsCache.data = allTournaments;
+      tournamentsCache.data = tournamentsRes.data;
       tournamentsCache.activeData = activeRes.data;
       tournamentsCache.lastFetch = Date.now();
       setError(''); // Clear any previous errors on success
@@ -638,38 +546,80 @@ const Tournaments: React.FC = () => {
     }
   };
 
-  const countNonForfeitedMatches = (tournament: Tournament): number => {
-    if (tournament.type === 'PLAYOFF') {
-      // For playoff, count matches that have been played (have a winner or forfeit)
-      // A match is played only if:
-      // 1. There's a forfeit, OR
-      // 2. Both players have sets > 0 (actual scores entered), OR
-      // 3. There's a clear winner with scores entered (both sets >= 0 but not both 0)
-      return tournament.matches.filter(match => {
-        // Skip BYE matches (member2Id === null indicates a BYE)
-        if (match.member2Id === null) return false;
-        
-        // Match is played if there's a forfeit
-        if (match.player1Forfeit || match.player2Forfeit) return true;
-        // Match is played if both players have sets > 0 (actual match was played)
-        if ((match.player1Sets ?? 0) > 0 && (match.player2Sets ?? 0) > 0) return true;
-        // Match is played if there's a score difference (one player won)
-        // But only if at least one set is > 0 (to avoid counting default 0-0 as played)
-        const sets1 = match.player1Sets ?? 0;
-        const sets2 = match.player2Sets ?? 0;
-        if (sets1 !== sets2 && (sets1 > 0 || sets2 > 0)) return true;
-        // Otherwise, match not played yet
-        return false;
-      }).length;
-    } else {
-      // For round-robin, count non-forfeited matches
-      return tournament.matches.filter(match => 
-        !match.player1Forfeit && !match.player2Forfeit
-      ).length;
+  // ============================================================================
+  // PLUGIN-BASED HELPER FUNCTIONS
+  // ============================================================================
+  // These functions delegate to plugins, eliminating type-specific conditionals
+  
+  // Get expected number of matches for a tournament (delegates to plugin)
+  const getExpectedMatches = (tournament: Tournament): number => {
+    if (!tournament.type) return 0;
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+    if (plugin.calculateExpectedMatches) {
+      return plugin.calculateExpectedMatches(tournament as any);
     }
+    // Fallback
+    return tournament.participants.length * (tournament.participants.length - 1) / 2;
   };
 
-  // Use utility function for date formatting
+  // Check if all matches are played (delegates to plugin)
+  const areAllMatchesPlayed = (tournament: Tournament): boolean => {
+    if (!tournament.type) return false;
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+    if (plugin.areAllMatchesPlayed) {
+      return plugin.areAllMatchesPlayed(tournament as any);
+    }
+    // Fallback
+    return tournament.matches.length >= getExpectedMatches(tournament);
+  };
+
+  // Count non-forfeited matches (delegates to plugin)
+  const countNonForfeitedMatches = (tournament: Tournament): number => {
+    if (!tournament.type) return 0;
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+    if (plugin.countNonForfeitedMatches) {
+      return plugin.countNonForfeitedMatches(tournament as any);
+    }
+    // Fallback
+    return tournament.matches.filter(m => !m.player1Forfeit && !m.player2Forfeit).length;
+  };
+
+  // Check if tournament can be deleted (delegates to plugin)
+  const canDeleteTournament = (tournament: Tournament): boolean => {
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+    
+    // Delegate decision to plugin
+    if (plugin.canDeleteTournament) {
+      return plugin.canDeleteTournament(tournament);
+    }
+    
+    // Default fallback: only allow deletion if no matches exist
+    return tournament.matches.length === 0;
+  };
+
+  // Get delete confirmation message (delegates to plugin)
+  const getDeleteConfirmationMessage = (tournament: Tournament): string => {
+    if (!tournament.type) return 'Delete tournament?';
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+    if (plugin.getDeleteConfirmationMessage) {
+      return plugin.getDeleteConfirmationMessage(tournament as any);
+    }
+    // Fallback
+    return tournament.matches.length > 0 
+      ? 'Cancel tournament (moves to completed, keeps matches)'
+      : 'Delete tournament';
+  };
+
+  // Get tournament type name for display (delegates to plugin)
+  const getTournamentTypeName = (tournament: Tournament): string => {
+    if (!tournament.type) return 'Tournament';
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+    if (plugin.getTypeName) {
+      return plugin.getTypeName();
+    }
+    // Fallback - return the enum value
+    return tournament.type.replace(/_/g, ' ');
+  };
 
   // Helper function to save state before navigating
   const saveStateBeforeNavigate = () => {
@@ -706,15 +656,15 @@ const Tournaments: React.FC = () => {
     let allOtherMemberIds: number[];
     
     if (tournamentId !== undefined) {
-      // For round robin tournaments, only get opponents from the same tournament
+      // Get opponents from the specific tournament
       const tournament = tournaments.find(t => t.id === tournamentId);
-      if (tournament && tournament.type === 'ROUND_ROBIN') {
+      if (tournament) {
         // Get only participants from this specific tournament
         allOtherMemberIds = tournament.participants
           .map(p => p.memberId)
           .filter(id => id !== memberId);
       } else {
-        // For other tournament types, get all players from all tournaments
+        // Fallback: get all players from all tournaments
         const allMembers = tournaments.flatMap(t => t.participants.map(p => p.memberId));
         allOtherMemberIds = allMembers
           .filter((id, index, self) => id !== memberId && self.indexOf(id) === index);
@@ -856,95 +806,9 @@ const Tournaments: React.FC = () => {
     return statsMap;
   };
 
-  // Calculate sorted standings for round-robin tournament
-  const calculateStandings = (tournament: Tournament): Array<{ member: Member; stats: PlayerStats; position: number }> => {
-    const statsMap = calculatePlayerStats(tournament);
-    const participants = tournament.participants;
-    
-    // Create array with player and stats
-    const standings = participants.map(participant => ({
-      member: participant.member,
-      stats: statsMap.get(participant.memberId)!,
-    }));
+  // Removed: calculateStandings - now imported from roundRobinUtils
 
-    // Sort according to criteria:
-    // 1. Number of wins (descending)
-    // 2. Sets won - sets lost (descending)
-    // 3. User ID (ascending - lower ID wins tie)
-    standings.sort((a, b) => {
-      // Primary: wins (higher wins = better)
-      if (b.stats.wins !== a.stats.wins) {
-        return b.stats.wins - a.stats.wins;
-      }
-
-      // Tiebreaker 1: sets won - sets lost (higher difference = better)
-      const diffA = a.stats.setsWon - a.stats.setsLost;
-      const diffB = b.stats.setsWon - b.stats.setsLost;
-      if (diffB !== diffA) {
-        return diffB - diffA;
-      }
-
-      // Final tiebreaker: user ID (lower ID = better)
-      return a.member.id - b.member.id;
-    });
-
-    // Add positions (1-based)
-    return standings.map((item, index) => ({
-      ...item,
-      position: index + 1,
-    }));
-  };
-
-  // Build results matrix for round-robin display
-  const buildResultsMatrix = (tournament: Tournament) => {
-    const participants = tournament.participants;
-    const participantData = tournament.participants; // Keep participant data for ratings
-    const matrix: { [key: number]: { [key: number]: string } } = {};
-    const matchMap: { [key: string]: Match } = {}; // Store match data for editing
-    
-    // Initialize matrix
-    participants.forEach(p1 => {
-      matrix[p1.member.id] = {};
-      participants.forEach(p2 => {
-        if (p1.member.id === p2.member.id) {
-          matrix[p1.member.id][p2.member.id] = '-';
-        } else {
-          matrix[p1.member.id][p2.member.id] = '';
-        }
-      });
-    });
-
-    // Fill in match results
-    tournament.matches.forEach(match => {
-      if (match.member2Id === null) return; // Skip BYE matches
-      
-      let score1: string;
-      let score2: string;
-      
-      // Handle forfeit matches
-      if (match.player1Forfeit) {
-        score1 = 'L';
-        score2 = 'W';
-      } else if (match.player2Forfeit) {
-        score1 = 'W';
-        score2 = 'L';
-      } else {
-        // Regular match with scores
-        score1 = `${match.player1Sets} - ${match.player2Sets}`;
-        score2 = `${match.player2Sets} - ${match.player1Sets}`;
-      }
-      
-      matrix[match.member1Id][match.member2Id] = score1;
-      // Reverse for the other direction (shows who won)
-      matrix[match.member2Id][match.member1Id] = score2;
-      
-      // Store match for editing (both directions)
-      matchMap[`${match.member1Id}-${match.member2Id}`] = match;
-      matchMap[`${match.member2Id}-${match.member1Id}`] = match;
-    });
-
-    return { participants, participantData, matrix, matchMap };
-  };
+  // Removed: buildResultsMatrix - now imported from roundRobinUtils
 
   // Handle double-click on match cell to add/edit
   const handleCellDoubleClick = (member1Id: number, member2Id: number, tournament: Tournament) => {
@@ -1143,17 +1007,22 @@ const Tournaments: React.FC = () => {
     const tournament = activeTournaments.find(t => t.id === tournamentId);
     if (!tournament) return;
 
-    // For playoff tournaments with matches, show cancel confirmation instead
-    if (tournament.type === 'PLAYOFF' && tournament.matches.length > 0) {
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+
+    const canDelete = plugin.canDeleteTournament ? plugin.canDeleteTournament(tournament) : tournament.matches.length === 0;
+    
+    if (!canDelete && tournament.matches.length > 0) {
+      // Tournament needs cancellation instead of deletion
       setShowCancelConfirmation({ tournamentId, matchCount: tournament.matches.length });
       return;
     }
 
-    // Always require confirmation
-    const matchCount = tournament.matches.length;
-    const confirmMessage = matchCount > 0
-      ? `This tournament has ${matchCount} match${matchCount !== 1 ? 'es' : ''} recorded. Are you sure you want to delete it? This action cannot be undone.`
-      : 'Are you sure you want to delete this tournament? This action cannot be undone.';
+    // Get confirmation message from plugin or use default
+    const confirmMessage = plugin.getDeleteConfirmationMessage 
+      ? plugin.getDeleteConfirmationMessage(tournament)
+      : tournament.matches.length > 0
+        ? `This tournament has ${tournament.matches.length} match${tournament.matches.length !== 1 ? 'es' : ''} recorded. Are you sure you want to delete it? This action cannot be undone.`
+        : 'Are you sure you want to delete this tournament? This action cannot be undone.';
     
     if (!window.confirm(confirmMessage)) {
       return;
@@ -1176,12 +1045,27 @@ const Tournaments: React.FC = () => {
   };
 
   const handleCancelTournament = async (tournamentId: number) => {
+    const tournament = activeTournaments.find(t => t.id === tournamentId);
+    if (!tournament) return;
+
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+
     setError('');
     setSuccess('');
 
     try {
-      await api.patch(`/tournaments/${tournamentId}/cancel`);
-      setSuccess('Tournament cancelled successfully. All completed matches have been recorded and affect player ratings.');
+      // Let plugin handle cancellation logic if it provides custom handling
+      if (plugin.handleCancellation) {
+        const result = await plugin.handleCancellation(tournament);
+        // Plugin can provide custom success message
+        const successMessage = result.message || 'Tournament cancelled successfully. All completed matches have been recorded and affect player ratings.';
+        setSuccess(successMessage);
+      } else {
+        // Default cancellation behavior
+        await api.patch(`/tournaments/${tournamentId}/cancel`);
+        setSuccess('Tournament cancelled successfully. All completed matches have been recorded and affect player ratings.');
+      }
+      
       setShowCancelConfirmation(null);
       fetchData();
       if (selectedTournament?.id === tournamentId) {
@@ -1190,42 +1074,6 @@ const Tournaments: React.FC = () => {
     } catch (err: unknown) {
       const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setError(apiError || 'Failed to cancel tournament');
-    }
-  };
-
-  // Calculate expected number of matches for round-robin tournament
-  const getExpectedMatches = (tournament: Tournament): number => {
-    if (tournament.type === 'PLAYOFF') {
-      // Playoff (single elimination): numParticipants - 1 matches
-      // Each match eliminates one player, need to eliminate all but one
-      return tournament.participants.length - 1;
-    } else if (tournament.type === 'SINGLE_MATCH') {
-      // Single match: exactly 1 match
-      return 1;
-    } else {
-      // Round-robin: each player plays every other player once
-      // Formula: n * (n - 1) / 2
-      return tournament.participants.length * (tournament.participants.length - 1) / 2;
-    }
-  };
-
-  // Check if all matches are played
-  const areAllMatchesPlayed = (tournament: Tournament): boolean => {
-    const expectedMatches = getExpectedMatches(tournament);
-    
-    if (tournament.type === 'PLAYOFF') {
-      // For playoff, check if all matches have winners (or forfeits)
-      // All matches should exist and have winners
-      return tournament.matches.length >= expectedMatches && 
-             tournament.matches.every(match => {
-               // Match is complete if there's a forfeit or if sets indicate a winner
-               if (match.player1Forfeit || match.player2Forfeit) return true;
-               // Match is complete if one player has more sets than the other
-               return match.player1Sets > match.player2Sets || match.player2Sets > match.player1Sets;
-             });
-    } else {
-      // For round-robin and single match, just check count
-      return tournament.matches.length >= expectedMatches;
     }
   };
 
@@ -1248,220 +1096,7 @@ const Tournaments: React.FC = () => {
     matches: ScheduleMatch[];
   }
 
-  const generateRoundRobinSchedule = (tournament: Tournament): ScheduleRound[] => {
-    if (tournament.type !== 'ROUND_ROBIN') {
-      return [];
-    }
-
-    const participants = tournament.participants;
-    const n = participants.length;
-    
-    if (n < 2) {
-      return [];
-    }
-
-    // First, generate all unique pairs to ensure completeness
-    const allPairs = new Map<string, { player1Index: number; player2Index: number }>();
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const key = `${i}-${j}`;
-        allPairs.set(key, { player1Index: i, player2Index: j });
-      }
-    }
-
-    // Verify we have the correct number of pairs: n*(n-1)/2
-    const expectedPairs = (n * (n - 1)) / 2;
-    if (allPairs.size !== expectedPairs) {
-      // Schedule generation error: Expected pairs mismatch
-    }
-
-    const rounds: ScheduleRound[] = [];
-    const usedPairs = new Set<string>();
-    const playerMatchCounts = new Map<number, number>(); // Track how many matches each player has been scheduled
-    let matchNumber = 1;
-    let roundNumber = 1;
-
-    // Initialize match counts
-    for (let i = 0; i < n; i++) {
-      playerMatchCounts.set(i, 0);
-    }
-
-    // Organize pairs into rounds with fair distribution
-    while (usedPairs.size < allPairs.size) {
-      const roundMatches: ScheduleMatch[] = [];
-      const playersInRound = new Set<number>();
-
-      // Get all available pairs (not yet used and players not in current round)
-      const availablePairs: Array<{ key: string; pair: { player1Index: number; player2Index: number }; priority: number }> = [];
-      
-      // Find min and max match counts to ensure fair distribution
-      const matchCounts = Array.from(playerMatchCounts.values());
-      const minCount = Math.min(...matchCounts);
-      const maxCount = Math.max(...matchCounts);
-      
-      for (const [key, pair] of allPairs.entries()) {
-        if (usedPairs.has(key)) continue;
-        if (playersInRound.has(pair.player1Index) || playersInRound.has(pair.player2Index)) continue;
-
-        const count1 = playerMatchCounts.get(pair.player1Index) || 0;
-        const count2 = playerMatchCounts.get(pair.player2Index) || 0;
-        
-        // Priority calculation:
-        // 1. Prefer pairs where both players have the minimum count (most fair)
-        // 2. Avoid pairs that would create a difference > 1
-        // 3. Lower sum is better
-        let priority = count1 + count2;
-        
-        // Boost priority if both players are at minimum count
-        if (count1 === minCount && count2 === minCount) {
-          priority -= 1000; // High priority
-        }
-        
-        // Penalize if adding this match would create unfair distribution
-        // (maxCount - minCount should stay <= 1)
-        if (count1 === maxCount || count2 === maxCount) {
-          if (maxCount - minCount >= 1) {
-            priority += 1000; // Lower priority - would create unfair distribution
-          }
-        }
-
-        availablePairs.push({ key, pair, priority });
-      }
-
-      // Sort by priority (lower is better) to ensure fair distribution
-      availablePairs.sort((a, b) => a.priority - b.priority);
-
-      // Add matches to this round, ensuring no player appears twice
-      for (const { key, pair } of availablePairs) {
-        // Double-check players aren't already in this round (might have changed during iteration)
-        if (playersInRound.has(pair.player1Index) || playersInRound.has(pair.player2Index)) {
-          continue;
-        }
-
-        const participant1 = participants[pair.player1Index];
-        const participant2 = participants[pair.player2Index];
-        const member1 = participant1.member;
-        const member2 = participant2.member;
-
-        roundMatches.push({
-          matchNumber: matchNumber++,
-          round: roundNumber,
-          member1Id: member1.id,
-          member1Name: formatPlayerName(member1.firstName, member1.lastName, getNameDisplayOrder()),
-          member1StoredRating: participant1.playerRatingAtTime,
-          member1CurrentRating: member1.rating ?? null,
-          member2Id: member2.id,
-          member2Name: formatPlayerName(member2.firstName, member2.lastName, getNameDisplayOrder()),
-          member2StoredRating: participant2.playerRatingAtTime,
-          member2CurrentRating: member2.rating ?? null,
-        });
-
-        // Mark this pair as used, mark players as in this round, and increment match counts
-        usedPairs.add(key);
-        playersInRound.add(pair.player1Index);
-        playersInRound.add(pair.player2Index);
-        playerMatchCounts.set(pair.player1Index, (playerMatchCounts.get(pair.player1Index) || 0) + 1);
-        playerMatchCounts.set(pair.player2Index, (playerMatchCounts.get(pair.player2Index) || 0) + 1);
-      }
-
-      if (roundMatches.length > 0) {
-        rounds.push({
-          round: roundNumber,
-          matches: roundMatches,
-        });
-        roundNumber++;
-      } else {
-        // If we can't add any more matches but haven't used all pairs, there's a problem
-        break;
-      }
-    }
-
-    // Verify all pairs were used
-    if (usedPairs.size !== allPairs.size) {
-      // Schedule generation warning: Not all pairs were used
-    }
-
-    return rounds;
-  };
-
-  const getRoundOfX = (round: number, totalParticipants: number): string => {
-    // Calculate how many players are in this round
-    // Round 1 has all participants, each subsequent round has half
-    const playersInRound = totalParticipants / Math.pow(2, round - 1);
-    
-    // Special names for common rounds
-    if (playersInRound === 2) return 'Final';
-    if (playersInRound === 4) return 'Semifinals';
-    if (playersInRound === 8) return 'Quarterfinals';
-    
-    // For other rounds, use "Round 1", "Round 2", etc.
-    return `Round ${round}`;
-  };
-
-  const generatePlayoffSchedule = (tournament: Tournament): Array<{ round: number; roundLabel: string; matches: Array<{ player1Name: string; player2Name: string; player1Rating: string | null; player2Rating: string | null; round: number; roundLabel: string }> }> => {
-    if (tournament.type !== 'PLAYOFF' || !tournament.bracketMatches) {
-      return [];
-    }
-
-    const participants = tournament.participants;
-    const participantMap = new Map(participants.map(p => [p.member.id, p]));
-    const totalParticipants = participants.length;
-
-    // Group bracket matches by round
-    const matchesByRound = new Map<number, typeof tournament.bracketMatches>();
-    tournament.bracketMatches.forEach(bm => {
-      if (!matchesByRound.has(bm.round)) {
-        matchesByRound.set(bm.round, []);
-      }
-      matchesByRound.get(bm.round)!.push(bm);
-    });
-
-    // Sort rounds
-    const rounds = Array.from(matchesByRound.keys()).sort((a, b) => a - b);
-
-    const scheduleRounds: Array<{ round: number; roundLabel: string; matches: Array<{ player1Name: string; player2Name: string; player1Rating: string | null; player2Rating: string | null; round: number; roundLabel: string }> }> = [];
-
-    rounds.forEach(round => {
-      const roundMatches = matchesByRound.get(round) || [];
-      const roundLabel = getRoundOfX(round, totalParticipants);
-      const readyMatches: Array<{ player1Name: string; player2Name: string; player1Rating: string | null; player2Rating: string | null; round: number; roundLabel: string }> = [];
-
-      roundMatches.forEach(bm => {
-        // A match is "ready to play" if:
-        // 1. Both players are assigned (not BYE, not null)
-        // 2. The match hasn't been played yet (no match result)
-        const hasBothPlayers = bm.member1Id !== null && bm.member1Id !== 0 && 
-                               bm.member2Id !== null && bm.member2Id !== 0;
-        const isNotPlayed = !bm.match;
-
-        if (hasBothPlayers && isNotPlayed) {
-          const p1 = participantMap.get(bm.member1Id!);
-          const p2 = participantMap.get(bm.member2Id!);
-          
-          if (p1 && p2) {
-            readyMatches.push({
-            player1Name: formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder()),
-            player2Name: formatPlayerName(p2.member.firstName, p2.member.lastName, getNameDisplayOrder()),
-            player1Rating: formatActiveTournamentRating(p1.playerRatingAtTime, p1.member.rating),
-            player2Rating: formatActiveTournamentRating(p2.playerRatingAtTime, p2.member.rating),
-              round: round,
-              roundLabel: roundLabel,
-            });
-          }
-        }
-      });
-
-      if (readyMatches.length > 0) {
-        scheduleRounds.push({
-          round,
-          roundLabel,
-          matches: readyMatches,
-        });
-      }
-    });
-
-    return scheduleRounds;
-  };
+  // Removed: generateRoundRobinSchedule - now imported from roundRobinUtils
 
   const toggleSchedule = (tournamentId: number) => {
     setExpandedSchedules(prev => {
@@ -1488,25 +1123,26 @@ const Tournaments: React.FC = () => {
   };
 
   const handlePrintSchedule = (tournament: Tournament) => {
-    // Use plugin system for schedule generation
-    const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type as TournamentType) : null;
-    if (!plugin) return;
-
-    // For now, keep the existing logic but this should be moved to plugins
-    let scheduleRounds: any[] = [];
-    if (tournament.type === 'ROUND_ROBIN') {
-      scheduleRounds = generateRoundRobinSchedule(tournament);
-    } else if (tournament.type === 'PLAYOFF') {
-      scheduleRounds = generatePlayoffSchedule(tournament);
+    // Use plugin to generate schedule
+    const plugin = tournamentPluginRegistry.get(tournament.type);
+    if (!plugin || !plugin.generateSchedule) {
+      console.error('No schedule generation available for tournament type:', tournament.type);
+      return;
     }
+    
+    const scheduleRounds = plugin.generateSchedule(tournament);
+    
     if (scheduleRounds.length === 0) return;
 
     // Calculate total matches
     const totalMatches = scheduleRounds.reduce((sum, round) => sum + round.matches.length, 0);
 
-    // Create a set of played matches for quick lookup (only for Round Robin)
+    // Create a set of played matches for quick lookup
     const playedMatches = new Set<string>();
-    if (tournament.type === 'ROUND_ROBIN') {
+    const hasBracketStructure = tournament.bracketMatches && tournament.bracketMatches.length > 0;
+    
+    if (!hasBracketStructure) {
+      // For non-bracket tournaments, track played matches
       tournament.matches.forEach(match => {
         if (match.member2Id !== null && match.member2Id !== 0) {
           const key1 = `${match.member1Id}-${match.member2Id}`;
@@ -1518,10 +1154,22 @@ const Tournaments: React.FC = () => {
     }
 
     // Format ratings for each match in each round before generating HTML
+    // hasBracketStructure already declared above
     const roundsWithRatings = scheduleRounds.map((round) => ({
       ...round,
       matches: round.matches.map((match: any, matchIdx: number) => {
-        if (tournament.type === 'ROUND_ROBIN') {
+        if (hasBracketStructure) {
+          // Bracket-based tournament (playoff style)
+          return {
+            ...match,
+            player1RatingDisplay: match.player1Rating,
+            player2RatingDisplay: match.player2Rating,
+            isPlayed: false, // Bracket schedule only shows ready matches
+            matchNumber: matchIdx + 1,
+            roundLabel: match.roundLabel,
+          };
+        } else {
+          // Round-robin style tournament
           const p1Rating = formatActiveTournamentRating(match.player1StoredRating, match.player1CurrentRating);
           const p2Rating = formatActiveTournamentRating(match.player2StoredRating, match.player2CurrentRating);
           const matchKey = `${match.member1Id}-${match.member2Id}`;
@@ -1532,16 +1180,6 @@ const Tournaments: React.FC = () => {
             player2RatingDisplay: p2Rating,
             isPlayed,
             matchNumber: match.matchNumber,
-          };
-        } else {
-          // Playoff schedule
-          return {
-            ...match,
-            player1RatingDisplay: match.player1Rating,
-            player2RatingDisplay: match.player2Rating,
-            isPlayed: false, // Playoff schedule only shows ready matches
-            matchNumber: matchIdx + 1, // Sequential number within round
-            roundLabel: match.roundLabel, // Round label (e.g., "Round of 16")
           };
         }
       }),
@@ -1645,17 +1283,17 @@ const Tournaments: React.FC = () => {
           <table>
             <thead>
               <tr>
-                ${tournament.type === 'PLAYOFF' ? '<th>Round</th>' : '<th>Match #</th>'}
+                ${hasBracketStructure ? '<th>Round</th>' : '<th>Match #</th>'}
                 <th>Player 1</th>
                 <th>Player 2</th>
               </tr>
             </thead>
             <tbody>
               ${roundsWithRatings.map((round, roundIndex) => `
-                ${roundIndex > 0 ? `<tr class="separator-row"><td colspan="${tournament.type === 'PLAYOFF' ? '3' : '3'}"></td></tr>` : ''}
+                ${roundIndex > 0 ? `<tr class="separator-row"><td colspan="3"></td></tr>` : ''}
                 ${round.matches.map((match: any) => `
                   <tr class="${match.isPlayed ? 'played' : ''}">
-                    <td>${tournament.type === 'PLAYOFF' ? (match.roundLabel || `Round ${match.round}`) : match.matchNumber}</td>
+                    <td>${hasBracketStructure ? (match.roundLabel || `Round ${match.round}`) : match.matchNumber}</td>
                     <td>${match.player1Name}${match.player1RatingDisplay ? `<span class="rating">(${match.player1RatingDisplay})</span>` : ''}</td>
                     <td>${match.player2Name}${match.player2RatingDisplay ? `<span class="rating">(${match.player2RatingDisplay})</span>` : ''}</td>
                   </tr>
@@ -1684,11 +1322,38 @@ const Tournaments: React.FC = () => {
     const completionDate = tournament.recordedAt ? new Date(tournament.recordedAt).toLocaleDateString() : new Date(tournament.createdAt).toLocaleDateString();
     
     let resultsContent = '';
+    const hasBracketStructure = tournament.bracketMatches && tournament.bracketMatches.length > 0;
     
-    if (tournament.type === 'ROUND_ROBIN') {
+    if (!hasBracketStructure) {
       // Print Final Standings and Results Matrix for Round Robin
       const standings = calculateStandings(tournament);
       const { participants, participantData, matrix } = buildResultsMatrix(tournament);
+      
+      // Convert matrix from Match objects to score strings for printing
+      const scoreMatrix: { [key: number]: { [key: number]: string } } = {};
+      participants.forEach((p1, i) => {
+        scoreMatrix[p1.member.id] = {};
+        participants.forEach((p2, j) => {
+          if (i === j) {
+            scoreMatrix[p1.member.id][p2.member.id] = '-';
+          } else {
+            const match = matrix[i][j];
+            if (match) {
+              if (match.player1Forfeit) {
+                scoreMatrix[p1.member.id][p2.member.id] = match.member1Id === p1.memberId ? 'L' : 'W';
+              } else if (match.player2Forfeit) {
+                scoreMatrix[p1.member.id][p2.member.id] = match.member1Id === p1.memberId ? 'W' : 'L';
+              } else {
+                const score1 = match.member1Id === p1.memberId ? match.player1Sets : match.player2Sets;
+                const score2 = match.member1Id === p1.memberId ? match.player2Sets : match.player1Sets;
+                scoreMatrix[p1.member.id][p2.member.id] = `${score1} - ${score2}`;
+              }
+            } else {
+              scoreMatrix[p1.member.id][p2.member.id] = '';
+            }
+          }
+        });
+      });
       
       // Build standings table HTML
       let standingsTable = `
@@ -1774,7 +1439,7 @@ const Tournaments: React.FC = () => {
         `;
         
         participants.forEach((participant2) => {
-          const score = matrix[participant1.member.id][participant2.member.id];
+          const score = scoreMatrix[participant1.member.id][participant2.member.id];
           const isDiagonal = participant1.member.id === participant2.member.id;
           const hasScore = score && score !== '';
           
@@ -1818,8 +1483,8 @@ const Tournaments: React.FC = () => {
       
       resultsContent = standingsTable + matrixTable;
       
-    } else if (tournament.type === 'PLAYOFF') {
-      // Print visual bracket for Playoff tournaments
+    } else {
+      // Print visual bracket for bracket-based tournaments
       const bracketMatches = tournament.bracketMatches || [];
       const maxRound = Math.max(...bracketMatches.map(bm => bm.round), 0);
       
@@ -1960,36 +1625,6 @@ const Tournaments: React.FC = () => {
           </div>
         `;
       }
-    } else {
-      // SINGLE_MATCH - just show the match result
-      if (tournament.matches.length > 0) {
-        const match = tournament.matches[0];
-        const player1 = tournament.participants.find(p => p.memberId === match.member1Id)?.member;
-        const player2 = tournament.participants.find(p => p.memberId === match.member2Id)?.member;
-        const player1Name = player1 ? formatPlayerName(player1.firstName, player1.lastName, getNameDisplayOrder()) : 'Unknown';
-        const player2Name = player2 ? formatPlayerName(player2.firstName, player2.lastName, getNameDisplayOrder()) : 'Unknown';
-        const score = match.player1Forfeit ? 'Forfeit' : match.player2Forfeit ? 'Forfeit' : `${match.player1Sets} - ${match.player2Sets}`;
-        
-        resultsContent = `
-          <h2>Match Result</h2>
-          <table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">
-            <thead>
-              <tr>
-                <th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: left;">Player 1</th>
-                <th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: center; width: 100px;">Score</th>
-                <th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: left;">Player 2</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style="padding: 8px; border: 1px solid #333;">${player1Name}</td>
-                <td style="padding: 8px; border: 1px solid #333; text-align: center; font-weight: bold;">${score}</td>
-                <td style="padding: 8px; border: 1px solid #333;">${player2Name}</td>
-              </tr>
-            </tbody>
-          </table>
-        `;
-      }
     }
     
     const printContent = `
@@ -2094,7 +1729,7 @@ const Tournaments: React.FC = () => {
             <strong>Date:</strong> ${new Date(tournament.createdAt).toLocaleDateString()}<br>
             <strong>Completed:</strong> ${completionDate}<br>
             <strong>Participants:</strong> ${tournament.participants.length}<br>
-            <strong>Type:</strong> ${tournament.type === 'ROUND_ROBIN' ? 'Round Robin' : tournament.type === 'PLAYOFF' ? 'Playoff' : 'Single Match'}
+            <strong>Type:</strong> ${getTournamentTypeName(tournament)}
           </div>
           ${resultsContent}
         </body>
@@ -2169,8 +1804,8 @@ const Tournaments: React.FC = () => {
             <div 
               key={tournament.id} 
               ref={(el) => { tournamentRefs.current[tournament.id] = el; }}
-              style={{ marginBottom: tournament.type === 'SINGLE_MATCH' ? '10px' : '20px', padding: tournament.type === 'SINGLE_MATCH' ? '8px' : '15px', border: '1px solid #ddd', borderRadius: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: tournament.type === 'SINGLE_MATCH' ? '5px' : '10px' }}>
+              style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ddd', borderRadius: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 {editingTournamentName === tournament.id ? (
                   <TournamentNameEditor
                       value={tournamentNameEdit}
@@ -2179,7 +1814,7 @@ const Tournaments: React.FC = () => {
                     onCancel={handleCancelEditTournamentName}
                   />
                       ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: tournament.type === 'SINGLE_MATCH' ? '4px' : '8px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <TournamentHeader
                       tournament={tournament as any}
                       onEditClick={() => handleStartEditTournamentName(tournament)}
@@ -2191,12 +1826,12 @@ const Tournaments: React.FC = () => {
                   countNonForfeitedMatches={countNonForfeitedMatches}
                 />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {tournament.type !== 'SINGLE_MATCH' && tournament.type !== 'PLAYOFF' && !areAllMatchesPlayed(tournament) && (
+                  {!(tournament.bracketMatches && tournament.bracketMatches.length > 0) && !areAllMatchesPlayed(tournament) && (
                     <span style={{ fontSize: '12px', color: '#e67e22', fontStyle: 'italic' }}>
                       {countNonForfeitedMatches(tournament)} / {getExpectedMatches(tournament)} matches played
                     </span>
                   )}
-                  {tournament.type !== 'SINGLE_MATCH' && tournament.type !== 'PLAYOFF' && (
+                  {!(tournament.bracketMatches && tournament.bracketMatches.length > 0) && (
                     <button 
                       onClick={() => handleCompleteTournament(tournament.id)} 
                       disabled={!areAllMatchesPlayed(tournament)}
@@ -2283,14 +1918,13 @@ const Tournaments: React.FC = () => {
                       ✏️ Modify
                     </button>
                   )}
-                  {tournament.type !== 'SINGLE_MATCH' && (
-                    <button
-                      onClick={() => handleDeleteTournament(tournament.id)}
-                      disabled={!isUserOrganizer}
+                  <button
+                    onClick={() => handleDeleteTournament(tournament.id)}
+                    disabled={!isUserOrganizer}
                       title={
                         !isUserOrganizer 
                           ? 'Only Organizers can delete tournaments' 
-                          : tournament.type === 'PLAYOFF' && tournament.matches.length > 0
+                          : !canDeleteTournament(tournament)
                             ? 'Cancel tournament (moves to completed, keeps matches)'
                             : 'Delete tournament'
                       }
@@ -2310,11 +1944,11 @@ const Tournaments: React.FC = () => {
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: tournament.type === 'PLAYOFF' && tournament.matches.length > 0 ? '#e74c3c' : '#e74c3c',
+                        color: '#e74c3c',
                         opacity: !isUserOrganizer ? 0.5 : 1,
                       }}
                     >
-                      {tournament.type === 'PLAYOFF' && tournament.matches.length > 0 ? (
+                      {!canDeleteTournament(tournament) ? (
                         <svg
                           width="20"
                           height="20"
@@ -2333,236 +1967,11 @@ const Tournaments: React.FC = () => {
                         '🗑️'
                       )}
                     </button>
-                  )}
                 </div>
               </div>
               
-              {/* Single Match - Show line with icons when not editing */}
-              {tournament.type === 'SINGLE_MATCH' && tournament.matches.length === 0 && !editingMatch && (
-                    // Show line with icons when not editing
-                    <div style={{ marginTop: '15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-                          <div style={{ fontSize: '16px', fontWeight: 'bold', lineHeight: '1.2', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-                            <span>{formatPlayerName(tournament.participants[0].member.firstName, tournament.participants[0].member.lastName, getNameDisplayOrder())}</span>
-                          </div>
-                          {tournament.participants[0].member.rating !== null && (
-                            <div style={{ fontSize: '11px', color: '#666', fontWeight: 'normal', marginTop: '2px' }}>
-                              {tournament.participants[0].member.rating}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ fontSize: '18px', color: '#3498db', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '24px' }}>
-                          🏓
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                          <div style={{ fontSize: '16px', fontWeight: 'bold', lineHeight: '1.2', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-                            <span>{formatPlayerName(tournament.participants[1].member.firstName, tournament.participants[1].member.lastName, getNameDisplayOrder())}</span>
-                          </div>
-                          {tournament.participants[1].member.rating !== null && (
-                            <div style={{ fontSize: '11px', color: '#666', fontWeight: 'normal', marginTop: '2px' }}>
-                              {tournament.participants[1].member.rating}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const member1Id = tournament.participants[0].memberId;
-                            const member2Id = tournament.participants[1].memberId;
-                            saveStateBeforeNavigate();
-                            navigate('/history', { 
-                              state: { 
-                                playerId: member1Id, 
-                                opponentIds: [member2Id],
-                                from: 'tournaments'
-                              } 
-                            });
-                          }}
-                          title="View History between these players"
-                          style={{
-                            padding: '2px 4px',
-                            border: 'none',
-                            background: 'transparent',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#e67e22',
-                          }}
-                        >
-                          📜
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const member1Id = tournament.participants[0].memberId;
-                            const member2Id = tournament.participants[1].memberId;
-                            saveStateBeforeNavigate();
-                            navigate('/statistics', { 
-                              state: { 
-                                playerIds: [member1Id, member2Id],
-                                from: 'tournaments'
-                              } 
-                            });
-                          }}
-                          title="View Statistics for both players"
-                          style={{
-                            padding: '2px 4px',
-                            border: 'none',
-                            background: 'transparent',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#3498db',
-                          }}
-                        >
-                          📊
-                        </button>
-                        <div style={{ width: '16px' }}></div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTournament(tournament);
-                            setEditingMatch({
-                              matchId: 0,
-                              member1Id: tournament.participants[0].memberId,
-                              member2Id: tournament.participants[1].memberId,
-                              player1Sets: '0',
-                              player2Sets: '0',
-                              player1Forfeit: false,
-                              player2Forfeit: false,
-                            });
-                          }}
-                          title="Enter Score"
-                          style={{
-                            padding: '2px 4px',
-                            border: 'none',
-                            background: 'transparent',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#27ae60',
-                          }}
-                        >
-                          <svg 
-                            width="20" 
-                            height="20" 
-                            viewBox="0 0 20 20" 
-                            fill="none" 
-                            xmlns="http://www.w3.org/2000/svg"
-                            style={{
-                              display: 'block',
-                              opacity: 0.8,
-                            }}
-                          >
-                            <rect 
-                              x="2" 
-                              y="3" 
-                              width="16" 
-                              height="14" 
-                              rx="2" 
-                              stroke="currentColor" 
-                              strokeWidth="1.5" 
-                              fill="none"
-                            />
-                            <line 
-                              x1="10" 
-                              y1="3" 
-                              x2="10" 
-                              y2="17" 
-                              stroke="currentColor" 
-                              strokeWidth="1.5"
-                            />
-                            <text 
-                              x="5.5" 
-                              y="12" 
-                              fontSize="8" 
-                              fontWeight="bold" 
-                              fill="currentColor" 
-                              textAnchor="middle"
-                              fontFamily="Arial, sans-serif"
-                            >
-                              3
-                            </text>
-                            <text 
-                              x="14.5" 
-                              y="12" 
-                              fontSize="8" 
-                              fontWeight="bold" 
-                              fill="currentColor" 
-                              textAnchor="middle"
-                              fontFamily="Arial, sans-serif"
-                            >
-                              2
-                            </text>
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteTournament(tournament.id);
-                          }}
-                          disabled={!isUserOrganizer}
-                          title={
-                            !isUserOrganizer 
-                              ? 'Only Organizers can delete tournaments' 
-                              : (tournament.type as any) === 'PLAYOFF' && tournament.matches.length > 0
-                                ? 'Cancel tournament (moves to completed, keeps matches)'
-                                : 'Delete Tournament'
-                          }
-                          onMouseEnter={(e) => {
-                            if (isUserOrganizer) {
-                              handleIconMouseEnter('delete', tournament.id, e);
-                            }
-                          }}
-                          onMouseLeave={handleIconMouseLeave}
-                          onMouseMove={handleIconMouseMove}
-                          style={{
-                            padding: '2px 4px',
-                            border: 'none',
-                            background: 'transparent',
-                            cursor: !isUserOrganizer ? 'not-allowed' : 'pointer',
-                            fontSize: '14px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: (tournament.type as any) === 'PLAYOFF' && tournament.matches.length > 0 ? '#e74c3c' : '#e74c3c',
-                            opacity: !isUserOrganizer ? 0.5 : 1,
-                          }}
-                        >
-                          {(tournament.type as any) === 'PLAYOFF' && tournament.matches.length > 0 ? (
-                            <svg
-                              width="20"
-                              height="20"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="#e74c3c"
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              style={{ display: 'block' }}
-                            >
-                              <line x1="18" y1="6" x2="6" y2="18"></line>
-                              <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                          ) : (
-                            '🗑️'
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-              
-              {tournament.type !== 'SINGLE_MATCH' && (
-                // Regular tournament
-                <>
+              {/* Tournament details and matches */}
+              <>
                   <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
                     <ExpandCollapseButton
                       isExpanded={expandedDetails.has(tournament.id)}
@@ -2587,14 +1996,12 @@ const Tournaments: React.FC = () => {
                       expandedText="▲ Hide Details"
                       collapsedText="▼ Show Details / Record Result"
                     />
-                    {(tournament.type === 'ROUND_ROBIN' || tournament.type === 'PLAYOFF') && (
-                      <ExpandCollapseButton
-                        isExpanded={expandedSchedules.has(tournament.id)}
-                        onToggle={() => toggleSchedule(tournament.id)}
-                        expandedText="▲ Hide Schedule"
-                        collapsedText="▼ Show Schedule"
-                      />
-                    )}
+                    <ExpandCollapseButton
+                      isExpanded={expandedSchedules.has(tournament.id)}
+                      onToggle={() => toggleSchedule(tournament.id)}
+                      expandedText="▲ Hide Schedule"
+                      collapsedText="▼ Show Schedule"
+                    />
                     <ExpandCollapseButton
                       isExpanded={expandedParticipants.has(tournament.id)}
                       onToggle={() => toggleParticipants(tournament.id)}
@@ -2835,8 +2242,7 @@ const Tournaments: React.FC = () => {
                       />
                     );
                   })()}
-                </>
-              )}
+              </>
             </div>
               ))}
             </>
@@ -2891,20 +2297,6 @@ const Tournaments: React.FC = () => {
               style={{ cursor: 'pointer' }}
             />
             <span>Tournaments</span>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}>
-            <input
-              type="checkbox"
-              checked={showCompletedMatches}
-              onChange={(e) => {
-                const value = e.target.checked;
-                setShowCompletedMatches(value);
-                // Save to localStorage to make filter sticky
-                localStorage.setItem('tournaments_showCompletedMatches', String(value));
-              }}
-              style={{ cursor: 'pointer' }}
-            />
-            <span>Matches</span>
           </label>
         </div>
         
@@ -3060,715 +2452,55 @@ const Tournaments: React.FC = () => {
         </div>
         )}
 
-        {!completedSectionCollapsed && (showCompletedTournaments || showCompletedMatches) ? (
+        {!completedSectionCollapsed && showCompletedTournaments ? (
           <>
 
             {(() => {
-              // Separate matches and tournaments completely
-              const standaloneMatches = completedMatches.filter(match => showCompletedMatches);
+              // Show only tournaments
               const completedTournaments = filteredCompletedTournaments.filter(tournament => showCompletedTournaments);
 
-              if (standaloneMatches.length === 0 && completedTournaments.length === 0) {
+              if (completedTournaments.length === 0) {
                 const hasFilters = tournamentNameFilter.trim() || dateFilterType;
-                if (showCompletedTournaments && !showCompletedMatches) {
-                  return <p>No completed tournaments{hasFilters ? ' found matching the filters' : ''}</p>;
-                } else if (!showCompletedTournaments && showCompletedMatches) {
-                  return <p>No completed matches</p>;
-                } else {
-                  return <p>No completed events{hasFilters ? ' found matching the filters' : ''}</p>;
-                }
+                return <p>No completed tournaments{hasFilters ? ' found matching the filters' : ''}</p>;
               }
 
               return (
                 <>
-                  {/* Render standalone matches with simple, clean display */}
-                  {standaloneMatches.map((match) => {
-                    const player1 = match.participants[0]?.member;
-                    const player2 = match.participants[1]?.member;
-                    const matchData = match.matches[0];
+                  {/* Render tournaments using plugin system */}
+                  {completedTournaments.map((tournament) => {
+                    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+                    const isExpanded = expandedDetails.has(tournament.id) && tournament.status === 'COMPLETED';
                     
-                    if (!player1 || !player2 || !matchData) return null;
-
                     return (
-                      <div key={`match-${match.id}`} style={{ 
-                        marginBottom: '20px', 
-                        padding: '16px', 
-                        border: '1px solid #3498db', 
-                        borderRadius: '8px',
-                        background: 'linear-gradient(135deg, #f5f9ff 0%, #e8f4fd 100%)',
-                        boxShadow: '0 4px 8px rgba(52, 152, 219, 0.15)'
-                      }}>
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center',
-                          gap: '20px',
-                          marginBottom: '8px'
-                        }}>
-                          <div style={{ 
-                            fontSize: '18px', 
-                            fontWeight: '600',
-                            color: '#2c3e50',
-                            minWidth: '140px'
-                          }}>
-                            {player1.firstName} {player1.lastName}
-                          </div>
-                          <div style={{ 
-                            fontSize: '20px', 
-                            fontWeight: 'bold',
-                            color: '#3498db',
-                            minWidth: '50px',
-                            textAlign: 'center',
-                            padding: '4px 8px',
-                            backgroundColor: '#ecf0f1',
-                            borderRadius: '4px'
-                          }}>
-                            {matchData.player1Sets}:{matchData.player2Sets}
-                          </div>
-                          <div style={{ 
-                            fontSize: '18px', 
-                            fontWeight: '600',
-                            color: '#2c3e50',
-                            minWidth: '140px'
-                          }}>
-                            {player2.firstName} {player2.lastName}
-                          </div>
-                          <div style={{ display: 'flex', gap: '12px', marginLeft: 'auto' }}>
-                            <button
-                              onClick={() => {/* TODO: Add stats handler */}}
-                              style={{ 
-                                background: '#3498db', 
-                                border: 'none', 
-                                cursor: 'pointer', 
-                                fontSize: '16px',
-                                padding: '8px 12px',
-                                borderRadius: '4px',
-                                color: 'white',
-                                transition: 'background-color 0.2s'
-                              }}
-                              title="View Statistics"
-                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#2980b9'}
-                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#3498db'}
-                            >
-                              📊
-                            </button>
-                            <button
-                              onClick={() => {/* TODO: Add history handler */}}
-                              style={{ 
-                                background: '#27ae60', 
-                                border: 'none', 
-                                cursor: 'pointer', 
-                                fontSize: '16px',
-                                padding: '8px 12px',
-                                borderRadius: '4px',
-                                color: 'white',
-                                transition: 'background-color 0.2s'
-                              }}
-                              title="View History"
-                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#229954'}
-                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#27ae60'}
-                            >
-                              📜
-                            </button>
-                          </div>
-                        </div>
-                        <div style={{ 
-                          fontSize: '13px', 
-                          color: '#7f8c8d',
-                          fontStyle: 'italic',
-                          paddingLeft: '4px'
-                        }}>
-                          📅 {new Date(matchData.createdAt || match.createdAt).toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric', 
-                            year: 'numeric' 
-                          })} at {new Date(matchData.createdAt || match.createdAt).toLocaleTimeString('en-US', { 
-                            hour: 'numeric', 
-                            minute: '2-digit',
-                            hour12: true 
-                          })}
-                        </div>
+                      <div key={tournament.id}>
+                        {plugin.createCompletedPanel({
+                          tournament: tournament as any,
+                          onTournamentUpdate: (updatedTournament) => {
+                            setTournaments(prev => 
+                              prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
+                            );
+                          },
+                          onError: (error) => setError(error),
+                          onSuccess: (message) => {
+                            console.log('Success:', message);
+                          },
+                          isExpanded,
+                          onToggleExpand: () => {
+                            const newSet = new Set(expandedDetails);
+                            if (newSet.has(tournament.id)) {
+                              newSet.delete(tournament.id);
+                            } else {
+                              newSet.add(tournament.id);
+                            }
+                            setExpandedDetails(newSet);
+                          }
+                        })}
                       </div>
                     );
                   })}
-
-                  {/* Render regular tournaments using plugin system */}
-                  {completedTournaments.map((tournament) => {
-                    const plugin = tournament.type ? tournamentPluginRegistry.get(tournament.type as any) : null;
-                    const isExpanded = expandedDetails.has(tournament.id) && tournament.status === 'COMPLETED';
-                    
-                    // If plugin exists and tournament is completed, use plugin's completed panel
-                    if (plugin && tournament.status === 'COMPLETED') {
-                      return (
-                        <div key={tournament.id}>
-                          {plugin.createCompletedPanel({
-                            tournament: tournament as any,
-                            onTournamentUpdate: (updatedTournament) => {
-                              setTournaments(prev => 
-                                prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
-                              );
-                            },
-                            onError: (error) => setError(error),
-                            onSuccess: (message) => {
-                              console.log('Success:', message);
-                            },
-                            isExpanded,
-                            onToggleExpand: () => {
-                              const newSet = new Set(expandedDetails);
-                              if (newSet.has(tournament.id)) {
-                                newSet.delete(tournament.id);
-                              } else {
-                                newSet.add(tournament.id);
-                              }
-                              setExpandedDetails(newSet);
-                            }
-                          })}
-                        </div>
-                      );
-                    }
-                    
-                    // Fallback to existing logic for now
-                    const { participants, participantData, matrix } = buildResultsMatrix(tournament);
-                    const standings = tournament.type === 'ROUND_ROBIN' ? calculateStandings(tournament) : [];
-                    const rankingMap = new Map(standings.map(s => [s.member.id, s.position]));
-              
-              return (
-                <div 
-                  key={tournament.id} 
-                  ref={(el) => { tournamentRefs.current[tournament.id] = el; }}
-                  style={{ marginBottom: tournament.type === 'SINGLE_MATCH' ? '10px' : '30px', padding: tournament.type === 'SINGLE_MATCH' ? '8px' : '15px', border: '1px solid #ddd', borderRadius: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: tournament.type === 'SINGLE_MATCH' ? '5px' : '15px' }}>
-                    <div style={{ flex: 1 }}>
-                      {editingTournamentName === tournament.id ? (
-                        <TournamentNameEditor
-                            value={tournamentNameEdit}
-                          onChange={setTournamentNameEdit}
-                          onSave={() => handleSaveTournamentName(tournament.id)}
-                          onCancel={handleCancelEditTournamentName}
-                        />
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: tournament.type === 'SINGLE_MATCH' ? '4px' : '8px', flexWrap: 'wrap' }}>
-                          <TournamentHeader
-                            tournament={tournament}
-                            onEditClick={() => handleStartEditTournamentName(tournament)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <TournamentInfo
-                      tournament={tournament as any}
-                      countNonForfeitedMatches={countNonForfeitedMatches}
-                      alignRight={true}
-                    />
-                    {tournament.type === 'SINGLE_MATCH' ? (
-                      tournament.status === 'COMPLETED' && tournament.matches.length > 0 ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const member1Id = tournament.matches[0].member1Id;
-                              const member2Id = tournament.matches[0].member2Id;
-                              saveStateBeforeNavigate();
-                              navigate('/statistics', { 
-                                state: { 
-                                  playerIds: [member1Id, member2Id].filter(id => id !== null) as number[],
-                                  from: 'tournaments'
-                                } 
-                              });
-                            }}
-                            title="View Statistics for both players"
-                            style={{
-                              padding: '4px 8px',
-                              border: 'none',
-                              background: 'transparent',
-                              cursor: 'pointer',
-                              fontSize: '14px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: '#3498db',
-                            }}
-                          >
-                            📊
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const member1Id = tournament.matches[0].member1Id;
-                              const member2Id = tournament.matches[0].member2Id;
-                              saveStateBeforeNavigate();
-                              navigate('/history', { 
-                                state: { 
-                                  playerId: member1Id, 
-                                  opponentIds: member2Id ? [member2Id] : [],
-                                  from: 'tournaments'
-                                } 
-                              });
-                            }}
-                            title="View History between these players"
-                            style={{
-                              padding: '4px 8px',
-                              border: 'none',
-                              background: 'transparent',
-                              cursor: 'pointer',
-                              fontSize: '14px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: '#e67e22',
-                            }}
-                          >
-                            📜
-                          </button>
-                        </div>
-                      ) : (
-                        <span
-                          style={{
-                            backgroundColor: '#95a5a6',
-                            color: 'white',
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: 'bold',
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          🏓 MATCH
-                        </span>
-                      )
-                    ) : null}
-                  </div>
-
-                  {tournament.type !== 'SINGLE_MATCH' && (
-                    // Regular tournament
-                    <>
-                      <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                        <ExpandCollapseButton
-                          isExpanded={expandedDetails.has(tournament.id)}
-                          onToggle={() => {
-                            const isCurrentlyExpanded = expandedDetails.has(tournament.id);
-                            setExpandedDetails(prev => {
-                              const newSet = new Set(prev);
-                              if (isCurrentlyExpanded) {
-                                newSet.delete(tournament.id);
-                              } else {
-                                newSet.add(tournament.id);
-                              }
-                              return newSet;
-                            });
-                          }}
-                          expandedText="▲ Hide Results"
-                          collapsedText="▼ Show Results"
-                          title={isExpanded ? 'Hide Results' : 'Show Results'}
-                        />
-                        <ExpandCollapseButton
-                          isExpanded={expandedParticipants.has(tournament.id)}
-                          onToggle={() => toggleParticipants(tournament.id)}
-                          expandedText="▲ Hide Participants"
-                          collapsedText="▼ Show Participants"
-                          title={expandedParticipants.has(tournament.id) ? 'Hide Participants' : 'Show Participants'}
-                        />
-                      <button
-                          onClick={() => handlePrintResults(tournament)}
-                        style={{
-                            padding: '8px 16px',
-                            border: '1px solid #3498db',
-                          borderRadius: '4px',
-                            backgroundColor: '#fff',
-                            color: '#3498db',
-                          cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 'bold',
-                            transition: 'all 0.2s ease',
-                          }}
-                          title="Print Results"
-                        >
-                          🖨️ Print
-                      </button>
-                  </div>
-
-                      {/* Participants section for completed tournaments */}
-                      {expandedParticipants.has(tournament.id) && (
-                        <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
-                          Participants: {tournament.participants.map(p => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
-                        </p>
-                      )}
-                    </>
-                  )}
-
-                  {isExpanded && tournament.type !== 'SINGLE_MATCH' && (
-                    <div style={{ marginTop: '10px' }}>
-                      {tournament.type === 'PLAYOFF' ? (
-                        <PlayoffBracket
-                          tournamentId={tournament.id}
-                          participants={tournament.participants}
-                          tournamentStatus={tournament.status}
-                          cancelled={tournament.cancelled}
-                          matches={(() => {
-                            const bracketMatches = tournament.bracketMatches || [];
-                            return bracketMatches.map((bm: any) => ({
-                              ...bm,
-                              member1Id: bm.member1Id ?? bm.player1Id,
-                              member2Id: bm.member2Id ?? bm.player2Id,
-                              player1Id: bm.player1Id ?? bm.member1Id,
-                              player2Id: bm.player2Id ?? bm.member2Id,
-                            })).map((bm: any) => {
-                            const match = bm.match;
-                            // Determine winner from match result if it exists
-                            let winnerId: number | null = null;
-                            if (match) {
-                              if (match.player1Sets > (match.player2Sets ?? 0)) {
-                                winnerId = match.member1Id;
-                              } else if ((match.player2Sets ?? 0) > match.player1Sets) {
-                                winnerId = match.member2Id;
-                              } else if (match.player1Forfeit) {
-                                winnerId = match.member2Id;
-                              } else if (match.player2Forfeit) {
-                                winnerId = match.member1Id;
-                              }
-                            }
-                            
-                            // Check for BYEs: memberId === null or 0 means BYE
-                            const player1IsBye = bm.member1Id === null || bm.member1Id === 0;
-                            const player2IsBye = bm.member2Id === null || bm.member2Id === 0;
-                            
-                            return {
-                              id: bm.id, // BracketMatch ID - essential for tracking all bracket matches
-                              round: bm.round,
-                              position: bm.position,
-                              member1Id: bm.member1Id,
-                              member2Id: bm.member2Id,
-                              player1Id: player1IsBye ? null : bm.member1Id, // Convert 0/null to null for frontend
-                              player2Id: player2IsBye ? null : bm.member2Id, // Convert 0/null to null for frontend
-                              player1IsBye,
-                              player2IsBye,
-                              matchId: match?.id, // Match ID if match has been played, undefined otherwise
-                              winnerId: winnerId,
-                              nextMatchId: bm.nextMatchId || undefined,
-                              player1Sets: match?.player1Sets,
-                              player2Sets: match?.player2Sets,
-                              player1Forfeit: match?.player1Forfeit,
-                              player2Forfeit: match?.player2Forfeit,
-                              // Include match rating data if available
-                              match: match ? {
-                                id: match.id,
-                                player1RatingBefore: match.player1RatingBefore ?? null,
-                                player1RatingChange: match.player1RatingChange ?? null,
-                                player2RatingBefore: match.player2RatingBefore ?? null,
-                                player2RatingChange: match.player2RatingChange ?? null,
-                              } : undefined,
-                            };
-                          });
-                          })()}
-                          onBracketUpdate={fetchData}
-                          isReadOnly={tournament.status === 'COMPLETED'}
-                        />
-                      ) : tournament.status === 'COMPLETED' && tournament.type === 'ROUND_ROBIN' ? (
-                        <div style={{ marginBottom: '30px' }}>
-                          <h5 style={{ marginBottom: '15px' }}>Final Standings</h5>
-                          <div style={{ overflowX: 'auto' }}>
-                            <table style={{ borderCollapse: 'collapse', fontSize: '14px', width: '100%', maxWidth: '800px' }}>
-                              <thead>
-                                <tr>
-                                  <th style={{ padding: '8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'center', width: '60px' }}>Pos</th>
-                                  <th style={{ padding: '8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'left', whiteSpace: 'nowrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span>Player</span>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleQuickViewStats(tournament.id);
-                                        }}
-                                        title="View Statistics for All Players in This Tournament"
-                                        style={{
-                                          padding: '2px 4px',
-                                          border: 'none',
-                                          background: 'transparent',
-                                          cursor: 'pointer',
-                                          fontSize: '14px',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                          color: '#3498db',
-                                        }}
-                                      >
-                                        📊
-                                      </button>
-                                    </div>
-                                  </th>
-                                  <th style={{ padding: '8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'center', width: '60px' }}>W</th>
-                                  <th style={{ padding: '8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'center', width: '60px' }}>L</th>
-                                  <th style={{ padding: '8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'center', width: '80px' }}>Sets Won</th>
-                                  <th style={{ padding: '8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'center', width: '80px' }}>Sets Lost</th>
-                                  <th style={{ padding: '8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'center', width: '100px' }}>Set Diff</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {calculateStandings(tournament).map(({ member, stats, position }) => {
-                                  const participant = tournament.participants.find(p => p.memberId === member.id);
-                                  const ratingDisplay = formatCompletedTournamentRating(participant?.playerRatingAtTime, member.rating);
-                                  const setDiff = stats.setsWon - stats.setsLost;
-                                  
-                                  return (
-                                    <tr key={member.id}>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center', fontWeight: 'bold', backgroundColor: position === 1 ? '#fff3cd' : position === 2 ? '#e9ecef' : position === 3 ? '#d4edda' : '#fff' }}>
-                                        {position}
-                                      </td>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>
-                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                                          <PlayerNameWithIcons member={member} tournament={tournament} />
-                                          {ratingDisplay && (
-                                            <span style={{ fontSize: '11px', color: '#666', fontWeight: 'normal' }}>
-                                              ({position}, {ratingDisplay})
-                                            </span>
-                                          )}
-                                        </div>
-                                      </td>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>{stats.wins}</td>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>{stats.losses}</td>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>{stats.setsWon}</td>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>{stats.setsLost}</td>
-                                      <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center', fontWeight: 'bold', color: setDiff > 0 ? '#28a745' : setDiff < 0 ? '#dc3545' : '#666' }}>
-                                        {setDiff > 0 ? '+' : ''}{setDiff}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      ) : null}
-                      
-                      {tournament.type === 'ROUND_ROBIN' && (
-                        <>
-                          <h5 style={{ marginBottom: '15px' }}>Results Matrix</h5>
-                      <div style={{ marginBottom: '20px', display: 'inline-block' }}>
-                        <table style={{ borderCollapse: 'collapse', fontSize: '14px', tableLayout: 'auto' }}>
-                          <thead>
-                            <tr>
-                              <th style={{ padding: '6px 8px', border: '1px solid #ddd', backgroundColor: '#f8f9fa', textAlign: 'left', whiteSpace: 'nowrap' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span>Player</span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleQuickViewStats(tournament.id);
-                                    }}
-                                    title="View Statistics for All Players in This Tournament"
-                                    style={{
-                                      padding: '2px 4px',
-                                      border: 'none',
-                                      background: 'transparent',
-                                      cursor: 'pointer',
-                                      fontSize: '14px',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      color: '#3498db',
-                                    }}
-                                  >
-                                    📊
-                                  </button>
-                                </div>
-                              </th>
-                              {participants.map((participant) => {
-                                return (
-                                  <th
-                                    key={participant.member.id}
-                                    style={{
-                                      padding: '8px',
-                                      border: '1px solid #ddd',
-                                      backgroundColor: '#f8f9fa',
-                                      minWidth: '80px',
-                                      textAlign: 'center',
-                                      fontWeight: 'normal',
-                                    }}
-                                  >
-                                    <div>
-                                      {formatPlayerName(participant.member.firstName, participant.member.lastName, getNameDisplayOrder())}
-                                    </div>
-                                  </th>
-                                );
-                              })}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {participants.map((participant1) => {
-                            const participantData1 = participantData.find(p => p.memberId === participant1.member.id);
-                            const ratingDisplay1 = tournament.status === 'COMPLETED'
-                              ? formatCompletedTournamentRating(participantData1?.playerRatingAtTime, participant1.member.rating)
-                              : formatActiveTournamentRating(participantData1?.playerRatingAtTime, participant1.member.rating);
-                            const ranking1 = rankingMap.get(participant1.member.id);
-                            return (
-                              <tr key={participant1.member.id}>
-                                <td
-                                  style={{
-                                    padding: '6px 8px',
-                                    border: '1px solid #ddd',
-                                    backgroundColor: '#f8f9fa',
-                                    fontWeight: 'bold',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                  >
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                                      <PlayerNameWithIcons member={participant1.member} tournament={tournament} />
-                                      {ranking1 && ratingDisplay1 && (
-                                        <span style={{ fontSize: '11px', color: '#666', fontWeight: 'normal' }}>
-                                          ({ranking1}, {ratingDisplay1})
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                {participants.map((participant2) => {
-                                  const score = matrix[participant1.member.id][participant2.member.id];
-                                  const isDiagonal = participant1.member.id === participant2.member.id;
-                                  const hasScore = score && score !== '';
-                                  const cellStyle: React.CSSProperties = {
-                                    padding: '8px',
-                                    border: '1px solid #ddd',
-                                    textAlign: 'center',
-                                    backgroundColor: isDiagonal ? '#e9ecef' : hasScore ? '#fff' : '#f9f9f9',
-                                    fontWeight: isDiagonal ? 'normal' : 'bold',
-                                    cursor: hasScore && !isDiagonal ? 'pointer' : 'default',
-                                    minWidth: '80px',
-                                    width: '80px',
-                                  };
-
-                                  // Highlight winner (higher score or W)
-                                  if (!isDiagonal && score) {
-                                    const isForfeit = score === 'W' || score === 'L';
-                                    if (isForfeit) {
-                                      if (score === 'W') {
-                                        cellStyle.backgroundColor = '#d4edda';
-                                      } else {
-                                        cellStyle.backgroundColor = '#f8d7da';
-                                      }
-                                    } else {
-                                      const [score1, score2] = score.split(' - ').map(Number);
-                                      if (score1 > score2) {
-                                        cellStyle.backgroundColor = '#d4edda';
-                                      } else if (score2 > score1) {
-                                        cellStyle.backgroundColor = '#f8d7da';
-                                      }
-                                    }
-                                  }
-
-                                  // Determine if this cell can be edited (organizer and not diagonal)
-                                  const canEditCell = isUserOrganizer && !isDiagonal;
-                                  
-                                  return (
-                                    <td 
-                                      key={participant2.member.id} 
-                                      style={{...cellStyle, cursor: canEditCell ? 'pointer' : 'default', position: 'relative'}}
-                                      onDoubleClick={() => canEditCell && handleCellDoubleClick(participant1.member.id, participant2.member.id, tournament)}
-                                      title={canEditCell ? (hasScore ? 'Double-click to edit' : 'Double-click to record result') : (isUserOrganizer ? '' : 'Only Organizers can enter matches')}
-                                    >
-                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                        {hasScore ? (
-                                          <span>{score}</span>
-                                        ) : (
-                                          isUserOrganizer ? (
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                                handleCellDoubleClick(participant1.member.id, participant2.member.id, tournament);
-                                              }}
-                                              onDoubleClick={(e) => {
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                                handleCellDoubleClick(participant1.member.id, participant2.member.id, tournament);
-                                              }}
-                                              title="Click or double-click to enter score"
-                                              style={{
-                                                padding: '2px 4px',
-                                                border: 'none',
-                                                background: 'transparent',
-                                                cursor: 'pointer',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                              justifyContent: 'center',
-                                              color: '#27ae60',
-                                            }}
-                                          >
-                                            <svg 
-                                              width="16" 
-                                              height="16" 
-                                              viewBox="0 0 20 20" 
-                                              fill="none" 
-                                              xmlns="http://www.w3.org/2000/svg"
-                                              style={{
-                                                display: 'block',
-                                                opacity: 0.8,
-                                              }}
-                                            >
-                                              <rect 
-                                                x="2" 
-                                                y="3" 
-                                                width="16" 
-                                                height="14" 
-                                                rx="2" 
-                                                stroke="currentColor" 
-                                                strokeWidth="1.5" 
-                                                fill="none"
-                                              />
-                                              <line 
-                                                x1="10" 
-                                                y1="3" 
-                                                x2="10" 
-                                                y2="17" 
-                                                stroke="currentColor" 
-                                                strokeWidth="1.5"
-                                              />
-                                              <text 
-                                                x="5.5" 
-                                                y="12" 
-                                                fontSize="7" 
-                                                fontWeight="bold" 
-                                                fill="currentColor" 
-                                                textAnchor="middle"
-                                                fontFamily="Arial, sans-serif"
-                                              >
-                                                ?
-                                              </text>
-                                              <text 
-                                                x="14.5" 
-                                                y="12" 
-                                                fontSize="7" 
-                                                fontWeight="bold" 
-                                                fill="currentColor" 
-                                                textAnchor="middle"
-                                                fontFamily="Arial, sans-serif"
-                                              >
-                                                ?
-                                              </text>
-                                            </svg>
-                                          </button>
-                                          ) : null
-                                        )}
-                                      </div>
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                      <p style={{ fontSize: '12px', color: '#666', marginTop: '10px', fontStyle: 'italic' }}>
-                        Green cells indicate wins for the row player, red cells indicate losses. Diagonal shows player names. W = Win (forfeit), L = Loss (forfeit). Double-click a score to edit.
-                      </p>
-                      </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
+                </>
               );
-              })}
-            </>
-          );
-        })()}
+            })()}
           </>
         ) : null}
       </div>
@@ -3816,65 +2548,57 @@ const Tournaments: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 10001,
-        }}
-        onClick={() => setShowCancelConfirmation(null)}
-        >
+          zIndex: 10000,
+        }}>
           <div style={{
             backgroundColor: 'white',
-            padding: '24px',
+            padding: '30px',
             borderRadius: '8px',
             maxWidth: '500px',
-            width: '90%',
             boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-          }}
-          onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#e67e22' }}>Cancel Tournament</h3>
-            <p style={{ marginBottom: '16px', lineHeight: '1.5' }}>
-              This tournament has {showCancelConfirmation.matchCount} match{showCancelConfirmation.matchCount !== 1 ? 'es' : ''} recorded.
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#e74c3c' }}>
+              Cancel Tournament?
+            </h3>
+            <p style={{ marginBottom: '10px' }}>
+              This tournament has <strong>{showCancelConfirmation.matchCount}</strong> completed {showCancelConfirmation.matchCount === 1 ? 'match' : 'matches'}.
             </p>
-            <p style={{ marginBottom: '16px', lineHeight: '1.5', fontWeight: 'bold', color: '#333' }}>
-              What will happen:
-            </p>
-            <ul style={{ marginBottom: '20px', paddingLeft: '20px', lineHeight: '1.8' }}>
-              <li>The tournament will be moved to <strong>Completed</strong> state</li>
-              <li>All completed matches will be <strong>kept and recorded</strong></li>
-              <li>All completed matches will <strong>affect players' ratings</strong></li>
-              <li>The tournament will show <strong>"NOT COMPLETED"</strong> instead of a champion name</li>
-            </ul>
-            <p style={{ marginBottom: '20px', lineHeight: '1.5', color: '#666', fontSize: '14px' }}>
-              This action cannot be undone. Are you sure you want to cancel this tournament?
+            <p style={{ marginBottom: '20px' }}>
+              Cancelling will move the tournament to completed status and preserve all match results and rating changes.
             </p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowCancelConfirmation(null)}
                 style={{
-                  padding: '8px 16px',
-                  border: '1px solid #ccc',
+                  padding: '10px 20px',
+                  border: '1px solid #ddd',
                   borderRadius: '4px',
-                  backgroundColor: '#f5f5f5',
-                  color: '#000',
+                  backgroundColor: 'white',
                   cursor: 'pointer',
                   fontSize: '14px',
                 }}
               >
-                Cancel
+                Keep Tournament Active
               </button>
               <button
-                onClick={() => handleCancelTournament(showCancelConfirmation.tournamentId)}
+                onClick={async () => {
+                  if (showCancelConfirmation) {
+                    await handleCancelTournament(showCancelConfirmation.tournamentId);
+                    setShowCancelConfirmation(null);
+                  }
+                }}
                 style={{
-                  padding: '8px 16px',
+                  padding: '10px 20px',
                   border: 'none',
                   borderRadius: '4px',
-                  backgroundColor: '#e67e22',
+                  backgroundColor: '#e74c3c',
                   color: 'white',
                   cursor: 'pointer',
                   fontSize: '14px',
                   fontWeight: 'bold',
                 }}
               >
-                Confirm Cancellation
+                Cancel Tournament
               </button>
             </div>
           </div>

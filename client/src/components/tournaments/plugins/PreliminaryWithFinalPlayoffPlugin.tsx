@@ -32,7 +32,7 @@ const PreliminaryWithFinalPlayoffCompletedPanel: React.FC<TournamentCompletedPro
 );
 
 export const PreliminaryWithFinalPlayoffPlugin: TournamentPlugin = {
-  type: TournamentType.PRELIMINARY_WITH_FINAL_PLAYOFF,
+  type: 'PRELIMINARY_WITH_FINAL_PLAYOFF',
   isBasic: false, // This is a compound tournament
   name: 'Preliminary + Final Playoff',
   description: 'Preliminary rounds followed by a final playoff bracket',

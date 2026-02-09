@@ -132,12 +132,31 @@ function App() {
     };
   }, []);
 
-  const handleLogin = () => {
-    // After successful login, member is already in localStorage and session is set
-    // Just set auth state directly without making another API call
-    setIsAuth(true);
-    // The App will re-render and show the main app with Routes
-    // The default route "/" will redirect to "/players" via Navigate component
+  const handleLogin = async () => {
+    // After successful login, verify the session is properly established
+    try {
+      const response = await api.get('/auth/member/me');
+      if (response.data.member) {
+        // Update member data in case it changed
+        setMember(response.data.member);
+        // Check if password reset is required
+        if (response.data.member.mustResetPassword) {
+          setShowPasswordReset(true);
+        }
+        setIsAuth(true);
+      } else {
+        // Session not established, stay on login
+        removeMember();
+        removeToken();
+        setIsAuth(false);
+      }
+    } catch (err) {
+      // Session verification failed, stay on login
+      console.error('Session verification failed after login:', err);
+      removeMember();
+      removeToken();
+      setIsAuth(false);
+    }
   };
 
   const handleLogout = async () => {
