@@ -108,9 +108,9 @@ export class PlayoffPlugin implements TournamentPlugin {
   isBasic = true;
 
   async createTournament(context: TournamentCreationContext): Promise<any> {
-    const { name, participantIds, players, prisma, additionalData } = context;
+    const { name, participantIds, players, prisma, additionalData, bracketPositions: bracketPositionsFromBody } = context as any;
     
-    const bracketPositions = additionalData?.bracketPositions || [];
+    const bracketPositions = additionalData?.bracketPositions || bracketPositionsFromBody || [];
     
     // Create tournament
     const tournament = await prisma.tournament.create({
@@ -120,7 +120,7 @@ export class PlayoffPlugin implements TournamentPlugin {
         status: 'ACTIVE',
         participants: {
           create: participantIds.map((memberId: number) => {
-            const player = players.find(p => p.id === memberId);
+            const player = players.find((p: any) => p.id === memberId);
             return {
               memberId,
               playerRatingAtTime: player?.rating || null,

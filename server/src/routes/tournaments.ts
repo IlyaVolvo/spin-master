@@ -415,7 +415,7 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, participantIds, type, bracketPositions, roundRobinSize, playoffBracketSize, groups } = req.body;
+    const { name, participantIds, type, bracketPositions, roundRobinSize, playoffBracketSize, groups, additionalData } = req.body;
     
     // Get valid types from plugin registry
     const validTypes = tournamentPluginRegistry.getTypes();
@@ -477,6 +477,7 @@ router.post('/', [
       roundRobinSize,
       playoffBracketSize,
       groups,
+      additionalData,
       prisma,
     });
 
@@ -575,7 +576,7 @@ router.post('/bulk', [
   }
 });
 
-// Create a match directly with final scores (creates SINGLE_MATCH tournament with COMPLETED status)
+// Create a standalone match directly with final scores (no tournament, tournamentId = null)
 // Organizers can create matches for any pair of players
 // Non-organizers can create matches for themselves (need opponent's password confirmation)
 router.post('/matches/create', [
@@ -584,7 +585,6 @@ router.post('/matches/create', [
   body('player1Sets').toInt().isInt({ min: 0 }),
   body('player2Sets').toInt().isInt({ min: 0 }),
   body('opponentPassword').optional().trim(), // Required for non-organizers
-  body('name').optional().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -593,7 +593,7 @@ router.post('/matches/create', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { member1Id, member2Id, player1Sets, player2Sets, opponentPassword, name } = req.body;
+    const { member1Id, member2Id, player1Sets, player2Sets, opponentPassword } = req.body;
     const currentMemberId = req.memberId || req.member?.id;
 
     if (!currentMemberId) {
@@ -669,72 +669,34 @@ router.post('/matches/create', [
     const finalPlayer1Sets = player1Sets ?? 0;
     const finalPlayer2Sets = player2Sets ?? 0;
 
-    // Generate tournament name
-    let tournamentName = name;
-    if (!tournamentName) {
-      const dateStr = new Date().toLocaleDateString();
-      tournamentName = `${player1.firstName} ${player1.lastName} vs ${player2.firstName} ${player2.lastName} - ${dateStr}`;
-    }
-
-    // Create tournament with match in a transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Create tournament with COMPLETED status
-      const tournament = await tx.tournament.create({
-        data: {
-          name: tournamentName,
-          type: 'SINGLE_MATCH',
-          status: 'COMPLETED', // Never active, immediately completed
-          participants: {
-            create: [
-              {
-                memberId: member1Id,
-                playerRatingAtTime: player1.rating || null,
-              },
-              {
-                memberId: member2Id,
-                playerRatingAtTime: player2.rating || null,
-              },
-            ],
-          },
-        },
-      });
-
-      // Create match with final scores
-      const match = await tx.match.create({
-        data: {
-          tournamentId: tournament.id,
-          member1Id,
-          member2Id,
-          player1Sets: finalPlayer1Sets,
-          player2Sets: finalPlayer2Sets,
-          player1Forfeit: false,
-          player2Forfeit: false,
-        },
-      });
-
-      return { tournament, match };
+    // Create standalone match with null tournamentId
+    const match = await prisma.match.create({
+      data: {
+        tournamentId: null,
+        member1Id,
+        member2Id,
+        player1Sets: finalPlayer1Sets,
+        player2Sets: finalPlayer2Sets,
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
     });
 
-    // Process rating changes
+    // Process rating changes (null tournamentId = standalone match, uses current ratings)
     const winnerId = finalPlayer1Sets > finalPlayer2Sets ? member1Id :
                      finalPlayer2Sets > finalPlayer1Sets ? member2Id : null;
     
     if (winnerId && member1Id !== null && member2Id !== null) {
       const { processMatchRating } = await import('../services/matchRatingService');
       const player1Won = winnerId === member1Id;
-      // Use incremental rating (current rating, not playerRatingAtTime)
-      await processMatchRating(member1Id, member2Id, player1Won, result.tournament.id, result.match.id, false, true);
+      await processMatchRating(member1Id, member2Id, player1Won, null, match.id, false, true);
     }
 
-    // Invalidate cache and emit notifications
-    await invalidateCacheAfterTournament(result.tournament.id);
-    emitTournamentUpdate(result.tournament);
-    emitMatchUpdate(result.match, result.tournament.id);
-    emitCacheInvalidation(result.tournament.id);
+    // Emit match update notification
+    emitMatchUpdate(match, null);
 
-    logger.info('Match created successfully', { 
-      tournamentId: result.tournament.id, 
-      matchId: result.match.id,
+    logger.info('Standalone match created successfully', { 
+      matchId: match.id,
       member1Id,
       member2Id,
       player1Sets: finalPlayer1Sets,
@@ -742,11 +704,10 @@ router.post('/matches/create', [
     });
 
     res.status(201).json({
-      tournament: result.tournament,
-      match: result.match,
+      match,
     });
   } catch (error) {
-    logger.error('Error creating match', { 
+    logger.error('Error creating standalone match', { 
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
       body: req.body
@@ -852,7 +813,6 @@ router.post('/:id/matches', [
 
     // Adjust ratings immediately after match is created
     // Delegate rating calculation to plugin
-    // SINGLE_MATCH: Calculate per match using playerRatingAtTime (rating when tournament started)
     // Forfeited matches should not change ratings
     // Note: BYE matches are already rejected above, so we know this is not a BYE match
     
@@ -872,34 +832,14 @@ router.post('/:id/matches', [
             winnerId,
             prisma,
           });
-        } else if (tournament.type === 'SINGLE_MATCH') {
-          // SINGLE_MATCH: Legacy handling (will be refactored separately)
-          const { processMatchRating } = await import('../services/matchRatingService');
-          const player1Won = winnerId === member1Id;
-          await processMatchRating(member1Id, member2Id, player1Won, tournamentId, match.id, false, true);
         }
       }
     }
 
-    // For Single Match tournaments, auto-complete after match is created
-    if (tournament.type === 'SINGLE_MATCH') {
-      // Mark tournament as completed
-      const completedTournament = await prisma.tournament.update({
-        where: { id: tournamentId },
-        data: { status: 'COMPLETED' },
-      });
-      
-      // Invalidate cache and emit notifications
-      await invalidateCacheAfterTournament(tournamentId);
-      emitTournamentUpdate(completedTournament);
-      emitMatchUpdate(match, tournamentId);
-      emitCacheInvalidation(tournamentId);
-    } else {
-      // For other tournament types, invalidate cache for this tournament
-      invalidateTournamentCache(tournamentId);
-      emitMatchUpdate(match, tournamentId);
-      emitCacheInvalidation(tournamentId);
-    }
+    // Invalidate cache for this tournament
+    invalidateTournamentCache(tournamentId);
+    emitMatchUpdate(match, tournamentId);
+    emitCacheInvalidation(tournamentId);
 
     res.status(201).json(match);
   } catch (error) {
@@ -961,7 +901,7 @@ router.patch('/:tournamentId/matches/:matchId', [
       player1Forfeit: player1Forfeit || false,
       player2Forfeit: player2Forfeit || false,
       prisma,
-      userId: req.userId,
+      userId: req.userId ?? req.memberId,
     });
     
     const updatedMatch = result.match;
@@ -1149,7 +1089,7 @@ router.delete('/:tournamentId/matches/:matchId', async (req: AuthRequest, res: R
       return res.status(400).json({ error: 'Match does not belong to this tournament' });
     }
 
-    const tournamentStatus = match.tournament.status;
+    const tournamentStatus = match.tournament?.status;
 
     // Delete the match
     await prisma.match.delete({
@@ -1532,7 +1472,7 @@ const handlePluginRequest = async (
       data: req.body,
       query: req.query,
       prisma,
-      userId: req.userId,
+      userId: req.userId ?? req.memberId,
     });
     
     res.json(result);

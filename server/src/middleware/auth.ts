@@ -6,6 +6,7 @@ import { prisma } from '../index';
 
 export interface AuthRequest extends Request {
   memberId?: number;
+  userId?: number;
   member?: {
     id: number;
     email: string;

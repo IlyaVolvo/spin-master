@@ -122,7 +122,7 @@ async function generateMatches(minRating: number, maxRating: number, numMatches:
     // Generate match score
     const { player1Sets, player2Sets } = generateBestOf5Score(rating1, rating2);
 
-    // Create tournament (SINGLE_MATCH type)
+    // Create tournament for the match
     const tournamentName = `${player1.firstName} ${player1.lastName} vs ${player2.firstName} ${player2.lastName} - ${new Date().toLocaleDateString()}`;
 
     try {
@@ -130,8 +130,8 @@ async function generateMatches(minRating: number, maxRating: number, numMatches:
       const tournament = await prisma.tournament.create({
         data: {
           name: tournamentName,
-          type: 'SINGLE_MATCH',
-          status: 'ACTIVE',
+          type: 'ROUND_ROBIN',
+          status: 'COMPLETED',
           participants: {
             create: [
               {

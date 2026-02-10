@@ -217,6 +217,7 @@ export interface TournamentCreationStepProps {
   tournamentName: string;
   setTournamentName: (name: string) => void;
   selectedPlayerIds: number[];
+  members?: Member[];
   data: Record<string, any>;
   setData: (updater: (prev: Record<string, any>) => Record<string, any>) => void;
 }

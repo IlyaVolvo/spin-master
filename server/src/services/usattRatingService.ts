@@ -502,151 +502,89 @@ export async function recalculateAllRatings(): Promise<void> {
       });
     }
 
-    // Check if this is a single match tournament
-    const isSingleMatchTournament = tournament.type === 'SINGLE_MATCH';
-    
-    // For single match tournaments, use playerRatingAtTime directly and simple point exchange
-    // Skip the 4-pass algorithm which is designed for multi-match tournaments
     const finalRatings = new Map<number, number>();
-    
-    if (isSingleMatchTournament) {
-      // For single matches, use the simple point exchange calculation
-      // Use playerRatingAtTime from tournament participants (rating when tournament was created)
-      for (const participant of tournament.participants) {
-        const player = participant.member;
-        const match = tournament.matches.find(
-          m => m.member1Id === player.id || m.member2Id === player.id
-        );
-        
-        if (!match) continue;
-        
-        const playerRatingAtTime = participant.playerRatingAtTime;
-        if (playerRatingAtTime === null) {
-          // Unrated player - skip for now (would need Pass 2 logic for unrated)
-          continue;
-        }
-        
-        // Find opponent
-        const opponentId = match.member1Id === player.id ? match.member2Id : match.member1Id;
-        const opponent = tournament.participants.find(p => p.memberId === opponentId);
-        const opponentRatingAtTime = opponent?.playerRatingAtTime ?? null;
-        
-        if (opponentRatingAtTime === null) continue;
-        
-        // Determine winner
-        const isPlayer1 = match.member1Id === player.id;
-        const playerWon = isPlayer1 
-          ? match.player1Sets > match.player2Sets
-          : match.player2Sets > match.player1Sets;
-        
-        // Calculate rating difference
-        const ratingDiff = opponentRatingAtTime - playerRatingAtTime;
-        // Upset: player wins as underdog OR opponent wins as underdog (from player's perspective)
-        const isUpset = (playerWon && ratingDiff > 0) || (!playerWon && ratingDiff < 0);
-        const points = await getPointExchange(Math.abs(ratingDiff), isUpset);
-        
-        // Apply point exchange
-        let newRating = playerRatingAtTime;
-        if (playerWon) {
-          newRating += points;
-        } else {
-          newRating -= points;
-        }
-        
-        const finalRating = Math.max(0, Math.round(newRating));
-        finalRatings.set(player.id, finalRating);
-        currentRatings.set(player.id, finalRating);
-        
-        // Store post-tournament rating for display (in both caches)
-        const { setCachedPostTournamentRating } = await import('./cacheService');
-        setCachedPostTournamentRating(tournament.id, player.id, finalRating);
-        postTournamentRatings.set(`${tournament.id}-${player.id}`, finalRating);
-      }
-    } else {
-      // For multi-match tournaments, use full 4-pass algorithm
-      
-      // Pass 1: Process rated players only
-      const pass1Ratings = new Map<number, number | null>();
-      await Promise.all(
-        Array.from(playersData.entries()).map(async ([memberId, data]) => {
-          if (data.initialRating !== null) {
-            const rating = await calculatePass1(data, playersData);
-            pass1Ratings.set(memberId, rating);
-          }
-        })
-      );
-      
-      // Pass 2: Calculate adjustments for rated players, ratings for unrated
-      const pass2Adjustments = new Map<number, number>();
-      const pass2Ratings = new Map<number, number | null>();
 
-      for (const [memberId, data] of playersData.entries()) {
+    // Pass 1: Process rated players only
+    const pass1Ratings = new Map<number, number | null>();
+    await Promise.all(
+      Array.from(playersData.entries()).map(async ([memberId, data]) => {
         if (data.initialRating !== null) {
-          const pass1Rating = pass1Ratings.get(memberId);
-          const adjustment = calculatePass2Adjustment(data, pass1Rating ?? null, playersData);
-          if (adjustment !== null) {
-            pass2Adjustments.set(memberId, adjustment);
-          }
+          const rating = await calculatePass1(data, playersData);
+          pass1Ratings.set(memberId, rating);
+        }
+      })
+    );
+    
+    // Pass 2: Calculate adjustments for rated players, ratings for unrated
+    const pass2Adjustments = new Map<number, number>();
+    const pass2Ratings = new Map<number, number | null>();
+
+    for (const [memberId, data] of playersData.entries()) {
+      if (data.initialRating !== null) {
+        const pass1Rating = pass1Ratings.get(memberId);
+        const adjustment = calculatePass2Adjustment(data, pass1Rating ?? null, playersData);
+        if (adjustment !== null) {
+          pass2Adjustments.set(memberId, adjustment);
+        }
+      } else {
+        const rating = calculatePass2Rating(data, playersData, pass2Adjustments);
+        if (rating !== null) {
+          pass2Ratings.set(memberId, rating);
+          pass2Adjustments.set(memberId, rating);
+        }
+      }
+    }
+
+    // Pass 3: Further adjustments
+    const pass3Ratings = new Map<number, number>();
+    for (const [memberId, data] of playersData.entries()) {
+      const pass2Rating = pass2Adjustments.get(memberId);
+      if (pass2Rating === undefined) continue;
+
+      const finalRating = data.initialRating !== null
+        ? Math.max(pass2Rating, data.initialRating)
+        : pass2Rating;
+
+      pass3Ratings.set(memberId, finalRating);
+    }
+
+    // Pass 4: Final rating using point exchange table with adjusted opponent ratings
+    for (const [memberId, data] of playersData.entries()) {
+      const pass3Rating = pass3Ratings.get(memberId);
+      if (pass3Rating === undefined) continue;
+
+      let rating = pass3Rating;
+
+      // Recalculate point exchanges using Pass 3 adjusted opponent ratings
+      // This refines the rating based on how opponents' ratings changed
+      for (const match of data.matches) {
+        const opponentPass3 = pass3Ratings.get(match.opponentId);
+        if (opponentPass3 === undefined) continue;
+
+        const ratingDiff = opponentPass3 - rating;
+        // An upset occurs when the lower-rated player wins
+        // Player wins as underdog: match.won && ratingDiff > 0 (opponent is higher rated)
+        // Player loses as favorite: !match.won && ratingDiff < 0 (opponent is lower rated) - this is an upset from opponent's perspective
+        // For this player's calculation, upset = they won against a higher-rated opponent
+        const isUpset = match.won && ratingDiff > 0;
+        const points = await getPointExchange(Math.abs(ratingDiff), isUpset);
+
+        if (match.won) {
+          rating += points;
         } else {
-          const rating = calculatePass2Rating(data, playersData, pass2Adjustments);
-          if (rating !== null) {
-            pass2Ratings.set(memberId, rating);
-            pass2Adjustments.set(memberId, rating);
-          }
+          rating -= points;
         }
       }
 
-      // Pass 3: Further adjustments
-      const pass3Ratings = new Map<number, number>();
-      for (const [memberId, data] of playersData.entries()) {
-        const pass2Rating = pass2Adjustments.get(memberId);
-        if (pass2Rating === undefined) continue;
-
-        const finalRating = data.initialRating !== null
-          ? Math.max(pass2Rating, data.initialRating)
-          : pass2Rating;
-
-        pass3Ratings.set(memberId, finalRating);
-      }
-
-      // Pass 4: Final rating using point exchange table with adjusted opponent ratings
-      for (const [memberId, data] of playersData.entries()) {
-        const pass3Rating = pass3Ratings.get(memberId);
-        if (pass3Rating === undefined) continue;
-
-        let rating = pass3Rating;
-
-        // Recalculate point exchanges using Pass 3 adjusted opponent ratings
-        // This refines the rating based on how opponents' ratings changed
-        for (const match of data.matches) {
-          const opponentPass3 = pass3Ratings.get(match.opponentId);
-          if (opponentPass3 === undefined) continue;
-
-          const ratingDiff = opponentPass3 - rating;
-          // An upset occurs when the lower-rated player wins
-          // Player wins as underdog: match.won && ratingDiff > 0 (opponent is higher rated)
-          // Player loses as favorite: !match.won && ratingDiff < 0 (opponent is lower rated) - this is an upset from opponent's perspective
-          // For this player's calculation, upset = they won against a higher-rated opponent
-          const isUpset = match.won && ratingDiff > 0;
-          const points = await getPointExchange(Math.abs(ratingDiff), isUpset);
-
-          if (match.won) {
-            rating += points;
-          } else {
-            rating -= points;
-          }
-        }
-
-        const finalRating = Math.max(0, Math.round(rating));
-        finalRatings.set(memberId, finalRating);
-        // Update current rating for next tournament
-        currentRatings.set(memberId, finalRating);
-        
-        // Store post-tournament rating for display (in both caches)
-        const { setCachedPostTournamentRating } = await import('./cacheService');
-        setCachedPostTournamentRating(tournament.id, memberId, finalRating);
-        postTournamentRatings.set(`${tournament.id}-${memberId}`, finalRating);
-      }
+      const finalRating = Math.max(0, Math.round(rating));
+      finalRatings.set(memberId, finalRating);
+      // Update current rating for next tournament
+      currentRatings.set(memberId, finalRating);
+      
+      // Store post-tournament rating for display (in both caches)
+      const { setCachedPostTournamentRating } = await import('./cacheService');
+      setCachedPostTournamentRating(tournament.id, memberId, finalRating);
+      postTournamentRatings.set(`${tournament.id}-${memberId}`, finalRating);
     }
   }
 
@@ -722,7 +660,6 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
 
 /**
  * Calculate what a player's rating was after a specific tournament
- * For single matches, uses simple point exchange calculation
  */
 async function calculateRatingAfterTournament(
   tournaments: any[],
@@ -739,42 +676,7 @@ async function calculateRatingAfterTournament(
   const playerRatingAtTime = participant.playerRatingAtTime;
   if (playerRatingAtTime === null) return null;
   
-  // For single match tournaments, calculate directly
-  if (targetTournament.type === 'SINGLE_MATCH') {
-    const match = targetTournament.matches.find((m: any) => 
-      m.member1Id === memberId || m.member2Id === memberId
-    );
-    if (!match || match.player1Sets === 0 && match.player2Sets === 0) {
-      return playerRatingAtTime; // Match not played
-    }
-    
-    const opponentId = match.member1Id === memberId ? match.member2Id : match.member1Id;
-    const opponent = targetTournament.participants.find((p: any) => p.memberId === opponentId);
-    const opponentRating = opponent?.playerRatingAtTime ?? null;
-    
-    if (opponentRating === null) return playerRatingAtTime;
-    
-    const isPlayer1 = match.member1Id === memberId;
-    const playerWon = isPlayer1 
-      ? match.player1Sets > match.player2Sets
-      : match.player2Sets > match.player1Sets;
-    
-    const ratingDiff = opponentRating - playerRatingAtTime;
-    const isUpset = (playerWon && ratingDiff > 0) || (!playerWon && ratingDiff < 0);
-    const points = await getPointExchange(Math.abs(ratingDiff), isUpset);
-    
-    let newRating = playerRatingAtTime;
-    if (playerWon) {
-      newRating += points;
-    } else {
-      newRating -= points;
-    }
-    
-    return Math.max(0, Math.round(newRating));
-  }
-  
-  // For other tournament types, would need full 4-pass algorithm
-  // For now, return the starting rating (can be improved later)
+  // For now, return the starting rating (full 4-pass recalculation can be added later)
   return playerRatingAtTime;
 }
 

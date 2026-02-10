@@ -69,7 +69,7 @@ export function emitTournamentUpdate(tournament: any) {
 /**
  * Emit match update event
  */
-export function emitMatchUpdate(match: any, tournamentId: number) {
+export function emitMatchUpdate(match: any, tournamentId: number | null) {
   emitToAll('match:updated', {
     id: match.id,
     tournamentId,

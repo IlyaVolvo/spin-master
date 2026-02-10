@@ -40,7 +40,7 @@ interface Match {
 interface Tournament {
   id: number;
   name: string | null;
-  type?: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH';
+  type?: 'ROUND_ROBIN' | 'PLAYOFF';
   createdAt: string;
   recordedAt?: string;
   status: 'ACTIVE' | 'COMPLETED';
@@ -70,10 +70,6 @@ export const TournamentInfo: React.FC<TournamentInfoProps> = ({
   countNonForfeitedMatches,
   alignRight = false,
 }) => {
-  if (tournament.type === 'SINGLE_MATCH') {
-    return null;
-  }
-
   return (
     <p style={{ 
       fontSize: '14px', 

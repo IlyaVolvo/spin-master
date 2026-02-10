@@ -8,7 +8,7 @@ interface MatchHistory {
   tournamentId: number;
   tournamentName: string | null;
   tournamentStatus: string;
-  tournamentType?: 'ROUND_ROBIN' | 'PLAYOFF' | 'SINGLE_MATCH';
+  tournamentType?: 'ROUND_ROBIN' | 'PLAYOFF';
   tournamentDate: string;
   opponentId: number;
   opponentName: string;
@@ -395,7 +395,7 @@ const History: React.FC = () => {
                               {new Date(match.matchDate).toLocaleString()}
                             </td>
                             <td style={{ padding: '10px' }}>
-                              {match.tournamentType && match.tournamentType !== 'SINGLE_MATCH' ? (
+                              {match.tournamentType ? (
                                 <a
                                   href={`/tournaments`}
                                   onClick={(e) => {

@@ -12,10 +12,10 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('\n=== Debugging Rating Calculations ===\n');
 
-  // Find a specific single match tournament to debug
+  // Find completed tournaments to debug
   const singleMatches = await prisma.tournament.findMany({
     where: { 
-      type: 'SINGLE_MATCH',
+      type: 'ROUND_ROBIN',
       status: 'COMPLETED'
     },
     include: {

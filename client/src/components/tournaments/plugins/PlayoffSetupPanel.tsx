@@ -132,13 +132,14 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
 
     setLoading(true);
     try {
-      const response = await fetch('/api/tournaments/playoff', {
+      const response = await fetch('/api/tournaments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           name: setupData.name,
+          type: 'PLAYOFF',
           participantIds: setupData.participants.map(p => p.id),
           bracketSize: setupData.bracketSize,
           isDoubleElimination: setupData.isDoubleElimination,

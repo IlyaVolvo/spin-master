@@ -1254,16 +1254,17 @@ router.post('/match-history', [
         const isMember1 = match.member1Id === memberId;
         const opponentId = isMember1 ? match.member2Id : match.member1Id;
         const opponent = opponents.find(o => o.id === opponentId);
-        const isRoundRobin = match.tournament.type === 'ROUND_ROBIN';
+        const isRoundRobin = match.tournament?.type === 'ROUND_ROBIN';
+        const isStandaloneMatch = !match.tournament;
         
         // For ROUND_ROBIN tournaments, ratings don't change per match, so get rating from participant data
-        // For other tournament types, get rating from rating history
+        // For other tournament types and standalone matches, get rating from rating history
         let memberRatingAfter: number | null = null;
         let memberRatingChange: number | null = null;
         let opponentRatingAfter: number | null = null;
         let opponentRatingChange: number | null = null;
         
-        if (isRoundRobin) {
+        if (isRoundRobin && match.tournament) {
           // Get rating from tournament participant data (rating at time of tournament)
           // For round robin, this is effectively the rating "after" since there's no per-match change
           const memberParticipant = match.tournament.participants.find(p => p.memberId === memberId);
@@ -1274,7 +1275,7 @@ router.post('/match-history', [
           memberRatingChange = null;
           opponentRatingChange = null;
         } else {
-          // Get rating information from rating history for non-round-robin tournaments
+          // Get rating information from rating history for non-round-robin tournaments and standalone matches
           const matchRatingMap = ratingMap.get(match.id.toString());
           const memberRatingInfo = matchRatingMap?.get(memberId);
           const opponentRatingInfo = matchRatingMap?.get(opponentId || 0);
@@ -1288,10 +1289,10 @@ router.post('/match-history', [
         return {
           id: match.id,
           tournamentId: match.tournamentId,
-          tournamentName: match.tournament.name,
-          tournamentStatus: match.tournament.status,
-          tournamentType: match.tournament.type,
-          tournamentDate: match.tournament.createdAt.toISOString(),
+          tournamentName: match.tournament?.name ?? null,
+          tournamentStatus: match.tournament?.status ?? null,
+          tournamentType: match.tournament?.type ?? null,
+          tournamentDate: match.tournament?.createdAt?.toISOString() ?? match.createdAt.toISOString(),
           opponentId: opponentId,
           opponentName: opponent ? `${opponent.firstName} ${opponent.lastName}` : 'Unknown',
           memberSets: isMember1 ? match.player1Sets : match.player2Sets,

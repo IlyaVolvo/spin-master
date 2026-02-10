@@ -336,11 +336,6 @@ const Players: React.FC = () => {
   const [playerGroups, setPlayerGroups] = useState<number[][]>([]); // Array of arrays, each array is a tournament group with player IDs
   const [draggedPlayer, setDraggedPlayer] = useState<{ playerId: number; fromGroupIndex: number } | null>(null); // Track dragged player
   const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null); // Track which group is being dragged over
-  const [showSingleMatchConfirmation, setShowSingleMatchConfirmation] = useState(false);
-  const [matchPlayer1Sets, setMatchPlayer1Sets] = useState<string>('0');
-  const [matchPlayer2Sets, setMatchPlayer2Sets] = useState<string>('0');
-  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
-  const [opponentPassword, setOpponentPassword] = useState('');
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
   const [isSelectingForHistory, setIsSelectingForHistory] = useState(false);
@@ -352,6 +347,18 @@ const Players: React.FC = () => {
   const [isDraggingInBracket, setIsDraggingInBracket] = useState(false);
   const [hasPlayerInTempZone, setHasPlayerInTempZone] = useState(false);
   const [showSelectedFirst, setShowSelectedFirst] = useState(true);
+  
+  // Record Match state
+  const [isRecordingMatch, setIsRecordingMatch] = useState(false);
+  const [selectedPlayersForMatch, setSelectedPlayersForMatch] = useState<number[]>([]);
+  const [showMatchScoreModal, setShowMatchScoreModal] = useState(false);
+  const [matchStep, setMatchStep] = useState<'password' | 'score'>('score');
+  const [matchPlayer1Sets, setMatchPlayer1Sets] = useState('');
+  const [matchPlayer2Sets, setMatchPlayer2Sets] = useState('');
+  const [matchOpponentPassword, setMatchOpponentPassword] = useState('');
+  const [matchError, setMatchError] = useState('');
+  const [matchLoading, setMatchLoading] = useState(false);
+  
   const [editingPlayerId, setEditingPlayerId] = useState<number | null>(null);
   
   const [editFirstName, setEditFirstName] = useState('');
@@ -938,7 +945,6 @@ const Players: React.FC = () => {
       setCreationStepIndex(0);
       setCreationData({});
       setIsMultiTournamentMode(false);
-      setShowSingleMatchConfirmation(false);
       setShowTournamentConfirmation(false);
       setPlayerGroups([]);
       setIsOrganizingBracket(false);
@@ -2039,11 +2045,6 @@ const Players: React.FC = () => {
 
   // Move a player from one group to another
   const movePlayerToGroup = (playerId: number, fromGroupIndex: number, toGroupIndex: number) => {
-    // Disable during single match confirmation phase only
-    if (showSingleMatchConfirmation) {
-      return;
-    }
-    
     const newGroups = [...playerGroups];
     
     // Remove player from source group
@@ -2207,7 +2208,132 @@ const Players: React.FC = () => {
     setCreationStepIndex(0);
     setCreationData({});
     setIsMultiTournamentMode(false);
-    setShowSingleMatchConfirmation(false);
+  };
+
+  const handleStartRecordMatch = () => {
+    setMatchError('');
+    setMatchPlayer1Sets('');
+    setMatchPlayer2Sets('');
+    setMatchOpponentPassword('');
+    setMatchLoading(false);
+    setShowMatchScoreModal(false);
+    if (isUserOrganizer) {
+      setSelectedPlayersForMatch([]);
+    } else {
+      // Non-organizer: self is always player 1
+      setSelectedPlayersForMatch(currentMember?.id ? [currentMember.id] : []);
+    }
+    setIsRecordingMatch(true);
+  };
+
+  const handleCancelRecordMatch = () => {
+    setIsRecordingMatch(false);
+    setSelectedPlayersForMatch([]);
+    setShowMatchScoreModal(false);
+    setMatchStep('score');
+    setMatchPlayer1Sets('');
+    setMatchPlayer2Sets('');
+    setMatchOpponentPassword('');
+    setMatchError('');
+    setMatchLoading(false);
+  };
+
+  const handleTogglePlayerForMatch = (playerId: number) => {
+    // Non-organizer can't deselect themselves
+    if (!isUserOrganizer && playerId === currentMember?.id) return;
+    
+    const player = members.find(p => p.id === playerId);
+    if (!player || !player.isActive) {
+      setError('Only active players can be selected for matches.');
+      return;
+    }
+
+    if (selectedPlayersForMatch.includes(playerId)) {
+      setSelectedPlayersForMatch(selectedPlayersForMatch.filter(id => id !== playerId));
+    } else {
+      // Max 2 players
+      if (selectedPlayersForMatch.length >= 2) return;
+      const newSelection = [...selectedPlayersForMatch, playerId];
+      setSelectedPlayersForMatch(newSelection);
+      
+      // Auto-open score modal when 2 players are selected
+      if (newSelection.length === 2) {
+        setMatchError('');
+        setMatchPlayer1Sets('');
+        setMatchPlayer2Sets('');
+        setMatchOpponentPassword('');
+        if (isUserOrganizer) {
+          setMatchStep('score');
+        } else {
+          setMatchStep('password');
+        }
+        setShowMatchScoreModal(true);
+      }
+    }
+  };
+
+  const handleOpenMatchScoreModal = () => {
+    if (selectedPlayersForMatch.length !== 2) {
+      setError('Please select exactly 2 players');
+      return;
+    }
+    setMatchError('');
+    setMatchPlayer1Sets('');
+    setMatchPlayer2Sets('');
+    setMatchOpponentPassword('');
+    if (isUserOrganizer) {
+      setMatchStep('score');
+    } else {
+      setMatchStep('password');
+    }
+    setShowMatchScoreModal(true);
+  };
+
+  const handleRecordMatchPasswordConfirm = () => {
+    if (!matchOpponentPassword.trim()) {
+      setMatchError('Please enter opponent password');
+      return;
+    }
+    setMatchStep('score');
+    setMatchError('');
+  };
+
+  const handleRecordMatchSubmit = async () => {
+    if (selectedPlayersForMatch.length !== 2) return;
+    const member1Id = selectedPlayersForMatch[0];
+    const member2Id = selectedPlayersForMatch[1];
+    const p1Sets = parseInt(matchPlayer1Sets) || 0;
+    const p2Sets = parseInt(matchPlayer2Sets) || 0;
+    if (p1Sets === p2Sets) {
+      setMatchError('Match cannot end in a tie');
+      return;
+    }
+    if (p1Sets === 0 && p2Sets === 0) {
+      setMatchError('Please enter match scores');
+      return;
+    }
+    setMatchLoading(true);
+    setMatchError('');
+    try {
+      const payload: any = {
+        member1Id,
+        member2Id,
+        player1Sets: p1Sets,
+        player2Sets: p2Sets,
+      };
+      if (!isUserOrganizer && matchOpponentPassword.trim()) {
+        payload.opponentPassword = matchOpponentPassword;
+      }
+      await api.post('/tournaments/matches/create', payload);
+      setSuccess('Match recorded successfully');
+      handleCancelRecordMatch();
+      fetchMembers();
+    } catch (err: any) {
+      const msg = err.response?.data?.error || 'Failed to record match';
+      setMatchError(msg);
+    } finally {
+      setMatchLoading(false);
+    }
   };
 
   const creationPlugin = useMemo(() => {
@@ -2225,34 +2351,6 @@ const Players: React.FC = () => {
 
   const isUsingPluginWizard = Boolean(creationPlugin && creationFlow && creationFlow.steps.length > 0);
 
-  const handleStartMatchCreation = () => {
-    const currentMember = getMember();
-    const isOrganizerUser = isUserOrganizer;
-    
-    // For non-organizers, auto-select themselves as player 1
-    if (!isOrganizerUser && currentMember?.id) {
-      setSelectedPlayersForTournament([currentMember.id]);
-    } else {
-    setSelectedPlayersForTournament([]);
-    }
-    
-    setTournamentType('SINGLE_MATCH');
-    setShowSingleMatchConfirmation(false);
-    setShowPasswordConfirmation(false);
-    setOpponentPassword('');
-    // Don't set isCreatingTournament - match creation is independent
-  };
-
-  const handleCancelMatchCreation = () => {
-    setSelectedPlayersForTournament([]);
-    setTournamentType('ROUND_ROBIN');
-    setShowSingleMatchConfirmation(false);
-    setMatchPlayer1Sets('0');
-    setMatchPlayer2Sets('0');
-    setOpponentPassword('');
-    setShowPasswordConfirmation(false);
-  };
-
   const handleCancelTournamentCreation = () => {
     // Navigate back through steps
     if (tournamentCreationStep === 'type_selection') {
@@ -2263,7 +2361,6 @@ const Players: React.FC = () => {
     setTournamentName('');
       setTournamentType('ROUND_ROBIN');
       setIsMultiTournamentMode(false);
-      setShowSingleMatchConfirmation(false);
     setShowTournamentConfirmation(false);
       setShowCancelConfirmation(false);
       setPlayerGroups([]);
@@ -2310,7 +2407,6 @@ const Players: React.FC = () => {
     setIsOrganizingBracket(false);
     setBracketPositions([]);
     setIsMultiTournamentMode(false);
-    setShowSingleMatchConfirmation(false);
     setTournamentType('ROUND_ROBIN');
   };
 
@@ -2319,8 +2415,8 @@ const Players: React.FC = () => {
   };
 
   const handleTogglePlayerForTournament = (playerId: number) => {
-    // Disable selection during confirmation phase or password confirmation
-    if (showTournamentConfirmation || showSingleMatchConfirmation || showPasswordConfirmation) {
+    // Disable selection during confirmation phase
+    if (showTournamentConfirmation) {
       return;
     }
     
@@ -2331,61 +2427,11 @@ const Players: React.FC = () => {
       return;
     }
     
-    const currentMember = getMember();
-    const isOrganizerUser = isUserOrganizer;
-    
-    // For non-organizers in SINGLE_MATCH mode, they can only select the opponent (not themselves)
-    if (!isOrganizerUser && tournamentType === 'SINGLE_MATCH') {
-      const currentMemberId = currentMember?.id;
-      
-      // Can't select themselves
-      if (playerId === currentMemberId) {
-        setError('You are already selected as Player 1. Please select your opponent.');
-        return;
-      }
-      
-      // If opponent is already selected, deselect them
-      if (selectedPlayersForTournament.includes(playerId)) {
-        // Keep only the current user (player 1)
-        setSelectedPlayersForTournament([currentMemberId!].filter(id => id !== undefined) as number[]);
-        setShowPasswordConfirmation(false);
-        setOpponentPassword('');
-        return;
-      }
-      
-      // Can only select one opponent
-      if (selectedPlayersForTournament.length >= 2) {
-        setError('You can only select one opponent. Please deselect the current opponent first.');
-        return;
-      }
-      
-      // Select opponent and show password confirmation (before score entry)
-      const newSelection = [currentMemberId!, playerId].filter(id => id !== undefined) as number[];
-      setSelectedPlayersForTournament(newSelection);
-      
-      // Show password confirmation for non-organizers
-      setShowPasswordConfirmation(true);
-      return;
-    }
-    
-    // Original logic for organizers or non-match creation
     if (selectedPlayersForTournament.includes(playerId)) {
       setSelectedPlayersForTournament(selectedPlayersForTournament.filter(id => id !== playerId));
-      setShowSingleMatchConfirmation(false);
     } else {
-      // For Single Match, only allow 2 players
-      if (tournamentType === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2) {
-        setError('Single Match can only have 2 players. Please deselect a player first.');
-        return;
-      }
-      
       const newSelection = [...selectedPlayersForTournament, playerId];
       setSelectedPlayersForTournament(newSelection);
-      
-      // For Single Match, show confirmation after 2nd player is selected (organizers only)
-      if (tournamentType === 'SINGLE_MATCH' && newSelection.length === 2 && isOrganizerUser) {
-        setShowSingleMatchConfirmation(true);
-      }
     }
   };
 
@@ -2458,15 +2504,6 @@ const Players: React.FC = () => {
   };
 
   const handleShowTournamentConfirmation = () => {
-    if (tournamentType === 'SINGLE_MATCH') {
-      if (selectedPlayersForTournament.length !== 2) {
-        setError('Single Match requires exactly 2 players');
-        return;
-      }
-      setShowSingleMatchConfirmation(true);
-      return;
-    }
-    
     if (tournamentType === 'PLAYOFF') {
       if (!isOrganizingBracket) {
         setError('Please organize the bracket first');
@@ -2603,80 +2640,7 @@ const Players: React.FC = () => {
     // Store tournament type before any early returns
     const currentTournamentType = tournamentType;
 
-    // Validate based on tournament type
-    if (tournamentType === 'SINGLE_MATCH') {
-      if (selectedPlayersForTournament.length !== 2) {
-        setError('Single Match requires exactly 2 players');
-        return;
-      }
-      
-      // Validate match scores
-      const player1Sets = parseInt(matchPlayer1Sets) || 0;
-      const player2Sets = parseInt(matchPlayer2Sets) || 0;
-      
-      if (player1Sets === 0 && player2Sets === 0) {
-        setError('Please enter match scores');
-        return;
-      }
-      if (player1Sets === player2Sets) {
-        setError('Match cannot end in a tie');
-        return;
-      }
-      
-      // Check if user is organizer
-      const currentMember = getMember();
-      const isOrganizerUser = isUserOrganizer;
-      
-      // If not organizer, check if creating match for themselves and need password
-      if (!isOrganizerUser) {
-        const currentMemberId = currentMember?.id;
-        const isPlayer1 = currentMemberId === selectedPlayersForTournament[0];
-        const isPlayer2 = currentMemberId === selectedPlayersForTournament[1];
-        
-        if (!isPlayer1 && !isPlayer2) {
-          setError('You can only create matches for yourself');
-          return;
-        }
-        
-        // Need opponent password confirmation
-        if (!opponentPassword) {
-          setShowPasswordConfirmation(true);
-          return;
-        }
-      }
-      
-      // Create match with final scores using new endpoint
-      try {
-        const matchData: any = {
-          member1Id: selectedPlayersForTournament[0],
-          member2Id: selectedPlayersForTournament[1],
-          player1Sets: player1Sets,
-          player2Sets: player2Sets,
-        };
-        
-        if (!isOrganizerUser && opponentPassword) {
-          matchData.opponentPassword = opponentPassword;
-        }
-        
-        await api.post('/tournaments/matches/create', matchData);
-        setSuccess('Match created successfully');
-        
-        // Reset state
-        setShowSingleMatchConfirmation(false);
-        setSelectedPlayersForTournament([]);
-        setMatchPlayer1Sets('0');
-        setMatchPlayer2Sets('0');
-        setOpponentPassword('');
-        setShowPasswordConfirmation(false);
-        fetchMembers(); // Refresh players to get updated data
-        
-        // Don't navigate to tournaments tab - stay on Players page
-        return;
-      } catch (err: any) {
-        setError(err.response?.data?.error || 'Failed to create match');
-        return;
-      }
-    } else if (selectedPlayersForTournament.length < 2) {
+    if (selectedPlayersForTournament.length < 2) {
       setError('Select at least 2 players');
       return;
     }
@@ -2770,7 +2734,6 @@ const Players: React.FC = () => {
           if (tournamentType === 'PLAYOFF') {
             tournamentData.name = `Playoff ${dateStr}`;
           } else {
-            // Default to ROUND_ROBIN (SINGLE_MATCH is handled earlier in the function)
             tournamentData.name = `Tournament ${dateStr}`;
           }
         } else {
@@ -2807,7 +2770,6 @@ const Players: React.FC = () => {
       setTournamentName('');
       setTournamentType('ROUND_ROBIN');
       setIsMultiTournamentMode(false);
-      setShowSingleMatchConfirmation(false);
       setShowTournamentConfirmation(false);
       setPlayerGroups([]);
       setIsOrganizingBracket(false);
@@ -2815,12 +2777,9 @@ const Players: React.FC = () => {
       setNumSeedsForBracket(undefined);
       fetchMembers(); // Refresh players to get updated data
       
-      // Only navigate to tournaments page for non-SINGLE_MATCH tournaments
-      if (currentTournamentType !== 'SINGLE_MATCH') {
       setTimeout(() => {
         navigate('/tournaments');
       }, 1000);
-      }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create tournament(s)');
     }
@@ -3081,7 +3040,7 @@ const Players: React.FC = () => {
                   </button>
                 )}
           </div>
-          {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
+          {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && !isRecordingMatch && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 auto', justifyContent: 'center' }}>
               {(() => {
                 const buttonStyle: React.CSSProperties = {
@@ -3097,7 +3056,7 @@ const Players: React.FC = () => {
                 
                 const hasAdminButton = isAdmin();
                 const hasOrganizerButtons = isUserOrganizer;
-                const hasButtonsBeforeSeparator = hasAdminButton || hasOrganizerButtons || true; // Match button is always available
+                const hasButtonsBeforeSeparator = hasAdminButton || hasOrganizerButtons || !!currentMember;
                 
                 return (
                   <>
@@ -3121,15 +3080,16 @@ const Players: React.FC = () => {
                           + Tournament
                   </button>
                     )}
-                    {/* Match button is available to all players */}
-                  <button 
-                    onClick={handleStartMatchCreation}
-                          className="button-3d"
-                          style={buttonStyle}
-                      title="Record a match"
-                        >
-                          + Match
-                  </button>
+                    {currentMember && (
+                      <button 
+                        onClick={handleStartRecordMatch}
+                        className="button-3d"
+                        style={buttonStyle}
+                        title="Record a match"
+                      >
+                        + Match
+                      </button>
+                    )}
                     {hasButtonsBeforeSeparator && (
                       <span style={{ color: '#666', fontSize: '16px', margin: '0 4px', fontWeight: 'bold' }}>|</span>
                     )}
@@ -3183,7 +3143,7 @@ const Players: React.FC = () => {
         </div>
         
         {/* Tournament Information Box */}
-        {isCreatingTournament && tournamentCreationStep !== 'type_selection' && tournamentType !== 'SINGLE_MATCH' && (
+        {isCreatingTournament && tournamentCreationStep !== 'type_selection' && (
           <div style={{
             marginBottom: '15px',
             padding: '12px 16px',
@@ -3721,6 +3681,57 @@ const Players: React.FC = () => {
                 </div>,
                 document.body
               ) : null}
+
+                {/* Match Recording: Player Selection Header */}
+                {isRecordingMatch && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'stretch', width: '100%', position: 'relative', zIndex: 2 }}>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '10px', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', position: 'relative', zIndex: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0 }}>
+                    <h3 style={{ margin: 0, fontSize: '20px' }}>Record a Match</h3>
+                    <span style={{ fontSize: '14px', color: '#666' }}>
+                      {isUserOrganizer 
+                        ? `Select 2 players (${selectedPlayersForMatch.length}/2 selected)`
+                        : `Select your opponent (${selectedPlayersForMatch.length - (currentMember?.id ? 1 : 0)}/1 selected)`
+                      }
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0 }}>
+                    <button
+                      onClick={handleOpenMatchScoreModal}
+                      disabled={selectedPlayersForMatch.length !== 2}
+                      style={{
+                        padding: '8px 16px',
+                        backgroundColor: selectedPlayersForMatch.length !== 2 ? '#95a5a6' : '#27ae60',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: selectedPlayersForMatch.length !== 2 ? 'not-allowed' : 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        opacity: selectedPlayersForMatch.length !== 2 ? 0.7 : 1,
+                      }}
+                    >
+                      Enter Score
+                    </button>
+                    <button
+                      onClick={handleCancelRecordMatch}
+                      style={{
+                        padding: '8px 16px',
+                        backgroundColor: '#95a5a6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+                )}
 
                 {/* Step 3: Member Selection */}
                 {tournamentCreationStep === 'player_selection' && (
@@ -5406,23 +5417,6 @@ const Players: React.FC = () => {
             {success}
           </div>
         )}
-        {tournamentType === 'SINGLE_MATCH' && !showSingleMatchConfirmation && !showPasswordConfirmation && (
-          <div style={{ 
-            backgroundColor: '#e3f2fd',
-            color: '#1976d2',
-            padding: '12px 16px',
-            borderRadius: '4px',
-            marginBottom: '15px',
-            border: '1px solid #90caf9',
-            fontSize: '14px',
-            fontWeight: '500'
-          }}>
-            {isUserOrganizer 
-              ? 'Select 2 players for the match'
-              : 'Select the Opponent'
-            }
-          </div>
-        )}
 
         <div style={{ marginBottom: '0px' }}>
           {!filtersCollapsed && (
@@ -6555,14 +6549,14 @@ const Players: React.FC = () => {
                       </label>
                     )}
                   </td>
-                ) : (isCreatingTournament || isSelectingForStats || tournamentType === 'SINGLE_MATCH') && (
+                ) : (isCreatingTournament || isSelectingForStats || isRecordingMatch) && (
                   <td style={{ textAlign: 'center' }}>
                     <input
                       type="checkbox"
                       checked={
-                        tournamentType === 'SINGLE_MATCH'
-                          ? selectedPlayersForTournament.includes(player.id)
-                          : isCreatingTournament 
+                        isRecordingMatch
+                            ? selectedPlayersForMatch.includes(player.id)
+                            : isCreatingTournament 
                             ? selectedPlayersForTournament.includes(player.id)
                             : selectedPlayersForStats.includes(player.id)
                       }
@@ -6570,8 +6564,8 @@ const Players: React.FC = () => {
                         if (isOrganizingBracket) {
                           return; // Disable selection when organizing bracket
                         }
-                        if (tournamentType === 'SINGLE_MATCH') {
-                          handleTogglePlayerForTournament(player.id);
+                        if (isRecordingMatch) {
+                          handleTogglePlayerForMatch(player.id);
                         } else if (isCreatingTournament) {
                           handleTogglePlayerForTournament(player.id);
                         } else {
@@ -6580,54 +6574,22 @@ const Players: React.FC = () => {
                       }}
                       disabled={
                         isOrganizingBracket ||
-                        (tournamentType === 'SINGLE_MATCH' && (
-                          showSingleMatchConfirmation ||
-                          showPasswordConfirmation ||
-                          (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
-                          // For non-organizers, disable selection of themselves (they're already player 1)
-                          (!isUserOrganizer && player.id === currentMember?.id)
-                        )) ||
-                        (isCreatingTournament && (
-                          showTournamentConfirmation || 
-                          showSingleMatchConfirmation ||
-                          showPasswordConfirmation ||
-                          ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
-                          // For non-organizers, disable selection of themselves
-                          (!isUserOrganizer && (tournamentType as string) === 'SINGLE_MATCH' && player.id === currentMember?.id)
-                        ))
+                        (isCreatingTournament && showTournamentConfirmation) ||
+                        (isRecordingMatch && !isUserOrganizer && player.id === currentMember?.id) ||
+                        (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id))
                       }
                       style={{ 
                         cursor: (
                           isOrganizingBracket ||
-                          (tournamentType === 'SINGLE_MATCH' && (
-                            showSingleMatchConfirmation ||
-                            showPasswordConfirmation ||
-                            (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
-                            (!isUserOrganizer && player.id === currentMember?.id)
-                          )) ||
-                          (isCreatingTournament && (
-                            showTournamentConfirmation || 
-                            showSingleMatchConfirmation ||
-                            showPasswordConfirmation ||
-                            ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
-                            (!isUserOrganizer && (tournamentType as string) === 'SINGLE_MATCH' && player.id === currentMember?.id)
-                          ))
+                          (isCreatingTournament && showTournamentConfirmation) ||
+                          (isRecordingMatch && !isUserOrganizer && player.id === currentMember?.id) ||
+                          (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id))
                         ) ? 'not-allowed' : 'pointer',
                         opacity: (
                           isOrganizingBracket ||
-                          (tournamentType === 'SINGLE_MATCH' && (
-                            showSingleMatchConfirmation ||
-                            showPasswordConfirmation ||
-                            (selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
-                            (!isUserOrganizer && player.id === currentMember?.id)
-                          )) ||
-                          (isCreatingTournament && (
-                            showTournamentConfirmation || 
-                            showSingleMatchConfirmation ||
-                            showPasswordConfirmation ||
-                            ((tournamentType as string) === 'SINGLE_MATCH' && selectedPlayersForTournament.length >= 2 && !selectedPlayersForTournament.includes(player.id)) ||
-                            (!isUserOrganizer && (tournamentType as string) === 'SINGLE_MATCH' && player.id === currentMember?.id)
-                          ))
+                          (isCreatingTournament && showTournamentConfirmation) ||
+                          (isRecordingMatch && !isUserOrganizer && player.id === currentMember?.id) ||
+                          (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id))
                         ) ? 0.5 : 1
                       }}
                     />
@@ -7442,21 +7404,6 @@ const Players: React.FC = () => {
               {isMultiTournamentMode ? 'Confirm Multi-Tournament Creation' : 'Confirm Tournament Creation'}
             </h3>
             
-            {tournamentType === 'SINGLE_MATCH' && (
-              <div className="form-group" style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
-                <label style={{ fontWeight: 'bold', marginBottom: '8px', display: 'block' }}>Match Name (auto-generated):</label>
-                {(() => {
-                  const player1 = members.find(p => p.id === selectedPlayersForTournament[0]);
-                  const player2 = members.find(p => p.id === selectedPlayersForTournament[1]);
-                  const dateStr = new Date().toLocaleDateString();
-                  const matchName = player1 && player2
-                    ? `${player1.firstName} ${player1.lastName} vs ${player2.firstName} ${player2.lastName} - ${dateStr}`
-                    : `Match - ${dateStr}`;
-                  return <div style={{ color: '#666', fontSize: '14px' }}>{matchName}</div>;
-                })()}
-              </div>
-            )}
-
             {isMultiTournamentMode ? (
               (() => {
                 return (
@@ -7489,7 +7436,6 @@ const Players: React.FC = () => {
                             onDragOver={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              if (showSingleMatchConfirmation) return;
                               if (draggedPlayer && draggedPlayer.fromGroupIndex !== groupIndex) {
                                 setDragOverGroupIndex(groupIndex);
                               }
@@ -7502,7 +7448,6 @@ const Players: React.FC = () => {
                             onDrop={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              if (showSingleMatchConfirmation) return;
                               if (draggedPlayer && draggedPlayer.fromGroupIndex !== groupIndex) {
                                 movePlayerToGroup(draggedPlayer.playerId, draggedPlayer.fromGroupIndex, groupIndex);
                                 setDraggedPlayer(null);
@@ -7546,9 +7491,9 @@ const Players: React.FC = () => {
                               return (
                                 <div
                                   key={playerId}
-                                  draggable={!showSingleMatchConfirmation}
+                                  draggable={!showTournamentConfirmation}
                                   onDragStart={(e) => {
-                                    if (showSingleMatchConfirmation) {
+                                    if (showTournamentConfirmation) {
                                       e.preventDefault();
                                       return;
                                     }
@@ -7574,8 +7519,8 @@ const Players: React.FC = () => {
                                     backgroundColor: isDragging ? '#e0e0e0' : 'white',
                                     borderRadius: '4px',
                                     border: '1px solid #e0e0e0',
-                                    cursor: (showTournamentConfirmation || showSingleMatchConfirmation) ? 'not-allowed' : 'grab',
-                                    opacity: isDragging ? 0.5 : ((showTournamentConfirmation || showSingleMatchConfirmation) ? 0.5 : 1),
+                                    cursor: showTournamentConfirmation ? 'not-allowed' : 'grab',
+                                    opacity: isDragging ? 0.5 : (showTournamentConfirmation ? 0.5 : 1),
                                     transition: 'opacity 0.2s, background-color 0.2s',
                                     userSelect: 'none',
                                   }}
@@ -7802,8 +7747,8 @@ const Players: React.FC = () => {
         </div>
       )}
 
-      {/* Single Match Confirmation Modal */}
-      {showSingleMatchConfirmation && selectedPlayersForTournament.length === 2 && (
+      {/* Record Match Score Modal */}
+      {showMatchScoreModal && selectedPlayersForMatch.length === 2 && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -7815,190 +7760,158 @@ const Players: React.FC = () => {
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 10001,
-        }} onClick={() => setShowSingleMatchConfirmation(false)}>
+        }} onClick={() => { setShowMatchScoreModal(false); setMatchError(''); setSelectedPlayersForMatch(selectedPlayersForMatch.slice(0, 1)); }}>
           <div style={{
             backgroundColor: 'white',
             padding: '30px',
             borderRadius: '8px',
-            maxWidth: '500px',
+            maxWidth: '450px',
             width: '90%',
           }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0, marginBottom: '20px', textAlign: 'center' }}>
-              Single Match Confirmation
+              Record Match Score
             </h3>
-            <div style={{ marginBottom: '20px', textAlign: 'center' }}>
-              {(() => {
-                const player1 = members.find(p => p.id === selectedPlayersForTournament[0]);
-                const player2 = members.find(p => p.id === selectedPlayersForTournament[1]);
-                return (
-                  <div>
-                    <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '10px' }}>
-                      {player1 && formatPlayerName(player1.firstName, player1.lastName, nameDisplayOrder)}
-                      {player1?.rating !== null && player1?.rating !== undefined && (
-                        <span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal', marginLeft: '8px' }}>
-                          (Rating: {player1.rating})
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: '20px', margin: '10px 0', color: '#3498db' }}>VS</div>
-                    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                      {player2 && formatPlayerName(player2.firstName, player2.lastName, nameDisplayOrder)}
-                      {player2?.rating !== null && player2?.rating !== undefined && (
-                        <span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal', marginLeft: '8px' }}>
-                          (Rating: {player2.rating})
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-            <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px', fontSize: '13px', color: '#666' }}>
-              Match name will be auto-generated from player names and date
-            </div>
-            
-            {/* Match Score Inputs */}
-            <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ marginTop: 0, marginBottom: '15px', fontSize: '16px' }}>Enter Match Score</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '15px', alignItems: 'center', marginBottom: '15px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
+
+            {matchError && (
+              <div style={{ color: '#e74c3c', backgroundColor: '#fdecea', padding: '8px 12px', borderRadius: '4px', marginBottom: '15px', fontSize: '14px' }}>
+                {matchError}
+              </div>
+            )}
+
+            {/* Password confirmation step (non-organizer only) */}
+            {matchStep === 'password' && (
+              <div>
+                <div style={{ marginBottom: '15px', textAlign: 'center' }}>
+                  <span style={{ fontSize: '14px', color: '#666' }}>Confirm match with </span>
+                  <span style={{ fontWeight: 'bold', fontSize: '16px' }}>
                     {(() => {
-                      const player1 = members.find(p => p.id === selectedPlayersForTournament[0]);
-                      return player1 ? formatPlayerName(player1.firstName, player1.lastName, nameDisplayOrder) : 'Player 1';
-                    })()} Sets
+                      const opponentId = selectedPlayersForMatch.find(id => id !== currentMember?.id);
+                      const opponent = members.find(p => p.id === opponentId);
+                      return opponent ? formatPlayerName(opponent.firstName, opponent.lastName, getNameDisplayOrder()) : '';
+                    })()}
+                  </span>
+                </div>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
+                    Opponent Password
                   </label>
                   <input
-                    type="number"
-                    min="0"
-                    value={matchPlayer1Sets}
-                    onChange={(e) => setMatchPlayer1Sets(e.target.value)}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', textAlign: 'center' }}
+                    type="password"
+                    value={matchOpponentPassword}
+                    onChange={(e) => setMatchOpponentPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && matchOpponentPassword.trim()) {
+                        handleRecordMatchPasswordConfirm();
+                      }
+                    }}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', boxSizing: 'border-box' }}
+                    placeholder="Enter opponent's password"
+                    autoFocus
                   />
                 </div>
-                
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#666' }}>VS</div>
-                
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
-                    {(() => {
-                      const player2 = members.find(p => p.id === selectedPlayersForTournament[1]);
-                      return player2 ? formatPlayerName(player2.firstName, player2.lastName, nameDisplayOrder) : 'Player 2';
-                    })()} Sets
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={matchPlayer2Sets}
-                    onChange={(e) => setMatchPlayer2Sets(e.target.value)}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', textAlign: 'center' }}
-                  />
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button onClick={() => { setShowMatchScoreModal(false); setMatchError(''); setSelectedPlayersForMatch(selectedPlayersForMatch.slice(0, 1)); }}>Cancel</button>
+                  <button 
+                    onClick={handleRecordMatchPasswordConfirm}
+                    className="success"
+                    disabled={!matchOpponentPassword.trim()}
+                    style={{
+                      opacity: !matchOpponentPassword.trim() ? 0.5 : 1,
+                      cursor: !matchOpponentPassword.trim() ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Continue
+                  </button>
                 </div>
               </div>
-            </div>
-            
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={handleCancelMatchCreation}>Cancel</button>
-              <button onClick={handleCreateTournament} className="success">
-                Record the Match
-              </button>
-            </div>
+            )}
+
+            {/* Score entry step */}
+            {matchStep === 'score' && (
+              <div>
+                <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+                  {(() => {
+                    const p1 = members.find(p => p.id === selectedPlayersForMatch[0]);
+                    const p2 = members.find(p => p.id === selectedPlayersForMatch[1]);
+                    return (
+                      <div>
+                        <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '5px' }}>
+                          {p1 && formatPlayerName(p1.firstName, p1.lastName, getNameDisplayOrder())}
+                          {p1?.rating !== null && p1?.rating !== undefined && (
+                            <span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal', marginLeft: '8px' }}>
+                              ({p1.rating})
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '20px', margin: '5px 0', color: '#3498db' }}>VS</div>
+                        <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                          {p2 && formatPlayerName(p2.firstName, p2.lastName, getNameDisplayOrder())}
+                          {p2?.rating !== null && p2?.rating !== undefined && (
+                            <span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal', marginLeft: '8px' }}>
+                              ({p2.rating})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '15px', alignItems: 'center', marginBottom: '20px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold', textAlign: 'center' }}>
+                      {(() => {
+                        const p1 = members.find(p => p.id === selectedPlayersForMatch[0]);
+                        return p1 ? formatPlayerName(p1.firstName, p1.lastName, getNameDisplayOrder()) : 'Player 1';
+                      })()}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={matchPlayer1Sets}
+                      onChange={(e) => setMatchPlayer1Sets(e.target.value)}
+                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', textAlign: 'center', boxSizing: 'border-box' }}
+                      autoFocus
+                    />
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#666' }}>-</div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold', textAlign: 'center' }}>
+                      {(() => {
+                        const p2 = members.find(p => p.id === selectedPlayersForMatch[1]);
+                        return p2 ? formatPlayerName(p2.firstName, p2.lastName, getNameDisplayOrder()) : 'Player 2';
+                      })()}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={matchPlayer2Sets}
+                      onChange={(e) => setMatchPlayer2Sets(e.target.value)}
+                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', textAlign: 'center', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button onClick={() => { setShowMatchScoreModal(false); setMatchError(''); setSelectedPlayersForMatch(selectedPlayersForMatch.slice(0, 1)); }}>Cancel</button>
+                  <button 
+                    onClick={handleRecordMatchSubmit}
+                    className="success"
+                    disabled={matchLoading}
+                    style={{
+                      opacity: matchLoading ? 0.5 : 1,
+                      cursor: matchLoading ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {matchLoading ? 'Recording...' : 'Record Match'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Password Confirmation Modal for Non-Organizers */}
-      {showPasswordConfirmation && selectedPlayersForTournament.length === 2 && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10002,
-        }} onClick={() => {
-          setShowPasswordConfirmation(false);
-          setOpponentPassword('');
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '30px',
-            borderRadius: '8px',
-            maxWidth: '500px',
-            width: '90%',
-          }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0, marginBottom: '20px', textAlign: 'center' }}>
-              Opponent Password Confirmation
-            </h3>
-            <div style={{ marginBottom: '20px', textAlign: 'center' }}>
-              {(() => {
-                const currentMember = getMember();
-                const currentMemberId = currentMember?.id;
-                const isPlayer1 = currentMemberId === selectedPlayersForTournament[0];
-                const opponentId = isPlayer1 ? selectedPlayersForTournament[1] : selectedPlayersForTournament[0];
-                const opponent = members.find(p => p.id === opponentId);
-                return (
-                  <div>
-                    <p style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>
-                      To record this match, please enter your opponent's password for confirmation. You will then be able to enter the match scores.
-                    </p>
-                    <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '10px' }}>
-                      {opponent && formatPlayerName(opponent.firstName, opponent.lastName, nameDisplayOrder)}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
-                Opponent Password
-              </label>
-              <input
-                type="password"
-                value={opponentPassword}
-                onChange={(e) => setOpponentPassword(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && opponentPassword.trim()) {
-                    // After password is confirmed, show score entry modal
-                    setShowPasswordConfirmation(false);
-                    setShowSingleMatchConfirmation(true);
-                  }
-                }}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px' }}
-                placeholder="Enter opponent's password"
-                autoFocus
-              />
-            </div>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => {
-                setShowPasswordConfirmation(false);
-                setOpponentPassword('');
-              }}>Cancel</button>
-              <button 
-                onClick={() => {
-                  if (opponentPassword.trim()) {
-                    // After password is confirmed, show score entry modal
-                    setShowPasswordConfirmation(false);
-                    setShowSingleMatchConfirmation(true);
-                  }
-                }}
-                className="success"
-                disabled={!opponentPassword.trim()}
-                style={{
-                  opacity: !opponentPassword.trim() ? 0.5 : 1,
-                  cursor: !opponentPassword.trim() ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

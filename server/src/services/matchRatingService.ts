@@ -18,7 +18,7 @@ export interface MatchRatingResult {
  * @param tournamentId - Tournament ID (null for standalone matches)
  * @param matchId - Match ID to store rating changes
  * @param isForfeit - Whether this is a forfeit match (forfeits don't change ratings)
- * @param useIncrementalRating - If true, use current player rating (for PLAYOFF). If false, use playerRatingAtTime (for SINGLE_MATCH)
+ * @param useIncrementalRating - If true, use current player rating (for PLAYOFF). If false, use playerRatingAtTime
  * @returns MatchRatingResult if ratings were applied, null if skipped (BYE or forfeit)
  */
 export async function processMatchRating(

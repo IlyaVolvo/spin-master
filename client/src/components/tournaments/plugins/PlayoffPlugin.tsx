@@ -1,15 +1,120 @@
-import React from 'react';
-import { TournamentPlugin, TournamentType, TournamentSetupProps, TournamentActiveProps, TournamentScheduleProps, TournamentCompletedProps } from '../../../types/tournament';
+import React, { useEffect, useMemo, useState } from 'react';
+import { TournamentPlugin, TournamentType, TournamentSetupProps, TournamentActiveProps, TournamentScheduleProps, TournamentCompletedProps, TournamentCreationFlow, TournamentCreationStepProps } from '../../../types/tournament';
+import { BracketPreview } from '../../BracketPreview';
 import { PlayoffSetupPanel } from './PlayoffSetupPanel';
 import { PlayoffActivePanel } from './PlayoffActivePanel';
 import { PlayoffSchedulePanel } from './PlayoffSchedulePanel';
 import { PlayoffCompletedPanel } from './PlayoffCompletedPanel';
+
+const PlayoffBracketWizardStep: React.FC<TournamentCreationStepProps> = ({
+  selectedPlayerIds,
+  members,
+  data,
+  setData,
+}) => {
+  const [loading, setLoading] = useState(false);
+  const [localError, setLocalError] = useState<string>('');
+
+  const players = useMemo(() => {
+    const base = members || [];
+    return selectedPlayerIds
+      .map((id) => base.find((m) => m.id === id))
+      .filter((m): m is NonNullable<typeof m> => Boolean(m));
+  }, [members, selectedPlayerIds]);
+
+  const bracketPositions: Array<number | null> = Array.isArray(data.bracketPositions) ? data.bracketPositions : [];
+  const numSeeds: number | undefined = typeof data.numSeeds === 'number' ? data.numSeeds : undefined;
+
+  const fetchPreview = async (nextNumSeeds?: number) => {
+    setLoading(true);
+    setLocalError('');
+    try {
+      const response = await fetch('/api/tournaments/preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tournamentType: 'PLAYOFF',
+          participantIds: selectedPlayerIds,
+          numSeeds: nextNumSeeds,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate bracket preview');
+      }
+
+      const json = await response.json();
+      setData((prev) => ({
+        ...prev,
+        bracketPositions: json.bracketPositions,
+        bracketSize: json.bracketSize,
+        numSeeds: nextNumSeeds,
+      }));
+    } catch (e: any) {
+      setLocalError(e?.message || 'Failed to generate bracket preview');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!Array.isArray(data.bracketPositions) || data.bracketPositions.length === 0) {
+      fetchPreview(numSeeds);
+    }
+  }, [selectedPlayerIds, data.bracketPositions, numSeeds]);
+
+  if (!members) {
+    return <div />;
+  }
+
+  return (
+    <div>
+      {localError ? (
+        <div style={{ color: '#c0392b', marginBottom: '10px' }}>{localError}</div>
+      ) : null}
+      {loading ? (
+        <div style={{ marginBottom: '10px', color: '#666' }}>Loading bracket preview…</div>
+      ) : null}
+
+      {bracketPositions.length > 0 ? (
+        <BracketPreview
+          players={players}
+          bracketPositions={bracketPositions}
+          onBracketChange={(positions) =>
+            setData((prev) => ({
+              ...prev,
+              bracketPositions: positions,
+            }))
+          }
+          onReseed={(next) => {
+            fetchPreview(next);
+          }}
+          initialNumSeeds={numSeeds}
+        />
+      ) : null}
+    </div>
+  );
+};
 
 export const PlayoffPlugin: TournamentPlugin = {
   type: 'PLAYOFF',
   isBasic: true,
   name: 'Playoff/Bracket',
   description: 'Single or double elimination tournament bracket',
+
+  getCreationFlow: (): TournamentCreationFlow => ({
+    minPlayers: 4,
+    maxPlayers: 64,
+    steps: [
+      {
+        id: 'organize_bracket',
+        title: 'Organize Bracket',
+        render: (props) => <PlayoffBracketWizardStep {...props} />,
+      },
+    ],
+  }),
 
   createSetupPanel: (props: TournamentSetupProps) => (
     <PlayoffSetupPanel {...props} />
@@ -42,17 +147,19 @@ export const PlayoffPlugin: TournamentPlugin = {
   },
 
   createTournament: async (data: any) => {
-    const response = await fetch('/api/tournaments/playoff', {
+    const response = await fetch('/api/tournaments', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         name: data.name,
+        type: 'PLAYOFF',
         participantIds: data.participants.map((p: any) => p.id),
-        bracketSize: data.bracketSize,
-        isDoubleElimination: data.isDoubleElimination || false,
-        seedByRating: data.seedByRating || false,
+        bracketPositions: data.bracketPositions,
+        additionalData: {
+          bracketPositions: data.bracketPositions,
+        },
       }),
     });
 
