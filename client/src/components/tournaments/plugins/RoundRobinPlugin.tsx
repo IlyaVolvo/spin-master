@@ -4,6 +4,7 @@ import { RoundRobinSetupPanel } from './RoundRobinSetupPanel';
 import { RoundRobinActivePanel } from './RoundRobinActivePanel';
 import { RoundRobinSchedulePanel } from './RoundRobinSchedulePanel';
 import { RoundRobinCompletedPanel } from './RoundRobinCompletedPanel';
+import { RoundRobinPostSelectionFlow } from './RoundRobinPostSelectionFlow';
 import { generateRoundRobinSchedule, calculateStandings, buildResultsMatrix, calculatePlayerStats } from './roundRobinUtils';
 
 // Re-export utility functions for use in other components
@@ -19,6 +20,7 @@ export const RoundRobinPlugin: TournamentPlugin = {
     minPlayers: 3,
     maxPlayers: 100,
     steps: [],
+    renderPostSelectionFlow: (props) => <RoundRobinPostSelectionFlow {...props} />,
   }),
 
   createSetupPanel: (props: TournamentSetupProps) => (
@@ -125,3 +127,5 @@ export const RoundRobinPlugin: TournamentPlugin = {
 
   canPrintResults: true,
 };
+
+export default RoundRobinPlugin;

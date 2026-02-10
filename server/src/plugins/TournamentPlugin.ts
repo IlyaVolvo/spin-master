@@ -99,7 +99,7 @@ export interface TournamentPlugin {
   // Called when tournament is completed - plugin decides if/how to calculate final ratings
   onTournamentCompletionRatingCalculation?(context: { tournament: any; prisma: any }): Promise<void>;
   
-  // Match resolution - some tournament types (e.g., PLAYOFF) may need to map bracket IDs to match IDs
+  // Match resolution - some tournament typemay need to map speicfu==ic information during the tournament
   // Returns resolved match data or null if match cannot be resolved
   resolveMatchId?(context: {
     matchId: number;
@@ -131,7 +131,7 @@ export interface TournamentPlugin {
   }>;
   
   // Generic plugin-specific request handler
-  // Allows plugins to define their own custom endpoints (e.g., PLAYOFF: bracket, reseed; ROUND_ROBIN: standings)
+  // Allows plugins to define their own custom endpoints
   handlePluginRequest?(context: {
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     resource: string;

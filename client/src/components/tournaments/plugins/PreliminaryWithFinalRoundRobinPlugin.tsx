@@ -66,3 +66,5 @@ export const PreliminaryWithFinalRoundRobinPlugin: TournamentPlugin = {
     <PreliminaryWithFinalRoundRobinCompletedPanel {...props} />
   ),
 };
+
+export default PreliminaryWithFinalRoundRobinPlugin;

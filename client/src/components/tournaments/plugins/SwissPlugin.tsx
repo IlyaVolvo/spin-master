@@ -95,3 +95,5 @@ export const SwissPlugin: TournamentPlugin = {
 
   canPrintResults: true,
 };
+
+export default SwissPlugin;

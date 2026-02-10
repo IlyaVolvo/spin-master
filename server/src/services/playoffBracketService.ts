@@ -75,18 +75,20 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
   
   // Validate numSeeded parameter according to rules:
   // - Can be 0 OR any power of 2 >= 2 (powers of 2 are: 2, 4, 8, 16, ...)
-  // - Must be <= largest power of 2 <= floor(numPlayers / 2)
+  // - Must be <= largest power of 2 <= floor(numPlayers / 4)
+  // - No more than a quarter of total players can be seeded
   // Examples:
-  //   - numPlayers = 10: valid numSeeded = 0, 2, 4 (max is 4, since floor(10/2)=5, largest power of 2 <= 5 is 4)
-  //   - numPlayers = 16: valid numSeeded = 0, 2, 4, 8 (max is 8, since floor(16/2)=8, largest power of 2 <= 8 is 8)
-  //   - numPlayers = 5: valid numSeeded = 0, 2 (max is 2, since floor(5/2)=2, largest power of 2 <= 2 is 2)
-  //   - numPlayers = 4: valid numSeeded = 0, 2 (max is 2, since floor(4/2)=2, largest power of 2 <= 2 is 2)
+  //   - numPlayers = 10: valid numSeeded = 0, 2 (max is 2, since floor(10/4)=2, largest power of 2 <= 2 is 2)
+  //   - numPlayers = 16: valid numSeeded = 0, 2, 4 (max is 4, since floor(16/4)=4, largest power of 2 <= 4 is 4)
+  //   - numPlayers = 5: valid numSeeded = 0 (floor(5/4)=1, no power of 2 >= 2 fits)
+  //   - numPlayers = 8: valid numSeeded = 0, 2 (max is 2, since floor(8/4)=2, largest power of 2 <= 2 is 2)
+  //   - numPlayers = 32: valid numSeeded = 0, 2, 4, 8 (max is 8, since floor(32/4)=8)
   let numSeededToUse: number;
   
-  // Calculate maximum allowed numSeeded = largest power of 2 <= floor(numPlayers / 2)
-  const halfNumPlayers = Math.floor(numPlayers / 2);
-  const maxSeeded = halfNumPlayers > 0 
-    ? Math.pow(2, Math.floor(Math.log2(halfNumPlayers)))
+  // Calculate maximum allowed numSeeded = largest power of 2 <= floor(numPlayers / 4)
+  const quarterNumPlayers = Math.floor(numPlayers / 4);
+  const maxSeeded = quarterNumPlayers >= 2 
+    ? Math.pow(2, Math.floor(Math.log2(quarterNumPlayers)))
     : 0;
   
   if (numSeeded === undefined) {
@@ -112,7 +114,7 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
       }
       
       if (numSeededToUse > maxSeeded) {
-        throw new Error(`numSeeded (${numSeededToUse}) must be <= ${maxSeeded} (largest power of 2 < ${numPlayers} and <= ${numPlayers}/2)`);
+        throw new Error(`numSeeded (${numSeededToUse}) must be <= ${maxSeeded} (largest power of 2 <= floor(${numPlayers}/4))`);
       }
     }
   }
@@ -187,11 +189,10 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
     throw new Error(`Assertion failed after Step 2: Expected exactly ${numMatches} players assigned (one per match), but the count doesn't match. shuffledRemaining.length - remainingIndex = ${shuffledRemaining.length - remainingIndex}, numPlayers - numMatches = ${numPlayers - numMatches}`);
   }
   
-  // STEP 3: Calculate number of BYEs that should be in the given bracket. It should be [0, numPlayers/2[
-  // BYEs = bracketSize - numPlayers (positions that will remain empty)
-  // But we need to ensure each match has exactly one player OR one BYE, not both BYEs in a match
-  const numEmptyPositions = bracketSize - numPlayers;
-  const numByes = Math.max(0, Math.min(numEmptyPositions, Math.floor((numPlayers - 1) / 2)));
+  // STEP 3: Calculate number of BYEs in the bracket.
+  // BYEs = bracketSize - numPlayers (empty positions that become BYEs)
+  // Each BYE match has one player and one empty slot (null).
+  const numByes = bracketSize - numPlayers;
   
   // STEP 4: Assign BYEs for players with the highest rating already assigned to each match
   // For each match, if it has exactly one player, check if that player is among the top numByes players
@@ -502,19 +503,21 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
 }
 
 /**
- * Generate standard tournament bracket seeding pattern for any power of 2
+ * Generate standard tournament bracket seeding pattern (USTA/ITF style).
  * Returns array of bracket positions (0-indexed) for seeds 1, 2, 3, ...
  * 
- * This follows standard tournament bracket rules:
- * - Seed 1 (position 0) and Seed 2 (position bracketSize-1) are in opposite halves
- * - Seeds meet in finals based on bracket structure
- * - Works recursively for any power of 2 (2, 4, 8, 16, 32, 64, 128, 256, ...)
+ * Properties:
+ * - Seed 1 at the very top (position 0), Seed 2 at the very bottom (position bracketSize-1)
+ * - Seed 3 at top of bottom half, Seed 4 at bottom of top half
+ * - In each first-round match, seeds sum to bracketSize + 1
+ * - Higher seeds are maximally separated from each other
+ * - Works for any power of 2 (2, 4, 8, 16, 32, 64, 128, 256, ...)
  * 
- * Algorithm:
- * - Recursively split bracket into halves
- * - Top half contains seeds 1, 4, 5, 8, 9, 12, 13, ... (first, fourth, fifth, eighth, etc.)
- * - Bottom half contains seeds 2, 3, 6, 7, 10, 11, 14, 15, ... (second, third, sixth, seventh, etc.)
- * - This ensures seed 1 and seed 2 only meet in finals
+ * Examples (position → seed):
+ *   Size 2:  [1, 2]
+ *   Size 4:  [1, 4, 3, 2]
+ *   Size 8:  [1, 8, 4, 5, 3, 6, 7, 2]
+ *   Size 16: [1, 16, 8, 9, 4, 13, 5, 12, 3, 14, 6, 11, 7, 10, 15, 2]
  * 
  * @param bracketSize - Must be a power of 2 (2, 4, 8, 16, 32, 64, 128, 256, ...)
  * @returns Array of bracket positions (0-indexed) where index represents seed-1
@@ -525,67 +528,57 @@ function generateTournamentBracketPattern(bracketSize: number): number[] {
     throw new Error(`Bracket size must be a power of 2, got: ${bracketSize}`);
   }
   
-  // Base case: bracket size 2
-  if (bracketSize === 2) {
-    return [0, 1]; // Seed 1 at position 0, Seed 2 at position 1
-  }
+  const positionToSeed = placeSeedsInBracket(bracketSize);
   
-  // Recursive case: build bracket by splitting into halves
-  // Standard tournament bracket seeding pattern:
-  // - Seed 1 always goes to position 0 (top)
-  // - Seed 2 always goes to position bracketSize-1 (bottom)
-  // - For a bracket of size 2n, recursively build:
-  //   - Top half (positions 0 to n-1): contains seeds 1, 4, 5, 8, 9, 12, 13, ...
-  //   - Bottom half (positions n to 2n-1): contains seeds 2, 3, 6, 7, 10, 11, 14, 15, ...
-  // This ensures seed 1 and seed 2 only meet in finals
-  
-  const halfSize = bracketSize / 2;
-  const halfPattern = generateTournamentBracketPattern(halfSize);
-  
-  // Result array: result[seedIndex] = bracketPosition (0-indexed)
-  // where seedIndex 0 = seed 1, seedIndex 1 = seed 2, etc.
+  // Convert position→seed to seed→position (result[seedIndex] = position)
+  // seedIndex is 0-based (seedIndex 0 = seed 1)
   const result: number[] = new Array(bracketSize);
-  
-  // Build seed lists for top and bottom halves
-  // Standard tournament bracket pattern analysis:
-  // - Size 4: Top half gets seeds [1, 3], Bottom half gets seeds [2, 4]
-  // - Size 8: Top half gets seeds [1, 3, 5, 7], Bottom half gets seeds [2, 4, 6, 8]
-  // Pattern: Odd seeds (1, 3, 5, 7, ...) go to top half, Even seeds (2, 4, 6, 8, ...) go to bottom half
-  
-  const topHalfSeeds: number[] = [];
-  const bottomHalfSeeds: number[] = [];
-  
-  for (let seedIndex = 0; seedIndex < bracketSize; seedIndex++) {
-    // Seed index 0 = seed 1 (odd), index 1 = seed 2 (even), etc.
-    // Odd seeds (1, 3, 5, 7, ...) → top half
-    // Even seeds (2, 4, 6, 8, ...) → bottom half
-    const isOddSeed = (seedIndex % 2) === 0; // seedIndex 0, 2, 4, 6 = seeds 1, 3, 5, 7
-    
-    if (isOddSeed) {
-      topHalfSeeds.push(seedIndex);
-    } else {
-      bottomHalfSeeds.push(seedIndex);
-    }
-  }
-  
-  // Place seeds into bracket positions based on half-pattern
-  // Top half uses half-pattern in normal order
-  // Bottom half uses half-pattern with swapped pairs: [1, 0, 3, 2, 5, 4, ...]
-  // This maintains the proper tournament bracket structure
-  for (let i = 0; i < halfSize; i++) {
-    const halfPos = halfPattern[i];
-    
-    // Bottom half mapping: swap adjacent pairs
-    // For index i, use pattern: if i is even, use i+1; if i is odd, use i-1
-    // But we need to map to the correct half-pattern index
-    const bottomHalfPatternIndex = (i % 2 === 0) ? i + 1 : i - 1;
-    const bottomHalfPos = halfPattern[bottomHalfPatternIndex];
-    
-    result[topHalfSeeds[i]] = halfPos;
-    result[bottomHalfSeeds[i]] = bottomHalfPos + halfSize;
+  for (let pos = 0; pos < bracketSize; pos++) {
+    const seed = positionToSeed[pos]; // 1-based seed at this position
+    result[seed - 1] = pos; // seedIndex = seed - 1
   }
   
   return result;
+}
+
+/**
+ * Build position→seed mapping for a bracket using iterative expansion.
+ * 
+ * Start with [1, 2] and iteratively double the bracket size.
+ * At each expansion, every existing seed gets a complement opponent (sum = newSize + 1).
+ * All seeds expand normally (seed on top, complement below) EXCEPT the very last
+ * position (seed 2's lineage) which expands reversed (complement on top, seed below).
+ * This keeps seed 2 anchored at the very bottom of the bracket at every level.
+ * 
+ * @param bracketSize - Must be a power of 2
+ * @returns Array of 1-based seed numbers in bracket position order
+ */
+function placeSeedsInBracket(bracketSize: number): number[] {
+  let seeds = [1, 2];
+  
+  while (seeds.length < bracketSize) {
+    const nextSize = seeds.length * 2;
+    const sum = nextSize + 1;
+    const expanded: number[] = [];
+    const lastIndex = seeds.length - 1;
+    
+    for (let i = 0; i < seeds.length; i++) {
+      const seed = seeds[i];
+      const complement = sum - seed;
+      
+      if (i === lastIndex) {
+        // Last position (seed 2's lineage): complement on top, seed stays at bottom
+        expanded.push(complement, seed);
+      } else {
+        // All other positions: seed on top, complement below
+        expanded.push(seed, complement);
+      }
+    }
+    
+    seeds = expanded;
+  }
+  
+  return seeds;
 }
 
 /**

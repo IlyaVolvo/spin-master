@@ -1,56 +1,28 @@
 import { tournamentPluginRegistry } from '../TournamentPluginRegistry';
-import { TournamentType } from '../../../types/tournament';
-import { PlayoffPlugin } from './PlayoffPlugin.tsx';
-import { RoundRobinPlugin } from './RoundRobinPlugin.tsx';
-import { SwissPlugin } from './SwissPlugin.tsx';
-import { MultiRoundRobinsPlugin } from './MultiRoundRobinsPlugin.tsx';
-import { PreliminaryWithFinalPlayoffPlugin } from './PreliminaryWithFinalPlayoffPlugin';
-import { PreliminaryWithFinalRoundRobinPlugin } from './PreliminaryWithFinalRoundRobinPlugin';
+import { TournamentPlugin, TournamentType } from '../../../types/tournament';
 
-// Register all tournament plugins
-export function registerTournamentPlugins() {
-  // Register basic tournament plugins
-  tournamentPluginRegistry.register(PlayoffPlugin);
-  tournamentPluginRegistry.register(RoundRobinPlugin);
-  tournamentPluginRegistry.register(SwissPlugin);
-  tournamentPluginRegistry.register(MultiRoundRobinsPlugin);
-  
-  // Register compound tournament plugins
-  tournamentPluginRegistry.register(PreliminaryWithFinalPlayoffPlugin);
-  tournamentPluginRegistry.register(PreliminaryWithFinalRoundRobinPlugin);
+// Auto-discover all *Plugin.tsx files in this directory via Vite's import.meta.glob.
+// Each plugin file must have a `export default <plugin>` that satisfies TournamentPlugin.
+// Adding a new plugin is as simple as creating a new *Plugin.tsx file with a default export.
+const pluginModules = import.meta.glob<{ default: TournamentPlugin }>('./*Plugin.tsx', { eager: true });
+
+for (const [path, module] of Object.entries(pluginModules)) {
+  const plugin = module.default;
+  if (plugin && plugin.type && plugin.name) {
+    tournamentPluginRegistry.register(plugin);
+  } else {
+    console.warn(`⚠️ Skipping plugin at ${path}: missing default export or required fields (type, name)`);
+  }
 }
 
-// Auto-register plugins when this module is imported
-registerTournamentPlugins();
-
-// Print information about all registered tournaments
-console.group('🏓 Tournament Plugin Registry Status');
-console.log(`⏰ Initialized at: ${new Date().toLocaleTimeString()}`);
-
-const registeredPlugins = tournamentPluginRegistry.getAll();
-const basicPlugins = tournamentPluginRegistry.getBasic();
-const compoundPlugins = tournamentPluginRegistry.getCompound();
-
-console.log(`✅ Total registered plugins: ${registeredPlugins.length}`);
-console.log(`📊 Basic tournaments: ${basicPlugins.length}`);
-console.log(`🔗 Compound tournaments: ${compoundPlugins.length}`);
-
-console.log('\n📋 Registered Tournament Types:');
-registeredPlugins.forEach((plugin, index) => {
-  const icon = plugin.isBasic ? '📊' : '🔗';
-  console.log(`${icon} ${plugin.name} (${plugin.type})`);
-  console.log(`   └─ ${plugin.description}`);
+// Log registration status
+console.group('🏓 Tournament Plugin Registry');
+const all = tournamentPluginRegistry.getAll();
+console.log(`${all.length} plugins registered`);
+all.forEach(p => {
+  const icon = p.isBasic ? '📊' : '🔗';
+  console.log(`  ${icon} ${p.name} (${p.type})`);
 });
-
-console.log('\n🎯 Available Tournament Types:');
-const availableTypes = tournamentPluginRegistry.getTypes();
-availableTypes.forEach(type => {
-  const plugin = tournamentPluginRegistry.get(type);
-  const icon = plugin?.isBasic ? '📊' : '🔗';
-  const name = plugin?.name || 'Unknown';
-  console.log(`${icon} ${type} - ${name}`);
-});
-
 console.groupEnd();
 
 // Export function to check if a tournament type is supported

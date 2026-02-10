@@ -1,11 +1,11 @@
 import React from 'react';
-import { TournamentPlugin, TournamentType, Tournament } from '../../../types/tournament';
+import { TournamentPlugin, Tournament } from '../../../types/tournament';
 import { PlayoffActivePanel } from './PlayoffActivePanel';
 import { PlayoffCompletedPanel } from './PlayoffCompletedPanel';
 import { PlayoffSchedulePanel } from './PlayoffSchedulePanel';
 
 export const PlayoffPlugin: TournamentPlugin = {
-  type: TournamentType.PLAYOFF,
+  type: 'PLAYOFF',
   isBasic: true,
   name: 'Playoff',
   description: 'Single-elimination tournament bracket with automatic winner advancement',

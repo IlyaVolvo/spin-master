@@ -55,7 +55,7 @@ interface TournamentParticipant {
 
 interface TraditionalBracketProps {
   tournamentId?: number;
-  tournamentType: string; // Tournament type (e.g., 'PLAYOFF', 'PRELIMINARY_WITH_FINAL_PLAYOFF')
+  tournamentType: string; // Tournament type from plugin registry
   participants: TournamentParticipant[];
   matches: BracketMatch[];
   onMatchUpdate?: () => void;

@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatTournamentDates } from '../utils/dateFormatter';
+import type { TournamentType } from '../types/tournament';
 
 interface Member {
   id: number;
@@ -40,7 +41,7 @@ interface Match {
 interface Tournament {
   id: number;
   name: string | null;
-  type?: 'ROUND_ROBIN' | 'PLAYOFF';
+  type: TournamentType;
   createdAt: string;
   recordedAt?: string;
   status: 'ACTIVE' | 'COMPLETED';

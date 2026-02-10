@@ -66,3 +66,5 @@ export const PreliminaryWithFinalPlayoffPlugin: TournamentPlugin = {
     <PreliminaryWithFinalPlayoffCompletedPanel {...props} />
   ),
 };
+
+export default PreliminaryWithFinalPlayoffPlugin;

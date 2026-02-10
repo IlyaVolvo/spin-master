@@ -1,3 +1,5 @@
+import type { NameDisplayOrder } from '../utils/nameFormatter';
+
 // Tournament Type
 // Tournament types are dynamically registered via the plugin system
 // No longer a static enum - types come from the tournament plugin registry
@@ -205,6 +207,24 @@ export interface TournamentCreationFlow {
   minPlayers: number;
   maxPlayers?: number;
   steps: TournamentCreationStep[];
+  // If provided, the plugin owns the entire post-player-selection flow.
+  // Players.tsx will render this instead of its own step-based UI.
+  renderPostSelectionFlow?: (props: PostSelectionFlowProps) => React.ReactNode;
+}
+
+export interface PostSelectionFlowProps {
+  selectedPlayerIds: number[];
+  members: Member[];
+  tournamentName: string;
+  setTournamentName: (name: string) => void;
+  editingTournamentId: number | null;
+  onCreated: () => void;
+  onError: (error: string) => void;
+  onSuccess: (message: string) => void;
+  onCancel: () => void;
+  onBackToPlayerSelection: () => void;
+  formatPlayerName: (firstName: string, lastName: string, order?: NameDisplayOrder) => string;
+  nameDisplayOrder: NameDisplayOrder;
 }
 
 export interface TournamentCreationStep {

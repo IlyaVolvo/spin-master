@@ -5,6 +5,7 @@ import { PlayoffSetupPanel } from './PlayoffSetupPanel';
 import { PlayoffActivePanel } from './PlayoffActivePanel';
 import { PlayoffSchedulePanel } from './PlayoffSchedulePanel';
 import { PlayoffCompletedPanel } from './PlayoffCompletedPanel';
+import { PlayoffPostSelectionFlow } from './PlayoffPostSelectionFlow';
 
 const PlayoffBracketWizardStep: React.FC<TournamentCreationStepProps> = ({
   selectedPlayerIds,
@@ -114,6 +115,7 @@ export const PlayoffPlugin: TournamentPlugin = {
         render: (props) => <PlayoffBracketWizardStep {...props} />,
       },
     ],
+    renderPostSelectionFlow: (props) => <PlayoffPostSelectionFlow {...props} />,
   }),
 
   createSetupPanel: (props: TournamentSetupProps) => (
@@ -232,3 +234,5 @@ export const PlayoffPlugin: TournamentPlugin = {
 
   canPrintResults: true,
 };
+
+export default PlayoffPlugin;

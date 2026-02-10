@@ -61,3 +61,5 @@ export const MultiRoundRobinsPlugin: TournamentPlugin = {
 
   canPrintResults: false,
 };
+
+export default MultiRoundRobinsPlugin;
