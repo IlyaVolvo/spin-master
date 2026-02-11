@@ -4793,16 +4793,6 @@ const Players: React.FC = () => {
                       </button>
                     </div>
                   </th>
-                  <th style={{ 
-                    textAlign: 'center', 
-                    fontWeight: 'bold', 
-                    color: selectedPlayer.rating !== null ? '#2c3e50' : '#95a5a6',
-                    padding: '12px',
-                    backgroundColor: '#e8f5e9',
-                    borderBottom: '2px solid #4caf50'
-                  }}>
-                    {selectedPlayer.rating !== null ? selectedPlayer.rating : '-'}
-                  </th>
                   {showAgeColumn && (
                     <th style={{ 
                       textAlign: 'center', 
@@ -4813,6 +4803,16 @@ const Players: React.FC = () => {
                       {calculateAge(selectedPlayer.birthDate) !== null ? calculateAge(selectedPlayer.birthDate) : '-'}
                     </th>
                   )}
+                  <th style={{ 
+                    textAlign: 'center', 
+                    fontWeight: 'bold', 
+                    color: selectedPlayer.rating !== null ? '#2c3e50' : '#95a5a6',
+                    padding: '12px',
+                    backgroundColor: '#e8f5e9',
+                    borderBottom: '2px solid #4caf50'
+                  }}>
+                    {selectedPlayer.rating !== null ? selectedPlayer.rating : '-'}
+                  </th>
                   {showGamesColumn && (
                   <th style={{ 
                     textAlign: 'center', 
