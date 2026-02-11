@@ -46,7 +46,6 @@ interface TournamentParticipant {
 
 interface PlayoffBracketProps {
   tournamentId: number;
-  tournamentType: string; // Tournament type (e.g., 'PLAYOFF', 'PRELIMINARY_WITH_FINAL_PLAYOFF')
   participants: TournamentParticipant[];
   matches: BracketMatch[];
   onBracketUpdate?: () => void;
@@ -67,7 +66,6 @@ interface EditingMatch {
 
 export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
   tournamentId,
-  tournamentType,
   participants,
   matches,
   onBracketUpdate,
@@ -347,7 +345,6 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
 
       <TraditionalBracket
         tournamentId={tournamentId}
-        tournamentType={tournamentType}
         participants={participants}
         matches={matches.map(m => ({
           ...m,
@@ -371,7 +368,7 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
             editingMatch={editingFinalMatch}
             player1={player1.member}
             player2={player2.member}
-            tournamentType="PLAYOFF"
+            showForfeitOptions={true}
             onSetEditingMatch={setEditingFinalMatch}
             onSave={handleSaveFinalMatch}
             onCancel={() => setEditingFinalMatch(null)}

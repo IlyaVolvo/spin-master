@@ -1,5 +1,5 @@
 import React from 'react';
-import { TournamentPlugin, TournamentType, TournamentSetupProps, TournamentActiveProps, TournamentScheduleProps, TournamentCompletedProps } from '../../../types/tournament';
+import { TournamentPlugin, TournamentType, TournamentCreationFlow, TournamentSetupProps, TournamentActiveProps, TournamentScheduleProps, TournamentCompletedProps } from '../../../types/tournament';
 
 // Placeholder components for compound tournaments
 const PreliminaryWithFinalPlayoffSetupPanel: React.FC<TournamentSetupProps> = (props) => (
@@ -36,6 +36,12 @@ export const PreliminaryWithFinalPlayoffPlugin: TournamentPlugin = {
   isBasic: false, // This is a compound tournament
   name: 'Preliminary + Final Playoff',
   description: 'Preliminary rounds followed by a final playoff bracket',
+
+  getCreationFlow: (): TournamentCreationFlow => ({
+    minPlayers: 12,
+    maxPlayers: -1,
+    steps: [],
+  }),
 
   createSetupPanel: (props: TournamentSetupProps) => (
     <PreliminaryWithFinalPlayoffSetupPanel {...props} />

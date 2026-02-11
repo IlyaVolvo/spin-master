@@ -18,7 +18,7 @@ export const RoundRobinPlugin: TournamentPlugin = {
 
   getCreationFlow: (): TournamentCreationFlow => ({
     minPlayers: 3,
-    maxPlayers: 100,
+    maxPlayers: 32,
     steps: [],
     renderPostSelectionFlow: (props) => <RoundRobinPostSelectionFlow {...props} />,
   }),

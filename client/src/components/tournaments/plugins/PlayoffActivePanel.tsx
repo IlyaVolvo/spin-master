@@ -134,7 +134,6 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
     <div className="playoff-active">
       <TraditionalBracket
         tournamentId={tournament.id}
-        tournamentType={tournament.type}
         participants={tournament.participants.map(p => ({
           id: p.memberId,
           member: {
@@ -182,7 +181,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           editingMatch={editingMatch}
           player1={tournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member!}
           player2={tournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member!}
-          tournamentType="PLAYOFF"
+          showForfeitOptions={true}
           onSetEditingMatch={handleSetEditingMatch}
           onSave={handleSaveMatchEdit}
           onCancel={handleCancel}

@@ -350,7 +350,7 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
             editingMatch={editingMatch}
             player1={player1.member}
             player2={player2.member}
-            tournamentType="PLAYOFF"
+            showForfeitOptions={true}
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}

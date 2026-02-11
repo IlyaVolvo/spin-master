@@ -325,9 +325,6 @@ const Players: React.FC = () => {
   const [tournamentName, setTournamentName] = useState('');
   const [tournamentType, setTournamentType] = useState<TournamentType>('');
   const [creationTournamentType, setCreationTournamentType] = useState<TournamentType | null>(null);
-  const [isMultiTournamentMode, setIsMultiTournamentMode] = useState(false);
-  const [playersPerTournament, setMembersPerTournament] = useState<string>('6');
-  const [playerGroups, setPlayerGroups] = useState<number[][]>([]); // Array of arrays, each array is a tournament group with player IDs
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
   const [isSelectingForHistory, setIsSelectingForHistory] = useState(false);
@@ -1906,57 +1903,6 @@ const Players: React.FC = () => {
     return nameFilter.trim() !== '' || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '' || selectedRoles.length > 0;
   };
 
-  // Split players into groups based on desired size per tournament
-  const splitPlayersIntoGroups = (
-    selectedPlayerIds: number[],
-    desiredSize: number
-  ): number[][] => {
-    // Get players sorted by ranking (higher rating = better ranking, sorted descending)
-    const selectedPlayersList = members
-      .filter(p => selectedPlayerIds.includes(p.id))
-      .map(p => ({
-        ...p,
-        ranking: playerRankings.get(p.id) ?? 99999, // Higher ranking number = worse
-        rating: p.rating ?? 0,
-      }))
-      .sort((a, b) => {
-        // Sort by ranking (ascending - rank 1 first), then by rating (descending)
-        if (a.ranking !== b.ranking) return a.ranking - b.ranking;
-        return b.rating - a.rating;
-      });
-
-    const totalPlayers = selectedPlayersList.length;
-    if (totalPlayers === 0) return [];
-
-    // Calculate how many tournaments we need
-    const numTournaments = Math.ceil(totalPlayers / desiredSize);
-    
-    // Calculate base size and remainder for even distribution
-    const baseSize = Math.floor(totalPlayers / numTournaments);
-    const remainder = totalPlayers % numTournaments;
-    
-    // Create groups
-    const groups: number[][] = [];
-    let playerIndex = 0;
-
-    for (let i = 0; i < numTournaments; i++) {
-      // Distribute remainder players to first tournaments
-      const tournamentSize = i < remainder ? baseSize + 1 : baseSize;
-      const tournamentPlayers = selectedPlayersList
-        .slice(playerIndex, playerIndex + tournamentSize)
-        .map(p => p.id);
-      
-      groups.push(tournamentPlayers);
-      playerIndex += tournamentSize;
-      
-      if (playerIndex >= totalPlayers) break;
-    }
-
-    return groups;
-  };
-
-  // Track last recalc key to avoid recalculating when manually moving players
-  const lastRecalcKeyRef = useRef<string>('');
   
   // Check if we should restore scroll when location changes
   useEffect(() => {
@@ -2053,41 +1999,6 @@ const Players: React.FC = () => {
     };
   }, []);
   
-  // Recalculate player groups when multi-tournament mode, selected players, or desired size changes
-  useEffect(() => {
-    if (!isMultiTournamentMode) {
-      setPlayerGroups([]);
-      lastRecalcKeyRef.current = '';
-      return;
-    }
-
-    if (selectedPlayersForTournament.length === 0) {
-      setPlayerGroups([]);
-      lastRecalcKeyRef.current = '';
-      return;
-    }
-
-    const desiredSize = parseInt(playersPerTournament) || 5;
-    if (desiredSize < 3 || desiredSize > 99) {
-      setPlayerGroups([]);
-      lastRecalcKeyRef.current = '';
-      return;
-    }
-
-    // Create a key to detect if we need to recalculate
-    const sortedPlayerIds = [...selectedPlayersForTournament].sort((a, b) => a - b);
-    const currentKey = `${sortedPlayerIds.join(',')}-${desiredSize}`;
-    
-    // Only recalculate if the key changed (selection or size changed) or if groups are empty
-    // This preserves manual grouping changes when just moving players
-    if (currentKey !== lastRecalcKeyRef.current || playerGroups.length === 0) {
-      const groups = splitPlayersIntoGroups(selectedPlayersForTournament, desiredSize);
-      setPlayerGroups(groups);
-      lastRecalcKeyRef.current = currentKey;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMultiTournamentMode, selectedPlayersForTournament, playersPerTournament]);
-
   // Close move menu when clicking outside
 
   const handleStartTournamentCreation = () => {
@@ -2097,7 +2008,6 @@ const Players: React.FC = () => {
     setTournamentName('');
     setTournamentType('');
     setCreationTournamentType(null);
-    setIsMultiTournamentMode(false);
   };
 
   const handleStartRecordMatch = () => {
@@ -2250,9 +2160,7 @@ const Players: React.FC = () => {
       setSelectedPlayersForTournament([]);
       setTournamentName('');
       setTournamentType('');
-      setIsMultiTournamentMode(false);
       setShowCancelConfirmation(false);
-      setPlayerGroups([]);
     } else if (tournamentCreationStep === 'player_selection') {
       setTournamentCreationStep('type_selection');
     } else if (tournamentCreationStep === 'plugin_flow') {
@@ -2268,7 +2176,6 @@ const Players: React.FC = () => {
     setExistingParticipantIds(new Set());
     setSelectedPlayersForTournament([]);
     setTournamentName('');
-    setIsMultiTournamentMode(false);
     setTournamentType('');
   };
 
@@ -2299,14 +2206,14 @@ const Players: React.FC = () => {
 
   const handleFinishPlayerSelection = () => {
     const minPlayers = creationFlow?.minPlayers ?? 2;
-    const maxPlayers = creationFlow?.maxPlayers;
+    const maxPlayers = creationFlow?.maxPlayers ?? -1;
 
     if (selectedPlayersForTournament.length < minPlayers) {
       setError(`Select at least ${minPlayers} players`);
       return;
     }
 
-    if (maxPlayers && selectedPlayersForTournament.length > maxPlayers) {
+    if (maxPlayers > 0 && selectedPlayersForTournament.length > maxPlayers) {
       setError(`Select at most ${maxPlayers} players`);
       return;
     }
@@ -2325,8 +2232,6 @@ const Players: React.FC = () => {
     setTournamentName('');
     setTournamentType('');
     setCreationTournamentType(null);
-    setIsMultiTournamentMode(false);
-    setPlayerGroups([]);
     fetchMembers();
 
     setTimeout(() => {
@@ -2955,7 +2860,6 @@ const Players: React.FC = () => {
                                 onChange={() => {
                                   setCreationTournamentType(plugin.type);
                                   setTournamentType(plugin.type);
-                                  setIsMultiTournamentMode(false);
                                 }}
                                 style={{ cursor: 'pointer' }}
                               />
@@ -2965,85 +2869,6 @@ const Players: React.FC = () => {
                         })}
                       </div>
                       
-                      {/* Multi-tournament checkbox and players per tournament (greyed out unless Round Robin is selected) */}
-                      <div style={{ 
-                        marginBottom: '20px',
-                        padding: '15px',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '4px',
-                        backgroundColor: tournamentType === 'ROUND_ROBIN' ? 'white' : '#f9f9f9',
-                        opacity: tournamentType === 'ROUND_ROBIN' ? 1 : 0.6
-                      }}>
-                        <label style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          cursor: tournamentType === 'ROUND_ROBIN' ? 'pointer' : 'not-allowed',
-                          marginBottom: tournamentType === 'ROUND_ROBIN' && isMultiTournamentMode ? '15px' : '0'
-                        }}>
-                          <input
-                            type="checkbox"
-                            checked={isMultiTournamentMode}
-                            onChange={(e) => {
-                              if (tournamentType === 'ROUND_ROBIN') {
-                                setIsMultiTournamentMode(e.target.checked);
-                                if (!e.target.checked) {
-                                  setMembersPerTournament('6');
-                                }
-                              }
-                            }}
-                            disabled={tournamentType !== 'ROUND_ROBIN'}
-                            style={{ 
-                              cursor: tournamentType === 'ROUND_ROBIN' ? 'pointer' : 'not-allowed',
-                              width: '18px',
-                              height: '18px'
-                            }}
-                          />
-                          <span style={{ 
-                            fontSize: '16px', 
-                            fontWeight: '500',
-                            color: tournamentType === 'ROUND_ROBIN' ? '#333' : '#999'
-                          }}>
-                            Multi-tournament
-                          </span>
-                        </label>
-                        
-                        {/* Players per tournament input (only shown when Round Robin is selected AND multi-tournament is checked) */}
-                        {tournamentType === 'ROUND_ROBIN' && isMultiTournamentMode && (
-                          <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #e0e0e0' }}>
-                            <label style={{ 
-                              display: 'block', 
-                              marginBottom: '8px', 
-                              fontSize: '14px', 
-                              fontWeight: '500',
-                              color: '#333'
-                            }}>
-                              Players per tournament:
-                            </label>
-                            <input
-                              type="number"
-                              value={playersPerTournament}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                const num = parseInt(value);
-                                if (value === '' || (num >= 3 && num <= 99)) {
-                                  setMembersPerTournament(value);
-                                }
-                              }}
-                              min="3"
-                              max="99"
-                              style={{
-                                width: '100%',
-                                padding: '10px',
-                                fontSize: '14px',
-                                border: '1px solid #ddd',
-                                borderRadius: '4px',
-                                backgroundColor: 'white'
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
                     </div>
                     
                     {/* Fixed Footer */}
@@ -3075,13 +2900,6 @@ const Players: React.FC = () => {
                           const selectedType = creationTournamentType;
                           if (!selectedType) {
                             setError('Please select a tournament type');
-                            return;
-                          }
-
-                          // Keep legacy flow stable: only these types are currently wired into Players.tsx
-                          const supportedLegacyTypes = new Set<TournamentType>(['ROUND_ROBIN', 'PLAYOFF']);
-                          if (!supportedLegacyTypes.has(selectedType)) {
-                            setError('This tournament type is not yet supported in the Players creation flow.');
                             return;
                           }
 
@@ -3205,37 +3023,40 @@ const Players: React.FC = () => {
                     <span style={{ fontSize: '18px', color: '#2c3e50', fontWeight: 'bold' }}>
                       (<strong>{selectedPlayersForTournament.length}</strong> selected)
                     </span>
-                    {isMultiTournamentMode && (() => {
-                      const desiredSize = parseInt(playersPerTournament) || 6;
-                      const numTournaments = selectedPlayersForTournament.length > 0 
-                        ? Math.ceil(selectedPlayersForTournament.length / desiredSize)
-                        : 0;
-                                    return (
-                        <span style={{ fontSize: '16px', color: '#27ae60', fontWeight: 'bold' }}>
-                                        → {numTournaments} tournament{numTournaments !== 1 ? 's' : ''} will be created
-                                      </span>
-                                    );
-                                })()}
                               </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 10 }}>
                     {(() => {
                       const minPlayers = creationFlow?.minPlayers ?? 2;
-                      const notEnough = selectedPlayersForTournament.length < minPlayers;
+                      const maxPlayers = creationFlow?.maxPlayers ?? -1;
+                      const count = selectedPlayersForTournament.length;
+                      const notEnough = count < minPlayers;
+                      const tooMany = maxPlayers > 0 && count > maxPlayers;
+                      const invalid = notEnough || tooMany;
                       return (
                         <>
+                          {notEnough && (
+                            <span style={{ fontSize: '13px', color: '#e74c3c' }}>
+                              Need {minPlayers - count} more
+                            </span>
+                          )}
+                          {tooMany && (
+                            <span style={{ fontSize: '13px', color: '#e74c3c' }}>
+                              Max {maxPlayers} players
+                            </span>
+                          )}
                           <button
                             onClick={handleFinishPlayerSelection}
-                            disabled={notEnough}
+                            disabled={invalid}
                             style={{
                               padding: '8px 16px',
-                              backgroundColor: notEnough ? '#95a5a6' : '#27ae60',
+                              backgroundColor: invalid ? '#95a5a6' : '#27ae60',
                               color: 'white',
                               border: 'none',
                               borderRadius: '4px',
-                              cursor: notEnough ? 'not-allowed' : 'pointer',
+                              cursor: invalid ? 'not-allowed' : 'pointer',
                               fontSize: '14px',
                               fontWeight: 'bold',
-                              opacity: notEnough ? 0.7 : 1,
+                              opacity: invalid ? 0.7 : 1,
                             }}
                           >
                             Continue

@@ -20,7 +20,8 @@ export const PreliminaryAndPlayoffPlugin: TournamentPlugin = {
   description: 'Round Robin groups followed by a playoff bracket for top players',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 6,
+    minPlayers: 12,
+    maxPlayers: -1,
     steps: [],
     renderPostSelectionFlow: (props) => (
       <PreliminaryAndPlayoffPostSelectionFlow {...props} />

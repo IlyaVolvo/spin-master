@@ -20,7 +20,8 @@ export const MultiRoundRobinsPlugin: TournamentPlugin = {
   description: 'Split players into multiple round-robin groups and create one tournament per group',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 4,
+    minPlayers: 12,
+    maxPlayers: -1,
     steps: [],
   }),
 

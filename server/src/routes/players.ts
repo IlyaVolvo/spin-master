@@ -1254,36 +1254,32 @@ router.post('/match-history', [
         const isMember1 = match.member1Id === memberId;
         const opponentId = isMember1 ? match.member2Id : match.member1Id;
         const opponent = opponents.find(o => o.id === opponentId);
-        const isRoundRobin = match.tournament?.type === 'ROUND_ROBIN';
         const isStandaloneMatch = !match.tournament;
         
-        // For ROUND_ROBIN tournaments, ratings don't change per match, so get rating from participant data
-        // For other tournament types and standalone matches, get rating from rating history
+        // Check if this match has per-match rating history entries
+        const matchRatingMap = ratingMap.get(match.id.toString());
+        const memberRatingInfo = matchRatingMap?.get(memberId);
+        const opponentRatingInfo = matchRatingMap?.get(opponentId || 0);
+        const hasPerMatchRatings = memberRatingInfo !== undefined || opponentRatingInfo !== undefined;
+        
         let memberRatingAfter: number | null = null;
         let memberRatingChange: number | null = null;
         let opponentRatingAfter: number | null = null;
         let opponentRatingChange: number | null = null;
         
-        if (isRoundRobin && match.tournament) {
-          // Get rating from tournament participant data (rating at time of tournament)
-          // For round robin, this is effectively the rating "after" since there's no per-match change
-          const memberParticipant = match.tournament.participants.find(p => p.memberId === memberId);
-          const opponentParticipant = match.tournament.participants.find(p => p.memberId === opponentId);
-          memberRatingAfter = memberParticipant?.playerRatingAtTime ?? null;
-          opponentRatingAfter = opponentParticipant?.playerRatingAtTime ?? null;
-          // Round robin matches don't change ratings, so ratingChange is always null
-          memberRatingChange = null;
-          opponentRatingChange = null;
-        } else {
-          // Get rating information from rating history for non-round-robin tournaments and standalone matches
-          const matchRatingMap = ratingMap.get(match.id.toString());
-          const memberRatingInfo = matchRatingMap?.get(memberId);
-          const opponentRatingInfo = matchRatingMap?.get(opponentId || 0);
-          // Show rating AFTER the match (rating after = rating before + change, or use rating from history)
+        if (hasPerMatchRatings || isStandaloneMatch) {
+          // Use per-match rating history (for tournament types that recalculate per match, and standalone matches)
           memberRatingAfter = memberRatingInfo?.ratingAfter ?? null;
           memberRatingChange = memberRatingInfo?.ratingChange ?? null;
           opponentRatingAfter = opponentRatingInfo?.ratingAfter ?? null;
           opponentRatingChange = opponentRatingInfo?.ratingChange ?? null;
+        } else if (match.tournament) {
+          // No per-match rating history — use tournament participant data (rating at time of tournament)
+          // ratingChange stays null since this tournament type doesn't change ratings per match
+          const memberParticipant = match.tournament.participants.find(p => p.memberId === memberId);
+          const opponentParticipant = match.tournament.participants.find(p => p.memberId === opponentId);
+          memberRatingAfter = memberParticipant?.playerRatingAtTime ?? null;
+          opponentRatingAfter = opponentParticipant?.playerRatingAtTime ?? null;
         }
         
         return {

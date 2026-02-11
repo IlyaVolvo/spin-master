@@ -1,5 +1,5 @@
 import React from 'react';
-import { TournamentPlugin, TournamentType, TournamentSetupProps, TournamentActiveProps, TournamentScheduleProps, TournamentCompletedProps, SwissTournamentData } from '../../../types/tournament';
+import { TournamentPlugin, TournamentType, TournamentCreationFlow, TournamentSetupProps, TournamentActiveProps, TournamentScheduleProps, TournamentCompletedProps, SwissTournamentData } from '../../../types/tournament';
 import { SwissSetupPanel } from './SwissSetupPanel.tsx';
 import { SwissActivePanel } from './SwissActivePanel';
 import { SwissSchedulePanel } from './SwissSchedulePanel';
@@ -20,6 +20,12 @@ export const SwissPlugin: TournamentPlugin = {
   name: 'Swiss System',
   description: 'Swiss tournament with progressive pairings based on performance',
   icon: SwissIcon,
+
+  getCreationFlow: (): TournamentCreationFlow => ({
+    minPlayers: 15,
+    maxPlayers: -1,
+    steps: [],
+  }),
 
   createSetupPanel: (props: TournamentSetupProps) => (
     <SwissSetupPanel {...props} />

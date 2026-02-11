@@ -26,9 +26,8 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
   const [numSeedsForBracket, setNumSeedsForBracket] = useState<number | undefined>(undefined);
 
   const calculateMaxSeeds = (numPlayers: number): number => {
-    const quarterPlayers = Math.floor(numPlayers / 4);
-    if (quarterPlayers < 2) return 0;
-    return Math.pow(2, Math.floor(Math.log2(quarterPlayers)));
+    const bracketSize = Math.pow(2, Math.ceil(Math.log2(numPlayers)));
+    return bracketSize >= 8 ? bracketSize / 4 : 0;
   };
 
   const fetchBracketPreview = async (numSeeds?: number) => {

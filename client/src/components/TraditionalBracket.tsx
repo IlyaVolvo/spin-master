@@ -55,7 +55,6 @@ interface TournamentParticipant {
 
 interface TraditionalBracketProps {
   tournamentId?: number;
-  tournamentType: string; // Tournament type from plugin registry
   participants: TournamentParticipant[];
   matches: BracketMatch[];
   onMatchUpdate?: () => void;
@@ -89,7 +88,6 @@ interface MatchNode {
 
 export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
   tournamentId,
-  tournamentType,
   participants,
   matches,
   onMatchUpdate,
@@ -1987,7 +1985,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             editingMatch={editingMatch}
             player1={player1.member}
             player2={player2.member}
-            tournamentType={tournamentType}
+            showForfeitOptions={true}
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}

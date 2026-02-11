@@ -36,12 +36,11 @@ export const BracketPreview: React.FC<BracketPreviewProps> = ({
   const [rejectedDropPosition, setRejectedDropPosition] = useState<number | null>(null);
   
   // Calculate max number of seeded players:
-  // No more than a quarter of total players can be seeded.
-  // Must be a power of 2 >= 2, or 0 if fewer than 8 players.
+  // No more than a quarter of the bracket size (next power of 2 >= numPlayers).
+  // Must be a power of 2 >= 2, or 0 if bracket size < 8.
   const calculateMaxSeeds = (numPlayers: number): number => {
-    const quarterPlayers = Math.floor(numPlayers / 4);
-    if (quarterPlayers < 2) return 0;
-    return Math.pow(2, Math.floor(Math.log2(quarterPlayers)));
+    const bracketSize = Math.pow(2, Math.ceil(Math.log2(numPlayers)));
+    return bracketSize >= 8 ? bracketSize / 4 : 0;
   };
 
   // Get valid seed values: all powers of 2 <= maxSeeds (including 0 for random)

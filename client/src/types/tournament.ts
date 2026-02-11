@@ -205,7 +205,7 @@ export interface TournamentPlugin {
 
 export interface TournamentCreationFlow {
   minPlayers: number;
-  maxPlayers?: number;
+  maxPlayers: number; // -1 means unlimited
   steps: TournamentCreationStep[];
   // If provided, the plugin owns the entire post-player-selection flow.
   // Players.tsx will render this instead of its own step-based UI.

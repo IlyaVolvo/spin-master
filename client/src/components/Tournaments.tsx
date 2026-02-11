@@ -2233,7 +2233,7 @@ const Tournaments: React.FC = () => {
                         editingMatch={{...editingMatch, member2Id: editingMatch.member2Id} as any}
                         player1={player1}
                         player2={player2}
-                        tournamentType={selectedTournament.type}
+                        showForfeitOptions={true}
                         onSetEditingMatch={setEditingMatch}
                         onSave={handleSaveMatchEdit}
                         onCancel={() => setEditingMatch(null)}

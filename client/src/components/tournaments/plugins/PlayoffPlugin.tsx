@@ -106,8 +106,8 @@ export const PlayoffPlugin: TournamentPlugin = {
   description: 'Single or double elimination tournament bracket',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 4,
-    maxPlayers: 64,
+    minPlayers: 6,
+    maxPlayers: 128,
     steps: [
       {
         id: 'organize_bracket',

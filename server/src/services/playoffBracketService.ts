@@ -75,21 +75,20 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
   
   // Validate numSeeded parameter according to rules:
   // - Can be 0 OR any power of 2 >= 2 (powers of 2 are: 2, 4, 8, 16, ...)
-  // - Must be <= largest power of 2 <= floor(numPlayers / 4)
-  // - No more than a quarter of total players can be seeded
+  // - Must be <= bracketSize / 4 (no more than a quarter of the bracket)
+  // - bracketSize is the next power of 2 >= numPlayers
   // Examples:
-  //   - numPlayers = 10: valid numSeeded = 0, 2 (max is 2, since floor(10/4)=2, largest power of 2 <= 2 is 2)
-  //   - numPlayers = 16: valid numSeeded = 0, 2, 4 (max is 4, since floor(16/4)=4, largest power of 2 <= 4 is 4)
-  //   - numPlayers = 5: valid numSeeded = 0 (floor(5/4)=1, no power of 2 >= 2 fits)
-  //   - numPlayers = 8: valid numSeeded = 0, 2 (max is 2, since floor(8/4)=2, largest power of 2 <= 2 is 2)
-  //   - numPlayers = 32: valid numSeeded = 0, 2, 4, 8 (max is 8, since floor(32/4)=8)
+  //   - numPlayers = 7:  bracketSize = 8,  max = 8/4 = 2, valid = 0, 2
+  //   - numPlayers = 10: bracketSize = 16, max = 16/4 = 4, valid = 0, 2, 4
+  //   - numPlayers = 16: bracketSize = 16, max = 16/4 = 4, valid = 0, 2, 4
+  //   - numPlayers = 5:  bracketSize = 8,  max = 8/4 = 2, valid = 0, 2
+  //   - numPlayers = 8:  bracketSize = 8,  max = 8/4 = 2, valid = 0, 2
+  //   - numPlayers = 32: bracketSize = 32, max = 32/4 = 8, valid = 0, 2, 4, 8
   let numSeededToUse: number;
   
-  // Calculate maximum allowed numSeeded = largest power of 2 <= floor(numPlayers / 4)
-  const quarterNumPlayers = Math.floor(numPlayers / 4);
-  const maxSeeded = quarterNumPlayers >= 2 
-    ? Math.pow(2, Math.floor(Math.log2(quarterNumPlayers)))
-    : 0;
+  // Calculate maximum allowed numSeeded = bracketSize / 4
+  // bracketSize is already a power of 2, so bracketSize/4 is always a power of 2 (for bracketSize >= 8)
+  const maxSeeded = bracketSize >= 8 ? bracketSize / 4 : 0;
   
   if (numSeeded === undefined) {
     // Default: use the maximum allowed numSeeded (or 0 if not possible)
@@ -114,7 +113,7 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
       }
       
       if (numSeededToUse > maxSeeded) {
-        throw new Error(`numSeeded (${numSeededToUse}) must be <= ${maxSeeded} (largest power of 2 <= floor(${numPlayers}/4))`);
+        throw new Error(`numSeeded (${numSeededToUse}) must be <= ${maxSeeded} (bracketSize ${bracketSize} / 4)`);
       }
     }
   }

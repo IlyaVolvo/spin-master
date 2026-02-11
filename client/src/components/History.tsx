@@ -8,7 +8,7 @@ interface MatchHistory {
   tournamentId: number;
   tournamentName: string | null;
   tournamentStatus: string;
-  tournamentType?: 'ROUND_ROBIN' | 'PLAYOFF';
+  tournamentType?: string;
   tournamentDate: string;
   opponentId: number;
   opponentName: string;
@@ -431,11 +431,11 @@ const History: React.FC = () => {
                                 matchHistory.opponents.find(o => o.id === match.opponentId)?.lastName || '',
                                 getNameDisplayOrder()
                               )}
-                              {/* Show rating AFTER match with change for non-round-robin tournaments, or just rating for round robin */}
+                              {/* Show rating AFTER match, with change if available */}
                               {match.opponentRatingAfter !== null && (
                                 <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>
                                   ({match.opponentRatingAfter}
-                                  {match.tournamentType !== 'ROUND_ROBIN' && match.opponentRatingChange !== null ? (
+                                  {match.opponentRatingChange !== null ? (
                                     <>
                                       /
                                       <span style={{ color: match.opponentRatingChange > 0 ? '#27ae60' : match.opponentRatingChange < 0 ? '#e74c3c' : '#666' }}>
@@ -463,17 +463,15 @@ const History: React.FC = () => {
                               {match.memberRatingAfter !== null ? (
                                 <span style={{ fontSize: '12px', color: '#666' }}>
                                   {match.memberRatingAfter}
-                                  {/* Only show rating change for non-round-robin tournaments */}
-                                  {match.tournamentType !== 'ROUND_ROBIN' && match.memberRatingChange !== null ? (
+                                  {/* Show rating change if available */}
+                                  {match.memberRatingChange !== null ? (
                                     <>
                                       {' '}
                                       <span style={{ color: match.memberRatingChange > 0 ? '#27ae60' : match.memberRatingChange < 0 ? '#e74c3c' : '#666' }}>
                                         ({match.memberRatingChange > 0 ? '+' : ''}{match.memberRatingChange})
                                       </span>
                                     </>
-                                  ) : match.tournamentType === 'ROUND_ROBIN' ? null : (
-                                    <span style={{ color: '#666' }}> (0)</span>
-                                  )}
+                                  ) : null}
                                 </span>
                               ) : (
                                 <span style={{ fontSize: '12px', color: '#999' }}>N/A</span>

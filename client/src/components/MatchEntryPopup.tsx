@@ -1,6 +1,5 @@
 import React from 'react';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
-import { TournamentType } from '../types/tournament';
 
 interface Player {
   id: number;
@@ -22,7 +21,7 @@ interface MatchEntryPopupProps {
   editingMatch: EditingMatch;
   player1: Player;
   player2: Player;
-  tournamentType?: TournamentType;
+  showForfeitOptions?: boolean;
   onSetEditingMatch: (match: EditingMatch) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -34,7 +33,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   editingMatch,
   player1,
   player2,
-  tournamentType,
+  showForfeitOptions = true,
   onSetEditingMatch,
   onSave,
   onCancel,
@@ -42,7 +41,6 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   showClearButton = false,
 }) => {
   const isForfeit = editingMatch.player1Forfeit || editingMatch.player2Forfeit;
-  const showForfeitOptions = tournamentType === 'ROUND_ROBIN' || tournamentType === 'PLAYOFF';
   
   const player1Sets = parseInt(editingMatch.player1Sets) || 0;
   const player2Sets = parseInt(editingMatch.player2Sets) || 0;
