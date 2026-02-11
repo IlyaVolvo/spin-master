@@ -1,5 +1,4 @@
 import { prisma } from '../index';
-import { checkAndCreatePlayoff } from './roundRobinPlayoffService';
 
 /**
  * Recalculates rankings for all players based on tournament results.
@@ -124,18 +123,6 @@ export async function recalculateRankings(tournamentId: number) {
   // Note: Rankings are calculated from ratings on the frontend
   // No need to store rankings in the database - they are derived from ratings
   // Rating history is created separately when ratings are updated
-
-  // Check if this is a Round Robin tournament that's a child of a PRELIMINARY_AND_PLAYOFF
-  // If so, check if all Round Robins are complete and create playoff if needed
-  const tournament = await prisma.tournament.findUnique({
-    where: { id: tournamentId },
-    select: { type: true, parentTournamentId: true },
-  });
-
-  if (tournament?.type === 'ROUND_ROBIN' && tournament.parentTournamentId) {
-    // This is a child Round Robin tournament - check if we should create playoff
-    await checkAndCreatePlayoff(tournament.parentTournamentId);
-  }
 }
 
 

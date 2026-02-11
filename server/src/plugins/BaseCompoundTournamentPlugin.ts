@@ -106,6 +106,19 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     return true;
   }
 
+  matchesRemaining(tournament: any): number {
+    // Compound tournaments delegate to child tournaments
+    // Sum up remaining matches across all active children
+    if (!tournament.childTournaments || tournament.childTournaments.length === 0) {
+      return 0;
+    }
+    return tournament.childTournaments.reduce((total: number, child: any) => {
+      if (child.status === 'COMPLETED') return total;
+      const childPlugin = tournamentPluginRegistry.get(child.type);
+      return total + childPlugin.matchesRemaining(child);
+    }, 0);
+  }
+
   async onMatchCompleted(event: MatchCompletedEvent): Promise<TournamentStateChangeResult> {
     // Compound tournaments don't directly handle match completion
     // Matches belong to child tournaments
@@ -143,6 +156,57 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     }
     
     return {};
+  }
+
+  async getSchedule(context: { tournament: any; prisma: any }): Promise<any> {
+    // Compound tournaments aggregate schedules from child tournaments
+    const { tournament, prisma } = context;
+    const childSchedules = [];
+    if (tournament.childTournaments) {
+      for (const child of tournament.childTournaments) {
+        const childPlugin = tournamentPluginRegistry.get(child.type);
+        const schedule = await childPlugin.getSchedule({ tournament: child, prisma });
+        childSchedules.push({ tournamentId: child.id, name: child.name, ...schedule });
+      }
+    }
+    return { childSchedules };
+  }
+
+  async getPrintableView(context: { tournament: any; prisma: any }): Promise<any> {
+    // Compound tournaments aggregate printable views from child tournaments
+    const { tournament, prisma } = context;
+    const childViews = [];
+    if (tournament.childTournaments) {
+      for (const child of tournament.childTournaments) {
+        const childPlugin = tournamentPluginRegistry.get(child.type);
+        const view = await childPlugin.getPrintableView({ tournament: child, prisma });
+        childViews.push({ tournamentId: child.id, name: child.name, ...view });
+      }
+    }
+    return { childViews };
+  }
+
+  async updateMatch(context: {
+    matchId: number;
+    tournamentId: number;
+    member1Id?: number;
+    member2Id?: number;
+    player1Sets: number;
+    player2Sets: number;
+    player1Forfeit: boolean;
+    player2Forfeit: boolean;
+    prisma: any;
+    userId?: number;
+  }): Promise<{
+    match: any;
+    tournamentStateChange?: {
+      shouldMarkComplete?: boolean;
+      message?: string;
+    };
+  }> {
+    // Compound tournaments don't own matches directly
+    // Matches belong to child tournaments and are updated through their own plugins
+    throw new Error('Compound tournaments do not handle matches directly. Update the child tournament match instead.');
   }
 
   // Abstract method for subclasses to indicate if they have a final phase

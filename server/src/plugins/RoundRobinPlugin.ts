@@ -84,6 +84,18 @@ export class RoundRobinPlugin implements TournamentPlugin {
     return true; // Can always cancel
   }
 
+  matchesRemaining(tournament: any): number {
+    if (!tournament.participants || tournament.participants.length < 2) {
+      return 0;
+    }
+    const expectedMatches = (tournament.participants.length * (tournament.participants.length - 1)) / 2;
+    const playedMatches = tournament.matches?.filter((m: any) => 
+      (m.player1Sets !== null && m.player2Sets !== null) &&
+      (m.player1Sets > 0 || m.player2Sets > 0 || m.player1Forfeit || m.player2Forfeit)
+    ).length || 0;
+    return Math.max(0, expectedMatches - playedMatches);
+  }
+
   async onMatchCompleted(event: any): Promise<any> {
     const { tournament, prisma } = event;
     
@@ -114,6 +126,8 @@ export class RoundRobinPlugin implements TournamentPlugin {
   async updateMatch(context: {
     matchId: number;
     tournamentId: number;
+    member1Id?: number;
+    member2Id?: number;
     player1Sets: number;
     player2Sets: number;
     player1Forfeit: boolean;
@@ -127,43 +141,75 @@ export class RoundRobinPlugin implements TournamentPlugin {
       message?: string;
     };
   }> {
-    const { matchId, tournamentId, player1Sets, player2Sets, player1Forfeit, player2Forfeit, prisma } = context;
+    const { matchId, tournamentId, member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit, prisma } = context;
     
-    // Find match directly
-    const match = await prisma.match.findUnique({
-      where: { id: matchId },
-      include: { tournament: true },
-    });
+    let match: any = null;
     
-    if (!match) {
-      throw new Error('Match not found');
+    // matchId > 0 means update existing match
+    if (matchId > 0) {
+      match = await prisma.match.findUnique({
+        where: { id: matchId },
+        include: { tournament: true },
+      });
+      
+      if (!match) {
+        throw new Error('Match not found');
+      }
+      
+      if (match.tournamentId !== tournamentId) {
+        throw new Error('Match does not belong to this tournament');
+      }
     }
     
-    if (match.tournamentId !== tournamentId) {
-      throw new Error('Match does not belong to this tournament');
+    // Get member IDs from existing match or from context
+    const m1Id = match?.member1Id ?? member1Id;
+    const m2Id = match?.member2Id ?? member2Id;
+    
+    if (!m1Id || !m2Id) {
+      throw new Error('member1Id and member2Id are required for match creation');
     }
     
     // Determine winner
     const winnerId = player1Forfeit 
-      ? match.member2Id 
+      ? m2Id 
       : player2Forfeit 
-        ? match.member1Id 
+        ? m1Id 
         : player1Sets > player2Sets 
-          ? match.member1Id 
-          : match.member2Id;
+          ? m1Id 
+          : m2Id;
     
-    // Update match
-    const updatedMatch = await prisma.match.update({
-      where: { id: matchId },
-      data: {
-        player1Sets,
-        player2Sets,
-        player1Forfeit,
-        player2Forfeit,
-        winnerId,
-      },
-      include: { tournament: true },
-    });
+    let updatedMatch;
+    
+    if (match) {
+      // Update existing match
+      updatedMatch = await prisma.match.update({
+        where: { id: matchId },
+        data: {
+          player1Sets,
+          player2Sets,
+          player1Forfeit,
+          player2Forfeit,
+          winnerId,
+        },
+        include: { tournament: true },
+      });
+    } else {
+      // Create new match — for round robin, all matches are pre-created at tournament creation
+      // This path handles the case where a match needs to be created (legacy support)
+      updatedMatch = await prisma.match.create({
+        data: {
+          tournamentId,
+          member1Id: m1Id,
+          member2Id: m2Id,
+          player1Sets,
+          player2Sets,
+          player1Forfeit,
+          player2Forfeit,
+          winnerId,
+        },
+        include: { tournament: true },
+      });
+    }
     
     // Check if tournament is complete
     const tournament = await prisma.tournament.findUnique({

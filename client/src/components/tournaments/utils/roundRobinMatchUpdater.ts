@@ -64,9 +64,8 @@ export class RoundRobinMatchUpdater {
         apiData.player2Forfeit = false;
       }
 
-      // For round robin tournaments, use the dedicated round robin endpoint
-      // Use matchId = 0 for new matches (server will create with new ID)
-      const response = await api.patch(`/tournaments/${this.tournamentId}/round-robin-matches/0`, apiData);
+      // Use the generic match update endpoint with matchId=0 for new match creation
+      const response = await api.patch(`/tournaments/${this.tournamentId}/matches/0`, apiData);
       const savedMatch = response.data;
       
       callbacks.onSuccess?.('Match result added successfully');
@@ -120,7 +119,7 @@ export class RoundRobinMatchUpdater {
         apiData.player2Forfeit = false;
       }
 
-      const response = await api.patch(`/tournaments/${this.tournamentId}/round-robin-matches/${matchId}`, apiData);
+      const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;
       
       callbacks.onSuccess?.('Match result updated successfully');

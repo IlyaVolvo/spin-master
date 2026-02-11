@@ -42,8 +42,6 @@ import { PrismaClient } from '@prisma/client';
 import playerRoutes from './routes/players';
 import tournamentRoutes from './routes/tournaments';
 import authRoutes from './routes/auth';
-import playoffRoutes from './routes/playoff';
-import roundRobinRoutes from './routes/roundRobin';
 import matchRoutes from './routes/matches';
 import { requestLogger } from './middleware/requestLogger';
 import { logger } from './utils/logger';
@@ -125,8 +123,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/matches', matchRoutes);
-app.use('/api', playoffRoutes);
-app.use('/api', roundRobinRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

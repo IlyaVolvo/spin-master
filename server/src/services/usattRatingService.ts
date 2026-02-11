@@ -849,8 +849,8 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
     },
   });
 
-  if (!tournament || tournament.type !== 'ROUND_ROBIN') {
-    return; // Not a ROUND_ROBIN tournament
+  if (!tournament) {
+    return;
   }
 
   // Calculate final ratings using 4-pass algorithm (based on playerRatingAtTime)

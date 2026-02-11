@@ -848,9 +848,13 @@ router.post('/:id/matches', [
   }
 });
 
-// Update match result (for corrections)
+// Generic match update endpoint - single entry point for all tournament types
+// matchId can be: a real Match ID, a bracketMatchId (for playoffs), or 0 (for new match creation)
+// The plugin's updateMatch() handles the type-specific logic
 // Only Organizers can update matches
 router.patch('/:tournamentId/matches/:matchId', [
+  body('member1Id').optional().isInt({ min: 1 }),
+  body('member2Id').optional().isInt({ min: 1 }),
   body('player1Sets').optional().isInt({ min: 0 }),
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
@@ -868,7 +872,7 @@ router.patch('/:tournamentId/matches/:matchId', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { player1Sets, player2Sets, player1Forfeit, player2Forfeit } = req.body;
+    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit } = req.body;
     const tournamentId = parseInt(req.params.tournamentId);
     const matchId = parseInt(req.params.matchId);
     
@@ -876,46 +880,118 @@ router.patch('/:tournamentId/matches/:matchId', [
       return res.status(400).json({ error: 'Invalid tournament or match ID' });
     }
 
-    // Validate forfeit logic: exactly one player must forfeit
+    // Validate forfeit logic: exactly one player can forfeit
     if (player1Forfeit === true && player2Forfeit === true) {
       return res.status(400).json({ error: 'Only one player can forfeit' });
     }
 
-    // Get tournament and plugin
+    // Validate scores: cannot be equal unless it's a forfeit
+    if (!player1Forfeit && !player2Forfeit) {
+      const p1Sets = player1Sets ?? 0;
+      const p2Sets = player2Sets ?? 0;
+      if (p1Sets === p2Sets) {
+        return res.status(400).json({ error: 'Scores cannot be equal. One player must win.' });
+      }
+    }
+
+    // Get tournament with participants and plugin
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
+      include: { participants: true },
     });
     
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
     }
+
+    if (tournament.status !== 'ACTIVE') {
+      return res.status(400).json({ error: 'Tournament is not active' });
+    }
     
     const plugin = tournamentPluginRegistry.get(tournament.type);
+
+    // Process forfeit scores
+    let finalPlayer1Sets = player1Sets ?? 0;
+    let finalPlayer2Sets = player2Sets ?? 0;
+    let finalPlayer1Forfeit = player1Forfeit || false;
+    let finalPlayer2Forfeit = player2Forfeit || false;
+
+    if (finalPlayer1Forfeit) {
+      finalPlayer1Sets = 0;
+      finalPlayer2Sets = 1;
+      finalPlayer2Forfeit = false;
+    } else if (finalPlayer2Forfeit) {
+      finalPlayer1Sets = 1;
+      finalPlayer2Sets = 0;
+      finalPlayer1Forfeit = false;
+    }
     
     // Delegate match update to plugin
     const result = await plugin.updateMatch({
       matchId,
       tournamentId,
-      player1Sets: player1Sets ?? 0,
-      player2Sets: player2Sets ?? 0,
-      player1Forfeit: player1Forfeit || false,
-      player2Forfeit: player2Forfeit || false,
+      member1Id,
+      member2Id,
+      player1Sets: finalPlayer1Sets,
+      player2Sets: finalPlayer2Sets,
+      player1Forfeit: finalPlayer1Forfeit,
+      player2Forfeit: finalPlayer2Forfeit,
       prisma,
       userId: req.userId ?? req.memberId,
     });
     
     const updatedMatch = result.match;
     
-    // Handle tournament state changes
+    // Handle tournament completion
     if (result.tournamentStateChange?.shouldMarkComplete) {
       await prisma.tournament.update({
         where: { id: tournamentId },
-        data: { status: 'COMPLETED' },
+        data: { status: 'COMPLETED', recordedAt: new Date() },
       });
+
+      // Calculate completion ratings if plugin supports it
+      if (plugin.onTournamentCompletionRatingCalculation) {
+        await plugin.onTournamentCompletionRatingCalculation({ tournament, prisma });
+      }
+
+      // Recalculate rankings
+      const { recalculateRankings } = await import('../services/rankingService');
+      await recalculateRankings(tournamentId);
+
+      // Propagate to parent tournament if this is a child
+      if (tournament.parentTournamentId) {
+        const parentTournament = await prisma.tournament.findUnique({
+          where: { id: tournament.parentTournamentId },
+          include: { 
+            childTournaments: {
+              include: { participants: { include: { member: true } }, matches: true },
+            },
+            participants: { include: { member: true } },
+          },
+        });
+        
+        if (parentTournament) {
+          const parentPlugin = tournamentPluginRegistry.get(parentTournament.type);
+          if (parentPlugin.onChildTournamentCompleted) {
+            const parentResult = await parentPlugin.onChildTournamentCompleted({
+              parentTournament,
+              childTournament: tournament,
+              prisma,
+            });
+            
+            if (parentResult.shouldMarkComplete) {
+              await prisma.tournament.update({
+                where: { id: parentTournament.id },
+                data: { status: 'COMPLETED', recordedAt: new Date() },
+              });
+            }
+          }
+        }
+      }
     }
     
-    // Calculate ratings if match has winner and tournament is active
-    if (tournament.status === 'ACTIVE' && updatedMatch.winnerId) {
+    // Calculate per-match ratings if match has winner and tournament is still active
+    if (!result.tournamentStateChange?.shouldMarkComplete && updatedMatch.winnerId) {
       if (plugin.onMatchRatingCalculation) {
         await plugin.onMatchRatingCalculation({
           tournament,
@@ -924,12 +1000,6 @@ router.patch('/:tournamentId/matches/:matchId', [
           prisma,
         });
       }
-    }
-    
-    // If tournament is completed, recalculate rankings
-    if (result.tournamentStateChange?.shouldMarkComplete) {
-      const { recalculateRankings } = await import('../services/rankingService');
-      await recalculateRankings(tournamentId);
     }
 
     // Invalidate cache and emit notifications

@@ -231,6 +231,20 @@ export class PlayoffPlugin implements TournamentPlugin {
     return true;
   }
 
+  matchesRemaining(tournament: any): number {
+    if (!tournament.bracketMatches || tournament.bracketMatches.length === 0) {
+      return 0;
+    }
+    // Count bracket matches that are not BYEs and don't have a completed match
+    const playableMatches = tournament.bracketMatches.filter((bm: any) => 
+      bm.member1Id !== 0 && bm.member2Id !== 0 && bm.member2Id !== null
+    );
+    const completedMatches = playableMatches.filter((bm: any) => 
+      bm.match && bm.match.winnerId !== null
+    );
+    return Math.max(0, playableMatches.length - completedMatches.length);
+  }
+
   async resolveMatchId(context: {
     matchId: number;
     tournamentId: number;
@@ -512,6 +526,8 @@ export class PlayoffPlugin implements TournamentPlugin {
   async updateMatch(context: {
     matchId: number;
     tournamentId: number;
+    member1Id?: number;
+    member2Id?: number;
     player1Sets: number;
     player2Sets: number;
     player1Forfeit: boolean;

@@ -66,9 +66,9 @@ export class PlayoffMatchUpdater {
         apiData.player2Forfeit = false;
       }
 
-      // For playoff tournaments, use the dedicated playoff endpoint
-      // The server will create the match and link it to the bracket match
-      const response = await api.patch(`/tournaments/${this.tournamentId}/playoff-matches/${bracketMatchId}`, apiData);
+      // Use the generic match update endpoint with bracketMatchId
+      // The server plugin will resolve the bracketMatchId and handle bracket-specific logic
+      const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${bracketMatchId}`, apiData);
       const savedMatch = response.data;
       
       callbacks.onSuccess?.('Match result added successfully');

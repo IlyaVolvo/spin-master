@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 
 interface Player {
@@ -157,7 +157,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
           </div>
         </div>
         
-        {/* Forfeit options - only for ROUND_ROBIN and PLAYOFF */}
+        {/* Forfeit options  for all but non tournament macthes */}
         {showForfeitOptions && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginLeft: '20px', paddingLeft: '20px', borderLeft: '1px solid #ddd' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

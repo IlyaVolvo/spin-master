@@ -838,9 +838,6 @@ export async function advanceWinner(
   }
   
   const tournament = bracketMatch.tournament;
-  if (tournament.type !== 'PLAYOFF') {
-    throw new Error('Tournament is not a playoff tournament');
-  }
   
   const currentRound = bracketMatch.round;
   const currentPosition = bracketMatch.position;
@@ -910,8 +907,8 @@ export async function getBracketStructure(tournamentId: number): Promise<Bracket
     },
   });
   
-  if (!tournament || tournament.type !== 'PLAYOFF') {
-    throw new Error('Tournament is not a playoff tournament');
+  if (!tournament) {
+    throw new Error('Tournament not found');
   }
   
   const bracket: BracketMatch[] = [];

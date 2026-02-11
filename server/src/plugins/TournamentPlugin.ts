@@ -80,6 +80,10 @@ export interface TournamentPlugin {
   canDelete(tournament: any): boolean;
   canCancel(tournament: any): boolean;
   
+  // Returns the number of matches remaining before the tournament is complete
+  // When this reaches 0, the tournament should be marked as complete
+  matchesRemaining(tournament: any): number;
+  
   // Schedule and print - required for all tournament types
   // Returns match schedule in a standardized format
   // For compound tournaments, aggregates schedules from child tournaments
@@ -112,10 +116,14 @@ export interface TournamentPlugin {
   } | null>;
   
   // Match update - plugins handle match creation/update with type-specific logic
+  // matchId can be: a real Match ID, a bracketMatchId (for playoffs), or 0 (for new match creation)
+  // member1Id/member2Id are provided for match creation or when the caller knows the players
   // Returns the updated/created match and any tournament state changes
   updateMatch(context: {
     matchId: number;
     tournamentId: number;
+    member1Id?: number;
+    member2Id?: number;
     player1Sets: number;
     player2Sets: number;
     player1Forfeit: boolean;
