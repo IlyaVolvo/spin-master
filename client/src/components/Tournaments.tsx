@@ -123,6 +123,10 @@ const Tournaments: React.FC = () => {
     const stored = localStorage.getItem('tournaments_showCompletedTournaments');
     return stored !== null ? stored === 'true' : true;
   });
+  const [showCompletedMatches, setShowCompletedMatches] = useState<boolean>(() => {
+    const stored = localStorage.getItem('tournaments_showCompletedMatches');
+    return stored !== null ? stored === 'true' : true;
+  });
   const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
   const [expandedParticipants, setExpandedParticipants] = useState<Set<number>>(new Set());
   const [activeSectionCollapsed, setActiveSectionCollapsed] = useState<boolean>(false);
@@ -2298,6 +2302,19 @@ const Tournaments: React.FC = () => {
             />
             <span>Tournaments</span>
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}>
+            <input
+              type="checkbox"
+              checked={showCompletedMatches}
+              onChange={(e) => {
+                const value = e.target.checked;
+                setShowCompletedMatches(value);
+                localStorage.setItem('tournaments_showCompletedMatches', String(value));
+              }}
+              style={{ cursor: 'pointer' }}
+            />
+            <span>Matches</span>
+          </label>
         </div>
         
         {/* Filters - always visible */}
@@ -2452,49 +2469,274 @@ const Tournaments: React.FC = () => {
         </div>
         )}
 
-        {!completedSectionCollapsed && showCompletedTournaments ? (
+        {!completedSectionCollapsed && (showCompletedTournaments || showCompletedMatches) ? (
           <>
 
             {(() => {
-              // Show only tournaments
-              const completedTournaments = filteredCompletedTournaments.filter(tournament => showCompletedTournaments);
+              // Show tournaments and/or individual matches based on checkboxes
+              const completedTournaments = filteredCompletedTournaments.filter(tournament => {
+                const isIndividualMatch = tournament.type === 'ROUND_ROBIN' && tournament.participants.length === 2;
+                if (isIndividualMatch) return showCompletedMatches;
+                return showCompletedTournaments;
+              });
 
               if (completedTournaments.length === 0) {
                 const hasFilters = tournamentNameFilter.trim() || dateFilterType;
                 return <p>No completed tournaments{hasFilters ? ' found matching the filters' : ''}</p>;
               }
 
+              // Compute max first-player name length across all individual matches for alignment
+              const maxP1NameLength = (() => {
+                let maxLen = 0;
+                completedTournaments.forEach(t => {
+                  if (t.type === 'ROUND_ROBIN' && t.participants.length === 2) {
+                    const match = t.matches[0];
+                    const p1 = t.participants.find(p => p.memberId === match?.member1Id);
+                    if (p1) {
+                      const name = formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder());
+                      if (name.length > maxLen) maxLen = name.length;
+                    }
+                  }
+                });
+                return maxLen;
+              })();
+              // Approximate ch-based width for alignment (each char ~9px at 15px font)
+              const p1NameMinWidth = `${Math.max(100, maxP1NameLength * 9)}px`;
+
               return (
                 <>
-                  {/* Render tournaments using plugin system */}
+                  {/* Render completed tournaments with same structure as active tournaments */}
                   {completedTournaments.map((tournament) => {
                     const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
-                    const isExpanded = expandedDetails.has(tournament.id) && tournament.status === 'COMPLETED';
-                    
+                    const isResultsExpanded = expandedDetails.has(tournament.id);
+
+                    // Individual match: ROUND_ROBIN with exactly 2 participants
+                    const isIndividualMatch = tournament.type === 'ROUND_ROBIN' && tournament.participants.length === 2;
+
+                    if (isIndividualMatch) {
+                      const match = tournament.matches[0];
+                      const p1 = tournament.participants.find(p => p.memberId === match?.member1Id);
+                      const p2 = match?.member2Id ? tournament.participants.find(p => p.memberId === match.member2Id) : null;
+                      const p1Name = p1 ? formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder()) : 'Unknown';
+                      const p2Name = p2 ? formatPlayerName(p2.member.firstName, p2.member.lastName, getNameDisplayOrder()) : 'Unknown';
+                      const p1Sets = match?.player1Sets ?? 0;
+                      const p2Sets = match?.player2Sets ?? 0;
+                      const p1Won = match?.player1Forfeit ? false : (match?.player2Forfeit ? true : p1Sets > p2Sets);
+                      const p2Won = match?.player2Forfeit ? false : (match?.player1Forfeit ? true : p2Sets > p1Sets);
+
+                      // Rating data from participant enrichment (postRatingAtTime / playerRatingAtTime)
+                      const p1Pre = p1?.playerRatingAtTime ?? null;
+                      const p1Post = (p1 as any)?.postRatingAtTime ?? null;
+                      const p1Diff = (p1Pre !== null && p1Post !== null) ? p1Post - p1Pre : null;
+                      const p2Pre = p2?.playerRatingAtTime ?? null;
+                      const p2Post = (p2 as any)?.postRatingAtTime ?? null;
+                      const p2Diff = (p2Pre !== null && p2Post !== null) ? p2Post - p2Pre : null;
+
+                      return (
+                        <div
+                          key={tournament.id}
+                          ref={(el) => { tournamentRefs.current[tournament.id] = el; }}
+                          style={{ marginBottom: '4px', padding: '6px 12px', border: '1px solid #eee', borderRadius: '4px', backgroundColor: '#f9f9f9' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {/* Stats button - left of everything */}
+                            <button
+                              onClick={() => handleQuickViewStats(tournament.id)}
+                              title="View Statistics"
+                              style={{
+                                padding: '2px 4px',
+                                border: 'none',
+                                background: 'transparent',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                color: '#3498db',
+                                flexShrink: 0,
+                              }}
+                            >
+                              📊
+                            </button>
+
+                            {/* Player 1 name + rating */}
+                            <div style={{ textAlign: 'right', minWidth: p1NameMinWidth, flexShrink: 0 }}>
+                              <span style={{ fontSize: '14px', fontWeight: 'bold', color: p1Won ? '#27ae60' : p2Won ? '#e74c3c' : '#333' }}>
+                                {p1Name}
+                              </span>
+                              {p1Diff !== null && (
+                                <span style={{ fontSize: '11px', fontWeight: 'bold', marginLeft: '4px', color: p1Diff >= 0 ? '#27ae60' : '#e74c3c' }}>
+                                  ({p1Post}/{p1Diff >= 0 ? `+${p1Diff}` : p1Diff})
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Score */}
+                            <div style={{ textAlign: 'center', minWidth: '45px', flexShrink: 0 }}>
+                              <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#2c3e50' }}>
+                                {p1Sets} : {p2Sets}
+                              </span>
+                            </div>
+
+                            {/* Player 2 name + rating */}
+                            <div style={{ textAlign: 'left' }}>
+                              {p2Diff !== null && (
+                                <span style={{ fontSize: '11px', fontWeight: 'bold', marginRight: '4px', color: p2Diff >= 0 ? '#27ae60' : '#e74c3c' }}>
+                                  ({p2Post}/{p2Diff >= 0 ? `+${p2Diff}` : p2Diff})
+                                </span>
+                              )}
+                              <span style={{ fontSize: '14px', fontWeight: 'bold', color: p2Won ? '#27ae60' : p1Won ? '#e74c3c' : '#333' }}>
+                                {p2Name}
+                              </span>
+                            </div>
+
+                            {/* Date - pushed to right */}
+                            <div style={{ marginLeft: 'auto', fontSize: '11px', color: '#999', flexShrink: 0 }}>
+                              {tournament.recordedAt
+                                ? new Date(tournament.recordedAt).toLocaleDateString()
+                                : new Date(tournament.createdAt).toLocaleDateString()
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Regular tournament rendering
                     return (
-                      <div key={tournament.id}>
-                        {plugin.createCompletedPanel({
-                          tournament: tournament as any,
-                          onTournamentUpdate: (updatedTournament) => {
-                            setTournaments(prev => 
-                              prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
-                            );
-                          },
-                          onError: (error) => setError(error),
-                          onSuccess: (message) => {
-                            console.log('Success:', message);
-                          },
-                          isExpanded,
-                          onToggleExpand: () => {
-                            const newSet = new Set(expandedDetails);
-                            if (newSet.has(tournament.id)) {
-                              newSet.delete(tournament.id);
-                            } else {
-                              newSet.add(tournament.id);
-                            }
-                            setExpandedDetails(newSet);
-                          }
-                        })}
+                      <div 
+                        key={tournament.id}
+                        ref={(el) => { tournamentRefs.current[tournament.id] = el; }}
+                        style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ddd', borderRadius: '4px' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                          {editingTournamentName === tournament.id ? (
+                            <TournamentNameEditor
+                              value={tournamentNameEdit}
+                              onChange={setTournamentNameEdit}
+                              onSave={() => handleSaveTournamentName(tournament.id)}
+                              onCancel={handleCancelEditTournamentName}
+                            />
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <TournamentHeader
+                                tournament={tournament as any}
+                                onEditClick={() => handleStartEditTournamentName(tournament)}
+                              />
+                              {tournament.cancelled && (
+                                <span style={{ 
+                                  fontSize: '11px', 
+                                  color: '#e74c3c', 
+                                  fontWeight: 'bold',
+                                  padding: '2px 8px',
+                                  backgroundColor: '#fdecea',
+                                  borderRadius: '4px',
+                                  border: '1px solid #f5c6cb'
+                                }}>
+                                  CANCELLED
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <TournamentInfo
+                            tournament={tournament as any}
+                            countNonForfeitedMatches={countNonForfeitedMatches}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {plugin.canPrintResults && (
+                              <button
+                                onClick={() => handlePrintResults(tournament)}
+                                title="Print Results"
+                                style={{
+                                  padding: '6px 12px',
+                                  border: '1px solid #8e44ad',
+                                  borderRadius: '4px',
+                                  backgroundColor: '#fff',
+                                  color: '#8e44ad',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  fontWeight: 'bold',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                              >
+                                🖨️ Print
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleQuickViewStats(tournament.id)}
+                              title="View Statistics for tournament participants"
+                              style={{
+                                padding: '6px 12px',
+                                border: '1px solid #2980b9',
+                                borderRadius: '4px',
+                                backgroundColor: '#fff',
+                                color: '#2980b9',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: 'bold',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              📊 Stats
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Expand/Collapse buttons */}
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                          <ExpandCollapseButton
+                            isExpanded={isResultsExpanded}
+                            onToggle={() => {
+                              setExpandedDetails(prev => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(tournament.id)) {
+                                  newSet.delete(tournament.id);
+                                } else {
+                                  newSet.add(tournament.id);
+                                }
+                                return newSet;
+                              });
+                            }}
+                            expandedText="▲ Hide Final Results"
+                            collapsedText={tournament.cancelled ? "▼ Show Results (Incomplete)" : "▼ Show Final Results"}
+                          />
+                          <ExpandCollapseButton
+                            isExpanded={expandedParticipants.has(tournament.id)}
+                            onToggle={() => toggleParticipants(tournament.id)}
+                            expandedText="▲ Hide Participants"
+                            collapsedText="▼ Show Participants"
+                          />
+                        </div>
+
+                        {/* Participants section */}
+                        {expandedParticipants.has(tournament.id) && (
+                          <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
+                            Participants: {tournament.participants.map(p => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                          </p>
+                        )}
+
+                        {/* Final Results section - plugin's completed panel */}
+                        {isResultsExpanded && (
+                          <div style={{ marginTop: '7.5px', padding: '0 15px 15px 15px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+                            {plugin.createCompletedPanel({
+                              tournament: tournament as any,
+                              onTournamentUpdate: (updatedTournament) => {
+                                setTournaments(prev => 
+                                  prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
+                                );
+                              },
+                              onError: (error) => setError(error),
+                              onSuccess: (message) => {
+                                console.log('Success:', message);
+                              },
+                              isExpanded: true,
+                              onToggleExpand: () => {
+                                // Handled by outer ExpandCollapseButton
+                              }
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

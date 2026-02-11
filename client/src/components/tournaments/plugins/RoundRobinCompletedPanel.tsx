@@ -1,6 +1,7 @@
 import React from 'react';
 import { TournamentCompletedProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { isLikelyRanking } from '../../../utils/ratingFormatter';
 
 interface PlayerStats {
   memberId: number;
@@ -170,39 +171,12 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
   }, [tournament]);
 
   if (!isExpanded) {
-    return (
-      <div className="round-robin-completed collapsed">
-        <button onClick={onToggleExpand} className="results-toggle">
-          🏆 Show Final Results
-        </button>
-      </div>
-    );
+    return null;
   }
 
   return (
     <div className="round-robin-completed expanded">
-      <div className="results-header">
-        <h4>Final Results</h4>
-        <button onClick={onToggleExpand} className="results-toggle">
-          ▼ Hide Results
-        </button>
-      </div>
-
       <div className="results-content">
-        {/* Winner announcement */}
-        {playerStats.length > 0 && (
-          <div className="winner-announcement">
-            <div className="winner-medal">🥇</div>
-            <div className="winner-info">
-              <h5>Champion</h5>
-              <p className="winner-name">{getPlayerName(playerStats[0].memberId)}</p>
-              <p className="winner-stats">
-                {playerStats[0].wins}W - {playerStats[0].losses}L, {playerStats[0].points} points
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Final standings table */}
         <div className="final-standings">
           <h5>Final Standings</h5>
@@ -215,12 +189,16 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                 <th>Losses</th>
                 <th>Sets Won</th>
                 <th>Sets Lost</th>
-                <th>Points</th>
               </tr>
             </thead>
             <tbody>
               {playerStats.map((stats) => {
                 const participant = tournament.participants.find(p => p.memberId === stats.memberId);
+                const preRating = participant?.playerRatingAtTime;
+                const postRating = (participant as any)?.postRatingAtTime ?? participant?.member?.rating;
+                const showRating = preRating !== null && preRating !== undefined && !isLikelyRanking(preRating)
+                  && postRating !== null && postRating !== undefined;
+                const ratingDiff = showRating ? (postRating as number) - (preRating as number) : null;
                 return (
                   <tr key={stats.memberId} className={stats.rank <= 3 ? `rank-${stats.rank}` : ''}>
                     <td className="rank-cell">
@@ -229,18 +207,27 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                       {stats.rank === 3 && '🥉'}
                       {stats.rank > 3 && stats.rank}
                     </td>
-                    <td className="player-name">
+                    <td className="player-name" style={{ whiteSpace: 'nowrap' }}>
                       {formatPlayerName(
                         participant?.member.firstName || '',
                         participant?.member.lastName || '',
                         getNameDisplayOrder()
+                      )}
+                      {showRating && (
+                        <span style={{
+                          marginLeft: '6px',
+                          fontSize: '12px',
+                          color: ratingDiff !== null && ratingDiff >= 0 ? '#27ae60' : '#e74c3c',
+                          fontWeight: 'bold',
+                        }}>
+                          ({postRating}/{ratingDiff !== null && ratingDiff >= 0 ? `+${ratingDiff}` : ratingDiff})
+                        </span>
                       )}
                     </td>
                     <td>{stats.wins}</td>
                     <td>{stats.losses}</td>
                     <td>{stats.setsWon}</td>
                     <td>{stats.setsLost}</td>
-                    <td className="points-cell"><strong>{stats.points}</strong></td>
                   </tr>
                 );
               })}
@@ -309,9 +296,24 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                     </td>
                     {participantData.map((p2: any) => {
                       const cellValue = matrix[p1.member.id][p2.member.id];
-                      const isWin = cellValue.includes('W') && !cellValue.includes('-');
-                      const isLoss = cellValue.includes('L') && !cellValue.includes('-');
                       const isDraw = cellValue === '-';
+                      const isEmpty = cellValue === '';
+                      // Detect win/loss: forfeit 'W'/'L' or numeric score where left > right
+                      let isWin = false;
+                      let isLoss = false;
+                      if (cellValue === 'W') {
+                        isWin = true;
+                      } else if (cellValue === 'L') {
+                        isLoss = true;
+                      } else if (!isDraw && !isEmpty && cellValue.includes(' - ')) {
+                        const parts = cellValue.split(' - ');
+                        const left = parseInt(parts[0]);
+                        const right = parseInt(parts[1]);
+                        if (!isNaN(left) && !isNaN(right)) {
+                          isWin = left > right;
+                          isLoss = right > left;
+                        }
+                      }
                       
                       return (
                         <td 
@@ -340,37 +342,6 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
           </p>
         </div>
 
-        {/* Tournament summary */}
-        <div className="tournament-summary">
-          <h5>Tournament Summary</h5>
-          <div className="summary-stats">
-            <div className="stat-item">
-              <span className="stat-label">Participants:</span>
-              <span className="stat-value">{tournament.participants.length}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Total Matches:</span>
-              <span className="stat-value">{tournament.matches.length}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Completed:</span>
-              <span className="stat-value">
-                {tournament.matches.filter(m => 
-                  (m.player1Sets > 0 || m.player2Sets > 0 || m.player1Forfeit || m.player2Forfeit)
-                ).length}
-              </span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Date:</span>
-              <span className="stat-value">
-                {tournament.recordedAt 
-                  ? new Date(tournament.recordedAt).toLocaleDateString()
-                  : new Date(tournament.createdAt).toLocaleDateString()
-                }
-              </span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

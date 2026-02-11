@@ -334,8 +334,8 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
               marginBottom: '20px',
             }}>
               <h3 style={{ margin: 0 }}>
-                <span style={{ color: '#000' }}>Champion: </span>
-                <span style={{ color: '#27ae60' }}>{championshipLine.winnerName}</span>
+                <span>🥇 </span>
+                <span style={{ fontWeight: 'bold' }}>{championshipLine.winnerName}</span>
               </h3>
             </div>
           ) : null}
@@ -350,6 +350,10 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
           ...m,
           player1Id: m.member1Id,
           player2Id: m.member2Id,
+          player1Sets: m.player1Sets ?? (m as any).match?.player1Sets ?? undefined,
+          player2Sets: m.player2Sets ?? (m as any).match?.player2Sets ?? undefined,
+          player1Forfeit: m.player1Forfeit ?? (m as any).match?.player1Forfeit ?? undefined,
+          player2Forfeit: m.player2Forfeit ?? (m as any).match?.player2Forfeit ?? undefined,
         }))}
         onMatchUpdate={onBracketUpdate}
         isReadOnly={isReadOnly}

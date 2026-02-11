@@ -121,13 +121,7 @@ export const SwissCompletedPanel: React.FC<TournamentCompletedProps> = ({
   }, [tournament.matches, finalStandings]);
 
   if (!isExpanded) {
-    return (
-      <div className="swiss-completed collapsed">
-        <button onClick={onToggleExpand} className="results-toggle">
-          🏆 Show Final Results
-        </button>
-      </div>
-    );
+    return null;
   }
 
   const champion = finalStandings[0];
@@ -136,13 +130,6 @@ export const SwissCompletedPanel: React.FC<TournamentCompletedProps> = ({
 
   return (
     <div className="swiss-completed expanded">
-      <div className="results-header">
-        <h4>Final Results</h4>
-        <button onClick={onToggleExpand} className="results-toggle">
-          ▼ Hide Results
-        </button>
-      </div>
-
       <div className="results-content">
         {/* Podium */}
         <div className="podium">

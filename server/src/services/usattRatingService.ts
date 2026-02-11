@@ -660,6 +660,7 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
 
 /**
  * Calculate what a player's rating was after a specific tournament
+ * Uses RatingHistory records created when the tournament was completed
  */
 async function calculateRatingAfterTournament(
   tournaments: any[],
@@ -676,8 +677,25 @@ async function calculateRatingAfterTournament(
   const playerRatingAtTime = participant.playerRatingAtTime;
   if (playerRatingAtTime === null) return null;
   
-  // For now, return the starting rating (full 4-pass recalculation can be added later)
-  return playerRatingAtTime;
+  // Look up RatingHistory entries for this tournament and member
+  // RoundRobin: single entry with reason 'TOURNAMENT_COMPLETED', matchId = null
+  // Playoff: per-match entries with matchId set
+  const ratingHistoryEntries = await (prisma as any).ratingHistory.findMany({
+    where: {
+      memberId,
+      tournamentId: targetTournamentId,
+    },
+    orderBy: { timestamp: 'asc' },
+  });
+  
+  if (ratingHistoryEntries.length === 0) {
+    // No rating history - rating didn't change
+    return playerRatingAtTime;
+  }
+  
+  // The last entry's rating field is the final rating after all changes
+  const lastEntry = ratingHistoryEntries[ratingHistoryEntries.length - 1];
+  return lastEntry.rating ?? playerRatingAtTime;
 }
 
 /**
