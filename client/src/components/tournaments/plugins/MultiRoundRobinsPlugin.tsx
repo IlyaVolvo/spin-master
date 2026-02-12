@@ -8,6 +8,7 @@ import type {
   TournamentCompletedProps,
   TournamentCreationFlow,
 } from '../../../types/tournament';
+import { MultiRoundRobinsPostSelectionFlow } from './MultiRoundRobinsPostSelectionFlow';
 
 const PlaceholderPanel: React.FC = () => {
   return <div />;
@@ -20,9 +21,12 @@ export const MultiRoundRobinsPlugin: TournamentPlugin = {
   description: 'Split players into multiple round-robin groups and create one tournament per group',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 12,
+    minPlayers: 6,
     maxPlayers: -1,
     steps: [],
+    renderPostSelectionFlow: (props) => (
+      <MultiRoundRobinsPostSelectionFlow {...props} />
+    ),
   }),
 
   createSetupPanel: (_props: TournamentSetupProps) => <PlaceholderPanel />,
