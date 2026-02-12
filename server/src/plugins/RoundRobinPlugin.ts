@@ -1,4 +1,5 @@
 import { TournamentPlugin, TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { createRatingHistoryForRoundRobinTournament } from '../services/usattRatingService';
 
 export class RoundRobinPlugin implements TournamentPlugin {
   type = 'ROUND_ROBIN';
@@ -189,7 +190,6 @@ export class RoundRobinPlugin implements TournamentPlugin {
           player2Sets,
           player1Forfeit,
           player2Forfeit,
-          winnerId,
         },
         include: { tournament: true },
       });
@@ -198,14 +198,13 @@ export class RoundRobinPlugin implements TournamentPlugin {
       // This path handles the case where a match needs to be created (legacy support)
       updatedMatch = await prisma.match.create({
         data: {
-          tournamentId,
+          tournament: { connect: { id: tournamentId } },
           member1Id: m1Id,
           member2Id: m2Id,
           player1Sets,
           player2Sets,
           player1Forfeit,
           player2Forfeit,
-          winnerId,
         },
         include: { tournament: true },
       });
@@ -220,10 +219,14 @@ export class RoundRobinPlugin implements TournamentPlugin {
     const allMatchesComplete = this.isComplete(tournament);
     
     return {
-      match: updatedMatch,
+      match: { ...updatedMatch, winnerId },
       tournamentStateChange: allMatchesComplete 
         ? { shouldMarkComplete: true, message: 'All matches completed' }
         : undefined,
     };
+  }
+
+  async onTournamentCompletionRatingCalculation(context: { tournament: any; prisma: any }): Promise<void> {
+    await createRatingHistoryForRoundRobinTournament(context.tournament.id);
   }
 }

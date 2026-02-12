@@ -129,6 +129,7 @@ const Tournaments: React.FC = () => {
   });
   const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
   const [expandedParticipants, setExpandedParticipants] = useState<Set<number>>(new Set());
+  const [expandedCompound, setExpandedCompound] = useState<Set<number>>(new Set());
   const [activeSectionCollapsed, setActiveSectionCollapsed] = useState<boolean>(false);
   const [completedSectionCollapsed, setCompletedSectionCollapsed] = useState<boolean>(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState<{ tournamentId: number; matchCount: number } | null>(null);
@@ -690,6 +691,25 @@ const Tournaments: React.FC = () => {
     });
   };
 
+
+  // Toggle compound tournament expansion
+  const toggleCompound = (tournamentId: number) => {
+    setExpandedCompound(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(tournamentId)) {
+        newSet.delete(tournamentId);
+      } else {
+        newSet.add(tournamentId);
+      }
+      return newSet;
+    });
+  };
+
+  // Check if a tournament is compound (has child tournaments)
+  const isCompoundTournament = (tournament: Tournament): boolean => {
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+    return !plugin.isBasic;
+  };
 
   // Helper component to render member name with icons
   const PlayerNameWithIcons = ({ member, tournament }: { member: Member; tournament?: Tournament }) => (
@@ -1804,7 +1824,244 @@ const Tournaments: React.FC = () => {
             <p>No active events</p>
           ) : (
             <>
-              {filteredActiveEvents.map((tournament) => (
+              {filteredActiveEvents.map((tournament) => {
+                const isCompound = isCompoundTournament(tournament);
+                const children = tournament.childTournaments || [];
+                const isExpanded = expandedCompound.has(tournament.id);
+
+                // ═══════════════════════════════════════════════════════════════
+                // COMPOUND TOURNAMENT CARD
+                // ═══════════════════════════════════════════════════════════════
+                if (isCompound) {
+                  return (
+                    <div
+                      key={tournament.id}
+                      ref={(el) => { tournamentRefs.current[tournament.id] = el; }}
+                      style={{ marginBottom: '20px', border: '2px solid #7b1fa2', borderRadius: '6px', overflow: 'hidden' }}
+                    >
+                      {/* Parent header */}
+                      <div style={{ padding: '12px 15px', backgroundColor: '#f3e5f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <button
+                            onClick={() => toggleCompound(tournament.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px 6px', color: '#7b1fa2' }}
+                          >
+                            {isExpanded ? '▼' : '▶'}
+                          </button>
+                          {editingTournamentName === tournament.id ? (
+                            <TournamentNameEditor
+                              value={tournamentNameEdit}
+                              onChange={setTournamentNameEdit}
+                              onSave={() => handleSaveTournamentName(tournament.id)}
+                              onCancel={handleCancelEditTournamentName}
+                            />
+                          ) : (
+                            <TournamentHeader
+                              tournament={tournament as any}
+                              onEditClick={() => handleStartEditTournamentName(tournament)}
+                            />
+                          )}
+                          <span style={{ fontSize: '12px', color: '#7b1fa2', fontWeight: 'bold', padding: '2px 8px', backgroundColor: '#e1bee7', borderRadius: '4px' }}>
+                            {children.length} sub-tournaments
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <button
+                            onClick={() => handleDeleteTournament(tournament.id)}
+                            disabled={!isUserOrganizer}
+                            title={!isUserOrganizer ? 'Only Organizers can delete tournaments' : 'Delete tournament'}
+                            style={{
+                              padding: '4px 8px', border: 'none', background: 'transparent',
+                              cursor: !isUserOrganizer ? 'not-allowed' : 'pointer', fontSize: '14px',
+                              color: '#e74c3c', opacity: !isUserOrganizer ? 0.5 : 1,
+                            }}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Compound expand/collapse buttons (always visible) */}
+                      <div style={{ padding: '8px 15px', display: 'flex', gap: '10px', borderBottom: isExpanded ? '1px solid #e0e0e0' : 'none' }}>
+                        <ExpandCollapseButton
+                          isExpanded={isExpanded}
+                          onToggle={() => toggleCompound(tournament.id)}
+                          expandedText="▲ Hide Sub-Tournaments"
+                          collapsedText="▼ Show Sub-Tournaments / Record Results"
+                        />
+                        <ExpandCollapseButton
+                          isExpanded={expandedParticipants.has(tournament.id)}
+                          onToggle={() => toggleParticipants(tournament.id)}
+                          expandedText="▲ Hide All Participants"
+                          collapsedText="▼ Show All Participants"
+                        />
+                      </div>
+
+                      {/* Participants from parent (aggregated) */}
+                      {expandedParticipants.has(tournament.id) && (
+                        <div style={{ padding: '8px 15px', backgroundColor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
+                          <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
+                            <strong>All Participants ({tournament.participants.length}):</strong>{' '}
+                            {tournament.participants.map(p => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Expanded: child tournaments */}
+                      {isExpanded && children.length > 0 && (
+                        <div style={{ padding: '10px 15px', backgroundColor: '#fafafa' }}>
+                          {children
+                            .slice()
+                            .sort((a, b) => (a.groupNumber ?? 999) - (b.groupNumber ?? 999))
+                            .map((child) => {
+                              const childPlugin = tournamentPluginRegistry.get(child.type as TournamentType);
+                              return (
+                                <div
+                                  key={child.id}
+                                  style={{
+                                    marginBottom: '12px',
+                                    marginLeft: '10px',
+                                    padding: '12px',
+                                    border: '1px solid #ccc',
+                                    borderLeft: `4px solid ${child.status === 'COMPLETED' ? '#27ae60' : '#3498db'}`,
+                                    borderRadius: '4px',
+                                    backgroundColor: 'white',
+                                  }}
+                                >
+                                  {/* Child header */}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <strong style={{ fontSize: '15px' }}>{child.name || `Sub-tournament ${child.id}`}</strong>
+                                      <span style={{
+                                        fontSize: '11px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '3px',
+                                        backgroundColor: child.status === 'COMPLETED' ? '#d4edda' : '#cce5ff',
+                                        color: child.status === 'COMPLETED' ? '#155724' : '#004085',
+                                      }}>
+                                        {child.status}
+                                      </span>
+                                      {child.groupNumber && (
+                                        <span style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>
+                                          Group {child.groupNumber}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {child.status === 'ACTIVE' && (
+                                      <span style={{ fontSize: '12px', color: '#e67e22', fontStyle: 'italic' }}>
+                                        {child.matches?.filter((m: any) => !m.player1Forfeit && !m.player2Forfeit && (m.player1Sets > 0 || m.player2Sets > 0)).length || 0} / {child.participants.length * (child.participants.length - 1) / 2} matches
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Child action buttons */}
+                                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                    <ExpandCollapseButton
+                                      isExpanded={expandedDetails.has(child.id)}
+                                      onToggle={() => {
+                                        setExpandedDetails(prev => {
+                                          const newSet = new Set(prev);
+                                          if (newSet.has(child.id)) {
+                                            newSet.delete(child.id);
+                                            if (selectedTournament?.id === child.id) setSelectedTournament(null);
+                                          } else {
+                                            newSet.add(child.id);
+                                            setSelectedTournament(child);
+                                          }
+                                          return newSet;
+                                        });
+                                      }}
+                                      expandedText={child.status === 'COMPLETED' ? '▲ Hide Results' : '▲ Hide Details'}
+                                      collapsedText={child.status === 'COMPLETED' ? '▼ Show Results' : '▼ Show Details / Record Result'}
+                                    />
+                                    <ExpandCollapseButton
+                                      isExpanded={expandedSchedules.has(child.id)}
+                                      onToggle={() => toggleSchedule(child.id)}
+                                      expandedText="▲ Hide Schedule"
+                                      collapsedText="▼ Show Schedule"
+                                    />
+                                    <ExpandCollapseButton
+                                      isExpanded={expandedParticipants.has(child.id)}
+                                      onToggle={() => toggleParticipants(child.id)}
+                                      expandedText="▲ Hide Participants"
+                                      collapsedText="▼ Show Participants"
+                                    />
+                                  </div>
+
+                                  {/* Child participants */}
+                                  {expandedParticipants.has(child.id) && (
+                                    <p style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+                                      Participants: {child.participants.map((p: any) => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                                    </p>
+                                  )}
+
+                                  {/* Child details (active panel or completed panel) */}
+                                  {expandedDetails.has(child.id) && childPlugin && (
+                                    <div style={{ marginTop: '5px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+                                      {child.status === 'COMPLETED'
+                                        ? childPlugin.createCompletedPanel({
+                                            tournament: child as any,
+                                            onTournamentUpdate: (updated) => { fetchData(); },
+                                            onError: (err) => setError(err),
+                                            onSuccess: (msg) => { console.log(msg); },
+                                            isExpanded: true,
+                                            onToggleExpand: () => {},
+                                          })
+                                        : childPlugin.createActivePanel({
+                                            tournament: child as any,
+                                            onTournamentUpdate: (updated) => { fetchData(); },
+                                            onMatchUpdate: (match) => { fetchData(); },
+                                            onError: (err) => setError(err),
+                                            onSuccess: (msg) => { console.log(msg); },
+                                          })
+                                      }
+                                    </div>
+                                  )}
+
+                                  {/* Child schedule */}
+                                  {expandedSchedules.has(child.id) && childPlugin && (
+                                    <div style={{ marginTop: '5px' }}>
+                                      {childPlugin.createSchedulePanel({
+                                        tournament: child as any,
+                                        isExpanded: true,
+                                        onToggleExpand: () => toggleSchedule(child.id),
+                                        onTournamentUpdate: (updated) => { fetchData(); },
+                                        onError: (err) => setError(err),
+                                        onSuccess: (msg) => { console.log(msg); },
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* Match Entry Popup for child */}
+                                  {editingMatch && selectedTournament?.id === child.id && (() => {
+                                    const player1 = selectedTournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member;
+                                    const player2 = selectedTournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member;
+                                    if (!player1 || !player2 || !editingMatch.member2Id) return null;
+                                    return (
+                                      <MatchEntryPopup
+                                        editingMatch={{...editingMatch, member2Id: editingMatch.member2Id} as any}
+                                        player1={player1}
+                                        player2={player2}
+                                        showForfeitOptions={true}
+                                        onSetEditingMatch={setEditingMatch}
+                                        onSave={handleSaveMatchEdit}
+                                        onCancel={() => setEditingMatch(null)}
+                                        onClear={handleClearMatch}
+                                        showClearButton={editingMatch.matchId > 0}
+                                      />
+                                    );
+                                  })()}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // BASIC TOURNAMENT CARD (existing rendering)
+                // ═══════════════════════════════════════════════════════════════
+                return (
             <div 
               key={tournament.id} 
               ref={(el) => { tournamentRefs.current[tournament.id] = el; }}
@@ -1856,7 +2113,6 @@ const Tournaments: React.FC = () => {
                       }}
                       onMouseMove={handleIconMouseMove}
                       style={areAllMatchesPlayed(tournament) ? {
-                        // Enabled version - very visible and clickable
                         padding: '8px 16px',
                         border: '2px solid #27ae60',
                         borderRadius: '6px',
@@ -1871,7 +2127,6 @@ const Tournaments: React.FC = () => {
                         transition: 'all 0.2s ease',
                         boxShadow: '0 2px 4px rgba(39, 174, 96, 0.3)',
                       } : {
-                        // Disabled version - visible but clearly disabled
                         padding: '8px 16px',
                         border: '2px solid #bdc3c7',
                         borderRadius: '6px',
@@ -1985,13 +2240,11 @@ const Tournaments: React.FC = () => {
                           const newSet = new Set(prev);
                           if (isExpanded) {
                             newSet.delete(tournament.id);
-                            // Also clear selectedTournament if it was this tournament
                             if (selectedTournament?.id === tournament.id) {
                               setSelectedTournament(null);
                             }
                           } else {
                             newSet.add(tournament.id);
-                            // Set selectedTournament for match editing context
                             setSelectedTournament(tournament);
                           }
                           return newSet;
@@ -2248,7 +2501,8 @@ const Tournaments: React.FC = () => {
                   })()}
               </>
             </div>
-              ))}
+                );
+              })}
             </>
           )
         ) : null}
@@ -2599,7 +2853,184 @@ const Tournaments: React.FC = () => {
                       );
                     }
 
-                    // Regular tournament rendering
+                    // ═══════════════════════════════════════════════════════════════
+                    // COMPOUND COMPLETED TOURNAMENT CARD
+                    // ═══════════════════════════════════════════════════════════════
+                    if (isCompoundTournament(tournament)) {
+                      const children = tournament.childTournaments || [];
+                      const isCompoundExpanded = expandedCompound.has(tournament.id);
+                      return (
+                        <div
+                          key={tournament.id}
+                          ref={(el) => { tournamentRefs.current[tournament.id] = el; }}
+                          style={{ marginBottom: '20px', border: '2px solid #1976d2', borderRadius: '6px', overflow: 'hidden' }}
+                        >
+                          {/* Parent header */}
+                          <div style={{ padding: '12px 15px', backgroundColor: '#e3f2fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <button
+                                onClick={() => toggleCompound(tournament.id)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px 6px', color: '#1976d2' }}
+                              >
+                                {isCompoundExpanded ? '▼' : '▶'}
+                              </button>
+                              {editingTournamentName === tournament.id ? (
+                                <TournamentNameEditor
+                                  value={tournamentNameEdit}
+                                  onChange={setTournamentNameEdit}
+                                  onSave={() => handleSaveTournamentName(tournament.id)}
+                                  onCancel={handleCancelEditTournamentName}
+                                />
+                              ) : (
+                                <TournamentHeader
+                                  tournament={tournament as any}
+                                  onEditClick={() => handleStartEditTournamentName(tournament)}
+                                />
+                              )}
+                              <span style={{ fontSize: '12px', color: '#1976d2', fontWeight: 'bold', padding: '2px 8px', backgroundColor: '#bbdefb', borderRadius: '4px' }}>
+                                {children.length} sub-tournaments
+                              </span>
+                              {tournament.cancelled && (
+                                <span style={{ fontSize: '11px', color: '#e74c3c', fontWeight: 'bold', padding: '2px 8px', backgroundColor: '#fdecea', borderRadius: '4px', border: '1px solid #f5c6cb' }}>
+                                  CANCELLED
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <button
+                                onClick={() => handleQuickViewStats(tournament.id)}
+                                title="View Statistics"
+                                style={{ padding: '6px 12px', border: '1px solid #2980b9', borderRadius: '4px', backgroundColor: '#fff', color: '#2980b9', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                📊 Stats
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Compound expand/collapse buttons */}
+                          <div style={{ padding: '8px 15px', display: 'flex', gap: '10px', borderBottom: isCompoundExpanded ? '1px solid #e0e0e0' : 'none' }}>
+                            <ExpandCollapseButton
+                              isExpanded={isCompoundExpanded}
+                              onToggle={() => toggleCompound(tournament.id)}
+                              expandedText="▲ Hide Sub-Tournaments"
+                              collapsedText="▼ Show Sub-Tournament Results"
+                            />
+                            <ExpandCollapseButton
+                              isExpanded={expandedParticipants.has(tournament.id)}
+                              onToggle={() => toggleParticipants(tournament.id)}
+                              expandedText="▲ Hide All Participants"
+                              collapsedText="▼ Show All Participants"
+                            />
+                          </div>
+
+                          {/* Participants from parent (aggregated) */}
+                          {expandedParticipants.has(tournament.id) && (
+                            <div style={{ padding: '8px 15px', backgroundColor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
+                              <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
+                                <strong>All Participants ({tournament.participants.length}):</strong>{' '}
+                                {tournament.participants.map(p => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Expanded: child tournaments */}
+                          {isCompoundExpanded && children.length > 0 && (
+                            <div style={{ padding: '10px 15px', backgroundColor: '#fafafa' }}>
+                              {children
+                                .slice()
+                                .sort((a, b) => (a.groupNumber ?? 999) - (b.groupNumber ?? 999))
+                                .map((child) => {
+                                  const childPlugin = tournamentPluginRegistry.get(child.type as TournamentType);
+                                  return (
+                                    <div
+                                      key={child.id}
+                                      style={{
+                                        marginBottom: '12px',
+                                        marginLeft: '10px',
+                                        padding: '12px',
+                                        border: '1px solid #ccc',
+                                        borderLeft: `4px solid ${child.status === 'COMPLETED' ? '#27ae60' : '#3498db'}`,
+                                        borderRadius: '4px',
+                                        backgroundColor: 'white',
+                                      }}
+                                    >
+                                      {/* Child header */}
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                          <strong style={{ fontSize: '15px' }}>{child.name || `Sub-tournament ${child.id}`}</strong>
+                                          <span style={{
+                                            fontSize: '11px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '3px',
+                                            backgroundColor: child.status === 'COMPLETED' ? '#d4edda' : '#cce5ff',
+                                            color: child.status === 'COMPLETED' ? '#155724' : '#004085',
+                                          }}>
+                                            {child.status}
+                                          </span>
+                                          {child.groupNumber && (
+                                            <span style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>
+                                              Group {child.groupNumber}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Child action buttons */}
+                                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                        <ExpandCollapseButton
+                                          isExpanded={expandedDetails.has(child.id)}
+                                          onToggle={() => {
+                                            setExpandedDetails(prev => {
+                                              const newSet = new Set(prev);
+                                              if (newSet.has(child.id)) {
+                                                newSet.delete(child.id);
+                                              } else {
+                                                newSet.add(child.id);
+                                              }
+                                              return newSet;
+                                            });
+                                          }}
+                                          expandedText="▲ Hide Results"
+                                          collapsedText="▼ Show Results"
+                                        />
+                                        <ExpandCollapseButton
+                                          isExpanded={expandedParticipants.has(child.id)}
+                                          onToggle={() => toggleParticipants(child.id)}
+                                          expandedText="▲ Hide Participants"
+                                          collapsedText="▼ Show Participants"
+                                        />
+                                      </div>
+
+                                      {/* Child participants */}
+                                      {expandedParticipants.has(child.id) && (
+                                        <p style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+                                          Participants: {child.participants.map((p: any) => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                                        </p>
+                                      )}
+
+                                      {/* Child results */}
+                                      {expandedDetails.has(child.id) && childPlugin && (
+                                        <div style={{ marginTop: '5px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+                                          {childPlugin.createCompletedPanel({
+                                            tournament: child as any,
+                                            onTournamentUpdate: (updated) => { fetchData(); },
+                                            onError: (err) => setError(err),
+                                            onSuccess: (msg) => { console.log(msg); },
+                                            isExpanded: true,
+                                            onToggleExpand: () => {},
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // ═══════════════════════════════════════════════════════════════
+                    // BASIC COMPLETED TOURNAMENT CARD (existing rendering)
+                    // ═══════════════════════════════════════════════════════════════
                     return (
                       <div 
                         key={tournament.id}

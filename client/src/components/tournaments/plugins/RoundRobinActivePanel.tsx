@@ -265,6 +265,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                   >
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                       <span>{formatPlayerName(participant1.member.firstName, participant1.member.lastName, getNameDisplayOrder())}</span>
+                      <span style={{ fontSize: '11px', color: '#666', fontWeight: 'normal' }}>({participant1.playerRatingAtTime ?? participant1.member.rating ?? '—'})</span>
                     </div>
                   </td>
                   {participants.map((participant2: any) => {

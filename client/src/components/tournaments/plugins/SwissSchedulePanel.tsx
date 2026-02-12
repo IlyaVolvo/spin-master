@@ -112,7 +112,9 @@ export const SwissSchedulePanel: React.FC<TournamentScheduleProps> = ({
             {round.matches.length > 0 ? (
               <div className="round-matches">
                 {round.matches.map(match => (
-                  <div key={match.id} className={`schedule-match ${match.completed ? 'completed' : 'pending'}`}>
+                  <div key={match.id} className={`schedule-match ${match.completed ? 'completed' : 'pending'}`}
+                    style={match.completed ? { textDecoration: 'line-through', color: '#aaa' } : {}}
+                  >
                     <div className="match-info">
                       <div className="match-players">
                         <span className="player-name">
@@ -123,18 +125,10 @@ export const SwissSchedulePanel: React.FC<TournamentScheduleProps> = ({
                           {getPlayerName(match.member2Id)}
                         </span>
                       </div>
-                      
-                      <div className="match-status">
-                        {match.completed ? (
-                          <span className="completed">Completed</span>
-                        ) : (
-                          <span className="pending">Scheduled</span>
-                        )}
-                      </div>
                     </div>
 
                     {match.completed && (
-                      <div className="match-result">
+                      <div className="match-result" style={{ textDecoration: 'none', color: '#999' }}>
                         <span className="score">
                           {match.player1Sets} - {match.player2Sets}
                         </span>

@@ -92,6 +92,16 @@ export interface BracketMatch {
   match?: Match | null; // Actual match result if played
 }
 
+// Preliminary Round Robin Config Interface
+// Configuration for PRELIMINARY_WITH_FINAL_ROUND_ROBIN compound tournaments
+export interface PreliminaryRoundRobinConfig {
+  id: number;
+  tournamentId: number;
+  finalRoundRobinSize: number;
+  autoQualifiedCount: number;
+  autoQualifiedMemberIds: number[];
+}
+
 // Tournament Interface
 // Main tournament entity supporting both basic and compound tournament types
 // Basic tournaments have participants and matches directly
@@ -114,6 +124,8 @@ export interface Tournament {
   // Compound tournament specific
   groupNumber?: number | null; // For round-robin groups in compound tournaments
   childTournaments?: Tournament[]; // Child tournaments for compound types
+  // PRELIMINARY_WITH_FINAL_ROUND_ROBIN configuration
+  preliminaryRoundRobinConfig?: PreliminaryRoundRobinConfig | null;
 }
 
 export interface TournamentHierarchy {

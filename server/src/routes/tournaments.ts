@@ -205,6 +205,7 @@ async function attachRatingHistoryToBracketMatches(bracketMatches: any[], tourna
 router.get('/', async (req, res) => {
   try {
     const tournaments = await prisma.tournament.findMany({
+      where: { parentTournamentId: null }, // Only top-level tournaments; children are nested via enrichment
       orderBy: { createdAt: 'desc' },
       include: {
         participants: {
@@ -323,7 +324,7 @@ router.get('/', async (req, res) => {
 router.get('/active', async (req, res) => {
   try {
     const tournaments = await prisma.tournament.findMany({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', parentTournamentId: null }, // Only top-level; children nested via enrichment
       orderBy: { createdAt: 'desc' },
       include: {
         participants: {

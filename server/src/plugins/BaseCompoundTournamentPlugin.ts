@@ -18,23 +18,39 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
   async enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
     const { tournament, prisma } = context;
     
+    // Fetch child tournaments if not already loaded
+    let children = tournament.childTournaments;
+    if (!children) {
+      children = await prisma.tournament.findMany({
+        where: { parentTournamentId: tournament.id },
+        include: {
+          participants: { include: { member: true } },
+          matches: true,
+          bracketMatches: { include: { match: true } },
+        },
+      });
+    }
+
+    // Allow subclasses to enrich with type-specific config
+    let enrichedTournament = await this.enrichTournamentConfig(tournament, prisma);
+
     // For compound tournaments, enrich child tournaments using their respective plugins
-    if (tournament.childTournaments) {
+    if (children && children.length > 0) {
       const enrichedChildren = await Promise.all(
-        tournament.childTournaments.map(async (child: any) => {
+        children.map(async (child: any) => {
           const childPlugin = tournamentPluginRegistry.get(child.type);
           return await childPlugin.enrichActiveTournament({ tournament: child, prisma });
         })
       );
       
       return {
-        ...tournament,
+        ...enrichedTournament,
         childTournaments: enrichedChildren,
         bracketMatches: [],
       };
     }
     
-    return { ...tournament, bracketMatches: [] };
+    return { ...enrichedTournament, bracketMatches: [] };
   }
 
   async enrichCompletedTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
@@ -49,10 +65,26 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       };
     });
 
+    // Fetch child tournaments if not already loaded
+    let children = tournament.childTournaments;
+    if (!children) {
+      children = await prisma.tournament.findMany({
+        where: { parentTournamentId: tournament.id },
+        include: {
+          participants: { include: { member: true } },
+          matches: true,
+          bracketMatches: { include: { match: true } },
+        },
+      });
+    }
+
+    // Allow subclasses to enrich with type-specific config
+    let enrichedTournament = await this.enrichTournamentConfig(tournament, prisma);
+
     // Enrich child tournaments
-    if (tournament.childTournaments) {
+    if (children && children.length > 0) {
       const enrichedChildren = await Promise.all(
-        tournament.childTournaments.map(async (child: any) => {
+        children.map(async (child: any) => {
           const childPlugin = tournamentPluginRegistry.get(child.type);
           return await childPlugin.enrichCompletedTournament({ 
             tournament: child, 
@@ -63,7 +95,7 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       );
       
       return {
-        ...tournament,
+        ...enrichedTournament,
         participants: participantsWithPostRating,
         childTournaments: enrichedChildren,
         bracketMatches: [],
@@ -71,7 +103,7 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     }
 
     return {
-      ...tournament,
+      ...enrichedTournament,
       participants: participantsWithPostRating,
       bracketMatches: [],
     };
@@ -209,6 +241,12 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     throw new Error('Compound tournaments do not handle matches directly. Update the child tournament match instead.');
   }
 
+  // Hook for subclasses to enrich tournament with type-specific config
+  // Default is a no-op that returns the tournament as-is
+  protected async enrichTournamentConfig(tournament: any, prisma: any): Promise<any> {
+    return { ...tournament };
+  }
+
   // Abstract method for subclasses to indicate if they have a final phase
   protected abstract hasFinalPhase(): boolean;
 
@@ -242,7 +280,7 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     return await prisma.tournament.update({
       where: { id: childTournament.id },
       data: {
-        parentTournamentId,
+        parentTournament: { connect: { id: parentTournamentId } },
         groupNumber,
       },
       include: {

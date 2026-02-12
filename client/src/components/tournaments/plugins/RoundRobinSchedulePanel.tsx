@@ -232,10 +232,9 @@ export const RoundRobinSchedulePanel: React.FC<TournamentScheduleProps> = ({
               <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center', width: '80px' }}>Match #</th>
               <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Player 1</th>
               <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Player 2</th>
-              <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>Status</th>
             </tr>
             <tr>
-              <td colSpan={4} style={{ padding: '0', border: 'none', height: '2px', backgroundColor: '#333' }}></td>
+              <td colSpan={3} style={{ padding: '0', border: 'none', height: '2px', backgroundColor: '#333' }}></td>
             </tr>
           </thead>
           <tbody>
@@ -243,7 +242,7 @@ export const RoundRobinSchedulePanel: React.FC<TournamentScheduleProps> = ({
               <React.Fragment key={round.round}>
                 {roundIndex > 0 && (
                   <tr>
-                    <td colSpan={4} style={{ padding: '0', border: 'none', height: '3px', backgroundColor: '#333' }}></td>
+                    <td colSpan={3} style={{ padding: '0', border: 'none', height: '3px', backgroundColor: '#333' }}></td>
                   </tr>
                 )}
                 {round.matches.map((match, matchIndex) => {
@@ -251,14 +250,14 @@ export const RoundRobinSchedulePanel: React.FC<TournamentScheduleProps> = ({
                   const isPlayed = playedMatches.has(matchKey);
                   
                   return (
-                    <tr key={`${round.round}-${matchIndex}`} className={isPlayed ? 'played' : ''}>
+                    <tr key={`${round.round}-${matchIndex}`} style={isPlayed ? { textDecoration: 'line-through', color: '#aaa' } : {}}>
                       <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>
                         {match.matchNumber}
                       </td>
                       <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>
                         {match.player1Name}
                         {match.player1RatingDisplay && (
-                          <span style={{ fontSize: '12px', color: '#666', marginLeft: '5px' }}>
+                          <span style={{ fontSize: '12px', color: isPlayed ? '#bbb' : '#666', marginLeft: '5px' }}>
                             ({match.player1RatingDisplay})
                           </span>
                         )}
@@ -266,16 +265,9 @@ export const RoundRobinSchedulePanel: React.FC<TournamentScheduleProps> = ({
                       <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>
                         {match.player2Name}
                         {match.player2RatingDisplay && (
-                          <span style={{ fontSize: '12px', color: '#666', marginLeft: '5px' }}>
+                          <span style={{ fontSize: '12px', color: isPlayed ? '#bbb' : '#666', marginLeft: '5px' }}>
                             ({match.player2RatingDisplay})
                           </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>
-                        {isPlayed ? (
-                          <span style={{ color: '#27ae60', fontWeight: 'bold' }}>✓ Played</span>
-                        ) : (
-                          <span style={{ color: '#f39c12' }}>Pending</span>
                         )}
                       </td>
                     </tr>

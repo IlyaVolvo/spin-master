@@ -119,6 +119,13 @@ model Tournament {
   // Bracket structure: only for PLAYOFF basic tournaments
   bracketMatches BracketMatch[]
   
+  // Compound tournament configuration fields
+  groupNumber          Int?     // For child tournaments: which group this is (1, 2, 3...)
+
+  // Type-specific configuration (one-to-one relations)
+  swissData                    SwissTournamentData?
+  preliminaryRoundRobinConfig  PreliminaryRoundRobinConfig?
+
   // Self-referential relationship for parent-child tournaments (compound tournaments)
   parentTournament   Tournament?  @relation("TournamentHierarchy", fields: [parentTournamentId], references: [id], onDelete: Cascade)
   childTournaments   Tournament[] @relation("TournamentHierarchy")
@@ -232,4 +239,33 @@ model PointExchangeRule {
   @@unique([minDiff, maxDiff, effectiveFrom])
   @@index([effectiveFrom])
   @@map("point_exchange_rules")
+}
+
+// PreliminaryRoundRobinConfig: Configuration for PRELIMINARY_WITH_FINAL_ROUND_ROBIN tournaments
+// Stores final round robin size, auto-qualification settings
+model PreliminaryRoundRobinConfig {
+  id                     Int      @id @default(autoincrement())
+  tournamentId           Int      @unique
+  finalRoundRobinSize    Int      // Desired size of the final round robin
+  autoQualifiedCount     Int      @default(0) // Number of auto-qualified players (highest rated, skip preliminary)
+  autoQualifiedMemberIds Int[]    // Member IDs of auto-qualified players
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("preliminary_round_robin_configs")
+}
+
+// SwissTournamentData: Configuration for SWISS tournaments
+// Stores round count, pairing strategy, and completion state
+model SwissTournamentData {
+  id             Int      @id @default(autoincrement())
+  tournamentId   Int      @unique
+  numberOfRounds Int
+  pairByRating   Boolean  @default(true)
+  currentRound   Int      @default(0)
+  isCompleted    Boolean  @default(false)
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("swiss_tournament_data")
 }

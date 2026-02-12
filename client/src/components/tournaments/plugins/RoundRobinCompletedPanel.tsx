@@ -213,6 +213,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                         participant?.member.lastName || '',
                         getNameDisplayOrder()
                       )}
+                      <span style={{ fontSize: '11px', color: '#666', fontWeight: 'normal', marginLeft: '4px' }}>({preRating ?? '—'})</span>
                       {showRating && (
                         <span style={{
                           marginLeft: '6px',
@@ -293,6 +294,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                       }}
                     >
                       {formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder())}
+                      <span style={{ fontSize: '10px', fontWeight: 'normal', opacity: 0.8, marginLeft: '4px' }}>({p1.playerRatingAtTime ?? p1.member.rating ?? '—'})</span>
                     </td>
                     {participantData.map((p2: any) => {
                       const cellValue = matrix[p1.member.id][p2.member.id];
