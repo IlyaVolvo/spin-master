@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { PostSelectionFlowProps, Member } from '../../../types/tournament';
 import api from '../../../utils/api';
+import { snakeDraftGroups, computeGroupCapacities } from './roundRobinUtils';
 
 type Step = 'configure' | 'confirm_groups' | 'confirmation';
 
@@ -51,7 +52,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
   // Number of groups based on preliminary players and group size
   const numGroups = useMemo(() => {
     if (preliminaryPlayerIds.length === 0) return 0;
-    return Math.ceil(preliminaryPlayerIds.length / groupSize);
+    return computeGroupCapacities(preliminaryPlayerIds.length, groupSize).length;
   }, [preliminaryPlayerIds, groupSize]);
 
   // Minimum final RR size: auto-qualified + number of groups (1st place from each)
@@ -59,39 +60,9 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
     return autoQualifiedCount + numGroups;
   }, [autoQualifiedCount, numGroups]);
 
-  // Snake-draft grouping for preliminary players
+  // Snake-draft grouping for preliminary players (delegates to shared utility)
   function generateSnakeDraftGroups(playerIds: number[], desiredGroupSize: number): number[][] {
-    const sorted = [...playerIds]
-      .map(id => {
-        const player = members.find(p => p.id === id);
-        return { id, rating: player?.rating ?? 0 };
-      })
-      .sort((a, b) => b.rating - a.rating)
-      .map(p => p.id);
-
-    const nGroups = Math.ceil(sorted.length / desiredGroupSize);
-    const groups: number[][] = Array(nGroups).fill(null).map(() => []);
-
-    let playerIndex = 0;
-    let round = 0;
-
-    while (playerIndex < sorted.length) {
-      const isForward = round % 2 === 0;
-      if (isForward) {
-        for (let gi = 0; gi < nGroups && playerIndex < sorted.length; gi++) {
-          groups[gi].push(sorted[playerIndex]);
-          playerIndex++;
-        }
-      } else {
-        for (let gi = nGroups - 1; gi >= 0 && playerIndex < sorted.length; gi--) {
-          groups[gi].push(sorted[playerIndex]);
-          playerIndex++;
-        }
-      }
-      round++;
-    }
-
-    return groups;
+    return snakeDraftGroups(playerIds, desiredGroupSize, (id) => members.find(p => p.id === id));
   }
 
   const handleContinueFromConfigure = () => {

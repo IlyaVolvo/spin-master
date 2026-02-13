@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { PostSelectionFlowProps, Member } from '../../../types/tournament';
 import api from '../../../utils/api';
+import { snakeDraftGroups } from './roundRobinUtils';
 
 type Step = 'multi_toggle' | 'rearrange' | 'confirmation';
 
@@ -28,39 +29,9 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
   const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null);
   const lastRecalcKeyRef = useRef<string>('');
 
-  // Snake draft grouping
+  // Snake draft grouping (delegates to shared utility)
   const generateSnakeDraftGroups = (playerIds: number[], groupSize: number): number[][] => {
-    const sortedPlayers = [...playerIds]
-      .map(id => {
-        const player = members.find(p => p.id === id);
-        return { id, rating: player?.rating ?? 0 };
-      })
-      .sort((a, b) => b.rating - a.rating)
-      .map(p => p.id);
-
-    const numGroups = Math.ceil(sortedPlayers.length / groupSize);
-    const groups: number[][] = Array(numGroups).fill(null).map(() => []);
-
-    let playerIndex = 0;
-    let round = 0;
-
-    while (playerIndex < sortedPlayers.length) {
-      const isForward = round % 2 === 0;
-      if (isForward) {
-        for (let groupIndex = 0; groupIndex < numGroups && playerIndex < sortedPlayers.length; groupIndex++) {
-          groups[groupIndex].push(sortedPlayers[playerIndex]);
-          playerIndex++;
-        }
-      } else {
-        for (let groupIndex = numGroups - 1; groupIndex >= 0 && playerIndex < sortedPlayers.length; groupIndex--) {
-          groups[groupIndex].push(sortedPlayers[playerIndex]);
-          playerIndex++;
-        }
-      }
-      round++;
-    }
-
-    return groups;
+    return snakeDraftGroups(playerIds, groupSize, (id) => members.find(p => p.id === id));
   };
 
   // Recalculate groups when multi-tournament mode changes

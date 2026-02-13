@@ -597,6 +597,13 @@ const Players: React.FC = () => {
         .progress-step-current {
           animation: pulse 1.5s ease-in-out infinite;
         }
+        @keyframes selectPlayersFlash {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.2; }
+        }
+        .select-players-hint {
+          animation: selectPlayersFlash 3s ease-in-out infinite;
+        }
       `;
       document.head.appendChild(style);
     }
@@ -2802,6 +2809,7 @@ const Players: React.FC = () => {
                 No players selected yet
               </div>
             )}
+
           </div>
         )}
         
@@ -3119,6 +3127,55 @@ const Players: React.FC = () => {
                     <span style={{ fontSize: '18px', color: '#2c3e50', fontWeight: 'bold' }}>
                       (<strong>{selectedPlayersForTournament.length}</strong> selected)
                     </span>
+                    {tournamentCreationStep === 'player_selection' && (
+                      <>
+                        <span style={{ flex: 1 }} />
+                        <span
+                          className="select-players-hint"
+                          style={{
+                            fontSize: '16px',
+                            fontWeight: '700',
+                            color: '#3498db',
+                          }}
+                        >
+                          Select Players
+                        </span>
+                        <button
+                          onClick={() => {
+                            const activePlayers = getSortedPlayers().filter(p => p.isActive);
+                            setSelectedPlayersForTournament(activePlayers.map(p => p.id));
+                          }}
+                          style={{
+                            padding: '5px 12px',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            border: '2px solid #3498db',
+                            borderRadius: '4px',
+                            backgroundColor: 'white',
+                            color: '#3498db',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Select All
+                        </button>
+                        <button
+                          onClick={() => setSelectedPlayersForTournament([])}
+                          style={{
+                            padding: '5px 12px',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            border: '2px solid #95a5a6',
+                            borderRadius: '4px',
+                            backgroundColor: 'white',
+                            color: '#95a5a6',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Deselect All
+                        </button>
+                        <span style={{ flex: 1 }} />
+                      </>
+                    )}
                               </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 10 }}>
                     {(() => {

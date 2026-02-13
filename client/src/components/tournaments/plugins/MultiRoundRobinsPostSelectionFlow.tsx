@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { PostSelectionFlowProps } from '../../../types/tournament';
 import api from '../../../utils/api';
+import { rankBasedGroups, computeGroupCapacities } from './roundRobinUtils';
 
 type Step = 'select_group_size' | 'confirm_groups' | 'confirmation';
 
@@ -36,32 +37,8 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
 
   const numGroups = useMemo(() => {
     if (sortedSelectedPlayers.length === 0) return 0;
-    return Math.ceil(sortedSelectedPlayers.length / groupSize);
+    return computeGroupCapacities(sortedSelectedPlayers.length, groupSize).length;
   }, [sortedSelectedPlayers, groupSize]);
-
-  // Rank-based grouping: highest rated fill Group 1, next fill Group 2, etc.
-  function generateRankBasedGroups(playerIds: number[], desiredGroupSize: number): number[][] {
-    const sorted = [...playerIds]
-      .map(id => {
-        const player = members.find(p => p.id === id);
-        return { id, rating: player?.rating ?? 0 };
-      })
-      .sort((a, b) => b.rating - a.rating)
-      .map(p => p.id);
-
-    const nGroups = Math.ceil(sorted.length / desiredGroupSize);
-    const groups: number[][] = Array(nGroups).fill(null).map(() => []);
-
-    // Fill sequentially: first N go to Group 1, next N to Group 2, etc.
-    sorted.forEach((playerId, index) => {
-      const groupIndex = Math.floor(index / desiredGroupSize);
-      // Safety: if last group would overflow, put in last group
-      const safeIndex = Math.min(groupIndex, nGroups - 1);
-      groups[safeIndex].push(playerId);
-    });
-
-    return groups;
-  }
 
   const handleContinueFromGroupSize = () => {
     if (sortedSelectedPlayers.length < 4) {
@@ -72,7 +49,7 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
       onError('Group size must be at least 3');
       return;
     }
-    const groups = generateRankBasedGroups(selectedPlayerIds, groupSize);
+    const groups = rankBasedGroups(selectedPlayerIds, groupSize, (id) => members.find(p => p.id === id));
     setPlayerGroups(groups);
     setStep('confirm_groups');
   };
