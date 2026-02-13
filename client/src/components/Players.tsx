@@ -313,6 +313,7 @@ const Players: React.FC = () => {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [showRoleFilter, setShowRoleFilter] = useState(false);
   const roleFilterButtonRef = useRef<HTMLButtonElement>(null);
+  const lastClickedPlayerIdRef = useRef<number | null>(null);
   const [filtersCollapsed, setFiltersCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('players_filtersCollapsed');
     return saved === 'true';
@@ -2011,6 +2012,7 @@ const Players: React.FC = () => {
     setTournamentType('');
     setCreationTournamentType(null);
     setExpandedMenuGroups(new Set());
+    lastClickedPlayerIdRef.current = null;
   };
 
   const handleStartRecordMatch = () => {
@@ -2186,7 +2188,7 @@ const Players: React.FC = () => {
     setShowCancelConfirmation(false);
   };
 
-  const handleTogglePlayerForTournament = (playerId: number) => {
+  const handleTogglePlayerForTournament = (playerId: number, shiftKey?: boolean, visiblePlayerIds?: number[]) => {
     // Disable selection during plugin flow phase
     if (tournamentCreationStep === 'plugin_flow') {
       return;
@@ -2198,6 +2200,38 @@ const Players: React.FC = () => {
       setError('Only active players can be selected for tournaments or matches.');
       return;
     }
+
+    // Shift+click range selection: add or remove based on clicked player's current state
+    if (shiftKey && lastClickedPlayerIdRef.current !== null && visiblePlayerIds && visiblePlayerIds.length > 0) {
+      const lastIdx = visiblePlayerIds.indexOf(lastClickedPlayerIdRef.current);
+      const currIdx = visiblePlayerIds.indexOf(playerId);
+      if (lastIdx !== -1 && currIdx !== -1 && lastIdx !== currIdx) {
+        const start = Math.min(lastIdx, currIdx);
+        const end = Math.max(lastIdx, currIdx);
+        const rangeIds = visiblePlayerIds.slice(start, end + 1);
+        const isDeselecting = selectedPlayersForTournament.includes(playerId);
+        let newSelection: number[];
+        if (isDeselecting) {
+          // Remove all players in range
+          const rangeSet = new Set(rangeIds);
+          newSelection = selectedPlayersForTournament.filter(id => !rangeSet.has(id));
+        } else {
+          // Add all active players in range
+          newSelection = [...selectedPlayersForTournament];
+          for (const id of rangeIds) {
+            if (!newSelection.includes(id)) {
+              const p = members.find(m => m.id === id);
+              if (p && p.isActive) {
+                newSelection.push(id);
+              }
+            }
+          }
+        }
+        setSelectedPlayersForTournament(newSelection);
+        lastClickedPlayerIdRef.current = playerId;
+        return;
+      }
+    }
     
     if (selectedPlayersForTournament.includes(playerId)) {
       setSelectedPlayersForTournament(selectedPlayersForTournament.filter(id => id !== playerId));
@@ -2205,6 +2239,7 @@ const Players: React.FC = () => {
       const newSelection = [...selectedPlayersForTournament, playerId];
       setSelectedPlayersForTournament(newSelection);
     }
+    lastClickedPlayerIdRef.current = playerId;
   };
 
   const handleFinishPlayerSelection = () => {
@@ -4919,6 +4954,7 @@ const Players: React.FC = () => {
                 }
                 return true;
               });
+              const visiblePlayerIds = filteredForHistory.map(p => p.id);
               return filteredForHistory.map((player) => {
               // Render normal row (edit form is now in a modal)
               return (
@@ -4983,11 +5019,12 @@ const Players: React.FC = () => {
                             ? selectedPlayersForTournament.includes(player.id)
                             : selectedPlayersForStats.includes(player.id)
                       }
-                      onChange={() => {
+                      onChange={(e) => {
                         if (isRecordingMatch) {
                           handleTogglePlayerForMatch(player.id);
                         } else if (isCreatingTournament) {
-                          handleTogglePlayerForTournament(player.id);
+                          const shiftKey = (e.nativeEvent as MouseEvent).shiftKey;
+                          handleTogglePlayerForTournament(player.id, shiftKey, visiblePlayerIds);
                         } else {
                           handleTogglePlayerForStats(player.id);
                         }
