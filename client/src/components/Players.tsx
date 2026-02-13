@@ -10,6 +10,7 @@ import { getMember, isOrganizer, isAdmin } from '../utils/auth';
 import { connectSocket } from '../utils/socket';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import type { TournamentType } from '../types/tournament';
+import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
 import './tournaments/plugins';
 
 // Module-level cache to persist across component mounts/unmounts
@@ -325,6 +326,7 @@ const Players: React.FC = () => {
   const [tournamentName, setTournamentName] = useState('');
   const [tournamentType, setTournamentType] = useState<TournamentType>('');
   const [creationTournamentType, setCreationTournamentType] = useState<TournamentType | null>(null);
+  const [expandedMenuGroups, setExpandedMenuGroups] = useState<Set<string>>(new Set());
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
   const [isSelectingForHistory, setIsSelectingForHistory] = useState(false);
@@ -2008,6 +2010,7 @@ const Players: React.FC = () => {
     setTournamentName('');
     setTournamentType('');
     setCreationTournamentType(null);
+    setExpandedMenuGroups(new Set());
   };
 
   const handleStartRecordMatch = () => {
@@ -2837,36 +2840,94 @@ const Players: React.FC = () => {
                         />
                       </div>
                       
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
-                        {tournamentPluginRegistry.getAll().map((plugin) => {
-                          const selected = creationTournamentType === plugin.type;
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                        {(() => {
+                          // Build the full menu: configured items + any unmentioned registered plugins
+                          const mentionedTypes = getMenuTypes(tournamentTypeMenu);
+                          const unmentioned = tournamentPluginRegistry.getAll()
+                            .filter(p => !mentionedTypes.has(p.type));
+                          const fullMenu: TournamentMenuItem[] = [
+                            ...tournamentTypeMenu,
+                            ...unmentioned.map(p => ({ label: p.name, type: p.type })),
+                          ];
 
-                          return (
-                            <label key={plugin.type} style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '10px',
-                              padding: '12px',
-                              border: selected ? '2px solid #3498db' : '1px solid #ddd',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              backgroundColor: selected ? '#e8f4f8' : 'white'
-                            }}>
-                              <input
-                                type="radio"
-                                name="tournamentType"
-                                value={plugin.type}
-                                checked={selected}
-                                onChange={() => {
-                                  setCreationTournamentType(plugin.type);
-                                  setTournamentType(plugin.type);
-                                }}
-                                style={{ cursor: 'pointer' }}
-                              />
-                              <span style={{ fontSize: '16px', fontWeight: '500' }}>{plugin.name}</span>
-                            </label>
-                          );
-                        })}
+                          const renderMenuItem = (item: TournamentMenuItem, depth: number = 0): React.ReactNode => {
+                            if (isMenuGroup(item)) {
+                              const isExpanded = expandedMenuGroups.has(item.label);
+                              // Check if any child in this group is selected
+                              const hasSelectedChild = item.children.some(child =>
+                                !isMenuGroup(child) && creationTournamentType === child.type
+                              );
+                              return (
+                                <div key={item.label} style={{ marginLeft: depth > 0 ? '20px' : 0 }}>
+                                  <div
+                                    onClick={() => {
+                                      setExpandedMenuGroups(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(item.label)) next.delete(item.label);
+                                        else next.add(item.label);
+                                        return next;
+                                      });
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '8px',
+                                      padding: '12px',
+                                      border: hasSelectedChild ? '2px solid #3498db' : '1px solid #ddd',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      backgroundColor: hasSelectedChild ? '#e8f4f8' : '#f8f9fa',
+                                      userSelect: 'none',
+                                    }}
+                                  >
+                                    <span style={{ fontSize: '12px', color: '#666', width: '16px', textAlign: 'center' }}>
+                                      {isExpanded ? '▼' : '▶'}
+                                    </span>
+                                    <span style={{ fontSize: '16px', fontWeight: '500' }}>{item.label}</span>
+                                  </div>
+                                  {isExpanded && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px', marginLeft: '20px' }}>
+                                      {item.children.map(child => renderMenuItem(child, depth + 1))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            // Leaf item — only render if the plugin is actually registered
+                            if (!tournamentPluginRegistry.isRegistered(item.type)) return null;
+                            const selected = creationTournamentType === item.type;
+                            return (
+                              <label key={item.type} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '12px',
+                                border: selected ? '2px solid #3498db' : '1px solid #ddd',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                backgroundColor: selected ? '#e8f4f8' : 'white',
+                                marginLeft: depth > 0 ? '20px' : 0,
+                              }}>
+                                <input
+                                  type="radio"
+                                  name="tournamentType"
+                                  value={item.type}
+                                  checked={selected}
+                                  onChange={() => {
+                                    setCreationTournamentType(item.type);
+                                    setTournamentType(item.type);
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '16px', fontWeight: '500' }}>{item.label}</span>
+                              </label>
+                            );
+                          };
+
+                          return fullMenu.map(item => renderMenuItem(item));
+                        })()}
                       </div>
                       
                     </div>
