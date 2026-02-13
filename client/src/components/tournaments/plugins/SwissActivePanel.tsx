@@ -1,31 +1,38 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { MatchEntryPopup } from '../../MatchEntryPopup';
+import { saveScrollPosition } from '../../../utils/scrollPosition';
 import './SwissActivePanel.css';
 
-interface SwissPlayerStats {
-  memberId: number;
-  memberName: string;
-  points: number;
-  roundsPlayed: number;
-  wins: number;
-  losses: number;
-  rating: number | null;
-  opponents: Set<number>;
+interface EditingMatch {
+  matchId: number;
+  member1Id: number;
+  member2Id: number;
+  player1Sets: string;
+  player2Sets: string;
+  player1Forfeit: boolean;
+  player2Forfeit: boolean;
 }
 
-interface SwissRound {
-  roundNumber: number;
-  matches: Array<{
-    id: number;
-    member1Id: number;
-    member2Id: number;
-    player1Sets: number;
-    player2Sets: number;
-    player1Forfeit: boolean;
-    player2Forfeit: boolean;
-    completed: boolean;
-  }>;
+interface RoundResult {
+  opponentId: number;
+  opponentName: string;
+  playerSets: number;
+  opponentSets: number;
+  playerForfeit: boolean;
+  opponentForfeit: boolean;
+  won: boolean;
+}
+
+interface PlayerStandingRow {
+  memberId: number;
+  name: string;
+  rating: number | null;
+  ratingChange: number | null;
+  totalPoints: number;
+  roundResults: Map<number, RoundResult>;
 }
 
 export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
@@ -35,237 +42,371 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
   onError,
   onSuccess,
 }) => {
-  const [editingMatch, setEditingMatch] = useState<number | null>(null);
-  const [matchScores, setMatchScores] = useState<{[key: number]: {
-    player1Sets: string;
-    player2Sets: string;
-    player1Forfeit: boolean;
-    player2Forfeit: boolean;
-  }}>({});
-  const [currentRound, setCurrentRound] = useState(1);
+  const navigate = useNavigate();
+  const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
 
-  // Calculate player statistics
-  const playerStats = useMemo(() => {
-    const statsMap = new Map<number, SwissPlayerStats>();
-    
-    // Initialize stats for all participants
+  const swissData = (tournament as any).swissData;
+  const totalRounds = swissData?.numberOfRounds ?? 0;
+  const currentRound = swissData?.currentRound ?? 1;
+
+  // Get current round matches (the ones to display in the pairs table)
+  const currentRoundMatches = useMemo(() => {
+    return [...tournament.matches]
+      .filter(m => (m.round || 1) === currentRound)
+      .sort((a, b) => a.id - b.id)
+      .map(m => ({
+        id: m.id,
+        member1Id: m.member1Id,
+        member2Id: m.member2Id || 0,
+        player1Sets: m.player1Sets,
+        player2Sets: m.player2Sets,
+        player1Forfeit: m.player1Forfeit || false,
+        player2Forfeit: m.player2Forfeit || false,
+        completed: (m.player1Sets > 0 || m.player2Sets > 0 || m.player1Forfeit || (m.player2Forfeit || false)),
+      }));
+  }, [tournament.matches, currentRound]);
+
+  // Build standings with round-by-round results (only completed rounds)
+  const standings: PlayerStandingRow[] = useMemo(() => {
+    const rows = new Map<number, PlayerStandingRow>();
+
+    // Initialize all participants
     tournament.participants.forEach(p => {
-      statsMap.set(p.memberId, {
+      rows.set(p.memberId, {
         memberId: p.memberId,
-        memberName: formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder()),
-        points: 0,
-        roundsPlayed: 0,
-        wins: 0,
-        losses: 0,
-        rating: p.playerRatingAtTime,
-        opponents: new Set()
+        name: formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder()),
+        rating: p.playerRatingAtTime ?? p.member.rating ?? null,
+        ratingChange: null, // TODO: could be computed from rating history
+        totalPoints: 0,
+        roundResults: new Map(),
       });
     });
 
-    // Calculate stats from matches
+    // Process all completed matches
     tournament.matches.forEach(match => {
-      const stats1 = statsMap.get(match.member1Id);
-      const stats2 = match.member2Id ? statsMap.get(match.member2Id) : null;
+      const hasScore = (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0;
+      const hasForfeit = match.player1Forfeit || match.player2Forfeit;
+      if (!hasScore && !hasForfeit) return;
 
-      if (stats1 && stats2) {
-        stats1.opponents.add(match.member2Id || 0);
-        stats2.opponents.add(match.member1Id || 0);
-      }
+      const round = match.round || 1;
+      const row1 = rows.get(match.member1Id);
+      const row2 = match.member2Id ? rows.get(match.member2Id) : null;
 
-      // Determine winner and update points
-      const player1Won = (match.player1Sets || 0) > (match.player2Sets || 0);
-      const player2Won = (match.player2Sets || 0) > (match.player1Sets || 0);
+      let p1Won = false;
+      if (match.player2Forfeit) p1Won = true;
+      else if (match.player1Forfeit) p1Won = false;
+      else p1Won = (match.player1Sets || 0) > (match.player2Sets || 0);
 
-      if (player1Won && stats1) {
-        stats1.wins += 1;
-        stats1.points += 1;
-        stats1.roundsPlayed += 1;
-      } else if (player2Won && stats2) {
-        stats2.wins += 1;
-        stats2.points += 1;
-        stats2.roundsPlayed += 1;
-      }
+      if (row1 && row2) {
+        if (p1Won) row1.totalPoints += 1;
+        else row2.totalPoints += 1;
 
-      // Handle forfeits
-      if (match.player1Forfeit && stats2) {
-        stats2.wins += 1;
-        stats2.points += 1;
-        stats2.roundsPlayed += 1;
-        if (stats1) {
-          stats1.losses += 1;
-          stats1.roundsPlayed += 1;
-        }
-      } else if (match.player2Forfeit && stats1) {
-        stats1.wins += 1;
-        stats1.points += 1;
-        stats1.roundsPlayed += 1;
-        if (stats2) {
-          stats2.losses += 1;
-          stats2.roundsPlayed += 1;
-        }
+        row1.roundResults.set(round, {
+          opponentId: match.member2Id || 0,
+          opponentName: row2.name,
+          playerSets: match.player1Sets,
+          opponentSets: match.player2Sets,
+          playerForfeit: match.player1Forfeit || false,
+          opponentForfeit: match.player2Forfeit || false,
+          won: p1Won,
+        });
+
+        row2.roundResults.set(round, {
+          opponentId: match.member1Id,
+          opponentName: row1.name,
+          playerSets: match.player2Sets,
+          opponentSets: match.player1Sets,
+          playerForfeit: match.player2Forfeit || false,
+          opponentForfeit: match.player1Forfeit || false,
+          won: !p1Won,
+        });
       }
     });
 
-    return Array.from(statsMap.values()).sort((a, b) => {
-      // Sort by points (descending), then rating (descending)
-      if (b.points !== a.points) return b.points - a.points;
-      if (b.rating !== a.rating) return (b.rating || 0) - (a.rating || 0);
-      return a.memberName.localeCompare(b.memberName);
+    // Sort by points desc, then within equal points by rating desc
+    return Array.from(rows.values()).sort((a, b) => {
+      if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+      return (b.rating || 0) - (a.rating || 0);
     });
   }, [tournament.participants, tournament.matches]);
 
-  // Organize matches by rounds
-  const rounds = useMemo(() => {
-    const roundsMap = new Map<number, SwissRound>();
-    
-    tournament.matches.forEach(match => {
-      const round = match.round || 1;
-      if (!roundsMap.has(round)) {
-        roundsMap.set(round, {
-          roundNumber: round,
-          matches: []
-        });
-      }
-      
-      roundsMap.get(round)!.matches.push({
-        id: match.id,
-        member1Id: match.member1Id,
-        member2Id: match.member2Id || 0,
-        player1Sets: match.player1Sets,
-        player2Sets: match.player2Sets,
-        player1Forfeit: match.player1Forfeit || false,
-        player2Forfeit: match.player2Forfeit || false,
-        completed: (match.player1Sets > 0 || match.player2Sets > 0 || match.player1Forfeit || (match.player2Forfeit || false))
+  // Determine which rounds have at least one played match (for the standings table columns)
+  const roundsWithResults = useMemo(() => {
+    const rounds: number[] = [];
+    for (let r = 1; r <= currentRound; r++) {
+      const roundMatches = tournament.matches.filter(m => (m.round || 1) === r);
+      if (roundMatches.length === 0) continue;
+      const hasAnyResult = roundMatches.some(m => {
+        const hasScore = (m.player1Sets || 0) > 0 || (m.player2Sets || 0) > 0;
+        const hasForfeit = m.player1Forfeit || m.player2Forfeit;
+        return hasScore || hasForfeit;
       });
-    });
+      if (hasAnyResult) rounds.push(r);
+    }
+    return rounds;
+  }, [tournament.matches, currentRound]);
 
-    return Array.from(roundsMap.values()).sort((a, b) => a.roundNumber - b.roundNumber);
-  }, [tournament.matches]);
-
-  const getPlayerName = (memberId: number) => {
-    const participant = tournament.participants.find(p => p.memberId === memberId);
-    if (!participant) return 'Unknown';
-    return formatPlayerName(participant.member.firstName, participant.member.lastName, getNameDisplayOrder());
+  const getPlayer = (memberId: number) => {
+    const participant = tournament.participants.find((p: any) => p.member.id === memberId);
+    return participant?.member;
   };
 
-  const handleMatchEdit = (matchId: number) => {
+  const getRatingDisplay = (memberId: number) => {
+    const participant = tournament.participants.find((p: any) => p.member.id === memberId);
+    if (!participant) return '';
+    return participant.playerRatingAtTime ?? participant.member.rating ?? '—';
+  };
+
+  const handleMatchClick = (member1Id: number, member2Id: number, matchId: number) => {
     const match = tournament.matches.find(m => m.id === matchId);
     if (match) {
-      setMatchScores(prev => ({
-        ...prev,
-        [matchId]: {
-          player1Sets: match.player1Sets.toString(),
-          player2Sets: match.player2Sets.toString(),
-          player1Forfeit: match.player1Forfeit || false,
-          player2Forfeit: match.player2Forfeit || false,
-        }
-      }));
-      setEditingMatch(matchId);
+      setEditingMatch({
+        matchId: match.id,
+        member1Id: match.member1Id,
+        member2Id: match.member2Id || 0,
+        player1Sets: match.player1Sets.toString(),
+        player2Sets: match.player2Sets.toString(),
+        player1Forfeit: match.player1Forfeit || false,
+        player2Forfeit: match.player2Forfeit || false,
+      });
     }
   };
 
-  const handleMatchSave = async (matchId: number) => {
-    const scores = matchScores[matchId];
-    if (!scores) return;
+  const handleMatchSave = async () => {
+    if (!editingMatch) return;
 
     try {
-      const response = await fetch(`/api/matches/${matchId}`, {
+      const response = await fetch(`/api/tournaments/${tournament.id}/matches/${editingMatch.matchId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          player1Sets: parseInt(scores.player1Sets) || 0,
-          player2Sets: parseInt(scores.player2Sets) || 0,
-          player1Forfeit: scores.player1Forfeit,
-          player2Forfeit: scores.player2Forfeit,
+          player1Sets: parseInt(editingMatch.player1Sets) || 0,
+          player2Sets: parseInt(editingMatch.player2Sets) || 0,
+          player1Forfeit: editingMatch.player1Forfeit,
+          player2Forfeit: editingMatch.player2Forfeit,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to update match');
-      }
+      if (!response.ok) throw new Error('Failed to update match');
 
       const updatedMatch = await response.json();
-      onMatchUpdate(updatedMatch);
+      onTournamentUpdate(updatedMatch);
       setEditingMatch(null);
-      onSuccess('Match updated successfully');
+      onSuccess?.('Match updated successfully');
     } catch (error) {
-      onError('Failed to update match');
+      onError?.('Failed to update match');
     }
   };
 
-  const handleMatchCancel = (matchId: number) => {
+  const handleMatchCancel = () => {
     setEditingMatch(null);
-    delete matchScores[matchId];
   };
 
-  const handleGenerateNextRound = async () => {
-    try {
-      const response = await fetch(`/api/tournaments/${tournament.id}/swiss/next-round`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to generate next round');
-      }
-
-      const updatedTournament = await response.json();
-      onTournamentUpdate(updatedTournament);
-      onSuccess('Next round generated successfully');
-    } catch (error) {
-      onError('Failed to generate next round');
-    }
+  const handleViewH2H = (member1Id: number, member2Id: number) => {
+    saveScrollPosition('/tournaments', window.scrollY);
+    navigate('/history', {
+      state: { playerId: member1Id, opponentIds: [member2Id], from: 'tournaments' },
+    });
   };
 
-  const currentRoundData = rounds.find(r => r.roundNumber === currentRound) || { roundNumber: currentRound, matches: [] };
-  const isCurrentRoundComplete = currentRoundData.matches.length > 0 && currentRoundData.matches.every(m => m.completed);
-  const canGenerateNextRound = isCurrentRoundComplete && currentRound < rounds.length;
+  const currentRoundPlayed = currentRoundMatches.filter(m => m.completed).length;
+  const currentRoundTotal = currentRoundMatches.length;
 
   return (
     <div className="swiss-active">
       {/* Tournament Header */}
       <div className="swiss-active__header">
-        <h4>{tournament.name || 'Swiss Tournament'}</h4>
         <div className="tournament-info">
-          <span className="info-badge">
-            Round {currentRound} of {rounds.length}
-          </span>
-          <span className="info-badge">
-            {tournament.participants.length} Players
-          </span>
+          <span className="info-badge">Round {currentRound} of {totalRounds}</span>
+          <span className="info-badge">{tournament.participants.length} Players</span>
+          <span className="info-badge">{currentRoundPlayed}/{currentRoundTotal} matches played</span>
         </div>
       </div>
 
-      {/* Current Standings */}
+      {/* Table 1: Current Round Match Pairs */}
       <div className="swiss-active__section">
-        <h4>Current Standings</h4>
-        <div className="standings-table">
-          <table>
+        <h4>Round {currentRound} — Matches</h4>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {currentRoundMatches.length > 0 ? (
+            currentRoundMatches.map((match) => {
+              const isPlayed = match.completed;
+
+              const p1Sets = match.player1Sets;
+              const p2Sets = match.player2Sets;
+              const p1Forfeit = match.player1Forfeit;
+              const p2Forfeit = match.player2Forfeit;
+
+              return (
+                <div
+                  key={match.id}
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'nowrap',
+                    alignItems: 'center',
+                    padding: '6px 8px',
+                    borderBottom: '1px solid #eee',
+                    backgroundColor: isPlayed ? '#f8f9fa' : '#fff',
+                    gap: '6px',
+                    fontSize: '14px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* H2H history icon — navigates to match history between these 2 players */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleViewH2H(match.member1Id, match.member2Id); }}
+                    title="View match history between these players"
+                    style={{
+                      padding: '2px 4px', border: 'none', background: 'transparent',
+                      cursor: 'pointer', fontSize: '14px', display: 'inline-flex',
+                      alignItems: 'center', justifyContent: 'center', color: '#e67e22',
+                      flexShrink: 0,
+                    }}
+                  >📜</button>
+
+                  {/* Player 1 name + rating */}
+                  <span style={{
+                    fontWeight: isPlayed && p1Sets > p2Sets && !p1Forfeit ? 'bold' : 'normal',
+                    color: p1Forfeit ? '#e74c3c' : '#2c3e50',
+                    minWidth: 0, textAlign: 'right', flex: 1,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {formatPlayerName(
+                      getPlayer(match.member1Id)?.firstName || '',
+                      getPlayer(match.member1Id)?.lastName || '',
+                      getNameDisplayOrder()
+                    )}
+                    <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal', marginLeft: '3px' }}>
+                      ({getRatingDisplay(match.member1Id)})
+                    </span>
+                  </span>
+
+                  {/* Score / Enter score */}
+                  <div
+                    onClick={() => handleMatchClick(match.member1Id, match.member2Id, match.id)}
+                    style={{
+                      cursor: 'pointer', display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', minWidth: '70px', flexShrink: 0,
+                    }}
+                    title={isPlayed ? 'Click to edit match' : 'Click to enter score'}
+                  >
+                    {isPlayed ? (
+                      <span style={{
+                        fontWeight: 'bold', fontSize: '14px', color: '#333',
+                        whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: '4px',
+                        backgroundColor: p1Forfeit || p2Forfeit ? '#f8d7da' : '#e8f5e9',
+                      }}>
+                        {p1Forfeit ? 'FF' : p2Forfeit ? 'W' : `${p1Sets} - ${p2Sets}`}
+                        {p1Forfeit ? '' : p2Forfeit ? ' (FF)' : ''}
+                      </span>
+                    ) : (
+                      <button
+                        style={{
+                          padding: '0', border: '1px solid #90EE90', borderRadius: '4px',
+                          backgroundColor: 'transparent', cursor: 'pointer', display: 'flex',
+                          alignItems: 'stretch', width: '45px', height: '18px', overflow: 'hidden',
+                          opacity: 0.7,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMatchClick(match.member1Id, match.member2Id, match.id);
+                        }}
+                        title="Enter score"
+                      >
+                        <div style={{
+                          flex: 1, backgroundColor: '#ADD8E6', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', color: '#228B22',
+                          fontSize: '10px', fontWeight: 'bold', borderRight: '1px solid #90EE90',
+                        }}>?</div>
+                        <div style={{
+                          flex: 1, backgroundColor: '#ADD8E6', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', color: '#228B22',
+                          fontSize: '10px', fontWeight: 'bold',
+                        }}>?</div>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Player 2 name + rating */}
+                  <span style={{
+                    fontWeight: isPlayed && p2Sets > p1Sets && !p2Forfeit ? 'bold' : 'normal',
+                    color: p2Forfeit ? '#e74c3c' : '#2c3e50',
+                    minWidth: 0, flex: 1,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal', marginRight: '3px' }}>
+                      ({getRatingDisplay(match.member2Id)})
+                    </span>
+                    {formatPlayerName(
+                      getPlayer(match.member2Id)?.firstName || '',
+                      getPlayer(match.member2Id)?.lastName || '',
+                      getNameDisplayOrder()
+                    )}
+                  </span>
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+              No matches for this round yet.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Table 2: Standings with round-by-round results */}
+      <div className="swiss-active__section">
+        <h4>Standings</h4>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Player</th>
-                <th>Points</th>
-                <th>W-L</th>
-                <th>Rating</th>
-                <th>Opponents</th>
+              <tr style={{ borderBottom: '2px solid #333' }}>
+                <th style={{ padding: '6px 10px', textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', left: 0, backgroundColor: '#f8f9fa', zIndex: 1 }}>Player</th>
+                <th style={{ padding: '6px 8px', textAlign: 'center', whiteSpace: 'nowrap', borderLeft: '1px solid #ccc' }}>Pts</th>
+                {roundsWithResults.map(r => (
+                  <th key={r} style={{ padding: '6px 6px', textAlign: 'left', whiteSpace: 'nowrap', borderLeft: '1px solid #ccc' }}>R{r}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {playerStats.map((stats, index) => (
-                <tr key={stats.memberId}>
-                  <td>{index + 1}</td>
-                  <td className="player-name">{stats.memberName}</td>
-                  <td className="points"><strong>{stats.points}</strong></td>
-                  <td>{stats.wins}-{stats.losses}</td>
-                  <td>{stats.rating || '-'}</td>
-                  <td className="opponents">
-                    {Array.from(stats.opponents).map(opponentId => getPlayerName(opponentId)).join(', ')}
+              {standings.map((row) => (
+                <tr key={row.memberId} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{
+                    padding: '6px 10px', whiteSpace: 'nowrap', fontWeight: 500,
+                    position: 'sticky', left: 0, backgroundColor: '#fff', zIndex: 1,
+                  }}>
+                    {row.name}
+                    <span style={{ fontSize: '11px', color: '#888', fontWeight: 400, marginLeft: '4px' }}>
+                      {row.rating ?? '—'}
+                    </span>
                   </td>
+                  <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: '#27ae60', borderLeft: '1px solid #ccc' }}>
+                    {row.totalPoints}
+                  </td>
+                  {roundsWithResults.map(r => {
+                    const result = row.roundResults.get(r);
+                    if (!result) {
+                      return <td key={r} style={{ padding: '6px 6px', textAlign: 'left', color: '#ccc', borderLeft: '1px solid #ccc' }}>—</td>;
+                    }
+                    const scoreText = result.playerForfeit
+                      ? 'FF'
+                      : result.opponentForfeit
+                        ? 'W (FF)'
+                        : `${result.playerSets}:${result.opponentSets}`;
+                    return (
+                      <td key={r} style={{
+                        padding: '6px 6px', textAlign: 'left', whiteSpace: 'nowrap',
+                        borderLeft: '1px solid #ccc',
+                      }}>
+                        <span style={{ fontSize: '11px', color: '#888' }}>
+                          {result.opponentName}
+                        </span>
+                        {' '}
+                        <span style={{ color: result.won ? '#27ae60' : '#e74c3c', fontWeight: result.won ? 600 : 400 }}>
+                          {scoreText}
+                        </span>
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -273,138 +414,18 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         </div>
       </div>
 
-      {/* Round Navigation */}
-      <div className="swiss-active__section">
-        <div className="round-navigation">
-          <h4>Round Matches</h4>
-          <div className="round-selector">
-            {rounds.map(round => (
-              <button
-                key={round.roundNumber}
-                className={`round-tab ${currentRound === round.roundNumber ? 'active' : ''}`}
-                onClick={() => setCurrentRound(round.roundNumber)}
-              >
-                Round {round.roundNumber}
-                {round.matches.every(m => m.completed) && ' ✓'}
-              </button>
-            ))}
-            {canGenerateNextRound && (
-              <button
-                className="round-tab generate-next"
-                onClick={handleGenerateNextRound}
-              >
-                + Generate Round {currentRound + 1}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Current Round Matches */}
-        <div className="round-matches">
-          {currentRoundData.matches.length > 0 ? (
-            currentRoundData.matches.map(match => (
-              <div key={match.id} className={`match-item ${match.completed ? 'completed' : 'pending'}`}>
-                <div className="match-players">
-                  <span className="player-name">{getPlayerName(match.member1Id)}</span>
-                  <span className="vs">vs</span>
-                  <span className="player-name">{getPlayerName(match.member2Id)}</span>
-                </div>
-
-                {editingMatch === match.id ? (
-                  <div className="match-edit">
-                    <div className="score-inputs">
-                      <input
-                        type="number"
-                        min="0"
-                        value={matchScores[match.id]?.player1Sets || ''}
-                        onChange={(e) => setMatchScores(prev => ({
-                          ...prev,
-                          [match.id]: { ...prev[match.id], player1Sets: e.target.value }
-                        }))}
-                        placeholder="Sets"
-                      />
-                      <span>-</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={matchScores[match.id]?.player2Sets || ''}
-                        onChange={(e) => setMatchScores(prev => ({
-                          ...prev,
-                          [match.id]: { ...prev[match.id], player2Sets: e.target.value }
-                        }))}
-                        placeholder="Sets"
-                      />
-                    </div>
-                    <div className="forfeit-checkboxes">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={matchScores[match.id]?.player1Forfeit || false}
-                          onChange={(e) => setMatchScores(prev => ({
-                            ...prev,
-                            [match.id]: { ...prev[match.id], player1Forfeit: e.target.checked }
-                          }))}
-                        />
-                        P1 Forfeit
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={matchScores[match.id]?.player2Forfeit || false}
-                          onChange={(e) => setMatchScores(prev => ({
-                            ...prev,
-                            [match.id]: { ...prev[match.id], player2Forfeit: e.target.checked }
-                          }))}
-                        />
-                        P2 Forfeit
-                      </label>
-                    </div>
-                    <div className="match-actions">
-                      <button onClick={() => handleMatchSave(match.id)} className="save-button">
-                        Save
-                      </button>
-                      <button onClick={() => handleMatchCancel(match.id)} className="cancel-button">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="match-display">
-                    <div className="match-score">
-                      {match.completed ? (
-                        <>
-                          <span className="score">{match.player1Sets}</span>
-                          <span>-</span>
-                          <span className="score">{match.player2Sets}</span>
-                          {match.player1Forfeit && <span className="forfeit">P1 Forfeit</span>}
-                          {match.player2Forfeit && <span className="forfeit">P2 Forfeit</span>}
-                        </>
-                      ) : (
-                        <span className="pending">Pending</span>
-                      )}
-                    </div>
-                    <button 
-                      onClick={() => handleMatchEdit(match.id)}
-                      className="edit-button"
-                    >
-                      {match.completed ? 'Edit' : 'Enter Score'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))
-          ) : (
-            <div className="no-matches">
-              <p>No matches generated for this round yet.</p>
-              {currentRound === 1 && (
-                <button onClick={handleGenerateNextRound} className="generate-first-round">
-                  Generate First Round
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Match Entry Popup */}
+      {editingMatch && (
+        <MatchEntryPopup
+          editingMatch={editingMatch}
+          player1={getPlayer(editingMatch.member1Id)!}
+          player2={getPlayer(editingMatch.member2Id)!}
+          showForfeitOptions={true}
+          onSetEditingMatch={setEditingMatch}
+          onSave={handleMatchSave}
+          onCancel={handleMatchCancel}
+        />
+      )}
     </div>
   );
 };

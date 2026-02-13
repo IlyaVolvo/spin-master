@@ -213,6 +213,7 @@ model Match {
   player2Sets    Int      @default(0)
   player1Forfeit Boolean  @default(false)
   player2Forfeit Boolean  @default(false)
+  round          Int?     // Round number for Swiss tournaments (null for other types)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

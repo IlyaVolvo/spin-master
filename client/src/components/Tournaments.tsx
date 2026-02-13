@@ -684,7 +684,7 @@ const Tournaments: React.FC = () => {
     saveStateBeforeNavigate();
     navigate('/history', { 
       state: { 
-      memberId: memberId, 
+      playerId: memberId, 
         opponentIds: allOtherMemberIds,
         from: 'tournaments'
       } 
@@ -1972,12 +1972,14 @@ const Tournaments: React.FC = () => {
                                       expandedText={child.status === 'COMPLETED' ? '▲ Hide Results' : '▲ Hide Details'}
                                       collapsedText={child.status === 'COMPLETED' ? '▼ Show Results' : '▼ Show Details / Record Result'}
                                     />
-                                    <ExpandCollapseButton
-                                      isExpanded={expandedSchedules.has(child.id)}
-                                      onToggle={() => toggleSchedule(child.id)}
-                                      expandedText="▲ Hide Schedule"
-                                      collapsedText="▼ Show Schedule"
-                                    />
+                                    {childPlugin?.createSchedulePanel && (
+                                      <ExpandCollapseButton
+                                        isExpanded={expandedSchedules.has(child.id)}
+                                        onToggle={() => toggleSchedule(child.id)}
+                                        expandedText="▲ Hide Schedule"
+                                        collapsedText="▼ Show Schedule"
+                                      />
+                                    )}
                                     <ExpandCollapseButton
                                       isExpanded={expandedParticipants.has(child.id)}
                                       onToggle={() => toggleParticipants(child.id)}
@@ -2017,9 +2019,9 @@ const Tournaments: React.FC = () => {
                                   )}
 
                                   {/* Child schedule */}
-                                  {expandedSchedules.has(child.id) && childPlugin && (
+                                  {expandedSchedules.has(child.id) && childPlugin && childPlugin.createSchedulePanel && (
                                     <div style={{ marginTop: '5px' }}>
-                                      {childPlugin.createSchedulePanel({
+                                      {childPlugin.createSchedulePanel!({
                                         tournament: child as any,
                                         isExpanded: true,
                                         onToggleExpand: () => toggleSchedule(child.id),
@@ -2253,12 +2255,17 @@ const Tournaments: React.FC = () => {
                       expandedText="▲ Hide Details"
                       collapsedText="▼ Show Details / Record Result"
                     />
-                    <ExpandCollapseButton
-                      isExpanded={expandedSchedules.has(tournament.id)}
-                      onToggle={() => toggleSchedule(tournament.id)}
-                      expandedText="▲ Hide Schedule"
-                      collapsedText="▼ Show Schedule"
-                    />
+                    {(() => {
+                      const schedPlugin = tournament.type ? tournamentPluginRegistry.get(tournament.type as TournamentType) : null;
+                      return schedPlugin?.createSchedulePanel ? (
+                        <ExpandCollapseButton
+                          isExpanded={expandedSchedules.has(tournament.id)}
+                          onToggle={() => toggleSchedule(tournament.id)}
+                          expandedText="▲ Hide Schedule"
+                          collapsedText="▼ Show Schedule"
+                        />
+                      ) : null;
+                    })()}
                     <ExpandCollapseButton
                       isExpanded={expandedParticipants.has(tournament.id)}
                       onToggle={() => toggleParticipants(tournament.id)}
@@ -2407,7 +2414,7 @@ const Tournaments: React.FC = () => {
                       isBasic: plugin?.isBasic || false
                     });
                     
-                    if (plugin) {
+                    if (plugin && plugin.createSchedulePanel) {
                       console.log(`✅ Rendering Schedule Panel:`, {
                         pluginName: plugin.name,
                         pluginType: plugin.type,

@@ -51,6 +51,10 @@ export function TournamentScheduleRenderer({ tournament, ...props }: TournamentR
     return React.createElement('div', {}, `No plugin found for tournament type: ${tournament.type}`);
   }
 
+  if (!plugin.createSchedulePanel) {
+    return React.createElement('div', {}, `No schedule panel available for tournament type: ${tournament.type}`);
+  }
+
   return plugin.createSchedulePanel({
     tournament,
     onTournamentUpdate: props.onTournamentUpdate || (() => {}),

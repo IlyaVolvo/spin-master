@@ -1,9 +1,9 @@
 import React from 'react';
-import { TournamentPlugin, TournamentType, TournamentCreationFlow, TournamentSetupProps, TournamentActiveProps, TournamentScheduleProps, TournamentCompletedProps, SwissTournamentData } from '../../../types/tournament';
+import { TournamentPlugin, TournamentType, TournamentCreationFlow, TournamentSetupProps, TournamentActiveProps, TournamentCompletedProps, SwissTournamentData } from '../../../types/tournament';
 import { SwissSetupPanel } from './SwissSetupPanel.tsx';
 import { SwissActivePanel } from './SwissActivePanel';
-import { SwissSchedulePanel } from './SwissSchedulePanel';
 import { SwissCompletedPanel } from './SwissCompletedPanel';
+import { SwissPostSelectionFlow } from './SwissPostSelectionFlow';
 
 // Swiss icon component
 const SwissIcon: React.FC<{ size: number; color: string }> = ({ size, color }) => (
@@ -22,9 +22,12 @@ export const SwissPlugin: TournamentPlugin = {
   icon: SwissIcon,
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 15,
+    minPlayers: 6,
     maxPlayers: -1,
     steps: [],
+    renderPostSelectionFlow: (props) => (
+      <SwissPostSelectionFlow {...props} />
+    ),
   }),
 
   createSetupPanel: (props: TournamentSetupProps) => (
@@ -60,23 +63,18 @@ export const SwissPlugin: TournamentPlugin = {
   },
 
   createTournament: async (data: any) => {
-    const response = await fetch('/api/tournaments/swiss', {
+    const response = await fetch('/api/tournaments', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         name: data.name,
+        type: 'SWISS',
         participantIds: data.participants.map((p: any) => p.id),
-        numberOfRounds: data.numberOfRounds,
-        pairByRating: data.pairByRating || true,
-        // Swiss-specific data that will be stored in SwissTournamentData table
-        swissData: {
+        additionalData: {
           numberOfRounds: data.numberOfRounds,
-          pairByRating: data.pairByRating || true,
-          currentRound: 1,
-          isCompleted: false
-        } as SwissTournamentData
+        },
       }),
     });
 
@@ -89,10 +87,6 @@ export const SwissPlugin: TournamentPlugin = {
 
   createActivePanel: (props: TournamentActiveProps) => (
     <SwissActivePanel {...props} />
-  ),
-
-  createSchedulePanel: (props: TournamentScheduleProps) => (
-    <SwissSchedulePanel {...props} />
   ),
 
   createCompletedPanel: (props: TournamentCompletedProps) => (

@@ -17,7 +17,7 @@ export function useTournamentPluginRenderer(tournament: Tournament) {
   return {
     renderActivePanel: (props: any) => plugin.createActivePanel(props),
     renderCompletedPanel: (props: any) => plugin.createCompletedPanel(props),
-    renderSchedulePanel: (props: any) => plugin.createSchedulePanel(props),
+    renderSchedulePanel: plugin.createSchedulePanel ? (props: any) => plugin.createSchedulePanel!(props) : undefined,
     renderHeader: (props: any) => plugin.renderHeader?.(props),
   };
 }

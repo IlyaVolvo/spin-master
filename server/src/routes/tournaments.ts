@@ -214,6 +214,7 @@ router.get('/', async (req, res) => {
           },
         },
         matches: true,
+        swissData: true,
         _count: {
           select: {
             participants: true,
@@ -333,6 +334,7 @@ router.get('/active', async (req, res) => {
           },
         },
         matches: true,
+        swissData: true,
       },
     });
 
@@ -370,6 +372,7 @@ router.get('/:id', async (req, res) => {
           },
         },
         matches: true,
+        swissData: true,
       },
     });
 

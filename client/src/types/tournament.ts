@@ -184,7 +184,7 @@ export interface TournamentPlugin {
 
   // Active tournament management
   createActivePanel: (props: TournamentActiveProps) => React.ReactNode;
-  createSchedulePanel: (props: TournamentScheduleProps) => React.ReactNode;
+  createSchedulePanel?: (props: TournamentScheduleProps) => React.ReactNode;
 
   // Completed tournament viewing
   createCompletedPanel: (props: TournamentCompletedProps) => React.ReactNode;
