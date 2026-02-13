@@ -19,11 +19,13 @@ interface EditingMatch {
 interface RoundResult {
   opponentId: number;
   opponentName: string;
+  opponentRating: number | null;
   playerSets: number;
   opponentSets: number;
   playerForfeit: boolean;
   opponentForfeit: boolean;
   won: boolean;
+  playerRatingChange: number | null;
 }
 
 interface PlayerStandingRow {
@@ -104,21 +106,25 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         row1.roundResults.set(round, {
           opponentId: match.member2Id || 0,
           opponentName: row2.name,
+          opponentRating: row2.rating,
           playerSets: match.player1Sets,
           opponentSets: match.player2Sets,
           playerForfeit: match.player1Forfeit || false,
           opponentForfeit: match.player2Forfeit || false,
           won: p1Won,
+          playerRatingChange: match.player1RatingChange ?? null,
         });
 
         row2.roundResults.set(round, {
           opponentId: match.member1Id,
           opponentName: row1.name,
+          opponentRating: row1.rating,
           playerSets: match.player2Sets,
           opponentSets: match.player1Sets,
           playerForfeit: match.player2Forfeit || false,
           opponentForfeit: match.player1Forfeit || false,
           won: !p1Won,
+          playerRatingChange: match.player2RatingChange ?? null,
         });
       }
     });
@@ -212,6 +218,59 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
   const currentRoundPlayed = currentRoundMatches.filter(m => m.completed).length;
   const currentRoundTotal = currentRoundMatches.length;
 
+  const handlePrintCurrentRound = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const tournamentName = tournament.name || `Tournament ${new Date(tournament.createdAt).toLocaleDateString()}`;
+    const matchRows = currentRoundMatches.map((match, idx) => {
+      const p1 = getPlayer(match.member1Id);
+      const p2 = getPlayer(match.member2Id);
+      const p1Name = p1 ? formatPlayerName(p1.firstName, p1.lastName, getNameDisplayOrder()) : 'TBD';
+      const p2Name = p2 ? formatPlayerName(p2.firstName, p2.lastName, getNameDisplayOrder()) : 'TBD';
+      const p1Rating = getRatingDisplay(match.member1Id);
+      const p2Rating = getRatingDisplay(match.member2Id);
+      const isPlayed = match.completed;
+      return `<tr class="${isPlayed ? 'played' : ''}">
+        <td>${idx + 1}</td>
+        <td>${p1Name}${p1Rating ? `<span class="rating">(${p1Rating})</span>` : ''}</td>
+        <td>${p2Name}${p2Rating ? `<span class="rating">(${p2Rating})</span>` : ''}</td>
+        <td class="score">${isPlayed ? (match.player1Forfeit ? 'FF' : match.player2Forfeit ? 'FF' : `${match.player1Sets}:${match.player2Sets}`) : ''}</td>
+      </tr>`;
+    }).join('');
+
+    const printContent = `<!DOCTYPE html><html><head>
+      <title>Round ${currentRound} - ${tournamentName}</title>
+      <style>
+        @media print { @page { margin: 1cm; } body { margin: 0; padding: 0; } }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        h1 { margin: 0 0 5px 0; font-size: 22px; color: #2c3e50; }
+        .info { margin-bottom: 15px; font-size: 14px; color: #666; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { padding: 10px; border: 1px solid #333; text-align: left; }
+        th { background-color: #f0f0f0; font-weight: bold; text-align: center; }
+        td:first-child { text-align: center; font-weight: bold; }
+        .score { text-align: center; min-width: 60px; }
+        .rating { font-size: 12px; color: #666; margin-left: 8px; }
+        .played { text-decoration: line-through; opacity: 0.6; }
+      </style></head><body>
+      <h1>${tournamentName}</h1>
+      <div class="info">
+        <strong>Round ${currentRound} of ${totalRounds}</strong> &nbsp;|&nbsp;
+        ${currentRoundPlayed}/${currentRoundTotal} matches played &nbsp;|&nbsp;
+        ${new Date().toLocaleDateString()}
+      </div>
+      <table>
+        <thead><tr><th>#</th><th>Player 1</th><th>Player 2</th><th>Score</th></tr></thead>
+        <tbody>${matchRows}</tbody>
+      </table>
+    </body></html>`;
+
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+  };
+
   return (
     <div className="swiss-active">
       {/* Tournament Header */}
@@ -225,7 +284,28 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 
       {/* Table 1: Current Round Match Pairs */}
       <div className="swiss-active__section">
-        <h4>Round {currentRound} — Matches</h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <h4 style={{ margin: 0 }}>Round {currentRound} — Matches</h4>
+          <button
+            onClick={handlePrintCurrentRound}
+            title="Print current round matches"
+            style={{
+              padding: '3px 8px',
+              border: '1px solid #8e44ad',
+              borderRadius: '4px',
+              backgroundColor: '#fff',
+              color: '#8e44ad',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+            }}
+          >
+            🖨️ Print
+          </button>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {currentRoundMatches.length > 0 ? (
             currentRoundMatches.map((match) => {
@@ -355,7 +435,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 
       {/* Table 2: Standings with round-by-round results */}
       <div className="swiss-active__section">
-        <h4>Standings</h4>
+        
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
@@ -399,11 +479,21 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
                       }}>
                         <span style={{ fontSize: '11px', color: '#888' }}>
                           {result.opponentName}
+                          {result.opponentRating != null && ` (${result.opponentRating})`}
                         </span>
                         {' '}
                         <span style={{ color: result.won ? '#27ae60' : '#e74c3c', fontWeight: result.won ? 600 : 400 }}>
                           {scoreText}
                         </span>
+                        {result.playerRatingChange != null && (
+                          <span style={{
+                            fontSize: '10px', marginLeft: '3px',
+                            color: result.playerRatingChange > 0 ? '#27ae60' : result.playerRatingChange < 0 ? '#e74c3c' : '#888',
+                            fontWeight: 500,
+                          }}>
+                            {result.playerRatingChange > 0 ? '+' : ''}{result.playerRatingChange}
+                          </span>
+                        )}
                       </td>
                     );
                   })}

@@ -94,6 +94,29 @@ export const SwissPlugin: TournamentPlugin = {
   ),
 
   canPrintResults: true,
+
+  calculateExpectedMatches: (tournament) => {
+    const swissData = (tournament as any).swissData;
+    const numberOfRounds = swissData?.numberOfRounds ?? 3;
+    const participantCount = tournament.participants.length;
+    return numberOfRounds * Math.floor(participantCount / 2);
+  },
+
+  countPlayedMatches: (tournament) => {
+    return tournament.matches.filter(match => {
+      const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
+      const hasForfeit = match.player1Forfeit || match.player2Forfeit;
+      return hasScore || hasForfeit;
+    }).length;
+  },
+
+  countNonForfeitedMatches: (tournament) => {
+    return tournament.matches.filter(match => {
+      const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
+      const notForfeited = !match.player1Forfeit && !match.player2Forfeit;
+      return hasScore && notForfeited;
+    }).length;
+  },
 };
 
 export default SwissPlugin;

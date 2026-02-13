@@ -173,10 +173,25 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
       return null;
     }
     
-    // Check if match is complete
-    const hasScore = finalMatch.player1Sets !== undefined && finalMatch.player2Sets !== undefined &&
-                     ((finalMatch.player1Sets ?? 0) > 0 || (finalMatch.player2Sets ?? 0) > 0);
-    const isComplete = finalMatch.winnerId && hasScore;
+    // Check if match is complete - derive winner from score/forfeit
+    // Scores may be directly on bracket match or on the nested match object
+    const fm = finalMatch as any;
+    const p1Sets = finalMatch.player1Sets ?? fm.match?.player1Sets ?? 0;
+    const p2Sets = finalMatch.player2Sets ?? fm.match?.player2Sets ?? 0;
+    const p1Forfeit = finalMatch.player1Forfeit ?? fm.match?.player1Forfeit ?? false;
+    const p2Forfeit = finalMatch.player2Forfeit ?? fm.match?.player2Forfeit ?? false;
+    const hasScore = p1Sets > 0 || p2Sets > 0 || p1Forfeit || p2Forfeit;
+    
+    // Determine winner from score
+    let derivedWinnerId: number | null = null;
+    if (hasScore) {
+      if (p1Forfeit) derivedWinnerId = finalMatch.member2Id;
+      else if (p2Forfeit) derivedWinnerId = finalMatch.member1Id;
+      else if (p1Sets > p2Sets) derivedWinnerId = finalMatch.member1Id;
+      else if (p2Sets > p1Sets) derivedWinnerId = finalMatch.member2Id;
+    }
+    const winnerId = finalMatch.winnerId ?? derivedWinnerId;
+    const isComplete = winnerId && hasScore;
     
     // Find players
     const player1Participant = participants.find(p => p.member.id === finalMatch.member1Id);
@@ -211,27 +226,25 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
     // For completed tournaments: show final result
     if (!isComplete) return null;
     
-    const winnerParticipant = participants.find(p => p.member.id === finalMatch.winnerId);
-    const loserId = finalMatch.member1Id === finalMatch.winnerId ? finalMatch.member2Id : finalMatch.member1Id;
+    const winnerParticipant = participants.find(p => p.member.id === winnerId);
+    const loserId = finalMatch.member1Id === winnerId ? finalMatch.member2Id : finalMatch.member1Id;
     const loserParticipant = participants.find(p => p.member.id === loserId);
     
     if (!winnerParticipant || !loserParticipant) return null;
     
-    const player1Sets = finalMatch.player1Sets ?? 0;
-    const player2Sets = finalMatch.player2Sets ?? 0;
-    const winnerIsPlayer1 = finalMatch.winnerId === finalMatch.member1Id;
+    const winnerIsPlayer1 = winnerId === finalMatch.member1Id;
     
-    // Format score (winner:loser)
+    // Format score (winner:loser) using already-derived p1Sets/p2Sets
     const scoreStr = winnerIsPlayer1 
-      ? `${player1Sets}:${player2Sets}` 
-      : `${player2Sets}:${player1Sets}`;
+      ? `${p1Sets}:${p2Sets}` 
+      : `${p2Sets}:${p1Sets}`;
     
     // Get winner rating data
     let winnerRatingAfter: number | null = null;
     let winnerRatingChange: number | null = null;
     
     if (finalMatch.match) {
-      const isPlayer1 = finalMatch.winnerId === finalMatch.member1Id;
+      const isPlayer1 = winnerId === finalMatch.member1Id;
       if (isPlayer1) {
         winnerRatingChange = finalMatch.match.player1RatingChange;
         const ratingBefore = finalMatch.match.player1RatingBefore;
@@ -252,7 +265,7 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
     let loserRatingChange: number | null = null;
     
     if (finalMatch.match) {
-      const isPlayer1 = finalMatch.winnerId !== finalMatch.member1Id;
+      const isPlayer1 = winnerId !== finalMatch.member1Id;
       if (isPlayer1) {
         loserRatingChange = finalMatch.match.player1RatingChange;
         const ratingBefore = finalMatch.match.player1RatingBefore;
@@ -312,32 +325,15 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
             📊
           </button>
           {cancelled && tournamentStatus === 'COMPLETED' ? (
-            <div style={{
-              width: '100%',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginTop: '30px',
-              marginBottom: '20px',
-            }}>
-              <h3 style={{ margin: 0 }}>
-                <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>Tournament has not been completed</span>
-              </h3>
-            </div>
+            <span style={{ color: '#e74c3c', fontWeight: 'bold', fontSize: '16px', marginLeft: '16px' }}>
+              Tournament has not been completed
+            </span>
           ) : championshipLine && championshipLine.type === 'completed' ? (
-            <div style={{
-              width: '100%',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginTop: '30px',
-              marginBottom: '20px',
-            }}>
-              <h3 style={{ margin: 0 }}>
-                <span>🥇 </span>
-                <span style={{ fontWeight: 'bold' }}>{championshipLine.winnerName}</span>
-              </h3>
-            </div>
+            <span style={{ fontSize: '16px', marginLeft: '16px' }}>
+              <span style={{ color: '#888', fontWeight: 500 }}>Champion:</span>{' '}
+              <span style={{ fontWeight: 'bold', color: '#2c3e50' }}>{championshipLine.winnerName}</span>
+              <span style={{ marginLeft: '4px' }}>🥇</span>
+            </span>
           ) : null}
           </div>
         </div>

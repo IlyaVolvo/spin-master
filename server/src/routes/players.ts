@@ -1057,16 +1057,29 @@ router.post('/match-history', [
 
     // Get all matches where the member played against any of the opponents
     // Matches can have the member as member1 or member2
+    // Exclude scheduled (unplayed) matches: must have a score or forfeit
     const matches = await prisma.match.findMany({
       where: {
-        OR: [
+        AND: [
           {
-            member1Id: memberId,
-            member2Id: { in: opponentIds },
+            OR: [
+              {
+                member1Id: memberId,
+                member2Id: { in: opponentIds },
+              },
+              {
+                member1Id: { in: opponentIds },
+                member2Id: memberId,
+              },
+            ],
           },
           {
-            member1Id: { in: opponentIds },
-            member2Id: memberId,
+            OR: [
+              { player1Sets: { gt: 0 } },
+              { player2Sets: { gt: 0 } },
+              { player1Forfeit: true },
+              { player2Forfeit: true },
+            ],
           },
         ],
       },

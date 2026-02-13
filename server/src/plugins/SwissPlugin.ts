@@ -1,5 +1,6 @@
 import { TournamentPlugin, TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
 import { logger } from '../utils/logger';
+import { adjustRatingsForSingleMatch } from '../services/usattRatingService';
 
 interface PlayerStanding {
   memberId: number;
@@ -73,6 +74,40 @@ export class SwissPlugin implements TournamentPlugin {
         enriched.swissData = swissData;
       }
     }
+
+    // Attach rating history to matches so client can show rating changes per match
+    const matchIds = enriched.matches.map((m: any) => m.id);
+    if (matchIds.length > 0) {
+      const allRatingHistory = await (prisma as any).ratingHistory.findMany({
+        where: {
+          matchId: { in: matchIds },
+          tournamentId: tournament.id,
+        },
+      });
+
+      // Build map: matchId -> memberId -> ratingHistory entry
+      const historyMap = new Map<number, Map<number, any>>();
+      for (const rh of allRatingHistory) {
+        if (!rh.matchId) continue;
+        if (!historyMap.has(rh.matchId)) historyMap.set(rh.matchId, new Map());
+        historyMap.get(rh.matchId)!.set(rh.memberId, rh);
+      }
+
+      enriched.matches = enriched.matches.map((match: any) => {
+        const matchHistory = historyMap.get(match.id);
+        if (!matchHistory) return match;
+        const h1 = matchHistory.get(match.member1Id);
+        const h2 = match.member2Id ? matchHistory.get(match.member2Id) : null;
+        return {
+          ...match,
+          player1RatingBefore: h1 ? (h1.rating - h1.ratingChange) : null,
+          player1RatingChange: h1 ? h1.ratingChange : null,
+          player2RatingBefore: h2 ? (h2.rating - h2.ratingChange) : null,
+          player2RatingChange: h2 ? h2.ratingChange : null,
+        };
+      });
+    }
+
     return { ...enriched, bracketMatches: [] };
   }
 
@@ -107,6 +142,27 @@ export class SwissPlugin implements TournamentPlugin {
 
   shouldRecalculateRatings(_tournament: any): boolean {
     return false; // Swiss does not recalculate per-match ratings
+  }
+
+  async onMatchRatingCalculation(context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
+    const { match, prisma } = context;
+    const isForfeit = match.player1Forfeit || match.player2Forfeit;
+    if (isForfeit || !match.member1Id || !match.member2Id) return;
+
+    // Delete any existing rating history for this match (handles re-scoring)
+    await (prisma as any).ratingHistory.deleteMany({
+      where: { matchId: match.id },
+    });
+
+    const player1Won = match.winnerId === match.member1Id;
+    await adjustRatingsForSingleMatch(
+      match.member1Id,
+      match.member2Id,
+      player1Won,
+      match.tournamentId,
+      match.id,
+    );
+    logger.info('Swiss match rating calculated', { matchId: match.id, player1Won });
   }
 
   canDelete(tournament: any): boolean {

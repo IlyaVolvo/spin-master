@@ -994,16 +994,14 @@ router.patch('/:tournamentId/matches/:matchId', [
       }
     }
     
-    // Calculate per-match ratings if match has winner and tournament is still active
-    if (!result.tournamentStateChange?.shouldMarkComplete && updatedMatch.winnerId) {
-      if (plugin.onMatchRatingCalculation) {
-        await plugin.onMatchRatingCalculation({
-          tournament,
-          match: updatedMatch,
-          winnerId: updatedMatch.winnerId,
-          prisma,
-        });
-      }
+    // Calculate per-match ratings if match has a winner
+    if (updatedMatch.winnerId && plugin.onMatchRatingCalculation) {
+      await plugin.onMatchRatingCalculation({
+        tournament,
+        match: updatedMatch,
+        winnerId: updatedMatch.winnerId,
+        prisma,
+      });
     }
 
     // Invalidate cache and emit notifications
