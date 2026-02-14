@@ -375,6 +375,14 @@ const Players: React.FC = () => {
   const [canDeleteMember, setCanDeleteMember] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Field-level validation for add-player form
+  const [addFieldErrors, setAddFieldErrors] = useState<Record<string, string>>({});
+  const [addFieldTouched, setAddFieldTouched] = useState<Record<string, boolean>>({});
+
+  // Field-level validation for edit form
+  const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string>>({});
+  const [editFieldTouched, setEditFieldTouched] = useState<Record<string, boolean>>({});
+
   // Load column visibility settings from localStorage on mount
   useEffect(() => {
     const savedShowIdColumn = localStorage.getItem('players_showIdColumn');
@@ -940,33 +948,194 @@ const Players: React.FC = () => {
     }
   };
 
+  const validateAddField = (field: string, value?: any): string => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    switch (field) {
+      case 'firstName': {
+        const v = (value !== undefined ? value : newPlayerFirstName).trim();
+        if (!v) return 'First name is required';
+        if (v.length < 2) return 'First name must be at least 2 characters';
+        return '';
+      }
+      case 'lastName': {
+        const v = (value !== undefined ? value : newPlayerLastName).trim();
+        if (!v) return 'Last name is required';
+        if (v.length < 2) return 'Last name must be at least 2 characters';
+        return '';
+      }
+      case 'email': {
+        const v = (value !== undefined ? value : newPlayerEmail).trim();
+        if (!v) return 'Email is required';
+        if (!emailRegex.test(v)) return 'Please enter a valid email address';
+        return '';
+      }
+      case 'birthDate': {
+        const v = value !== undefined ? value : newPlayerBirthDate;
+        if (!v) return 'Birth date is required';
+        const d = v instanceof Date ? v : new Date(v);
+        if (isNaN(d.getTime())) return 'Invalid date';
+        if (d > new Date()) return 'Birth date cannot be in the future';
+        return '';
+      }
+      case 'gender': {
+        const v = value !== undefined ? value : newPlayerGender;
+        if (!v) return 'Gender is required';
+        return '';
+      }
+      case 'rating': {
+        const v = value !== undefined ? value : newPlayerRating;
+        if (v === '' || v === undefined || v === null) return '';
+        const num = parseInt(v);
+        if (isNaN(num)) return 'Rating must be a number';
+        if (num < 0 || num > 9999) return 'Rating must be between 0 and 9999';
+        if (String(v).includes('.')) return 'Rating must be a whole number';
+        return '';
+      }
+      case 'phone': {
+        const v = (value !== undefined ? value : newPlayerPhone).trim();
+        if (!v) return '';
+        if (v.length < 7) return 'Phone number seems too short';
+        return '';
+      }
+      case 'picture': {
+        const v = (value !== undefined ? value : newPlayerPicture).trim();
+        if (!v) return '';
+        try {
+          new URL(v);
+          return '';
+        } catch {
+          return 'Please enter a valid URL';
+        }
+      }
+      default:
+        return '';
+    }
+  };
+
+  const handleAddFieldBlur = (field: string) => {
+    setAddFieldTouched(prev => ({ ...prev, [field]: true }));
+    const error = validateAddField(field);
+    setAddFieldErrors(prev => ({ ...prev, [field]: error }));
+  };
+
+  const handleAddFieldChange = (field: string, value: any) => {
+    // If field has been touched, re-validate on change for immediate feedback
+    if (addFieldTouched[field]) {
+      const error = validateAddField(field, value);
+      setAddFieldErrors(prev => ({ ...prev, [field]: error }));
+    }
+  };
+
+  const validateAllAddFields = (): boolean => {
+    const fields = ['firstName', 'lastName', 'email', 'birthDate', 'gender', 'rating', 'phone', 'picture'];
+    const errors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+    let hasError = false;
+    for (const field of fields) {
+      touched[field] = true;
+      const error = validateAddField(field);
+      errors[field] = error;
+      if (error) hasError = true;
+    }
+    setAddFieldErrors(errors);
+    setAddFieldTouched(touched);
+    return !hasError;
+  };
+
+  const validateEditField = (field: string, value?: any): string => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    switch (field) {
+      case 'firstName': {
+        const v = (value !== undefined ? value : editFirstName).trim();
+        if (!v) return 'First name is required';
+        if (v.length < 2) return 'First name must be at least 2 characters';
+        return '';
+      }
+      case 'lastName': {
+        const v = (value !== undefined ? value : editLastName).trim();
+        if (!v) return 'Last name is required';
+        if (v.length < 2) return 'Last name must be at least 2 characters';
+        return '';
+      }
+      case 'email': {
+        const v = (value !== undefined ? value : editEmail).trim();
+        if (!v) return 'Email is required';
+        if (!emailRegex.test(v)) return 'Please enter a valid email address';
+        return '';
+      }
+      case 'gender': {
+        const v = value !== undefined ? value : editGender;
+        if (!v) return 'Gender is required';
+        return '';
+      }
+      case 'rating': {
+        const v = value !== undefined ? value : editRating;
+        if (v === '' || v === undefined || v === null) return '';
+        const num = parseInt(v);
+        if (isNaN(num)) return 'Rating must be a number';
+        if (num < 0 || num > 9999) return 'Rating must be between 0 and 9999';
+        if (String(v).includes('.')) return 'Rating must be a whole number';
+        return '';
+      }
+      case 'phone': {
+        const v = (value !== undefined ? value : editPhone).trim();
+        if (!v) return '';
+        if (v.length < 7) return 'Phone number seems too short';
+        return '';
+      }
+      case 'picture': {
+        const v = (value !== undefined ? value : editPicture).trim();
+        if (!v) return '';
+        try {
+          new URL(v);
+          return '';
+        } catch {
+          return 'Please enter a valid URL';
+        }
+      }
+      default:
+        return '';
+    }
+  };
+
+  const handleEditFieldBlur = (field: string) => {
+    setEditFieldTouched(prev => ({ ...prev, [field]: true }));
+    const error = validateEditField(field);
+    setEditFieldErrors(prev => ({ ...prev, [field]: error }));
+  };
+
+  const handleEditFieldChange = (field: string, value: any) => {
+    if (editFieldTouched[field]) {
+      const error = validateEditField(field, value);
+      setEditFieldErrors(prev => ({ ...prev, [field]: error }));
+    }
+  };
+
+  const validateAllEditFields = (isAdmin: boolean): boolean => {
+    const fields = isAdmin
+      ? ['firstName', 'lastName', 'email', 'gender', 'rating', 'phone', 'picture']
+      : ['email', 'phone', 'picture'];
+    const errors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+    let hasError = false;
+    for (const field of fields) {
+      touched[field] = true;
+      const error = validateEditField(field);
+      errors[field] = error;
+      if (error) hasError = true;
+    }
+    setEditFieldErrors(errors);
+    setEditFieldTouched(touched);
+    return !hasError;
+  };
+
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    // Validate required fields
-    if (!newPlayerGender) {
-      setError('Please select a gender');
-      return;
-    }
-
-    // Validate email (required)
-    if (!newPlayerEmail || !newPlayerEmail.trim()) {
-      setError('Email is required');
-      return;
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newPlayerEmail.trim())) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
-    // Validate birthdate (required)
-    if (!newPlayerBirthDate) {
-      setError('Birth date is required');
+    // Validate all fields
+    if (!validateAllAddFields()) {
       return;
     }
 
@@ -978,16 +1147,11 @@ const Players: React.FC = () => {
         gender: newPlayerGender,
         password: 'changeme', // Auto-set as per requirements
         roles: ['PLAYER'], // Default role
-        birthDate: newPlayerBirthDate.toISOString().split('T')[0],
+        birthDate: newPlayerBirthDate!.toISOString().split('T')[0],
       };
       
       if (newPlayerRating) {
-        const ratingValue = parseInt(newPlayerRating);
-        if (isNaN(ratingValue) || ratingValue < 0 || ratingValue > 9999) {
-          setError('Rating must be an integer between 0 and 9999');
-          return;
-        }
-        playerData.rating = ratingValue;
+        playerData.rating = parseInt(newPlayerRating);
       }
       
       // Optional fields
@@ -1027,6 +1191,8 @@ const Players: React.FC = () => {
       setNewPlayerPhone('');
       setNewPlayerAddress('');
       setNewPlayerPicture('');
+      setAddFieldErrors({});
+      setAddFieldTouched({});
       setShowAddForm(false);
       fetchMembers();
     } catch (err: any) {
@@ -1378,6 +1544,8 @@ const Players: React.FC = () => {
       setNewPlayerPhone('');
       setNewPlayerAddress('');
       setNewPlayerPicture('');
+      setAddFieldErrors({});
+      setAddFieldTouched({});
       setShowAddForm(false);
       setShowConfirmation(false);
       setSimilarNames([]);
@@ -1741,6 +1909,8 @@ const Players: React.FC = () => {
     setEditIsActive(true);
     setEditRoles([]);
     setEditRating('');
+    setEditFieldErrors({});
+    setEditFieldTouched({});
     setShowPasswordChange(false);
     setCurrentPassword('');
     setNewPassword('');
@@ -1774,15 +1944,16 @@ const Players: React.FC = () => {
       return;
     }
 
+    // Validate all editable fields
+    if (!validateAllEditFields(!!isAdminUser)) {
+      return;
+    }
+
     try {
       const updateData: any = {};
       
       if (isAdminUser) {
         // Admin can edit all fields
-        if (!editGender) {
-          setError('Please select a gender');
-          return;
-        }
         updateData.firstName = editFirstName.trim();
         updateData.lastName = editLastName.trim();
         updateData.gender = editGender;
@@ -1791,13 +1962,7 @@ const Players: React.FC = () => {
         if (editRating.trim() === '') {
           updateData.rating = null;
         } else {
-          const ratingNum = parseInt(editRating);
-          if (!isNaN(ratingNum) && ratingNum >= 0 && ratingNum <= 9999) {
-            updateData.rating = ratingNum;
-          } else {
-            setError('Rating must be between 0 and 9999');
-            return;
-          }
+          updateData.rating = parseInt(editRating);
         }
         updateData.isActive = editIsActive;
         updateData.roles = editRoles;
@@ -3437,6 +3602,13 @@ const Players: React.FC = () => {
                     setNewPlayerLastName('');
                     setNewPlayerBirthDate(null);
                     setNewPlayerRating('');
+                    setNewPlayerEmail('');
+                    setNewPlayerGender('');
+                    setNewPlayerPhone('');
+                    setNewPlayerAddress('');
+                    setNewPlayerPicture('');
+                    setAddFieldErrors({});
+                    setAddFieldTouched({});
                     setError('');
                   }}
                   style={{
@@ -3459,29 +3631,35 @@ const Players: React.FC = () => {
               </div>
               <form onSubmit={handleAddPlayer} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                 <div style={{ overflowY: 'auto', flex: 1, paddingRight: '10px' }}>
-                <div className="form-group">
-                  <label>First Name</label>
+                <div className={`form-group ${addFieldErrors.firstName && addFieldTouched.firstName ? 'has-error' : addFieldTouched.firstName && !addFieldErrors.firstName ? 'is-valid' : ''}`}>
+                  <label>First Name *</label>
                   <input
                     type="text"
                     value={newPlayerFirstName}
-                    onChange={(e) => setNewPlayerFirstName(e.target.value)}
-                    required
+                    onChange={(e) => { setNewPlayerFirstName(e.target.value); handleAddFieldChange('firstName', e.target.value); }}
+                    onBlur={() => handleAddFieldBlur('firstName')}
+                    placeholder="First name"
+                    autoFocus
                   />
+                  {addFieldTouched.firstName && addFieldErrors.firstName && <span className="field-error">{addFieldErrors.firstName}</span>}
                 </div>
-                <div className="form-group">
-                  <label>Last Name</label>
+                <div className={`form-group ${addFieldErrors.lastName && addFieldTouched.lastName ? 'has-error' : addFieldTouched.lastName && !addFieldErrors.lastName ? 'is-valid' : ''}`}>
+                  <label>Last Name *</label>
                   <input
                     type="text"
                     value={newPlayerLastName}
-                    onChange={(e) => setNewPlayerLastName(e.target.value)}
-                    required
+                    onChange={(e) => { setNewPlayerLastName(e.target.value); handleAddFieldChange('lastName', e.target.value); }}
+                    onBlur={() => handleAddFieldBlur('lastName')}
+                    placeholder="Last name"
                   />
+                  {addFieldTouched.lastName && addFieldErrors.lastName && <span className="field-error">{addFieldErrors.lastName}</span>}
                 </div>
-                <div className="form-group">
+                <div className={`form-group ${addFieldErrors.birthDate && addFieldTouched.birthDate ? 'has-error' : addFieldTouched.birthDate && !addFieldErrors.birthDate ? 'is-valid' : ''}`}>
                   <label>Birth Date *</label>
                   <DatePicker
                     selected={newPlayerBirthDate}
-                    onChange={(date: Date | null) => setNewPlayerBirthDate(date)}
+                    onChange={(date: Date | null) => { setNewPlayerBirthDate(date); handleAddFieldChange('birthDate', date); if (!addFieldTouched.birthDate) { setAddFieldTouched(prev => ({ ...prev, birthDate: true })); } const err = validateAddField('birthDate', date); setAddFieldErrors(prev => ({ ...prev, birthDate: err })); }}
+                    onBlur={() => handleAddFieldBlur('birthDate')}
                     dateFormat="yyyy-MM-dd"
                     showYearDropdown
                     showMonthDropdown
@@ -3490,35 +3668,37 @@ const Players: React.FC = () => {
                     yearDropdownItemNumber={100}
                     maxDate={new Date()}
                     placeholderText="Select birth date"
-                    required
                     className="date-picker-input"
                     wrapperClassName="date-picker-wrapper"
                   />
+                  {addFieldTouched.birthDate && addFieldErrors.birthDate && <span className="field-error">{addFieldErrors.birthDate}</span>}
                 </div>
-                <div className="form-group">
+                <div className={`form-group ${addFieldErrors.email && addFieldTouched.email ? 'has-error' : addFieldTouched.email && !addFieldErrors.email ? 'is-valid' : ''}`}>
                   <label>Email *</label>
                   <input
                     type="email"
                     value={newPlayerEmail}
-                    onChange={(e) => setNewPlayerEmail(e.target.value)}
+                    onChange={(e) => { setNewPlayerEmail(e.target.value); handleAddFieldChange('email', e.target.value); }}
+                    onBlur={() => handleAddFieldBlur('email')}
                     placeholder="email@example.com"
-                    required
                   />
+                  {addFieldTouched.email && addFieldErrors.email && <span className="field-error">{addFieldErrors.email}</span>}
                 </div>
-                <div className="form-group">
+                <div className={`form-group ${addFieldErrors.gender && addFieldTouched.gender ? 'has-error' : addFieldTouched.gender && !addFieldErrors.gender ? 'is-valid' : ''}`}>
                   <label>Gender *</label>
                   <select
                     value={newPlayerGender}
-                    onChange={(e) => setNewPlayerGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER' | '')}
-                    required
+                    onChange={(e) => { setNewPlayerGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER' | ''); handleAddFieldChange('gender', e.target.value); if (!addFieldTouched.gender) { setAddFieldTouched(prev => ({ ...prev, gender: true })); } const err = validateAddField('gender', e.target.value); setAddFieldErrors(prev => ({ ...prev, gender: err })); }}
+                    onBlur={() => handleAddFieldBlur('gender')}
                   >
                     <option value="">Select gender...</option>
                     <option value="MALE">Male</option>
                     <option value="FEMALE">Female</option>
                     <option value="OTHER">Other</option>
                   </select>
+                  {addFieldTouched.gender && addFieldErrors.gender && <span className="field-error">{addFieldErrors.gender}</span>}
                 </div>
-                <div className="form-group">
+                <div className={`form-group ${addFieldErrors.rating && addFieldTouched.rating ? 'has-error' : ''}`}>
                   <label>Initial Rating (optional)</label>
                   <input
                     type="number"
@@ -3526,18 +3706,22 @@ const Players: React.FC = () => {
                     min="0"
                     max="9999"
                     value={newPlayerRating}
-                    onChange={(e) => setNewPlayerRating(e.target.value)}
+                    onChange={(e) => { setNewPlayerRating(e.target.value); handleAddFieldChange('rating', e.target.value); }}
+                    onBlur={() => handleAddFieldBlur('rating')}
                     placeholder="Leave empty for unrated (0-9999)"
                   />
+                  {addFieldTouched.rating && addFieldErrors.rating && <span className="field-error">{addFieldErrors.rating}</span>}
                 </div>
-                <div className="form-group">
+                <div className={`form-group ${addFieldErrors.phone && addFieldTouched.phone ? 'has-error' : ''}`}>
                   <label>Phone (optional)</label>
                   <input
                     type="tel"
                     value={newPlayerPhone}
-                    onChange={(e) => setNewPlayerPhone(e.target.value)}
+                    onChange={(e) => { setNewPlayerPhone(e.target.value); handleAddFieldChange('phone', e.target.value); }}
+                    onBlur={() => handleAddFieldBlur('phone')}
                     placeholder="Phone number"
                   />
+                  {addFieldTouched.phone && addFieldErrors.phone && <span className="field-error">{addFieldErrors.phone}</span>}
                 </div>
                 <div className="form-group">
                   <label>Address (optional)</label>
@@ -3548,14 +3732,16 @@ const Players: React.FC = () => {
                     placeholder="Address"
                   />
                 </div>
-                <div className="form-group">
+                <div className={`form-group ${addFieldErrors.picture && addFieldTouched.picture ? 'has-error' : ''}`}>
                   <label>Picture URL (optional)</label>
                   <input
                     type="url"
                     value={newPlayerPicture}
-                    onChange={(e) => setNewPlayerPicture(e.target.value)}
+                    onChange={(e) => { setNewPlayerPicture(e.target.value); handleAddFieldChange('picture', e.target.value); }}
+                    onBlur={() => handleAddFieldBlur('picture')}
                     placeholder="Image URL"
                   />
+                  {addFieldTouched.picture && addFieldErrors.picture && <span className="field-error">{addFieldErrors.picture}</span>}
                 </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #eee', flexShrink: 0 }}>
@@ -3572,6 +3758,8 @@ const Players: React.FC = () => {
                       setNewPlayerPhone('');
                       setNewPlayerAddress('');
                       setNewPlayerPicture('');
+                      setAddFieldErrors({});
+                      setAddFieldTouched({});
                       setError('');
                     }}
                     className="button-filter"
@@ -5354,12 +5542,13 @@ const Players: React.FC = () => {
                             <input
                               type="text"
                               value={editFirstName}
-                              onChange={(e) => setEditFirstName(e.target.value)}
+                              onChange={(e) => { setEditFirstName(e.target.value); handleEditFieldChange('firstName', e.target.value); }}
+                              onBlur={() => handleEditFieldBlur('firstName')}
                               disabled={!isAdminUser}
                               style={{ 
                                 width: '100%', 
                                 padding: '8px', 
-                                border: '1px solid #ddd', 
+                                border: `1px solid ${editFieldTouched.firstName && editFieldErrors.firstName ? '#e74c3c' : '#ddd'}`, 
                                 borderRadius: '4px',
                                 backgroundColor: !isAdminUser ? '#f5f5f5' : 'white',
                                 color: !isAdminUser ? '#999' : 'inherit',
@@ -5367,8 +5556,8 @@ const Players: React.FC = () => {
                                 opacity: !isAdminUser ? 0.7 : 1
                               }}
                               autoFocus={isAdminUser || undefined}
-                              required
                             />
+                            {editFieldTouched.firstName && editFieldErrors.firstName && <span className="field-error">{editFieldErrors.firstName}</span>}
                           </div>
                           <div>
                             <label style={{ 
@@ -5381,20 +5570,21 @@ const Players: React.FC = () => {
                             <input
                               type="text"
                               value={editLastName}
-                              onChange={(e) => setEditLastName(e.target.value)}
+                              onChange={(e) => { setEditLastName(e.target.value); handleEditFieldChange('lastName', e.target.value); }}
+                              onBlur={() => handleEditFieldBlur('lastName')}
                               disabled={!isAdminUser}
                               style={{ 
                                 width: '100%', 
                                 padding: '8px', 
-                                border: '1px solid #ddd', 
+                                border: `1px solid ${editFieldTouched.lastName && editFieldErrors.lastName ? '#e74c3c' : '#ddd'}`, 
                                 borderRadius: '4px',
                                 backgroundColor: !isAdminUser ? '#f5f5f5' : 'white',
                                 color: !isAdminUser ? '#999' : 'inherit',
                                 cursor: !isAdminUser ? 'not-allowed' : 'text',
                                 opacity: !isAdminUser ? 0.7 : 1
                               }}
-                              required
                             />
+                            {editFieldTouched.lastName && editFieldErrors.lastName && <span className="field-error">{editFieldErrors.lastName}</span>}
                           </div>
                           {/* Email - editable by all */}
                           <div>
@@ -5402,10 +5592,11 @@ const Players: React.FC = () => {
                             <input
                               type="email"
                               value={editEmail}
-                              onChange={(e) => setEditEmail(e.target.value)}
-                              style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
-                              required
+                              onChange={(e) => { setEditEmail(e.target.value); handleEditFieldChange('email', e.target.value); }}
+                              onBlur={() => handleEditFieldBlur('email')}
+                              style={{ width: '100%', padding: '8px', border: `1px solid ${editFieldTouched.email && editFieldErrors.email ? '#e74c3c' : '#ddd'}`, borderRadius: '4px' }}
                             />
+                            {editFieldTouched.email && editFieldErrors.email && <span className="field-error">{editFieldErrors.email}</span>}
                           </div>
                           {/* Gender */}
                           <div>
@@ -5418,25 +5609,26 @@ const Players: React.FC = () => {
                             }}>Gender *</label>
                             <select
                               value={editGender}
-                              onChange={(e) => setEditGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER' | '')}
+                              onChange={(e) => { setEditGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER' | ''); handleEditFieldChange('gender', e.target.value); if (!editFieldTouched.gender) { setEditFieldTouched(prev => ({ ...prev, gender: true })); } const err = validateEditField('gender', e.target.value); setEditFieldErrors(prev => ({ ...prev, gender: err })); }}
+                              onBlur={() => handleEditFieldBlur('gender')}
                               disabled={!isAdminUser}
                               style={{ 
                                 width: '100%', 
                                 padding: '8px', 
-                                border: '1px solid #ddd', 
+                                border: `1px solid ${editFieldTouched.gender && editFieldErrors.gender ? '#e74c3c' : '#ddd'}`, 
                                 borderRadius: '4px',
                                 backgroundColor: !isAdminUser ? '#f5f5f5' : 'white',
                                 color: !isAdminUser ? '#999' : 'inherit',
                                 cursor: !isAdminUser ? 'not-allowed' : 'pointer',
                                 opacity: !isAdminUser ? 0.7 : 1
                               }}
-                              required
                             >
                               <option value="">Select gender...</option>
                               <option value="MALE">Male</option>
                               <option value="FEMALE">Female</option>
                               <option value="OTHER">Other</option>
                             </select>
+                            {editFieldTouched.gender && editFieldErrors.gender && <span className="field-error">{editFieldErrors.gender}</span>}
                           </div>
                           {/* Birth Date */}
                           <div>
@@ -5470,9 +5662,11 @@ const Players: React.FC = () => {
                             <input
                               type="text"
                               value={editPhone}
-                              onChange={(e) => setEditPhone(e.target.value)}
-                              style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+                              onChange={(e) => { setEditPhone(e.target.value); handleEditFieldChange('phone', e.target.value); }}
+                              onBlur={() => handleEditFieldBlur('phone')}
+                              style={{ width: '100%', padding: '8px', border: `1px solid ${editFieldTouched.phone && editFieldErrors.phone ? '#e74c3c' : '#ddd'}`, borderRadius: '4px' }}
                             />
+                            {editFieldTouched.phone && editFieldErrors.phone && <span className="field-error">{editFieldErrors.phone}</span>}
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Address</label>
@@ -5488,10 +5682,12 @@ const Players: React.FC = () => {
                             <input
                               type="text"
                               value={editPicture}
-                              onChange={(e) => setEditPicture(e.target.value)}
-                              style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+                              onChange={(e) => { setEditPicture(e.target.value); handleEditFieldChange('picture', e.target.value); }}
+                              onBlur={() => handleEditFieldBlur('picture')}
+                              style={{ width: '100%', padding: '8px', border: `1px solid ${editFieldTouched.picture && editFieldErrors.picture ? '#e74c3c' : '#ddd'}`, borderRadius: '4px' }}
                               placeholder="https://..."
                             />
+                            {editFieldTouched.picture && editFieldErrors.picture && <span className="field-error">{editFieldErrors.picture}</span>}
                           </div>
                   {/* Active Status - Only visible to Admins */}
                   {isAdminUser && (
@@ -5517,12 +5713,14 @@ const Players: React.FC = () => {
                       <input
                         type="number"
                         value={editRating}
-                        onChange={(e) => setEditRating(e.target.value)}
-                        style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+                        onChange={(e) => { setEditRating(e.target.value); handleEditFieldChange('rating', e.target.value); }}
+                        onBlur={() => handleEditFieldBlur('rating')}
+                        style={{ width: '100%', padding: '8px', border: `1px solid ${editFieldTouched.rating && editFieldErrors.rating ? '#e74c3c' : '#ddd'}`, borderRadius: '4px' }}
                         placeholder="Rating (0-9999) or leave empty"
                         min="0"
                         max="9999"
                       />
+                      {editFieldTouched.rating && editFieldErrors.rating && <span className="field-error">{editFieldErrors.rating}</span>}
                       <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#666' }}>
                         Leave empty to remove rating. Current: {editRating ? editRating : (player.rating !== null ? player.rating : 'Not set')}
                       </p>

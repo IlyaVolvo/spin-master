@@ -107,6 +107,43 @@ table tr:hover {
   background-color: #f8f9fa;
 }
 
+/* Field Validation States */
+.form-group.has-error input,
+.form-group.has-error select {
+  border-color: #e74c3c !important;
+}
+
+.form-group.has-error input:focus,
+.form-group.has-error select:focus {
+  border-color: #e74c3c !important;
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.15);
+}
+
+.form-group.has-error .date-picker-input {
+  border-color: #e74c3c !important;
+}
+
+.form-group.has-error .date-picker-input:focus {
+  border-color: #e74c3c !important;
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.15);
+}
+
+.field-error {
+  color: #e74c3c;
+  font-size: 12px;
+  margin-top: 4px;
+  display: block;
+}
+
+.form-group.is-valid input,
+.form-group.is-valid select {
+  border-color: #27ae60 !important;
+}
+
+.form-group.is-valid .date-picker-input {
+  border-color: #27ae60 !important;
+}
+
 /* Checkbox Group */
 .checkbox-group {
   display: flex;
