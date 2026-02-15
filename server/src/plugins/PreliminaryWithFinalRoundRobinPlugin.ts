@@ -27,7 +27,7 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
     const { name, participantIds, players, prisma, additionalData } = context;
     
     const groups: number[][] = additionalData?.groups || [];
-    const finalRoundRobinSize: number = additionalData?.finalRoundRobinSize || 6;
+    const finalSize: number = additionalData?.finalRoundRobinSize || 6;
     const autoQualifiedCount: number = additionalData?.autoQualifiedCount || 0;
     const autoQualifiedMemberIds: number[] = additionalData?.autoQualifiedMemberIds || [];
 
@@ -48,9 +48,9 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
           }),
         },
         // Store configuration in dedicated table
-        preliminaryRoundRobinConfig: {
+        preliminaryConfig: {
           create: {
-            finalRoundRobinSize,
+            finalSize,
             autoQualifiedCount,
             autoQualifiedMemberIds,
           },
@@ -86,7 +86,7 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
           },
         },
         matches: true,
-        preliminaryRoundRobinConfig: true,
+        preliminaryConfig: true,
         childTournaments: {
           include: {
             participants: {
@@ -103,12 +103,12 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
 
   protected async enrichTournamentConfig(tournament: any, prisma: any): Promise<any> {
     let enriched = { ...tournament };
-    if (!tournament.preliminaryRoundRobinConfig) {
-      const config = await prisma.preliminaryRoundRobinConfig.findUnique({
+    if (!tournament.preliminaryConfig) {
+      const config = await prisma.preliminaryConfig.findUnique({
         where: { tournamentId: tournament.id },
       });
       if (config) {
-        enriched.preliminaryRoundRobinConfig = config;
+        enriched.preliminaryConfig = config;
       }
     }
     return enriched;
@@ -224,17 +224,17 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
     // === All preliminaries are done and no final exists yet — create the final round robin ===
 
     // Fetch config from dedicated table
-    const config = parentTournament.preliminaryRoundRobinConfig 
-      || await prisma.preliminaryRoundRobinConfig.findUnique({
+    const config = parentTournament.preliminaryConfig 
+      || await prisma.preliminaryConfig.findUnique({
         where: { tournamentId: parentTournament.id },
       });
 
-    if (!config || !config.finalRoundRobinSize) {
-      logger.error('Parent tournament missing PreliminaryRoundRobinConfig', { tournamentId: parentTournament.id });
+    if (!config || !config.finalSize) {
+      logger.error('Parent tournament missing PreliminaryConfig', { tournamentId: parentTournament.id });
       return {};
     }
 
-    const finalRoundRobinSize = config.finalRoundRobinSize;
+    const finalRoundRobinSize = config.finalSize;
     const autoQualifiedMemberIds: number[] = config.autoQualifiedMemberIds || [];
 
     // Calculate standings for each group

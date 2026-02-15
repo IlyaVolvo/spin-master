@@ -124,7 +124,7 @@ model Tournament {
 
   // Type-specific configuration (one-to-one relations)
   swissData                    SwissTournamentData?
-  preliminaryRoundRobinConfig  PreliminaryRoundRobinConfig?
+  preliminaryConfig  PreliminaryConfig?
 
   // Self-referential relationship for parent-child tournaments (compound tournaments)
   parentTournament   Tournament?  @relation("TournamentHierarchy", fields: [parentTournamentId], references: [id], onDelete: Cascade)
@@ -242,18 +242,18 @@ model PointExchangeRule {
   @@map("point_exchange_rules")
 }
 
-// PreliminaryRoundRobinConfig: Configuration for PRELIMINARY_WITH_FINAL_ROUND_ROBIN tournaments
-// Stores final round robin size, auto-qualification settings
-model PreliminaryRoundRobinConfig {
+// PreliminaryConfig: Configuration for compound preliminary tournaments
+// Used by both PRELIMINARY_WITH_FINAL_ROUND_ROBIN and PRELIMINARY_WITH_FINAL_PLAYOFF
+model PreliminaryConfig {
   id                     Int      @id @default(autoincrement())
   tournamentId           Int      @unique
-  finalRoundRobinSize    Int      // Desired size of the final round robin
+  finalSize              Int      @default(0) // Size of the final phase (RR player count or playoff bracket size)
   autoQualifiedCount     Int      @default(0) // Number of auto-qualified players (highest rated, skip preliminary)
   autoQualifiedMemberIds Int[]    // Member IDs of auto-qualified players
 
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
-  @@map("preliminary_round_robin_configs")
+  @@map("preliminary_configs")
 }
 
 // SwissTournamentData: Configuration for SWISS tournaments

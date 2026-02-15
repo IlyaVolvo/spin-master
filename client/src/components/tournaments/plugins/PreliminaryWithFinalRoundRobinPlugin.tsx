@@ -25,9 +25,9 @@ const PreliminaryWithFinalRoundRobinActivePanel: React.FC<TournamentActiveProps>
     .sort((a, b) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
   const finalTournament = children.find(c => c.groupNumber === null || c.groupNumber === undefined);
 
-  const config = tournament.preliminaryRoundRobinConfig;
+  const config = tournament.preliminaryConfig;
   const autoQualifiedMemberIds: number[] = config?.autoQualifiedMemberIds || [];
-  const finalRoundRobinSize: number = config?.finalRoundRobinSize || 0;
+  const finalRoundRobinSize: number = config?.finalSize || 0;
 
   const allPreliminariesComplete = preliminaryGroups.length > 0 && preliminaryGroups.every(c => c.status === 'COMPLETED');
 

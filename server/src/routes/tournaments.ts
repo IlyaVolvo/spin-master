@@ -419,7 +419,7 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, participantIds, type, bracketPositions, roundRobinSize, playoffBracketSize, groups, additionalData } = req.body;
+    const { name, participantIds, type, bracketPositions, roundRobinSize, groups, additionalData } = req.body;
     
     // Get valid types from plugin registry
     const validTypes = tournamentPluginRegistry.getTypes();
@@ -479,7 +479,6 @@ router.post('/', [
       players,
       bracketPositions,
       roundRobinSize,
-      playoffBracketSize,
       groups,
       additionalData,
       prisma,

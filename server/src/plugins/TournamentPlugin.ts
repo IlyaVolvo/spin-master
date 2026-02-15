@@ -22,7 +22,6 @@ export interface TournamentCreationContext {
   prisma: any;
   bracketPositions?: number[];
   roundRobinSize?: number;
-  playoffBracketSize?: number;
   groups?: number[][];
   additionalData?: Record<string, any>;
 }
