@@ -214,7 +214,8 @@ export class PlayoffPlugin implements TournamentPlugin {
     }
     
     const finalsMatch = tournament.bracketMatches.find((bm: any) => bm.round === 1);
-    return finalsMatch?.match?.player1Sets !== null && finalsMatch?.match?.player2Sets !== null;
+    if (!finalsMatch?.match) return false;
+    return finalsMatch.match.player1Sets !== null && finalsMatch.match.player2Sets !== null;
   }
 
   shouldRecalculateRatings(tournament: any): boolean {
