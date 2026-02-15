@@ -616,83 +616,47 @@ async function generateMatches(players: any[], targetMatches: number = 150, time
   // Sort matches by date
   matches.sort((a, b) => a.matchDate.getTime() - b.matchDate.getTime());
   
-  // Create individual single-match tournaments for each match
-  console.log('  Creating individual matches (as single-match tournaments)...');
+  // Create standalone matches (no tournament wrapper)
+  console.log('  Creating standalone matches...');
   let created = 0;
   
   for (const match of matches) {
-    const player1 = allPlayers.find(p => p.id === match.member1Id)!;
-    const player2 = allPlayers.find(p => p.id === match.member2Id)!;
-    
-    // Use the generated match date, ensuring tournament is created before match
-    // Tournament should be created slightly before the match
-    timestampTracker.setTime(match.matchDate);
-    timestampTracker.advance(-60000); // Tournament created 1 minute before match
-    const tournamentCreatedAt = timestampTracker.next();
-    const matchCreatedAt = match.matchDate; // Use the exact generated match date
+    const matchCreatedAt = match.matchDate;
     timestampTracker.setTime(matchCreatedAt);
-    timestampTracker.advance(60000); // recordedAt 1 minute after match
-    const tournamentRecordedAt = timestampTracker.next();
     
-    // Create a single-match tournament (COMPLETED with completed match)
-    const tournament = await prisma.tournament.create({
+    // Create a standalone match (tournamentId = null)
+    const matchRecord = await prisma.match.create({
       data: {
-        name: `${player1.firstName} ${player1.lastName} vs ${player2.firstName} ${player2.lastName}`,
-        type: 'ROUND_ROBIN',
-        status: 'COMPLETED', // Tournament is COMPLETED
-        createdAt: tournamentCreatedAt,
-        recordedAt: tournamentRecordedAt,
-        participants: {
-          create: [
-            {
-              memberId: match.member1Id,
-              playerRatingAtTime: player1.rating,
-            },
-            {
-              memberId: match.member2Id,
-              playerRatingAtTime: player2.rating,
-            },
-          ],
-        },
-        matches: {
-          create: {
-            member1Id: match.member1Id,
-            member2Id: match.member2Id,
-            player1Sets: match.player1Sets,
-            player2Sets: match.player2Sets,
-            createdAt: matchCreatedAt,
-            updatedAt: matchCreatedAt,
-          },
-        },
-      },
-      include: {
-        matches: true,
+        tournamentId: null,
+        member1Id: match.member1Id,
+        member2Id: match.member2Id,
+        player1Sets: match.player1Sets,
+        player2Sets: match.player2Sets,
+        createdAt: matchCreatedAt,
+        updatedAt: matchCreatedAt,
       },
     });
     
-    // Process rating changes for individual match tournament
-    const matchRecord = tournament.matches[0];
-    if (matchRecord) {
-      const player1Won = match.player1Sets > match.player2Sets;
-      const { processMatchRating } = await import('../src/services/matchRatingService');
-      await processMatchRating(
-        match.member1Id,
-        match.member2Id,
-        player1Won,
-        tournament.id,
-        matchRecord.id,
-        false, // isForfeit
-        true   // useIncrementalRating (individual matches should use incremental ratings to build on previous matches)
-      );
-    }
+    // Process rating changes for standalone match
+    const player1Won = match.player1Sets > match.player2Sets;
+    const { processMatchRating } = await import('../src/services/matchRatingService');
+    await processMatchRating(
+      match.member1Id,
+      match.member2Id,
+      player1Won,
+      null, // standalone match — no tournament
+      matchRecord.id,
+      false, // isForfeit
+      true   // useIncrementalRating
+    );
     
     created++;
     if (created % 25 === 0) {
-      console.log(`    Created ${created} / ${matches.length} individual matches...`);
+      console.log(`    Created ${created} / ${matches.length} standalone matches...`);
     }
   }
   
-  console.log(`\n✓ Created ${matches.length} individual matches (each as a completed single-match tournament)\n`);
+  console.log(`\n✓ Created ${matches.length} standalone matches\n`);
   console.log('  Match distribution (top 10):');
   const sortedCounts = Array.from(playerMatchCounts.entries())
     .sort((a, b) => b[1] - a[1])

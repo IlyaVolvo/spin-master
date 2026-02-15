@@ -5,8 +5,6 @@ import { saveScrollPosition, getScrollPosition, clearScrollPosition, saveUIState
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { isDateInRange } from '../utils/dateFormatter';
 import { formatActiveTournamentRating, formatCompletedTournamentRating } from '../utils/ratingFormatter';
-import { SingleMatchHeader } from './SingleMatchHeader';
-import { StandaloneMatchDisplay } from './StandaloneMatchDisplay';
 import { PlayoffBracket } from './PlayoffBracket';
 import { MatchEntryPopup } from './MatchEntryPopup';
 import { connectSocket, disconnectSocket, getSocket } from '../utils/socket';
@@ -26,12 +24,34 @@ import { calculateStandings, buildResultsMatrix, generateRoundRobinSchedule } fr
 const tournamentsCache: {
   data: Tournament[] | null;
   activeData: Tournament[] | null;
+  standaloneMatches: StandaloneMatchFromAPI[] | null;
   lastFetch: number;
 } = {
   data: null,
   activeData: null,
+  standaloneMatches: null,
   lastFetch: 0,
 };
+
+// Shape returned by GET /matches for standalone matches
+interface StandaloneMatchFromAPI {
+  id: number;
+  tournamentId: null;
+  member1Id: number;
+  member2Id: number | null;
+  player1Sets: number;
+  player2Sets: number;
+  player1Forfeit: boolean;
+  player2Forfeit: boolean;
+  createdAt: string;
+  updatedAt: string;
+  member1: { id: number; firstName: string; lastName: string; rating: number | null } | null;
+  member2: { id: number; firstName: string; lastName: string; rating: number | null } | null;
+  player1RatingBefore: number | null;
+  player1RatingChange: number | null;
+  player2RatingBefore: number | null;
+  player2RatingChange: number | null;
+}
 
 interface Member {
   id: number;
@@ -88,6 +108,7 @@ const Tournaments: React.FC = () => {
   const [isUserOrganizer, setIsUserOrganizer] = useState<boolean>(false);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [activeTournaments, setActiveTournaments] = useState<Tournament[]>([]);
+  const [standaloneMatches, setStandaloneMatches] = useState<StandaloneMatchFromAPI[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -303,10 +324,31 @@ const Tournaments: React.FC = () => {
     return activeEvents; // No filtering needed - always show tournaments and matches
   }, [activeEvents]);
 
-  // Memoize completed events (tournaments only, standalone matches will have separate code path)
-  const completedEvents = useMemo(() => {
-    return filteredCompletedTournaments;
-  }, [filteredCompletedTournaments]);
+  // Memoize filtered standalone matches (apply same date and name filters as tournaments)
+  const filteredStandaloneMatches = useMemo(() => {
+    let filtered = [...standaloneMatches];
+
+    // Filter by name (match player names against the name filter)
+    if (tournamentNameFilter.trim()) {
+      const nameFilterLower = tournamentNameFilter.trim().replace(/\s+/g, ' ').toLowerCase();
+      filtered = filtered.filter(m => {
+        const p1Name = m.member1 ? `${m.member1.firstName} ${m.member1.lastName}`.toLowerCase() : '';
+        const p2Name = m.member2 ? `${m.member2.firstName} ${m.member2.lastName}`.toLowerCase() : '';
+        const combined = `${p1Name} vs ${p2Name}`;
+        return combined.includes(nameFilterLower) || p1Name.includes(nameFilterLower) || p2Name.includes(nameFilterLower);
+      });
+    }
+
+    // Filter by date range
+    if (effectiveDateRange.start || effectiveDateRange.end) {
+      filtered = filtered.filter(m => {
+        const createdDate = new Date(m.createdAt);
+        return isDateInRange(createdDate, effectiveDateRange.start, effectiveDateRange.end);
+      });
+    }
+
+    return filtered;
+  }, [standaloneMatches, effectiveDateRange, tournamentNameFilter]);
 
   // Restore scroll position and UI state when component mounts (if returning from History/Statistics)
   useEffect(() => {
@@ -470,6 +512,9 @@ const Tournaments: React.FC = () => {
       // Use cached data immediately for fast UI
       setTournaments(tournamentsCache.data!);
       setActiveTournaments(tournamentsCache.activeData!);
+      if (tournamentsCache.standaloneMatches) {
+        setStandaloneMatches(tournamentsCache.standaloneMatches);
+      }
       setLoading(false);
       
       // Fetch fresh data in background if cache is stale (older than 30 seconds)
@@ -526,18 +571,21 @@ const Tournaments: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [tournamentsRes, activeRes] = await Promise.all([
+      const [tournamentsRes, activeRes, matchesRes] = await Promise.all([
         api.get('/tournaments'),
         api.get('/tournaments/active'),
+        api.get('/matches'),
       ]);
       
-      // Set tournaments and active tournaments
+      // Set tournaments, active tournaments, and standalone matches
       setTournaments(tournamentsRes.data);
       setActiveTournaments(activeRes.data);
+      setStandaloneMatches(matchesRes.data);
       
       // Update cache
       tournamentsCache.data = tournamentsRes.data;
       tournamentsCache.activeData = activeRes.data;
+      tournamentsCache.standaloneMatches = matchesRes.data;
       tournamentsCache.lastFetch = Date.now();
       setError(''); // Clear any previous errors on success
     } catch (err: unknown) {
@@ -2734,29 +2782,41 @@ const Tournaments: React.FC = () => {
           <>
 
             {(() => {
-              // Show tournaments and/or individual matches based on checkboxes
-              const completedTournaments = filteredCompletedTournaments.filter(tournament => {
-                const isIndividualMatch = tournament.type === 'ROUND_ROBIN' && tournament.participants.length === 2;
-                if (isIndividualMatch) return showCompletedMatches;
-                return showCompletedTournaments;
-              });
+              // Build unified list of completed events: tournaments + standalone matches
+              type CompletedEvent =
+                | { kind: 'tournament'; data: Tournament; time: number }
+                | { kind: 'match'; data: StandaloneMatchFromAPI; time: number };
 
-              if (completedTournaments.length === 0) {
+              const events: CompletedEvent[] = [];
+
+              if (showCompletedTournaments) {
+                filteredCompletedTournaments.forEach(t => {
+                  const time = t.recordedAt ? new Date(t.recordedAt).getTime() : new Date(t.createdAt).getTime();
+                  events.push({ kind: 'tournament', data: t, time });
+                });
+              }
+
+              if (showCompletedMatches) {
+                filteredStandaloneMatches.forEach(m => {
+                  events.push({ kind: 'match', data: m, time: new Date(m.createdAt).getTime() });
+                });
+              }
+
+              // Sort most recent first
+              events.sort((a, b) => b.time - a.time);
+
+              if (events.length === 0) {
                 const hasFilters = tournamentNameFilter.trim() || dateFilterType;
                 return <p>No completed tournaments{hasFilters ? ' found matching the filters' : ''}</p>;
               }
 
-              // Compute max first-player name length across all individual matches for alignment
+              // Compute max first-player name length across all standalone matches for alignment
               const maxP1NameLength = (() => {
                 let maxLen = 0;
-                completedTournaments.forEach(t => {
-                  if (t.type === 'ROUND_ROBIN' && t.participants.length === 2) {
-                    const match = t.matches[0];
-                    const p1 = t.participants.find(p => p.memberId === match?.member1Id);
-                    if (p1) {
-                      const name = formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder());
-                      if (name.length > maxLen) maxLen = name.length;
-                    }
+                events.forEach(e => {
+                  if (e.kind === 'match' && e.data.member1) {
+                    const name = formatPlayerName(e.data.member1.firstName, e.data.member1.lastName, getNameDisplayOrder());
+                    if (name.length > maxLen) maxLen = name.length;
                   }
                 });
                 return maxLen;
@@ -2766,43 +2826,40 @@ const Tournaments: React.FC = () => {
 
               return (
                 <>
-                  {/* Render completed tournaments with same structure as active tournaments */}
-                  {completedTournaments.map((tournament) => {
-                    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
-                    const isResultsExpanded = expandedDetails.has(tournament.id);
+                  {events.map((event) => {
+                    // ═══════════════════════════════════════════════════════════════
+                    // STANDALONE MATCH ROW
+                    // ═══════════════════════════════════════════════════════════════
+                    if (event.kind === 'match') {
+                      const m = event.data;
+                      const p1Name = m.member1 ? formatPlayerName(m.member1.firstName, m.member1.lastName, getNameDisplayOrder()) : 'Unknown';
+                      const p2Name = m.member2 ? formatPlayerName(m.member2.firstName, m.member2.lastName, getNameDisplayOrder()) : 'Unknown';
+                      const p1Sets = m.player1Sets ?? 0;
+                      const p2Sets = m.player2Sets ?? 0;
+                      const p1Won = m.player1Forfeit ? false : (m.player2Forfeit ? true : p1Sets > p2Sets);
+                      const p2Won = m.player2Forfeit ? false : (m.player1Forfeit ? true : p2Sets > p1Sets);
 
-                    // Individual match: ROUND_ROBIN with exactly 2 participants
-                    const isIndividualMatch = tournament.type === 'ROUND_ROBIN' && tournament.participants.length === 2;
-
-                    if (isIndividualMatch) {
-                      const match = tournament.matches[0];
-                      const p1 = tournament.participants.find(p => p.memberId === match?.member1Id);
-                      const p2 = match?.member2Id ? tournament.participants.find(p => p.memberId === match.member2Id) : null;
-                      const p1Name = p1 ? formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder()) : 'Unknown';
-                      const p2Name = p2 ? formatPlayerName(p2.member.firstName, p2.member.lastName, getNameDisplayOrder()) : 'Unknown';
-                      const p1Sets = match?.player1Sets ?? 0;
-                      const p2Sets = match?.player2Sets ?? 0;
-                      const p1Won = match?.player1Forfeit ? false : (match?.player2Forfeit ? true : p1Sets > p2Sets);
-                      const p2Won = match?.player2Forfeit ? false : (match?.player1Forfeit ? true : p2Sets > p1Sets);
-
-                      // Rating data from participant enrichment (postRatingAtTime / playerRatingAtTime)
-                      const p1Pre = p1?.playerRatingAtTime ?? null;
-                      const p1Post = (p1 as any)?.postRatingAtTime ?? null;
-                      const p1Diff = (p1Pre !== null && p1Post !== null) ? p1Post - p1Pre : null;
-                      const p2Pre = p2?.playerRatingAtTime ?? null;
-                      const p2Post = (p2 as any)?.postRatingAtTime ?? null;
-                      const p2Diff = (p2Pre !== null && p2Post !== null) ? p2Post - p2Pre : null;
+                      // Rating data from standalone match API
+                      const p1Pre = m.player1RatingBefore;
+                      const p1Change = m.player1RatingChange;
+                      const p1Post = (p1Pre !== null && p1Change !== null) ? p1Pre + p1Change : null;
+                      const p2Pre = m.player2RatingBefore;
+                      const p2Change = m.player2RatingChange;
+                      const p2Post = (p2Pre !== null && p2Change !== null) ? p2Pre + p2Change : null;
 
                       return (
                         <div
-                          key={tournament.id}
-                          ref={(el) => { tournamentRefs.current[tournament.id] = el; }}
+                          key={`match-${m.id}`}
                           style={{ marginBottom: '4px', padding: '6px 12px', border: '1px solid #eee', borderRadius: '4px', backgroundColor: '#f9f9f9' }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {/* Stats button - left of everything */}
+                            {/* Stats button */}
                             <button
-                              onClick={() => handleQuickViewStats(tournament.id)}
+                              onClick={() => {
+                                const playerIds = [m.member1Id, m.member2Id].filter((id): id is number => id !== null);
+                                saveStateBeforeNavigate();
+                                navigate('/statistics', { state: { playerIds, from: 'tournaments' } });
+                              }}
                               title="View Statistics"
                               style={{
                                 padding: '2px 4px',
@@ -2822,9 +2879,9 @@ const Tournaments: React.FC = () => {
                               <span style={{ fontSize: '14px', fontWeight: 'bold', color: p1Won ? '#27ae60' : p2Won ? '#e74c3c' : '#333' }}>
                                 {p1Name}
                               </span>
-                              {p1Diff !== null && (
-                                <span style={{ fontSize: '11px', fontWeight: 'bold', marginLeft: '4px', color: p1Diff >= 0 ? '#27ae60' : '#e74c3c' }}>
-                                  ({p1Post}/{p1Diff >= 0 ? `+${p1Diff}` : p1Diff})
+                              {p1Change !== null && p1Post !== null && (
+                                <span style={{ fontSize: '11px', fontWeight: 'bold', marginLeft: '4px', color: p1Change >= 0 ? '#27ae60' : '#e74c3c' }}>
+                                  ({p1Post}/{p1Change >= 0 ? `+${p1Change}` : p1Change})
                                 </span>
                               )}
                             </div>
@@ -2838,9 +2895,9 @@ const Tournaments: React.FC = () => {
 
                             {/* Player 2 name + rating */}
                             <div style={{ textAlign: 'left' }}>
-                              {p2Diff !== null && (
-                                <span style={{ fontSize: '11px', fontWeight: 'bold', marginRight: '4px', color: p2Diff >= 0 ? '#27ae60' : '#e74c3c' }}>
-                                  ({p2Post}/{p2Diff >= 0 ? `+${p2Diff}` : p2Diff})
+                              {p2Change !== null && p2Post !== null && (
+                                <span style={{ fontSize: '11px', fontWeight: 'bold', marginRight: '4px', color: p2Change >= 0 ? '#27ae60' : '#e74c3c' }}>
+                                  ({p2Post}/{p2Change >= 0 ? `+${p2Change}` : p2Change})
                                 </span>
                               )}
                               <span style={{ fontSize: '14px', fontWeight: 'bold', color: p2Won ? '#27ae60' : p1Won ? '#e74c3c' : '#333' }}>
@@ -2850,15 +2907,19 @@ const Tournaments: React.FC = () => {
 
                             {/* Date - pushed to right */}
                             <div style={{ marginLeft: 'auto', fontSize: '11px', color: '#999', flexShrink: 0 }}>
-                              {tournament.recordedAt
-                                ? new Date(tournament.recordedAt).toLocaleDateString()
-                                : new Date(tournament.createdAt).toLocaleDateString()
-                              }
+                              {new Date(m.createdAt).toLocaleDateString()}
                             </div>
                           </div>
                         </div>
                       );
                     }
+
+                    // ═══════════════════════════════════════════════════════════════
+                    // TOURNAMENT CARDS (below)
+                    // ═══════════════════════════════════════════════════════════════
+                    const tournament = event.data;
+                    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+                    const isResultsExpanded = expandedDetails.has(tournament.id);
 
                     // ═══════════════════════════════════════════════════════════════
                     // COMPOUND COMPLETED TOURNAMENT CARD
