@@ -223,9 +223,25 @@ export class PlayoffPlugin implements TournamentPlugin {
     return true;
   }
 
-  canDelete(tournament: any): boolean {
-    // Can delete playoff if no matches have been played
-    return tournament.matches.length === 0;
+  async onMatchRatingCalculation(context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
+    const { match, prisma } = context;
+    const isForfeit = match.player1Forfeit || match.player2Forfeit;
+    if (isForfeit || !match.member1Id || !match.member2Id) return;
+
+    // Delete any existing rating history for this match (handles re-scoring)
+    await prisma.ratingHistory.deleteMany({
+      where: { matchId: match.id },
+    });
+
+    const { adjustRatingsForSingleMatch } = await import('../services/usattRatingService');
+    const player1Won = match.winnerId === match.member1Id;
+    await adjustRatingsForSingleMatch(
+      match.member1Id,
+      match.member2Id,
+      player1Won,
+      match.tournamentId,
+      match.id,
+    );
   }
 
   canCancel(tournament: any): boolean {

@@ -324,23 +324,6 @@ describe('PlayoffPlugin', () => {
     });
   });
 
-  // ─── canDelete ─────────────────────────────────────────────────────────
-
-  describe('canDelete', () => {
-    it('should allow deletion when no matches exist', () => {
-      const t = makePlayoffTournament({ participantCount: 4, matches: [] });
-      expect(plugin.canDelete(t)).toBe(true);
-    });
-
-    it('should prevent deletion when matches exist', () => {
-      const t = makePlayoffTournament({
-        participantCount: 4,
-        matches: [{ id: 1, player1Sets: 3, player2Sets: 0 }],
-      });
-      expect(plugin.canDelete(t)).toBe(false);
-    });
-  });
-
   // ─── canCancel ─────────────────────────────────────────────────────────
 
   describe('canCancel', () => {

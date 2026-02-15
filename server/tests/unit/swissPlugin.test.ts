@@ -149,27 +149,6 @@ describe('SwissPlugin', () => {
     });
   });
 
-  // ─── canDelete ─────────────────────────────────────────────────────────
-
-  describe('canDelete', () => {
-    it('should allow deletion when no matches exist', () => {
-      const t = makeSwissTournament({ participantCount: 4, matches: [] });
-      expect(plugin.canDelete(t)).toBe(true);
-    });
-
-    it('should allow deletion when matches is undefined', () => {
-      expect(plugin.canDelete({ matches: undefined })).toBe(true);
-    });
-
-    it('should prevent deletion when matches exist', () => {
-      const t = makeSwissTournament({
-        participantCount: 4,
-        matches: [makeMatch({ member1Id: 1, member2Id: 2 })],
-      });
-      expect(plugin.canDelete(t)).toBe(false);
-    });
-  });
-
   // ─── canCancel ─────────────────────────────────────────────────────────
 
   describe('canCancel', () => {

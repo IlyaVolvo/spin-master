@@ -66,30 +66,6 @@ export class RoundRobinPlugin implements TournamentPlugin {
     return played >= expected;
   }
 
-  canDeleteTournament(tournament: Tournament): boolean {
-    // Round Robin can be deleted if no matches have been played
-    return tournament.matches.length === 0;
-  }
-
-  getDeleteConfirmationMessage(tournament: Tournament): string {
-    if (tournament.matches.length === 0) {
-      return 'Delete this tournament?';
-    }
-    return 'Cannot delete tournament with recorded matches. Cancel it instead.';
-  }
-
-  // ============================================================================
-  // CANCELLATION HANDLING
-  // ============================================================================
-  // Round Robin tournaments: keep all matches when cancelled
-  
-  async handleCancellation(tournament: Tournament): Promise<{ shouldKeepMatches: boolean; message?: string }> {
-    return {
-      shouldKeepMatches: true,
-      message: 'Tournament cancelled. All matches will be kept for rating history.'
-    };
-  }
-
   ActivePanel = RoundRobinActivePanel;
   CompletedPanel = RoundRobinCompletedPanel;
   SchedulePanel = RoundRobinSchedulePanel;

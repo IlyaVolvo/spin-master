@@ -247,9 +247,8 @@ const Tournaments: React.FC = () => {
   const getTooltipText = (type: string, tournament: Tournament): string => {
     if (type === 'complete') {
       return 'Complete Tournament: Marks the tournament as completed. All matches must be finished. Rankings will be recalculated.';
-    } else if (type === 'delete') {
-      // Delegate to plugin for delete confirmation message
-      return getDeleteConfirmationMessage(tournament);
+    } else if (type === 'cancel') {
+      return 'Cancel Tournament: Stops the tournament. If matches were played, they are preserved. If no matches were played, the tournament is removed.';
     }
     return '';
   };
@@ -635,32 +634,6 @@ const Tournaments: React.FC = () => {
     }
     // Fallback
     return tournament.matches.filter(m => !m.player1Forfeit && !m.player2Forfeit).length;
-  };
-
-  // Check if tournament can be deleted (delegates to plugin)
-  const canDeleteTournament = (tournament: Tournament): boolean => {
-    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
-    
-    // Delegate decision to plugin
-    if (plugin.canDeleteTournament) {
-      return plugin.canDeleteTournament(tournament);
-    }
-    
-    // Default fallback: only allow deletion if no matches exist
-    return tournament.matches.length === 0;
-  };
-
-  // Get delete confirmation message (delegates to plugin)
-  const getDeleteConfirmationMessage = (tournament: Tournament): string => {
-    if (!tournament.type) return 'Delete tournament?';
-    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
-    if (plugin.getDeleteConfirmationMessage) {
-      return plugin.getDeleteConfirmationMessage(tournament as any);
-    }
-    // Fallback
-    return tournament.matches.length > 0 
-      ? 'Cancel tournament (moves to completed, keeps matches)'
-      : 'Delete tournament';
   };
 
   // Get tournament type name for display (delegates to plugin)
@@ -1075,67 +1048,20 @@ const Tournaments: React.FC = () => {
     }
   };
 
-  const handleDeleteTournament = async (tournamentId: number) => {
-    const tournament = activeTournaments.find(t => t.id === tournamentId);
-    if (!tournament) return;
-
-    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
-
-    const canDelete = plugin.canDeleteTournament ? plugin.canDeleteTournament(tournament) : tournament.matches.length === 0;
-    
-    if (!canDelete && tournament.matches.length > 0) {
-      // Tournament needs cancellation instead of deletion
-      setShowCancelConfirmation({ tournamentId, matchCount: tournament.matches.length });
-      return;
-    }
-
-    // Get confirmation message from plugin or use default
-    const confirmMessage = plugin.getDeleteConfirmationMessage 
-      ? plugin.getDeleteConfirmationMessage(tournament)
-      : tournament.matches.length > 0
-        ? `This tournament has ${tournament.matches.length} match${tournament.matches.length !== 1 ? 'es' : ''} recorded. Are you sure you want to delete it? This action cannot be undone.`
-        : 'Are you sure you want to delete this tournament? This action cannot be undone.';
-    
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
-
-    setError('');
-    setSuccess('');
-
-    try {
-      await api.delete(`/tournaments/${tournamentId}`);
-      setSuccess('Tournament deleted successfully');
-      fetchData();
-      if (selectedTournament?.id === tournamentId) {
-        setSelectedTournament(null);
-      }
-    } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(apiError || 'Failed to delete tournament');
-    }
-  };
-
   const handleCancelTournament = async (tournamentId: number) => {
     const tournament = activeTournaments.find(t => t.id === tournamentId);
     if (!tournament) return;
 
-    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
-
     setError('');
     setSuccess('');
 
     try {
-      // Let plugin handle cancellation logic if it provides custom handling
-      if (plugin.handleCancellation) {
-        const result = await plugin.handleCancellation(tournament);
-        // Plugin can provide custom success message
-        const successMessage = result.message || 'Tournament cancelled successfully. All completed matches have been recorded and affect player ratings.';
-        setSuccess(successMessage);
+      const response = await api.patch(`/tournaments/${tournamentId}/cancel`);
+      const data = response.data;
+      if (data.deleted) {
+        setSuccess('Tournament removed (no matches were played).');
       } else {
-        // Default cancellation behavior
-        await api.patch(`/tournaments/${tournamentId}/cancel`);
-        setSuccess('Tournament cancelled successfully. All completed matches have been recorded and affect player ratings.');
+        setSuccess('Tournament cancelled. All completed matches have been preserved.');
       }
       
       setShowCancelConfirmation(null);
@@ -1147,6 +1073,21 @@ const Tournaments: React.FC = () => {
       const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setError(apiError || 'Failed to cancel tournament');
     }
+  };
+
+  const handleShowCancelConfirmation = (tournamentId: number) => {
+    const tournament = activeTournaments.find(t => t.id === tournamentId);
+    if (!tournament) return;
+
+    // Count matches (including children for compound tournaments)
+    let matchCount = tournament.matches.length;
+    if (tournament.childTournaments) {
+      for (const child of tournament.childTournaments) {
+        matchCount += child.matches?.length ?? 0;
+      }
+    }
+
+    setShowCancelConfirmation({ tournamentId, matchCount });
   };
 
   // Generate schedule for Round Robin tournament
@@ -1915,16 +1856,19 @@ const Tournaments: React.FC = () => {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <button
-                            onClick={() => handleDeleteTournament(tournament.id)}
+                            onClick={() => handleShowCancelConfirmation(tournament.id)}
                             disabled={!isUserOrganizer}
-                            title={!isUserOrganizer ? 'Only Organizers can delete tournaments' : 'Delete tournament'}
+                            title={!isUserOrganizer ? 'Only Organizers can cancel tournaments' : 'Cancel tournament'}
                             style={{
                               padding: '4px 8px', border: 'none', background: 'transparent',
                               cursor: !isUserOrganizer ? 'not-allowed' : 'pointer', fontSize: '14px',
                               color: '#e74c3c', opacity: !isUserOrganizer ? 0.5 : 1,
                             }}
                           >
-                            🗑️
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+                              <line x1="18" y1="6" x2="6" y2="18"></line>
+                              <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
                           </button>
                         </div>
                       </div>
@@ -2228,18 +2172,16 @@ const Tournaments: React.FC = () => {
                     </button>
                   )}
                   <button
-                    onClick={() => handleDeleteTournament(tournament.id)}
+                    onClick={() => handleShowCancelConfirmation(tournament.id)}
                     disabled={!isUserOrganizer}
                       title={
                         !isUserOrganizer 
-                          ? 'Only Organizers can delete tournaments' 
-                          : !canDeleteTournament(tournament)
-                            ? 'Cancel tournament (moves to completed, keeps matches)'
-                            : 'Delete tournament'
+                          ? 'Only Organizers can cancel tournaments' 
+                          : 'Cancel tournament'
                       }
                       onMouseEnter={(e) => {
                         if (isUserOrganizer) {
-                          handleIconMouseEnter('delete', tournament.id, e);
+                          handleIconMouseEnter('cancel', tournament.id, e);
                         }
                       }}
                       onMouseLeave={handleIconMouseLeave}
@@ -2257,24 +2199,20 @@ const Tournaments: React.FC = () => {
                         opacity: !isUserOrganizer ? 0.5 : 1,
                       }}
                     >
-                      {!canDeleteTournament(tournament) ? (
-                        <svg
-                          width="20"
-                          height="20"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#e74c3c"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          style={{ display: 'block' }}
-                        >
-                          <line x1="18" y1="6" x2="6" y2="18"></line>
-                          <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                      ) : (
-                        '🗑️'
-                      )}
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#e74c3c"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ display: 'block' }}
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
                     </button>
                 </div>
               </div>
@@ -3301,22 +3239,32 @@ const Tournaments: React.FC = () => {
             <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#e74c3c' }}>
               Cancel Tournament?
             </h3>
-            <p style={{ marginBottom: '10px' }}>
-              This tournament has <strong>{showCancelConfirmation.matchCount}</strong> completed {showCancelConfirmation.matchCount === 1 ? 'match' : 'matches'}.
-            </p>
-            <p style={{ marginBottom: '20px' }}>
-              Cancelling will move the tournament to completed status and preserve all match results and rating changes.
-            </p>
+            {showCancelConfirmation.matchCount > 0 ? (
+              <>
+                <p style={{ marginBottom: '10px' }}>
+                  This tournament has <strong>{showCancelConfirmation.matchCount}</strong> completed {showCancelConfirmation.matchCount === 1 ? 'match' : 'matches'}.
+                </p>
+                <p style={{ marginBottom: '20px' }}>
+                  Cancelling will move the tournament to completed status and preserve all match results and rating changes.
+                </p>
+              </>
+            ) : (
+              <p style={{ marginBottom: '20px' }}>
+                This tournament has no matches played. It will be permanently removed.
+              </p>
+            )}
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowCancelConfirmation(null)}
                 style={{
                   padding: '10px 20px',
-                  border: '1px solid #ddd',
+                  border: '2px solid #27ae60',
                   borderRadius: '4px',
                   backgroundColor: 'white',
+                  color: '#27ae60',
                   cursor: 'pointer',
                   fontSize: '14px',
+                  fontWeight: 'bold',
                 }}
               >
                 Keep Tournament Active

@@ -1,5 +1,5 @@
 import { TournamentPlugin, TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
-import { createRatingHistoryForRoundRobinTournament } from '../services/usattRatingService';
+import { createRatingHistoryForRoundRobinTournament, adjustRatingsForSingleMatch } from '../services/usattRatingService';
 
 export class RoundRobinPlugin implements TournamentPlugin {
   type = 'ROUND_ROBIN';
@@ -35,12 +35,18 @@ export class RoundRobinPlugin implements TournamentPlugin {
   }
 
   async enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
-    const { tournament } = context;
+    const { tournament, prisma } = context;
+
+    // Attach rating history to matches
+    if (prisma) {
+      await this.attachRatingHistoryToMatches(tournament.matches, prisma);
+    }
+
     return { ...tournament, bracketMatches: [] };
   }
 
   async enrichCompletedTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
-    const { tournament, postRatingMap } = context;
+    const { tournament, postRatingMap, prisma } = context;
     
     const participantsWithPostRating = tournament.participants.map((participant: any) => {
       const key = `${tournament.id}-${participant.memberId}`;
@@ -51,11 +57,45 @@ export class RoundRobinPlugin implements TournamentPlugin {
       };
     });
 
+    // Attach rating history to matches
+    if (prisma) {
+      await this.attachRatingHistoryToMatches(tournament.matches, prisma);
+    }
+
     return {
       ...tournament,
       participants: participantsWithPostRating,
       bracketMatches: [],
     };
+  }
+
+  private async attachRatingHistoryToMatches(matches: any[], prisma: any): Promise<void> {
+    const matchIds = (matches || [])
+      .filter((m: any) => m.id)
+      .map((m: any) => m.id);
+
+    if (matchIds.length === 0) return;
+
+    const allRatingHistory = await prisma.ratingHistory.findMany({
+      where: { matchId: { in: matchIds } },
+    });
+
+    const historyByMatch = new Map<number, any[]>();
+    for (const h of allRatingHistory) {
+      if (!h.matchId) continue;
+      if (!historyByMatch.has(h.matchId)) historyByMatch.set(h.matchId, []);
+      historyByMatch.get(h.matchId)!.push(h);
+    }
+
+    for (const match of matches) {
+      const entries = historyByMatch.get(match.id) || [];
+      const h1 = entries.find((e: any) => e.memberId === match.member1Id);
+      const h2 = entries.find((e: any) => e.memberId === match.member2Id);
+      match.player1RatingBefore = h1 ? h1.rating - h1.ratingChange : null;
+      match.player1RatingChange = h1 ? h1.ratingChange : null;
+      match.player2RatingBefore = h2 ? h2.rating - h2.ratingChange : null;
+      match.player2RatingChange = h2 ? h2.ratingChange : null;
+    }
   }
 
   isComplete(tournament: any): boolean {
@@ -77,8 +117,24 @@ export class RoundRobinPlugin implements TournamentPlugin {
     return this.isComplete(tournament) && tournament.status !== 'COMPLETED';
   }
 
-  canDelete(tournament: any): boolean {
-    return tournament.matches.length === 0;
+  async onMatchRatingCalculation(context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
+    const { match, prisma } = context;
+    const isForfeit = match.player1Forfeit || match.player2Forfeit;
+    if (isForfeit || !match.member1Id || !match.member2Id) return;
+
+    // Delete any existing rating history for this match (handles re-scoring)
+    await prisma.ratingHistory.deleteMany({
+      where: { matchId: match.id },
+    });
+
+    const player1Won = match.winnerId === match.member1Id;
+    await adjustRatingsForSingleMatch(
+      match.member1Id,
+      match.member2Id,
+      player1Won,
+      match.tournamentId,
+      match.id,
+    );
   }
 
   canCancel(tournament: any): boolean {

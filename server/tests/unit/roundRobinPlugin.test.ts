@@ -290,31 +290,6 @@ describe('RoundRobinPlugin', () => {
     });
   });
 
-  // ─── canDelete ─────────────────────────────────────────────────────────
-
-  describe('canDelete', () => {
-    it('should allow deletion when no matches exist', () => {
-      const t = makeTournament({ participantCount: 4, matches: [] });
-      expect(plugin.canDelete(t)).toBe(true);
-    });
-
-    it('should prevent deletion when matches exist', () => {
-      const t = makeTournament({
-        participantCount: 4,
-        matches: [{ member1Id: 1, member2Id: 2, player1Sets: 3, player2Sets: 0 }],
-      });
-      expect(plugin.canDelete(t)).toBe(false);
-    });
-
-    it('should prevent deletion even with unplayed matches (null scores)', () => {
-      const t = makeTournament({
-        participantCount: 2,
-        matches: [{ member1Id: 1, member2Id: 2, player1Sets: null, player2Sets: null }],
-      });
-      expect(plugin.canDelete(t)).toBe(false);
-    });
-  });
-
   // ─── canCancel ─────────────────────────────────────────────────────────
 
   describe('canCancel', () => {

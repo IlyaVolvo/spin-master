@@ -2,7 +2,7 @@
  * BaseCompoundTournamentPlugin — Unit Tests
  *
  * Tests the base class for compound tournament plugins:
- * - isComplete, canDelete, canCancel
+ * - isComplete, canCancel
  * - matchesRemaining (delegation to child plugins)
  * - updateMatch (should throw)
  * - enrichActiveTournament, enrichCompletedTournament
@@ -106,46 +106,6 @@ describe('BaseCompoundTournamentPlugin.isComplete', () => {
       childTournaments: [{ status: 'COMPLETED' }],
     };
     expect(plugin.isComplete(tournament)).toBe(true);
-  });
-});
-
-// ─── canDelete ────────────────────────────────────────────────────────────
-
-describe('BaseCompoundTournamentPlugin.canDelete', () => {
-  const plugin = new TestCompoundPlugin();
-
-  it('returns true when no child tournaments', () => {
-    expect(plugin.canDelete({})).toBe(true);
-  });
-
-  it('returns true when children have no matches', () => {
-    const tournament = {
-      childTournaments: [
-        { matches: [] },
-        { matches: [] },
-      ],
-    };
-    expect(plugin.canDelete(tournament)).toBe(true);
-  });
-
-  it('returns true when children have undefined matches', () => {
-    const tournament = {
-      childTournaments: [
-        {},
-        { matches: undefined },
-      ],
-    };
-    expect(plugin.canDelete(tournament)).toBe(true);
-  });
-
-  it('returns false when any child has matches', () => {
-    const tournament = {
-      childTournaments: [
-        { matches: [] },
-        { matches: [{ id: 1 }] },
-      ],
-    };
-    expect(plugin.canDelete(tournament)).toBe(false);
   });
 });
 

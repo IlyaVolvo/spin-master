@@ -76,6 +76,10 @@ export const PlayoffSchedulePanel: React.FC<TournamentScheduleProps> = ({
         const roundNum = parseInt(round);
         const roundName = getRoundName(roundNum);
         matches.forEach(bm => {
+          // Skip BYE matches
+          const isBye = !bm.member1Id || !bm.member2Id || bm.member1Id === 0 || bm.member2Id === 0;
+          if (isBye) return;
+
           rows.push({
             roundNumber: roundNum,
             roundName,
@@ -93,7 +97,7 @@ export const PlayoffSchedulePanel: React.FC<TournamentScheduleProps> = ({
     return (
       <div className="playoff-schedule collapsed">
         <button onClick={onToggleExpand} className="schedule-toggle">
-          📅 Show Bracket Schedule ({tournament.bracketMatches?.length || 0} matches)
+          📅 Show Bracket Schedule ({scheduleRows.length} matches)
         </button>
       </div>
     );

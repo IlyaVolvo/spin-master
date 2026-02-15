@@ -85,28 +85,4 @@ export const PlayoffPlugin: TournamentPlugin = {
     return played >= expected;
   },
 
-  canDeleteTournament: (tournament: Tournament): boolean => {
-    // Playoff can always be cancelled (moved to completed) even with matches
-    // But can only be truly deleted if no matches exist
-    return tournament.matches.length === 0;
-  },
-
-  getDeleteConfirmationMessage: (tournament: Tournament): string => {
-    if (tournament.matches.length > 0) {
-      return 'Cancel tournament (moves to completed, keeps matches)';
-    }
-    return 'Delete tournament';
-  },
-
-  // ============================================================================
-  // CANCELLATION HANDLING
-  // ============================================================================
-  // Playoff tournaments: keep all matches when cancelled (bracket may be incomplete)
-  
-  handleCancellation: async (tournament: Tournament): Promise<{ shouldKeepMatches: boolean; message?: string }> => {
-    return {
-      shouldKeepMatches: true,
-      message: 'Playoff tournament cancelled. All matches will be kept for rating history.'
-    };
-  }
 };

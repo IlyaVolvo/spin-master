@@ -126,14 +126,6 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     return false;
   }
 
-  canDelete(tournament: any): boolean {
-    // Can delete if no child tournaments have matches
-    if (!tournament.childTournaments) return true;
-    return tournament.childTournaments.every((child: any) => 
-      !child.matches || child.matches.length === 0
-    );
-  }
-
   canCancel(tournament: any): boolean {
     return true;
   }

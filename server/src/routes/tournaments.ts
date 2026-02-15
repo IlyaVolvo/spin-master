@@ -944,7 +944,21 @@ router.patch('/:tournamentId/matches/:matchId', [
     });
     
     const updatedMatch = result.match;
-    
+
+    // Calculate match ratings if plugin supports per-match rating calculation
+    if (plugin.onMatchRatingCalculation && updatedMatch && !finalPlayer1Forfeit && !finalPlayer2Forfeit) {
+      const winnerId = finalPlayer1Sets > finalPlayer2Sets ? updatedMatch.member1Id :
+                       finalPlayer2Sets > finalPlayer1Sets ? updatedMatch.member2Id : null;
+      if (winnerId) {
+        await plugin.onMatchRatingCalculation({
+          tournament,
+          match: updatedMatch,
+          winnerId,
+          prisma,
+        });
+      }
+    }
+
     // Handle tournament completion
     if (result.tournamentStateChange?.shouldMarkComplete) {
       await prisma.tournament.update({
@@ -1082,53 +1096,7 @@ router.patch('/:id/name', [
   }
 });
 
-// Delete tournament
-// Only Organizers can delete tournaments
-router.delete('/:id', async (req: AuthRequest, res: Response) => {
-  try {
-    // Check if user has ORGANIZER role
-    const hasOrganizerAccess = await isOrganizer(req);
-    if (!hasOrganizerAccess) {
-      return res.status(403).json({ error: 'Only Organizers can delete tournaments' });
-    }
-
-    const tournamentId = parseInt(req.params.id);
-    if (isNaN(tournamentId)) {
-      return res.status(400).json({ error: 'Invalid tournament ID' });
-    }
-
-    const tournament = await prisma.tournament.findUnique({
-      where: { id: tournamentId },
-      include: {
-        matches: true,
-      },
-    });
-
-    if (!tournament) {
-      return res.status(404).json({ error: 'Tournament not found' });
-    }
-
-    if (tournament.status === 'COMPLETED') {
-      return res.status(400).json({ error: 'Cannot delete completed tournaments' });
-    }
-
-    // Check if plugin allows deletion
-    const plugin = tournamentPluginRegistry.get(tournament.type);
-    if (!plugin.canDelete(tournament)) {
-      return res.status(400).json({ error: 'Cannot delete tournament with matches. Use cancel instead.' });
-    }
-
-    // Delete tournament (matches and participants will be cascade deleted)
-    await prisma.tournament.delete({
-      where: { id: tournamentId },
-    });
-
-    res.json({ message: 'Tournament deleted successfully' });
-  } catch (error) {
-    logger.error('Error deleting tournament', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// Delete tournament route removed — use PATCH /:id/cancel instead
 
 // Delete match
 // Only Organizers can delete matches
@@ -1241,9 +1209,12 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
   }
 });
 
-// Cancel playoff tournament
+// Cancel tournament
 // Only Organizers can cancel tournaments
-// Moves tournament to COMPLETED state, keeps all matches, affects ratings
+// For ACTIVE tournaments:
+//   - No matches played → physically deletes the tournament
+//   - Matches played → marks as cancelled + COMPLETED, preserves matches
+// For compound tournaments: propagates to all children automatically
 router.patch('/:id/cancel', async (req: AuthRequest, res) => {
   try {
     // Check if user has ORGANIZER role
@@ -1259,11 +1230,23 @@ router.patch('/:id/cancel', async (req: AuthRequest, res) => {
 
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
-      include: { matches: true },
+      include: {
+        matches: true,
+        childTournaments: {
+          include: {
+            matches: true,
+            childTournaments: { include: { matches: true } },
+          },
+        },
+      },
     });
 
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    if (tournament.status === 'COMPLETED') {
+      return res.status(400).json({ error: 'Tournament is already completed' });
     }
 
     // Check if plugin allows cancellation
@@ -1272,15 +1255,56 @@ router.patch('/:id/cancel', async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'This tournament type cannot be cancelled' });
     }
 
-    if (tournament.status === 'COMPLETED') {
-      return res.status(400).json({ error: 'Tournament is already completed' });
+    // Determine if this is a compound tournament (has children)
+    const isCompound = tournament.childTournaments && tournament.childTournaments.length > 0;
+
+    // Count total matches across the tournament (including children for compound)
+    let totalMatches = tournament.matches.length;
+    if (isCompound) {
+      for (const child of tournament.childTournaments) {
+        totalMatches += child.matches.length;
+        // Also count grandchildren (e.g. prelim groups under compound)
+        if (child.childTournaments) {
+          for (const grandchild of (child as any).childTournaments) {
+            totalMatches += grandchild.matches?.length ?? 0;
+          }
+        }
+      }
     }
 
-    if (tournament.matches.length === 0) {
-      return res.status(400).json({ error: 'Cannot cancel tournament with no matches. Use delete instead.' });
+    if (totalMatches === 0) {
+      // No matches anywhere → physically delete the entire tournament tree
+      // Cascade delete handles children, matches, participants, bracket matches, etc.
+      await prisma.tournament.delete({
+        where: { id: tournamentId },
+      });
+
+      // Invalidate cache
+      await invalidateCacheAfterTournament(tournamentId);
+
+      return res.json({ message: 'Tournament deleted (no matches were played)', deleted: true });
     }
 
-    // Update tournament status to COMPLETED and mark as cancelled
+    // Has matches → cancel (mark as cancelled + COMPLETED)
+    // For compound tournaments: cancel/delete each child first
+    if (isCompound) {
+      for (const child of tournament.childTournaments) {
+        if (child.status === 'COMPLETED') continue; // already done
+
+        if (child.matches.length === 0) {
+          // Child has no matches → delete it
+          await prisma.tournament.delete({ where: { id: child.id } });
+        } else {
+          // Child has matches → cancel it
+          await prisma.tournament.update({
+            where: { id: child.id },
+            data: { status: 'COMPLETED', cancelled: true },
+          });
+        }
+      }
+    }
+
+    // Cancel the root tournament
     const updatedTournament = await prisma.tournament.update({
       where: { id: tournamentId },
       data: { 
@@ -1294,6 +1318,12 @@ router.patch('/:id/cancel', async (req: AuthRequest, res) => {
           },
         },
         matches: true,
+        childTournaments: {
+          include: {
+            participants: { include: { member: true } },
+            matches: true,
+          },
+        },
       },
     });
 

@@ -76,7 +76,6 @@ export interface TournamentPlugin {
   
   // Query methods - plugins answer questions about their state
   isComplete(tournament: any): boolean;
-  canDelete(tournament: any): boolean;
   canCancel(tournament: any): boolean;
   
   // Returns the number of matches remaining before the tournament is complete

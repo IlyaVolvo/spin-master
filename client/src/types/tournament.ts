@@ -197,11 +197,6 @@ export interface TournamentPlugin {
   countPlayedMatches?: (tournament: Tournament) => number;
   countNonForfeitedMatches?: (tournament: Tournament) => number;
   areAllMatchesPlayed?: (tournament: Tournament) => boolean;
-  canDeleteTournament?: (tournament: Tournament) => boolean;
-  getDeleteConfirmationMessage?: (tournament: Tournament) => string;
-
-  // Cancellation handling - each type may provide specific cleanup logic
-  handleCancellation?: (tournament: Tournament) => Promise<{ shouldKeepMatches: boolean; message?: string }>;
 
   // Schedule generation
   generateSchedule?: (tournament: Tournament) => any[];

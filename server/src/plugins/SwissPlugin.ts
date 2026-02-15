@@ -165,10 +165,6 @@ export class SwissPlugin implements TournamentPlugin {
     logger.info('Swiss match rating calculated', { matchId: match.id, player1Won });
   }
 
-  canDelete(tournament: any): boolean {
-    return !tournament.matches || tournament.matches.length === 0;
-  }
-
   canCancel(_tournament: any): boolean {
     return true;
   }

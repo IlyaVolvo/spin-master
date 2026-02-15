@@ -220,18 +220,6 @@ export const PlayoffPlugin: TournamentPlugin = {
     return tournament.matches.length >= expectedMatches && playedMatches >= expectedMatches;
   },
 
-  canDeleteTournament: (tournament) => {
-    // Playoff tournaments with matches should be cancelled, not deleted
-    return tournament.matches.length === 0;
-  },
-
-  getDeleteConfirmationMessage: (tournament) => {
-    if (tournament.matches.length > 0) {
-      return 'Cancel Tournament: This will move the tournament to Completed state. All completed matches will be kept and recorded. All completed matches will affect players\' ratings. The tournament will show "NOT COMPLETED" instead of a champion name.';
-    }
-    return 'Delete Tournament: Permanently removes the tournament and all its data. This action cannot be undone.';
-  },
-
   canPrintResults: true,
 };
 

@@ -111,15 +111,6 @@ export const RoundRobinPlugin: TournamentPlugin = {
     return playedMatches >= expectedMatches;
   },
 
-  canDeleteTournament: (tournament) => {
-    // Round robin tournaments can always be deleted
-    return true;
-  },
-
-  getDeleteConfirmationMessage: (tournament) => {
-    return 'Delete Tournament: Permanently removes the tournament and all its data. This action cannot be undone.';
-  },
-
   // Schedule generation
   generateSchedule: (tournament) => {
     return generateRoundRobinSchedule(tournament);

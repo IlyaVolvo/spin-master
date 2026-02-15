@@ -20,14 +20,14 @@
  *     --rating-min <n>     Minimum rating filter (default: 0)
  *     --rating-max <n>     Maximum rating filter (default: 9999)
  *     --correlation <f>    Rating-result correlation, -1..1 (default: 0)
- *                          0 = pure Elo probability
- *                          1 = higher rated always wins
- *                         -1 = lower rated always wins (upsets only)
+ *                          0 = pure random (50/50 coin flip)
+ *                          1 = full Elo probability (rating gap matters)
+ *                         -1 = inverted Elo (lower rated favored)
  *     --complete <n>       % of matches to simulate, 0-100 (default: 100)
  *     --name <string>      Tournament name (default: TYPE YYYY-MM-DD HH:MM)
  *
  *   Type-specific options:
- *     playoff:        --seeds <n>  (default: numPlayers/4)
+ *     playoff:        --seeds <n>  (default: 0, must be 0 or power of 2)
  *     prelim-rr:      --auto <n>  --groups <n>  --final <n>
  *     prelim-playoff: --auto <n>  --groups <n>  --final <n>
  *
@@ -262,31 +262,30 @@ function defaultName(type: string): string {
   return `Generated ${DISPLAY_NAMES[type] || type} ${dateStr}`;
 }
 
-// ─── Match Simulation ────────────────────────────────────────────────────────
-
 /**
- * Calculate win probability for player1 using Elo formula,
- * then bias it with the correlation parameter.
+ * Win probability for player 1 given ratings and correlation.
  *
- * correlation = 0  → pure Elo probability
- * correlation = 1  → higher rated always wins (P=1 if rating1>rating2)
- * correlation = -1 → lower rated always wins (upset mode)
+ * The correlation controls how much the rating difference matters:
+ *   correlation = 0  -> 50/50 coin flip (ratings ignored)
+ *   correlation = 1  -> full Elo probability (larger rating gaps = stronger favorite)
+ *   correlation = -1 -> inverted Elo (lower rated player gets the Elo advantage)
+ *
+ * The rating difference naturally scales the effect: a 200-point gap
+ * produces a bigger favorite than a 50-point gap at the same correlation.
  */
 function winProbability(rating1: number, rating2: number, correlation: number): number {
+  // Elo probability based on rating difference
   const eloProbability = 1 / (1 + Math.pow(10, (rating2 - rating1) / 400));
 
-  if (correlation === 0) return eloProbability;
-
-  // Deterministic target: 1 if player1 is higher rated, 0 if lower, 0.5 if equal
-  const deterministic = rating1 > rating2 ? 1 : rating1 < rating2 ? 0 : 0.5;
+  if (correlation === 0) return 0.5;
 
   if (correlation > 0) {
-    // Blend toward deterministic (higher rated wins more)
-    return eloProbability + correlation * (deterministic - eloProbability);
+    // Blend from 50/50 toward full Elo probability
+    return 0.5 + correlation * (eloProbability - 0.5);
   } else {
-    // Blend toward anti-deterministic (upsets more likely)
-    const antiDeterministic = 1 - deterministic;
-    return eloProbability + Math.abs(correlation) * (antiDeterministic - eloProbability);
+    // Negative correlation: invert the Elo advantage (upsets)
+    const invertedElo = 1 - eloProbability;
+    return 0.5 + Math.abs(correlation) * (invertedElo - 0.5);
   }
 }
 
@@ -348,13 +347,18 @@ async function selectPlayers(numPlayers: number, ratingMin: number, ratingMax: n
     orderBy: { rating: 'desc' },
   });
 
-  if (allEligible.length < numPlayers) {
-    console.error(`❌ Need ${numPlayers} players but only ${allEligible.length} eligible (rating ${ratingMin}-${ratingMax})`);
+  if (allEligible.length < 2) {
+    console.error(`❌ Need at least 2 players but only ${allEligible.length} eligible (rating ${ratingMin}-${ratingMax})`);
     process.exit(1);
   }
 
-  const selected = shuffle(allEligible).slice(0, numPlayers);
-  console.log(`\nSelected ${numPlayers} players:`);
+  const actualCount = Math.min(numPlayers, allEligible.length);
+  if (actualCount < numPlayers) {
+    console.log(`⚠  Requested ${numPlayers} players but only ${allEligible.length} eligible (rating ${ratingMin}-${ratingMax}), using ${actualCount}`);
+  }
+
+  const selected = shuffle(allEligible).slice(0, actualCount);
+  console.log(`\nSelected ${actualCount} players:`);
   selected.forEach((p, i) => console.log(`  ${i + 1}. ${p.firstName} ${p.lastName} (Rating: ${p.rating}, ID: ${p.id})`));
   console.log('');
   return selected;
@@ -370,6 +374,14 @@ function playerRating(p: Player) { return p.rating ?? 1200; }
 function logMatch(p1: Player, p2: Player, s1: number, s2: number) {
   const winner = s1 > s2 ? playerName(p1) : playerName(p2);
   console.log(`  ${playerName(p1)} (${playerRating(p1)}) vs ${playerName(p2)} (${playerRating(p2)}) → ${s1}-${s2} | Winner: ${winner}`);
+}
+
+/** Calculate per-match rating adjustments (creates RatingHistory records) */
+async function calculateMatchRating(match: any, tournamentId: number) {
+  if (!match || match.player1Forfeit || match.player2Forfeit || !match.member1Id || !match.member2Id) return;
+  const { adjustRatingsForSingleMatch } = await import('../src/services/usattRatingService');
+  const player1Won = match.winnerId === match.member1Id;
+  await adjustRatingsForSingleMatch(match.member1Id, match.member2Id, player1Won, tournamentId, match.id);
 }
 
 // ─── Round Robin ─────────────────────────────────────────────────────────────
@@ -409,7 +421,7 @@ async function generateRoundRobin(players: Player[], opts: Opts) {
     const p1 = players[i], p2 = players[j];
     const { player1Sets, player2Sets } = simulateBestOf5(playerRating(p1), playerRating(p2), opts.correlation);
 
-    await plugin.updateMatch({
+    const result = await plugin.updateMatch({
       matchId: 0, // 0 = create new match
       tournamentId: tournament.id,
       member1Id: p1.id,
@@ -420,6 +432,7 @@ async function generateRoundRobin(players: Player[], opts: Opts) {
       player2Forfeit: false,
       prisma,
     });
+    await calculateMatchRating(result.match, tournament.id);
 
     logMatch(p1, p2, player1Sets, player2Sets);
   }
@@ -437,7 +450,7 @@ async function generateRoundRobin(players: Player[], opts: Opts) {
 
 async function generatePlayoff(players: Player[], opts: Opts) {
   const name = opts.name || defaultName('PLAYOFF');
-  const numSeeds = opts.seeds ?? Math.max(0, Math.floor(players.length / 4));
+  const numSeeds = opts.seeds ?? 0;
 
   // Sort by rating for seeding
   const sorted = [...players].sort((a, b) => playerRating(b) - playerRating(a));
@@ -501,14 +514,16 @@ async function simulatePlayoffBracket(tournamentId: number, allPlayers: Player[]
       continue;
     }
 
-    // Count total bracket matches to apply completion percentage
-    const totalBracketMatches = await prisma.bracketMatch.count({
-      where: { tournamentId, member1Id: { not: null }, member2Id: { not: null } },
+    // Single elimination: total matches = participants - 1
+    // We count distinct participants across all bracket matches (not just currently-assigned ones)
+    const participantCount = await prisma.tournamentParticipant.count({
+      where: { tournamentId },
     });
+    const totalMatches = participantCount - 1;
     const playedSoFar = await prisma.bracketMatch.count({
       where: { tournamentId, matchId: { not: null } },
     });
-    const targetTotal = Math.floor(totalBracketMatches * completePct / 100);
+    const targetTotal = Math.floor(totalMatches * completePct / 100);
 
     if (playedSoFar >= targetTotal) {
       console.log(`  (skipping round ${round} — ${completePct}% target reached)`);
@@ -544,6 +559,8 @@ async function simulatePlayoffBracket(tournamentId: number, allPlayers: Player[]
         where: { id: bm.id },
         data: { matchId: match.id },
       });
+
+      await calculateMatchRating(match, tournamentId);
 
       // Advance winner to next round
       await advanceWinner(tournamentId, bm.id, winnerId);
@@ -620,7 +637,7 @@ async function generateSwiss(players: Player[], opts: Opts) {
       const p2 = playerMap.get(match.member2Id!) || { id: match.member2Id!, firstName: '?', lastName: '?', rating: 1200 };
       const { player1Sets, player2Sets } = simulateBestOf5(playerRating(p1 as Player), playerRating(p2 as Player), opts.correlation);
 
-      await plugin.updateMatch({
+      const swissResult = await plugin.updateMatch({
         matchId: match.id,
         tournamentId: tournament.id,
         player1Sets,
@@ -629,6 +646,7 @@ async function generateSwiss(players: Player[], opts: Opts) {
         player2Forfeit: false,
         prisma,
       });
+      await calculateMatchRating(swissResult.match, tournament.id);
 
       logMatch(p1 as Player, p2 as Player, player1Sets, player2Sets);
       matchesPlayed++;
@@ -874,6 +892,7 @@ async function simulateRoundRobinChild(
       player2Forfeit: false,
       prisma,
     });
+    await calculateMatchRating(result.match, child.id);
 
     logMatch(p1 as Player, p2 as Player, player1Sets, player2Sets);
 
@@ -982,6 +1001,7 @@ async function simulateGroupsInterleaved(
         player2Forfeit: false,
         prisma,
       });
+      await calculateMatchRating(result.match, gq.child.id);
 
       console.log(`  [G${gq.child.groupNumber}] ${playerName(p1 as Player)} (${playerRating(p1 as Player)}) vs ${playerName(p2 as Player)} (${playerRating(p2 as Player)}) → ${player1Sets}-${player2Sets}`);
 
@@ -1213,7 +1233,7 @@ async function continueRoundRobin(tournament: any, playerMap: Map<number, Player
     const p2 = playerMap.get(m2) || { id: m2, firstName: '?', lastName: '?', rating: 1200 };
     const { player1Sets, player2Sets } = simulateBestOf5(playerRating(p1 as Player), playerRating(p2 as Player), opts.correlation);
 
-    await plugin.updateMatch({
+    const contResult = await plugin.updateMatch({
       matchId: 0,
       tournamentId: tournament.id,
       member1Id: m1,
@@ -1224,6 +1244,7 @@ async function continueRoundRobin(tournament: any, playerMap: Map<number, Player
       player2Forfeit: false,
       prisma,
     });
+    await calculateMatchRating(contResult.match, tournament.id);
 
     logMatch(p1 as Player, p2 as Player, player1Sets, player2Sets);
   }
@@ -1329,7 +1350,7 @@ async function continueSwiss(tournament: any, playerMap: Map<number, Player>, op
       const p2 = playerMap.get(match.member2Id!) || { id: match.member2Id!, firstName: '?', lastName: '?', rating: 1200 };
       const { player1Sets, player2Sets } = simulateBestOf5(playerRating(p1 as Player), playerRating(p2 as Player), opts.correlation);
 
-      await plugin.updateMatch({
+      const contSwissResult = await plugin.updateMatch({
         matchId: match.id,
         tournamentId: tournament.id,
         player1Sets,
@@ -1338,6 +1359,7 @@ async function continueSwiss(tournament: any, playerMap: Map<number, Player>, op
         player2Forfeit: false,
         prisma,
       });
+      await calculateMatchRating(contSwissResult.match, tournament.id);
 
       logMatch(p1 as Player, p2 as Player, player1Sets, player2Sets);
       matchesPlayed++;

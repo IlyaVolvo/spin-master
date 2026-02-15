@@ -1302,26 +1302,21 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           </div>
           {/* Rating directly under the name */}
           <div style={{ marginLeft: player1Seed !== null && player1Seed !== undefined ? '18px' : '0' }}>
-            {/* Round 1: Show initial tournament rating if no match result yet */}
-            {match.round === 1 && !hasResult && player1 && player1.playerRatingAtTime !== null && (
-              <span style={{ 
-                fontSize: '9px', 
-                color: '#666',
-                fontWeight: '400',
-              }}>
-                ({player1.playerRatingAtTime})
-              </span>
-            )}
-            {/* Show rating change after match result */}
-            {hasResult && player1RatingChange !== null && (
-              <span style={{ 
-                fontSize: '9px', 
-                color: '#666',
-                fontWeight: '400',
-              }}>
-                {player1NewRating !== null ? `${player1NewRating} ` : ''}({formatRatingChange(player1RatingChange)})
-              </span>
-            )}
+            {/* Show pre-match rating for all rounds */}
+            {player1 && player1Name !== 'BYE' && (() => {
+              const ratingBefore = hasResult && player1RatingBefore !== null ? player1RatingBefore : player1?.playerRatingAtTime ?? null;
+              if (ratingBefore === null) return null;
+              return (
+                <span style={{ fontSize: '9px', color: '#666', fontWeight: '400' }}>
+                  ({ratingBefore})
+                  {hasResult && player1RatingChange !== null && (
+                    <span style={{ color: player1RatingChange >= 0 ? '#27ae60' : '#e74c3c', marginLeft: '2px' }}>
+                      {formatRatingChange(player1RatingChange)}
+                    </span>
+                  )}
+                </span>
+              );
+            })()}
           </div>
           {isForfeit && match.player1Forfeit && (
             <span style={{ fontSize: '10px', color: '#e74c3c', fontStyle: 'italic' }}>walkover</span>
@@ -1437,26 +1432,21 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             display: 'flex',
             justifyContent: 'flex-end',
           }}>
-            {/* Round 1: Show initial tournament rating if no match result yet */}
-            {match.round === 1 && !hasResult && player2 && player2.playerRatingAtTime !== null && (
-              <span style={{ 
-                fontSize: '9px', 
-                color: '#666',
-                fontWeight: '400',
-              }}>
-                ({player2.playerRatingAtTime})
-              </span>
-            )}
-            {/* Show rating change after match result */}
-            {hasResult && player2RatingChange !== null && (
-              <span style={{ 
-                fontSize: '9px', 
-                color: '#666',
-                fontWeight: '400',
-              }}>
-                {player2NewRating !== null ? `${player2NewRating} ` : ''}({formatRatingChange(player2RatingChange)})
-              </span>
-            )}
+            {/* Show pre-match rating for all rounds */}
+            {player2 && player2Name !== 'BYE' && (() => {
+              const ratingBefore = hasResult && player2RatingBefore !== null ? player2RatingBefore : player2?.playerRatingAtTime ?? null;
+              if (ratingBefore === null) return null;
+              return (
+                <span style={{ fontSize: '9px', color: '#666', fontWeight: '400' }}>
+                  ({ratingBefore})
+                  {hasResult && player2RatingChange !== null && (
+                    <span style={{ color: player2RatingChange >= 0 ? '#27ae60' : '#e74c3c', marginLeft: '2px' }}>
+                      {formatRatingChange(player2RatingChange)}
+                    </span>
+                  )}
+                </span>
+              );
+            })()}
           </div>
           {isForfeit && match.player2Forfeit && (
             <span style={{ fontSize: '10px', color: '#e74c3c', fontStyle: 'italic' }}>walkover</span>
