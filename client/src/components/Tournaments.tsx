@@ -1175,6 +1175,8 @@ const Tournaments: React.FC = () => {
           // Bracket-based tournament (playoff style)
           return {
             ...match,
+            player1Name: match.player1Name,
+            player2Name: match.player2Name,
             player1RatingDisplay: match.player1Rating,
             player2RatingDisplay: match.player2Rating,
             isPlayed: false, // Bracket schedule only shows ready matches
@@ -1183,12 +1185,14 @@ const Tournaments: React.FC = () => {
           };
         } else {
           // Round-robin style tournament
-          const p1Rating = formatActiveTournamentRating(match.player1StoredRating, match.player1CurrentRating);
-          const p2Rating = formatActiveTournamentRating(match.player2StoredRating, match.player2CurrentRating);
+          const p1Rating = formatActiveTournamentRating(match.member1StoredRating, match.member1CurrentRating);
+          const p2Rating = formatActiveTournamentRating(match.member2StoredRating, match.member2CurrentRating);
           const matchKey = `${match.member1Id}-${match.member2Id}`;
           const isPlayed = playedMatches.has(matchKey);
           return {
             ...match,
+            player1Name: match.member1Name,
+            player2Name: match.member2Name,
             player1RatingDisplay: p1Rating,
             player2RatingDisplay: p2Rating,
             isPlayed,
@@ -1762,6 +1766,308 @@ const Tournaments: React.FC = () => {
     }, 250);
   };
 
+  const handlePrintCompoundSchedule = (tournament: Tournament) => {
+    const children = (tournament.childTournaments || [])
+      .slice()
+      .sort((a: any, b: any) => (a.groupNumber ?? 999) - (b.groupNumber ?? 999));
+
+    if (children.length === 0) return;
+
+    const tournamentName = tournament.name || `Tournament ${new Date(tournament.createdAt).toLocaleDateString()}`;
+
+    let allSchedulesHtml = '';
+    for (const child of children) {
+      const childPlugin = tournamentPluginRegistry.get(child.type as TournamentType);
+      if (!childPlugin || !childPlugin.generateSchedule) continue;
+
+      const scheduleRounds = childPlugin.generateSchedule(child as any);
+      if (scheduleRounds.length === 0) continue;
+
+      const totalMatches = scheduleRounds.reduce((sum: number, round: any) => sum + round.matches.length, 0);
+      const hasBracketStructure = child.bracketMatches && child.bracketMatches.length > 0;
+
+      const playedMatches = new Set<string>();
+      if (!hasBracketStructure) {
+        (child.matches || []).forEach((match: any) => {
+          if (match.member2Id !== null && match.member2Id !== 0) {
+            playedMatches.add(`${match.member1Id}-${match.member2Id}`);
+            playedMatches.add(`${match.member2Id}-${match.member1Id}`);
+          }
+        });
+      }
+
+      const roundsWithRatings = scheduleRounds.map((round: any) => ({
+        ...round,
+        matches: round.matches.map((match: any, matchIdx: number) => {
+          if (hasBracketStructure) {
+            return { ...match, p1Name: match.player1Name, p2Name: match.player2Name, p1Rating: match.player1Rating, p2Rating: match.player2Rating, isPlayed: false, matchNumber: matchIdx + 1, roundLabel: match.roundLabel };
+          } else {
+            const p1Rating = formatActiveTournamentRating(match.member1StoredRating, match.member1CurrentRating);
+            const p2Rating = formatActiveTournamentRating(match.member2StoredRating, match.member2CurrentRating);
+            return { ...match, p1Name: match.member1Name, p2Name: match.member2Name, p1Rating, p2Rating, isPlayed: playedMatches.has(`${match.member1Id}-${match.member2Id}`), matchNumber: match.matchNumber };
+          }
+        }),
+      }));
+
+      allSchedulesHtml += `
+        <div style="margin-bottom: 30px; page-break-inside: avoid;">
+          <h3 style="margin: 0 0 5px 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">
+            ${child.name || `Sub-tournament ${child.id}`}
+            <span style="font-size: 12px; color: #666; font-weight: normal; margin-left: 10px;">${totalMatches} matches | ${child.participants?.length || 0} players</span>
+          </h3>
+          <table style="border-collapse: collapse; width: 100%; margin-top: 5px;">
+            <thead>
+              <tr>
+                ${hasBracketStructure ? '<th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: center;">Round</th>' : '<th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: center;">Match #</th>'}
+                <th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: left;">Player 1</th>
+                <th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: left;">Player 2</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${roundsWithRatings.map((round: any, roundIndex: number) => `
+                ${roundIndex > 0 ? '<tr style="height: 3px; background-color: #333;"><td colspan="3" style="padding: 0; border: none; height: 3px;"></td></tr>' : ''}
+                ${round.matches.map((match: any) => `
+                  <tr style="${match.isPlayed ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
+                    <td style="padding: 8px; border: 1px solid #333; text-align: center; font-weight: bold;">${hasBracketStructure ? (match.roundLabel || `Round ${match.round}`) : match.matchNumber}</td>
+                    <td style="padding: 8px; border: 1px solid #333;">${match.p1Name}${match.p1Rating ? ` <span style="font-size: 12px; color: #666;">(${match.p1Rating})</span>` : ''}</td>
+                    <td style="padding: 8px; border: 1px solid #333;">${match.p2Name}${match.p2Rating ? ` <span style="font-size: 12px; color: #666;">(${match.p2Rating})</span>` : ''}</td>
+                  </tr>
+                `).join('')}
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    if (!allSchedulesHtml) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Schedule - ${tournamentName}</title>
+          <style>
+            @media print { @page { margin: 1cm; } body { margin: 0; padding: 0; } }
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { margin: 0 0 10px 0; font-size: 24px; color: #2c3e50; }
+            .tournament-info { margin-bottom: 20px; font-size: 14px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <h1>Match Schedule</h1>
+          <div class="tournament-info">
+            <strong>Tournament:</strong> ${tournamentName}<br>
+            <strong>Date:</strong> ${new Date(tournament.createdAt).toLocaleDateString()}<br>
+            <strong>Sub-tournaments:</strong> ${children.length}
+          </div>
+          ${allSchedulesHtml}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+  };
+
+  const handlePrintCompoundResults = (tournament: Tournament) => {
+    const children = (tournament.childTournaments || [])
+      .slice()
+      .sort((a: any, b: any) => (a.groupNumber ?? 999) - (b.groupNumber ?? 999));
+
+    if (children.length === 0) return;
+
+    const tournamentName = tournament.name || `Tournament ${new Date(tournament.createdAt).toLocaleDateString()}`;
+    const completionDate = tournament.recordedAt ? new Date(tournament.recordedAt).toLocaleDateString() : new Date(tournament.createdAt).toLocaleDateString();
+
+    let allResultsHtml = '';
+    for (const child of children) {
+      const hasBracketStructure = child.bracketMatches && child.bracketMatches.length > 0;
+
+      allResultsHtml += `<div style="margin-bottom: 30px; page-break-inside: avoid;">`;
+      allResultsHtml += `<h3 style="margin: 0 0 10px 0; color: #2c3e50; border-bottom: 2px solid ${hasBracketStructure ? '#27ae60' : '#3498db'}; padding-bottom: 5px;">
+        ${child.name || `Sub-tournament ${child.id}`}
+        <span style="font-size: 12px; color: #666; font-weight: normal; margin-left: 10px;">${child.participants?.length || 0} players</span>
+      </h3>`;
+
+      if (!hasBracketStructure) {
+        // Round Robin results: standings + matrix
+        const standings = calculateStandings(child as any);
+        const { participants, participantData, matrix } = buildResultsMatrix(child as any);
+
+        // Standings table
+        allResultsHtml += `
+          <table style="border-collapse: collapse; width: 100%; margin-bottom: 15px;">
+            <thead>
+              <tr>
+                <th style="padding: 6px; border: 1px solid #333; background-color: #f0f0f0; text-align: center; width: 40px;">Pos</th>
+                <th style="padding: 6px; border: 1px solid #333; background-color: #f0f0f0; text-align: left;">Player</th>
+                <th style="padding: 6px; border: 1px solid #333; background-color: #f0f0f0; text-align: center; width: 40px;">W</th>
+                <th style="padding: 6px; border: 1px solid #333; background-color: #f0f0f0; text-align: center; width: 40px;">L</th>
+                <th style="padding: 6px; border: 1px solid #333; background-color: #f0f0f0; text-align: center; width: 60px;">Sets +/-</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        standings.forEach(({ member, stats, position }: any) => {
+          const participant = participantData.find((p: any) => p.memberId === member.id);
+          const ratingDisplay = formatCompletedTournamentRating(participant?.playerRatingAtTime, member.rating);
+          const setDiff = stats.setsWon - stats.setsLost;
+          const playerName = formatPlayerName(member.firstName, member.lastName, getNameDisplayOrder());
+          const posBgColor = position === 1 ? '#fff3cd' : position === 2 ? '#e9ecef' : position === 3 ? '#d4edda' : '#fff';
+          const diffColor = setDiff > 0 ? '#28a745' : setDiff < 0 ? '#dc3545' : '#666';
+
+          allResultsHtml += `
+            <tr>
+              <td style="padding: 6px; border: 1px solid #333; text-align: center; font-weight: bold; background-color: ${posBgColor};">${position}</td>
+              <td style="padding: 6px; border: 1px solid #333; font-weight: bold;">${playerName}${ratingDisplay ? ` <span style="font-size: 11px; color: #666; font-weight: normal;">(${ratingDisplay})</span>` : ''}</td>
+              <td style="padding: 6px; border: 1px solid #333; text-align: center;">${stats.wins}</td>
+              <td style="padding: 6px; border: 1px solid #333; text-align: center;">${stats.losses}</td>
+              <td style="padding: 6px; border: 1px solid #333; text-align: center; font-weight: bold; color: ${diffColor};">${setDiff > 0 ? '+' : ''}${setDiff}</td>
+            </tr>
+          `;
+        });
+
+        allResultsHtml += `</tbody></table>`;
+
+        // Results matrix
+        const scoreMatrix: { [key: number]: { [key: number]: string } } = {};
+        participants.forEach((p1: any, i: number) => {
+          scoreMatrix[p1.member.id] = {};
+          participants.forEach((p2: any, j: number) => {
+            if (i === j) { scoreMatrix[p1.member.id][p2.member.id] = '-'; return; }
+            const match = matrix[i][j];
+            if (match) {
+              if (match.player1Forfeit) scoreMatrix[p1.member.id][p2.member.id] = match.member1Id === p1.memberId ? 'L' : 'W';
+              else if (match.player2Forfeit) scoreMatrix[p1.member.id][p2.member.id] = match.member1Id === p1.memberId ? 'W' : 'L';
+              else {
+                const s1 = match.member1Id === p1.memberId ? match.player1Sets : match.player2Sets;
+                const s2 = match.member1Id === p1.memberId ? match.player2Sets : match.player1Sets;
+                scoreMatrix[p1.member.id][p2.member.id] = `${s1} - ${s2}`;
+              }
+            } else { scoreMatrix[p1.member.id][p2.member.id] = ''; }
+          });
+        });
+
+        allResultsHtml += `<table style="border-collapse: collapse; width: 100%;"><thead><tr><th style="padding: 5px; border: 1px solid #333; background-color: #f0f0f0; text-align: left; font-size: 12px;">Player</th>`;
+        participants.forEach((p: any) => {
+          allResultsHtml += `<th style="padding: 5px; border: 1px solid #333; background-color: #f0f0f0; text-align: center; font-size: 11px; min-width: 60px;">${formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())}</th>`;
+        });
+        allResultsHtml += `</tr></thead><tbody>`;
+
+        participants.forEach((p1: any) => {
+          const playerName = formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder());
+          allResultsHtml += `<tr><td style="padding: 5px; border: 1px solid #333; background-color: #f0f0f0; font-weight: bold; font-size: 12px; white-space: nowrap;">${playerName}</td>`;
+          participants.forEach((p2: any) => {
+            const score = scoreMatrix[p1.member.id][p2.member.id];
+            const isDiagonal = p1.member.id === p2.member.id;
+            let cellBg = isDiagonal ? '#e9ecef' : '#fff';
+            if (!isDiagonal && score) {
+              if (score === 'W') cellBg = '#d4edda';
+              else if (score === 'L') cellBg = '#f8d7da';
+              else if (score !== '') {
+                const [s1, s2] = score.split(' - ').map(Number);
+                cellBg = s1 > s2 ? '#d4edda' : s2 > s1 ? '#f8d7da' : '#fff';
+              }
+            }
+            allResultsHtml += `<td style="padding: 5px; border: 1px solid #333; text-align: center; background-color: ${cellBg}; font-size: 12px; font-weight: ${isDiagonal ? 'normal' : 'bold'};">${score || '-'}</td>`;
+          });
+          allResultsHtml += `</tr>`;
+        });
+        allResultsHtml += `</tbody></table>`;
+
+      } else {
+        // Bracket-based tournament results
+        const bracketMatches = child.bracketMatches || [];
+        const maxRound = Math.max(...bracketMatches.map((bm: any) => bm.round), 0);
+
+        const getRoundLabel = (round: number, totalRounds: number) => {
+          const totalMatches = Math.pow(2, totalRounds - round + 1);
+          if (totalMatches >= 32) return 'Round of 32';
+          if (totalMatches >= 16) return 'Round of 16';
+          if (totalMatches >= 8) return 'Quarterfinals';
+          if (totalMatches >= 4) return 'Semifinals';
+          if (totalMatches >= 2) return 'Finals';
+          return 'Championship';
+        };
+
+        for (let round = 1; round <= maxRound; round++) {
+          const roundMatches = bracketMatches.filter((bm: any) => bm.round === round).sort((a: any, b: any) => a.position - b.position);
+          if (roundMatches.length === 0) continue;
+
+          allResultsHtml += `<div style="margin-bottom: 10px;"><strong>${getRoundLabel(round, maxRound)}</strong></div>`;
+          allResultsHtml += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 10px;">`;
+
+          roundMatches.forEach((bm: any) => {
+            const match = bm.match;
+            const p1 = child.participants?.find((p: any) => p.memberId === bm.member1Id)?.member;
+            const p2 = child.participants?.find((p: any) => p.memberId === bm.member2Id)?.member;
+            const isBye = !bm.member1Id || bm.member1Id === 0 || !bm.member2Id || bm.member2Id === 0;
+
+            if (isBye) return;
+
+            const p1Name = p1 ? formatPlayerName(p1.firstName, p1.lastName, getNameDisplayOrder()) : 'TBD';
+            const p2Name = p2 ? formatPlayerName(p2.firstName, p2.lastName, getNameDisplayOrder()) : 'TBD';
+            let score = '-';
+            let winnerStyle1 = '', winnerStyle2 = '';
+            if (match) {
+              if (match.player1Forfeit) { score = 'Forfeit'; winnerStyle2 = 'color: #27ae60; font-weight: bold;'; }
+              else if (match.player2Forfeit) { score = 'Forfeit'; winnerStyle1 = 'color: #27ae60; font-weight: bold;'; }
+              else { score = `${match.player1Sets} - ${match.player2Sets}`; if (match.player1Sets > (match.player2Sets ?? 0)) winnerStyle1 = 'color: #27ae60; font-weight: bold;'; else winnerStyle2 = 'color: #27ae60; font-weight: bold;'; }
+            }
+
+            allResultsHtml += `<tr>
+              <td style="padding: 6px; border: 1px solid #333; ${winnerStyle1}">${p1Name}</td>
+              <td style="padding: 6px; border: 1px solid #333; text-align: center; font-weight: bold; width: 80px;">${score}</td>
+              <td style="padding: 6px; border: 1px solid #333; ${winnerStyle2}">${p2Name}</td>
+            </tr>`;
+          });
+
+          allResultsHtml += `</table>`;
+        }
+      }
+
+      allResultsHtml += `</div>`;
+    }
+
+    if (!allResultsHtml) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Results - ${tournamentName}</title>
+          <style>
+            @media print { @page { margin: 1cm; } body { margin: 0; padding: 0; } }
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { margin: 0 0 10px 0; font-size: 24px; color: #2c3e50; }
+            h2 { margin: 20px 0 10px 0; font-size: 20px; color: #2c3e50; }
+            .tournament-info { margin-bottom: 20px; font-size: 14px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <h1>Tournament Results</h1>
+          <div class="tournament-info">
+            <strong>Tournament:</strong> ${tournamentName}<br>
+            <strong>Date:</strong> ${new Date(tournament.createdAt).toLocaleDateString()}<br>
+            <strong>Completed:</strong> ${completionDate}<br>
+            <strong>Participants:</strong> ${tournament.participants.length}<br>
+            <strong>Sub-tournaments:</strong> ${children.length}
+          </div>
+          ${allResultsHtml}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+  };
+
   if (loading) {
     return <div className="card">Loading...</div>;
   }
@@ -1855,6 +2161,13 @@ const Tournaments: React.FC = () => {
                           </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <button
+                            onClick={() => handlePrintCompoundSchedule(tournament)}
+                            title="Print all sub-tournament schedules"
+                            style={{ padding: '6px 12px', border: '1px solid #7b1fa2', borderRadius: '4px', backgroundColor: '#fff', color: '#7b1fa2', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            🖨️ Print Schedule
+                          </button>
                           <button
                             onClick={() => handleShowCancelConfirmation(tournament.id)}
                             disabled={!isUserOrganizer}
@@ -2903,6 +3216,13 @@ const Tournaments: React.FC = () => {
                               )}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <button
+                                onClick={() => handlePrintCompoundResults(tournament)}
+                                title="Print all sub-tournament results"
+                                style={{ padding: '6px 12px', border: '1px solid #1976d2', borderRadius: '4px', backgroundColor: '#fff', color: '#1976d2', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                🖨️ Print
+                              </button>
                               <button
                                 onClick={() => handleQuickViewStats(tournament.id)}
                                 title="View Statistics"
