@@ -264,14 +264,18 @@ export class SwissPlugin implements TournamentPlugin {
 
       // First: try same point group, lowest ranked (last in the subarray)
       const sameGroupIndices: number[] = [];
-      const lowerGroupIndices: number[] = [];
+
+      // Group lower-point candidates by their point value (descending)
+      const lowerGroupsByPoints = new Map<number, number[]>();
 
       for (let i = 0; i < unpaired.length; i++) {
         if (!player.opponents.has(unpaired[i].memberId)) {
           if (unpaired[i].points === player.points) {
             sameGroupIndices.push(i);
-          } else {
-            lowerGroupIndices.push(i);
+          } else if (unpaired[i].points < player.points) {
+            const pts = unpaired[i].points;
+            if (!lowerGroupsByPoints.has(pts)) lowerGroupsByPoints.set(pts, []);
+            lowerGroupsByPoints.get(pts)!.push(i);
           }
         }
       }
@@ -279,14 +283,25 @@ export class SwissPlugin implements TournamentPlugin {
       // Pick the lowest-ranked in same group (last index in sameGroupIndices)
       if (sameGroupIndices.length > 0) {
         pairedIndex = sameGroupIndices[sameGroupIndices.length - 1];
-      } else if (lowerGroupIndices.length > 0) {
-        // Pick the lowest-ranked in the next point group
-        pairedIndex = lowerGroupIndices[lowerGroupIndices.length - 1];
+      } else {
+        // Try each lower point group in descending order (next group down first)
+        const lowerPointValues = Array.from(lowerGroupsByPoints.keys()).sort((a, b) => b - a);
+        for (const pts of lowerPointValues) {
+          const indices = lowerGroupsByPoints.get(pts)!;
+          // Pick the lowest-ranked in this point group (last index)
+          pairedIndex = indices[indices.length - 1];
+          break;
+        }
       }
 
       if (pairedIndex >= 0) {
         const opponent = unpaired.splice(pairedIndex, 1)[0];
-        pairings.push([player.memberId, opponent.memberId]);
+        // Higher-rated player is always member1
+        if (player.rating >= opponent.rating) {
+          pairings.push([player.memberId, opponent.memberId]);
+        } else {
+          pairings.push([opponent.memberId, player.memberId]);
+        }
       } else {
         // No valid opponent found — this player gets a bye (skip)
         // In a proper Swiss with even players this shouldn't happen
