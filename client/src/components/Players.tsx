@@ -2330,6 +2330,19 @@ const Players: React.FC = () => {
   const isUsingPluginWizard = Boolean(creationPlugin && creationFlow && creationFlow.steps.length > 0);
 
   const handleCancelTournamentCreation = () => {
+    // In modify mode, cancel goes back to tournaments page
+    if (editingTournamentId) {
+      setIsCreatingTournament(false);
+      setEditingTournamentId(null);
+      setExistingParticipantIds(new Set());
+      setSelectedPlayersForTournament([]);
+      setTournamentName('');
+      setTournamentType('');
+      setShowCancelConfirmation(false);
+      navigate('/tournaments');
+      return;
+    }
+
     if (tournamentCreationStep === 'type_selection') {
       // Exit tournament creation entirely
       setIsCreatingTournament(false);
@@ -2416,14 +2429,6 @@ const Players: React.FC = () => {
   };
 
   const handleFinishPlayerSelection = () => {
-    console.log('[DEBUG] handleFinishPlayerSelection', {
-      creationTournamentType,
-      creationPlugin: !!creationPlugin,
-      creationFlow: !!creationFlow,
-      hasRenderPostSelectionFlow: !!creationFlow?.renderPostSelectionFlow,
-      selectedCount: selectedPlayersForTournament.length,
-      editingTournamentId,
-    });
     const minPlayers = creationFlow?.minPlayers ?? 2;
     const maxPlayers = creationFlow?.maxPlayers ?? -1;
 

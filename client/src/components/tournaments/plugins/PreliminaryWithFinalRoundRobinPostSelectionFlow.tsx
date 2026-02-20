@@ -83,9 +83,13 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
       setLocalError('Need at least 2 players in the preliminary phase');
       return;
     }
-    const groups = generateSnakeDraftGroups(preliminaryPlayerIds, groupSize);
-    setPlayerGroups(groups);
-    setStep('confirm_groups');
+    try {
+      const groups = generateSnakeDraftGroups(preliminaryPlayerIds, groupSize);
+      setPlayerGroups(groups);
+      setStep('confirm_groups');
+    } catch (err: any) {
+      setLocalError(`Error generating groups: ${err.message}`);
+    }
   };
 
   const handleCreate = async () => {
