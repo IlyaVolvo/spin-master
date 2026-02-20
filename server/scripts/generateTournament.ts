@@ -19,11 +19,11 @@
  *   Common options:
  *     --rating-min <n>     Minimum rating filter (default: 0)
  *     --rating-max <n>     Maximum rating filter (default: 9999)
- *     --correlation <f>    Rating-result correlation, -1..1 (default: 0)
+ *     --correlation <f>    Rating-result correlation, -1..1 (default: 0.5)
  *                          0 = pure random (50/50 coin flip)
  *                          1 = full Elo probability (rating gap matters)
  *                         -1 = inverted Elo (lower rated favored)
- *     --complete <n>       % of matches to simulate, 0-100 (default: 100)
+ *     --complete <n>       % of matches to simulate, 0-100 (default: 0)
  *     --name <string>      Tournament name (default: TYPE YYYY-MM-DD HH:MM)
  *
  *   Type-specific options:
@@ -39,7 +39,7 @@
  *   matches. The tournament type is auto-detected from the database.
  *
  *   Compatible options:
- *     --correlation <f>    Rating-result correlation (default: 0)
+ *     --correlation <f>    Rating-result correlation (default: 0.5)
  *     --complete <n>       % of *remaining* matches to simulate (default: 100)
  *
  * ── EXAMPLES ─────────────────────────────────────────────────────────
@@ -121,8 +121,8 @@ function parseArgs(argv: string[]): Opts {
     numPlayers,
     ratingMin: 0,
     ratingMax: 9999,
-    correlation: 0,
-    complete: 100,
+    correlation: 0.5,
+    complete: 0,
   };
 
   let i = 2;
@@ -186,7 +186,7 @@ function parseContinueArgs(argv: string[]): ContinueOpts {
 
   const opts: ContinueOpts = {
     tournamentId,
-    correlation: 0,
+    correlation: 0.5,
     complete: 100,
   };
 
@@ -228,8 +228,8 @@ Types: rr, playoff, swiss, prelim-rr, prelim-playoff
 Create options:
   --rating-min <n>     (default: 0)
   --rating-max <n>     (default: 9999)
-  --correlation <f>    -1..1 (default: 0)
-  --complete <n>       % of matches to simulate, 0-100 (default: 100)
+  --correlation <f>    -1..1 (default: 0.5)
+  --complete <n>       % of matches to simulate, 0-100 (default: 0)
   --name <string>
 
 Type-specific:
@@ -239,7 +239,7 @@ Type-specific:
   prelim-playoff: --auto <n> (0)  --groups <n> (5)  --final <n> (closest pow2 of 2*groups + auto)
 
 Continue options:
-  --correlation <f>    -1..1 (default: 0)
+  --correlation <f>    -1..1 (default: 0.5)
   --complete <n>       % of *remaining* matches to simulate (default: 100)
 `);
   process.exit(1);
