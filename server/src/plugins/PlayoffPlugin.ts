@@ -1,4 +1,5 @@
-import { TournamentPlugin, TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 
 async function attachRatingHistoryToBracketMatches(
   bracketMatches: any[], 
@@ -103,7 +104,7 @@ async function attachRatingHistoryToBracketMatches(
   }
 }
 
-export class PlayoffPlugin implements TournamentPlugin {
+export class PlayoffPlugin extends BaseTournamentPlugin {
   type = 'PLAYOFF';
   isBasic = true;
 
@@ -690,5 +691,15 @@ export class PlayoffPlugin implements TournamentPlugin {
     }
     
     return { match: updatedMatch };
+  }
+
+  protected async getTournamentSpecificUpdateData(
+    existingTournament: any,
+    additionalData: Record<string, any> | undefined,
+    prisma: any
+  ): Promise<Record<string, any>> {
+    // Playoff tournaments don't have additional specific data to update
+    // The bracket structure is handled separately
+    return {};
   }
 }

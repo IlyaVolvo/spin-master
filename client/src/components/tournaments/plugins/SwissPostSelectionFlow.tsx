@@ -61,8 +61,13 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         tournamentData.name = tournamentName.trim();
       }
 
-      await api.post('/tournaments', tournamentData);
-      onSuccess('Swiss tournament created successfully');
+      if (editingTournamentId) {
+        await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        onSuccess('Swiss tournament modified successfully');
+      } else {
+        await api.post('/tournaments', tournamentData);
+        onSuccess('Swiss tournament created successfully');
+      }
       onCreated();
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
@@ -237,7 +242,7 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
       }}>
         <h3 style={{ marginTop: 0, marginBottom: '20px' }}>
-          Confirm Tournament Creation
+          {editingTournamentId ? 'Confirm Tournament Modification' : 'Confirm Tournament Creation'}
         </h3>
 
         <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
@@ -308,7 +313,7 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
               fontWeight: 'bold',
             }}
           >
-            Create Tournament
+            {editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
           </button>
         </div>
       </div>

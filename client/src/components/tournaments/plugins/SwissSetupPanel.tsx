@@ -37,16 +37,16 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
 
   // Load available players
   React.useEffect(() => {
-    const fetchPlayers = async () => {
+    const loadData = async () => {
       try {
-        const response = await fetch('/api/members');
-        const players = await response.json();
+        const membersResponse = await fetch('/api/members');
+        const players = await membersResponse.json();
         setAvailablePlayers(players.filter((p: any) => p.isActive));
       } catch (error) {
-        onError('Failed to load players');
+        onError('Failed to load data');
       }
     };
-    fetchPlayers();
+    loadData();
   }, [onError]);
 
   // Filter players based on search

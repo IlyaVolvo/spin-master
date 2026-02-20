@@ -1,4 +1,5 @@
-import { TournamentPlugin, TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 import { logger } from '../utils/logger';
 import { adjustRatingsForSingleMatch } from '../services/usattRatingService';
 
@@ -9,7 +10,7 @@ interface PlayerStanding {
   opponents: Set<number>;
 }
 
-export class SwissPlugin implements TournamentPlugin {
+export class SwissPlugin extends BaseTournamentPlugin {
   type = 'SWISS';
   isBasic = true;
 
@@ -495,5 +496,34 @@ export class SwissPlugin implements TournamentPlugin {
     return {
       match: { ...updatedMatch, winnerId },
     };
+  }
+
+  protected async getTournamentSpecificUpdateData(
+    existingTournament: any,
+    additionalData: Record<string, any> | undefined,
+    prisma: any
+  ): Promise<Record<string, any>> {
+    const numberOfRounds = additionalData?.numberOfRounds || 3;
+    
+    // Update or create swissData
+    if (existingTournament.swissData) {
+      await prisma.swissData.update({
+        where: { tournamentId: existingTournament.id },
+        data: {
+          numberOfRounds,
+        },
+      });
+    } else {
+      await prisma.swissData.create({
+        data: {
+          tournamentId: existingTournament.id,
+          numberOfRounds,
+          currentRound: 0,
+          isCompleted: false,
+        },
+      });
+    }
+    
+    return {};
   }
 }

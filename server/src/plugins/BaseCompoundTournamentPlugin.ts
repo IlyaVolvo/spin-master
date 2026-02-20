@@ -15,6 +15,11 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
 
   abstract createTournament(context: TournamentCreationContext): Promise<any>;
 
+  // Compound tournaments cannot be modified once created
+  canModify(tournament: any): boolean {
+    return false;
+  }
+
   async enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
     const { tournament, prisma } = context;
     

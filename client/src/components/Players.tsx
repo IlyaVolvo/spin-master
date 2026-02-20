@@ -553,6 +553,7 @@ const Players: React.FC = () => {
         throw new Error('tournamentType is required in navigation state for modifyTournament');
       }
       setTournamentType(location.state.tournamentType);
+      setCreationTournamentType(location.state.tournamentType);
       
       // Clear the state to prevent re-triggering
       navigate('/players', { 

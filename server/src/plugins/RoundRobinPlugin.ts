@@ -1,7 +1,8 @@
-import { TournamentPlugin, TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 import { createRatingHistoryForRoundRobinTournament, adjustRatingsForSingleMatch } from '../services/usattRatingService';
 
-export class RoundRobinPlugin implements TournamentPlugin {
+export class RoundRobinPlugin extends BaseTournamentPlugin {
   type = 'ROUND_ROBIN';
   isBasic = true;
 
@@ -284,5 +285,14 @@ export class RoundRobinPlugin implements TournamentPlugin {
 
   async onTournamentCompletionRatingCalculation(context: { tournament: any; prisma: any }): Promise<void> {
     await createRatingHistoryForRoundRobinTournament(context.tournament.id);
+  }
+
+  protected async getTournamentSpecificUpdateData(
+    existingTournament: any,
+    additionalData: Record<string, any> | undefined,
+    prisma: any
+  ): Promise<Record<string, any>> {
+    // Round Robin tournaments don't have additional specific data to update
+    return {};
   }
 }

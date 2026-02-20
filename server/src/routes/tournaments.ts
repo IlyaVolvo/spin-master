@@ -491,8 +491,88 @@ router.post('/', [
   }
 });
 
-// Create multiple tournaments at once
-// Bulk create tournaments - Only Organizers can create tournaments
+// Modify an existing tournament that hasn't started yet
+// Only Organizers can modify tournaments
+router.patch('/:id', [
+  body('name').optional().trim(),
+  body('participantIds').isArray({ min: 2 }),
+  body('participantIds.*').isInt({ min: 1 }),
+  body('additionalData').optional().isObject(),
+], async (req: AuthRequest, res: Response) => {
+  try {
+    // Check if user has ORGANIZER role
+    const hasOrganizerAccess = await isOrganizer(req);
+    if (!hasOrganizerAccess) {
+      return res.status(403).json({ error: 'Only Organizers can modify tournaments' });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const tournamentId = parseInt(req.params.id);
+    const { name, participantIds, additionalData } = req.body;
+
+    // Get existing tournament
+    const existingTournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        participants: true,
+        matches: true,
+      },
+    });
+
+    if (!existingTournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    // Get plugin for this tournament type
+    const plugin = tournamentPluginRegistry.get(existingTournament.type);
+    
+    // Check if tournament can be modified
+    if (!plugin.canModify || !plugin.canModify(existingTournament)) {
+      return res.status(400).json({ error: 'Tournament cannot be modified - matches have already been played' });
+    }
+
+    // Verify all participants are active
+    const players = await prisma.member.findMany({
+      where: {
+        id: { in: participantIds },
+        isActive: true,
+      },
+    });
+
+    if (players.length !== participantIds.length) {
+      return res.status(400).json({ error: 'Some participants are not active or not found' });
+    }
+
+    // Modify tournament using plugin
+    const modifiedTournament = await plugin.modifyTournament!({
+      tournamentId,
+      name: name || existingTournament.name,
+      participantIds,
+      players,
+      prisma,
+      additionalData,
+    });
+
+    // Invalidate cache and emit update
+    invalidateTournamentCache(tournamentId);
+    emitTournamentUpdate(tournamentId);
+
+    res.json(modifiedTournament);
+  } catch (error) {
+    logger.error('Error modifying tournament', { 
+      error: error instanceof Error ? error.message : String(error),
+      tournamentId: req.params.id 
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create multiple tournaments in bulk (for quick setup)
+// Only Organizers can create tournaments
 // Type validation delegated to plugin registry in route handler
 router.post('/bulk', [
   body('tournaments').isArray({ min: 1 }),

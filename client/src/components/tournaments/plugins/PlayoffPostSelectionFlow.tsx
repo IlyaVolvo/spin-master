@@ -97,12 +97,9 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
       }
 
       if (editingTournamentId) {
-        await api.patch(`/tournaments/${editingTournamentId}/participants`, {
-          participantIds: selectedPlayerIds
-        });
-        await api.patch(`/tournaments/${editingTournamentId}/name`, {
+        await api.patch(`/tournaments/${editingTournamentId}`, {
           name: tournamentData.name,
-          createdAt: new Date().toISOString()
+          participantIds: selectedPlayerIds,
         });
         onSuccess('Tournament modified successfully');
       } else {
@@ -275,7 +272,7 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
             fontWeight: 'bold',
           }}
         >
-          Create a Tournament
+          {editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
         </button>
         <button
           onClick={() => setStep('organize_bracket')}

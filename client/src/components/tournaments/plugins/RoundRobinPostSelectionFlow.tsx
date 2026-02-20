@@ -111,12 +111,9 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
         }
 
         if (editingTournamentId) {
-          await api.patch(`/tournaments/${editingTournamentId}/participants`, {
-            participantIds: selectedPlayerIds
-          });
-          await api.patch(`/tournaments/${editingTournamentId}/name`, {
+          await api.patch(`/tournaments/${editingTournamentId}`, {
             name: tournamentData.name,
-            createdAt: new Date().toISOString()
+            participantIds: selectedPlayerIds,
           });
           onSuccess('Tournament modified successfully');
         } else {

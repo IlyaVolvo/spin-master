@@ -74,9 +74,20 @@ export interface TournamentPlugin {
   // Creation method
   createTournament(context: TournamentCreationContext): Promise<Tournament>;
   
+  // Modification method - for tournaments that haven't started yet
+  modifyTournament?(context: {
+    tournamentId: number;
+    name: string;
+    participantIds: number[];
+    players: any[];
+    prisma: any;
+    additionalData?: Record<string, any>;
+  }): Promise<Tournament>;
+  
   // Query methods - plugins answer questions about their state
   isComplete(tournament: any): boolean;
   canCancel(tournament: any): boolean;
+  canModify(tournament: any): boolean;
   
   // Returns the number of matches remaining before the tournament is complete
   // When this reaches 0, the tournament should be marked as complete

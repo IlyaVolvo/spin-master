@@ -2451,7 +2451,7 @@ const Tournaments: React.FC = () => {
                       ✓
                     </button>
                   )}
-                  {tournament.status === 'ACTIVE' && tournament.matches.length === 0 && isUserOrganizer && (
+                  {tournament.status === 'ACTIVE' && !tournament.matches.some((m: any) => (m.player1Sets || 0) > 0 || (m.player2Sets || 0) > 0 || m.player1Forfeit || m.player2Forfeit) && isUserOrganizer && (
                     <button
                       onClick={() => {
                         saveStateBeforeNavigate();
