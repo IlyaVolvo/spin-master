@@ -3249,6 +3249,26 @@ const Tournaments: React.FC = () => {
                               )}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              {isUserOrganizer && (
+                                <button
+                                  onClick={() => {
+                                    saveStateBeforeNavigate();
+                                    navigate('/players', {
+                                      state: {
+                                        repeatTournament: true,
+                                        tournamentName: tournament.name,
+                                        tournamentType: tournament.type,
+                                        participantIds: tournament.participants.map(p => p.memberId),
+                                        from: 'tournaments'
+                                      }
+                                    });
+                                  }}
+                                  title="Create a new tournament with the same settings"
+                                  style={{ padding: '6px 12px', border: '1px solid #27ae60', borderRadius: '4px', backgroundColor: '#fff', color: '#27ae60', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                  🔄 Repeat
+                                </button>
+                              )}
                               <button
                                 onClick={() => handlePrintCompoundResults(tournament)}
                                 title="Print all sub-tournament results"
@@ -3430,6 +3450,38 @@ const Tournaments: React.FC = () => {
                             countNonForfeitedMatches={countNonForfeitedMatches}
                           />
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {isUserOrganizer && (
+                              <button
+                                onClick={() => {
+                                  saveStateBeforeNavigate();
+                                  navigate('/players', {
+                                    state: {
+                                      repeatTournament: true,
+                                      tournamentName: tournament.name,
+                                      tournamentType: tournament.type,
+                                      participantIds: tournament.participants.map(p => p.memberId),
+                                      from: 'tournaments'
+                                    }
+                                  });
+                                }}
+                                title="Create a new tournament with the same settings"
+                                style={{
+                                  padding: '6px 12px',
+                                  border: '1px solid #27ae60',
+                                  borderRadius: '4px',
+                                  backgroundColor: '#fff',
+                                  color: '#27ae60',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  fontWeight: 'bold',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                              >
+                                🔄 Repeat
+                              </button>
+                            )}
                             {plugin.canPrintResults && (
                               <button
                                 onClick={() => handlePrintResults(tournament)}

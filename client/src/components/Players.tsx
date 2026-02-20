@@ -320,6 +320,7 @@ const Players: React.FC = () => {
   });
   const [isCreatingTournament, setIsCreatingTournament] = useState(false);
   const [editingTournamentId, setEditingTournamentId] = useState<number | null>(null);
+  const [repeatingTournament, setRepeatingTournament] = useState(false);
   const [existingParticipantIds, setExistingParticipantIds] = useState<Set<number>>(new Set());
   const [tournamentCreationStep, setTournamentCreationStep] = useState<'type_selection' | 'player_selection' | 'plugin_flow'>('type_selection');
   const [selectedPlayersForTournament, setSelectedPlayersForTournament] = useState<number[]>([]);
@@ -563,6 +564,33 @@ const Players: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.modifyTournament, location.state?.tournamentId, members.length, isCreatingTournament]);
+
+  // Handle tournament repeat from Tournaments component
+  useEffect(() => {
+    if (location.state?.repeatTournament === true && !isCreatingTournament && members.length > 0) {
+      const participantIds = location.state.participantIds || [];
+      
+      setEditingTournamentId(null);
+      setRepeatingTournament(true);
+      setExistingParticipantIds(new Set(participantIds));
+      setIsCreatingTournament(true);
+      setTournamentCreationStep('player_selection');
+      setSelectedPlayersForTournament(participantIds);
+      setTournamentName(location.state.tournamentName || '');
+      if (!location.state.tournamentType) {
+        throw new Error('tournamentType is required in navigation state for repeatTournament');
+      }
+      setTournamentType(location.state.tournamentType);
+      setCreationTournamentType(location.state.tournamentType);
+      
+      // Clear the state to prevent re-triggering
+      navigate('/players', { 
+        state: { ...location.state, repeatTournament: false },
+        replace: true 
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.repeatTournament, members.length, isCreatingTournament]);
 
   // Auto-expand filters when in player selection mode for tournaments
   useEffect(() => {
@@ -2330,10 +2358,11 @@ const Players: React.FC = () => {
   const isUsingPluginWizard = Boolean(creationPlugin && creationFlow && creationFlow.steps.length > 0);
 
   const handleCancelTournamentCreation = () => {
-    // In modify mode, cancel goes back to tournaments page
-    if (editingTournamentId) {
+    // In modify or repeat mode, cancel goes back to tournaments page
+    if (editingTournamentId || repeatingTournament) {
       setIsCreatingTournament(false);
       setEditingTournamentId(null);
+      setRepeatingTournament(false);
       setExistingParticipantIds(new Set());
       setSelectedPlayersForTournament([]);
       setTournamentName('');
@@ -2347,6 +2376,7 @@ const Players: React.FC = () => {
       // Exit tournament creation entirely
       setIsCreatingTournament(false);
       setEditingTournamentId(null);
+      setRepeatingTournament(false);
       setExistingParticipantIds(new Set());
       setSelectedPlayersForTournament([]);
       setTournamentName('');
@@ -2364,6 +2394,7 @@ const Players: React.FC = () => {
     setShowCancelConfirmation(false);
     setIsCreatingTournament(false);
     setEditingTournamentId(null);
+    setRepeatingTournament(false);
     setExistingParticipantIds(new Set());
     setSelectedPlayersForTournament([]);
     setTournamentName('');
@@ -2450,6 +2481,7 @@ const Players: React.FC = () => {
   const handleTournamentCreated = () => {
     setIsCreatingTournament(false);
     setEditingTournamentId(null);
+    setRepeatingTournament(false);
     setExistingParticipantIds(new Set());
     setTournamentCreationStep('type_selection');
     setSelectedPlayersForTournament([]);
