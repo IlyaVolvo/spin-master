@@ -82,8 +82,13 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
         tournamentData.name = tournamentName.trim();
       }
 
-      await api.post('/tournaments', tournamentData);
-      onSuccess('Multi Round Robin tournament created successfully');
+      if (editingTournamentId) {
+        await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        onSuccess('Multi Round Robin tournament modified successfully');
+      } else {
+        await api.post('/tournaments', tournamentData);
+        onSuccess('Multi Round Robin tournament created successfully');
+      }
       onCreated();
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
@@ -439,7 +444,7 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
               fontWeight: 'bold',
             }}
           >
-            Create Tournament
+            {editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
           </button>
         </div>
       </div>

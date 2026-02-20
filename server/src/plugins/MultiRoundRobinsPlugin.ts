@@ -72,6 +72,36 @@ export class MultiRoundRobinsPlugin extends BaseCompoundTournamentPlugin {
     });
   }
 
+  protected async recreateChildren(context: {
+    tournamentId: number;
+    name: string;
+    participantIds: number[];
+    players: any[];
+    prisma: any;
+    additionalData?: Record<string, any>;
+  }): Promise<void> {
+    const { tournamentId, name, players, prisma, additionalData } = context;
+    const groups: number[][] = additionalData?.groups || [];
+
+    // Re-create child Round Robin tournaments for each group
+    await Promise.all(
+      groups.map(async (group: number[], index: number) => {
+        const groupPlayers = players.filter((p: any) => group.includes(p.id));
+        const groupName = `${name} - Group ${index + 1}`;
+
+        return await this.createChildTournament(
+          'ROUND_ROBIN',
+          groupName,
+          group,
+          groupPlayers,
+          tournamentId,
+          index + 1,
+          prisma
+        );
+      })
+    );
+  }
+
   protected hasFinalPhase(): boolean {
     return false; // No final phase, just parallel groups
   }

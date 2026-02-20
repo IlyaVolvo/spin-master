@@ -138,8 +138,13 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
         tournamentData.name = tournamentName.trim();
       }
 
-      await api.post('/tournaments', tournamentData);
-      onSuccess('Preliminary + Final Playoff tournament created successfully');
+      if (editingTournamentId) {
+        await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        onSuccess('Preliminary + Final Playoff tournament modified successfully');
+      } else {
+        await api.post('/tournaments', tournamentData);
+        onSuccess('Preliminary + Final Playoff tournament created successfully');
+      }
       onCreated();
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
@@ -524,7 +529,7 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
         boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
       }}>
         <h3 style={{ marginTop: 0, marginBottom: '20px' }}>
-          Confirm Tournament Creation
+          {editingTournamentId ? 'Confirm Tournament Modification' : 'Confirm Tournament Creation'}
         </h3>
 
         {/* Configuration summary */}
@@ -646,7 +651,7 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
               fontWeight: 'bold',
             }}
           >
-            Create Tournament
+            {editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
           </button>
         </div>
       </div>

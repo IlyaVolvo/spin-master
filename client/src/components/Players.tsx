@@ -2416,6 +2416,14 @@ const Players: React.FC = () => {
   };
 
   const handleFinishPlayerSelection = () => {
+    console.log('[DEBUG] handleFinishPlayerSelection', {
+      creationTournamentType,
+      creationPlugin: !!creationPlugin,
+      creationFlow: !!creationFlow,
+      hasRenderPostSelectionFlow: !!creationFlow?.renderPostSelectionFlow,
+      selectedCount: selectedPlayersForTournament.length,
+      editingTournamentId,
+    });
     const minPlayers = creationFlow?.minPlayers ?? 2;
     const maxPlayers = creationFlow?.maxPlayers ?? -1;
 

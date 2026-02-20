@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { PostSelectionFlowProps, Member } from '../../../types/tournament';
 import api from '../../../utils/api';
 import { snakeDraftGroups, computeGroupCapacities } from './roundRobinUtils';
@@ -26,6 +26,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
   const [playerGroups, setPlayerGroups] = useState<number[][]>([]);
   const [draggedPlayer, setDraggedPlayer] = useState<{ playerId: number; fromGroupIndex: number } | null>(null);
   const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   // Sort all selected players by rating (descending)
   const sortedSelectedPlayers = useMemo(() => {
@@ -60,18 +61,26 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
     return autoQualifiedCount + numGroups;
   }, [autoQualifiedCount, numGroups]);
 
+  // Auto-adjust finalRoundRobinSize when minFinalSize changes
+  useEffect(() => {
+    if (finalRoundRobinSize < minFinalSize) {
+      setFinalRoundRobinSize(minFinalSize);
+    }
+  }, [minFinalSize]);
+
   // Snake-draft grouping for preliminary players (delegates to shared utility)
   function generateSnakeDraftGroups(playerIds: number[], desiredGroupSize: number): number[][] {
     return snakeDraftGroups(playerIds, desiredGroupSize, (id) => members.find(p => p.id === id));
   }
 
   const handleContinueFromConfigure = () => {
+    setLocalError(null);
     if (finalRoundRobinSize < minFinalSize) {
-      onError(`Final Round Robin size must be at least ${minFinalSize} (${autoQualifiedCount} auto-qualified + ${numGroups} group winners)`);
+      setLocalError(`Final Round Robin size must be at least ${minFinalSize} (${autoQualifiedCount} auto-qualified + ${numGroups} group winners)`);
       return;
     }
     if (preliminaryPlayerIds.length < 2) {
-      onError('Need at least 2 players in the preliminary phase');
+      setLocalError('Need at least 2 players in the preliminary phase');
       return;
     }
     const groups = generateSnakeDraftGroups(preliminaryPlayerIds, groupSize);
@@ -110,8 +119,13 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
         tournamentData.name = tournamentName.trim();
       }
 
-      await api.post('/tournaments', tournamentData);
-      onSuccess('Preliminary + Final Round Robin tournament created successfully');
+      if (editingTournamentId) {
+        await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        onSuccess('Preliminary + Final Round Robin tournament modified successfully');
+      } else {
+        await api.post('/tournaments', tournamentData);
+        onSuccess('Preliminary + Final Round Robin tournament created successfully');
+      }
       onCreated();
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
@@ -258,6 +272,12 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
             </div>
           </div>
         </div>
+
+        {localError && (
+          <div style={{ marginTop: '10px', padding: '10px 15px', backgroundColor: '#fdecea', border: '1px solid #f5c6cb', borderRadius: '4px', color: '#721c24', fontSize: '14px' }}>
+            {localError}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
           <button
@@ -474,7 +494,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
         boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
       }}>
         <h3 style={{ marginTop: 0, marginBottom: '20px' }}>
-          Confirm Tournament Creation
+          {editingTournamentId ? 'Confirm Tournament Modification' : 'Confirm Tournament Creation'}
         </h3>
 
         {/* Configuration summary */}
@@ -596,7 +616,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
               fontWeight: 'bold',
             }}
           >
-            Create Tournament
+            {editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
           </button>
         </div>
       </div>

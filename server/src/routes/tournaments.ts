@@ -514,12 +514,15 @@ router.patch('/:id', [
     const tournamentId = parseInt(req.params.id);
     const { name, participantIds, additionalData } = req.body;
 
-    // Get existing tournament
+    // Get existing tournament (include childTournaments for compound types)
     const existingTournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: {
         participants: true,
         matches: true,
+        childTournaments: {
+          include: { matches: true },
+        },
       },
     });
 

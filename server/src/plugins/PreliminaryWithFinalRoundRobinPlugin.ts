@@ -101,6 +101,50 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
     });
   }
 
+  protected async recreateChildren(context: {
+    tournamentId: number;
+    name: string;
+    participantIds: number[];
+    players: any[];
+    prisma: any;
+    additionalData?: Record<string, any>;
+  }): Promise<void> {
+    const { tournamentId, name, players, prisma, additionalData } = context;
+
+    const groups: number[][] = additionalData?.groups || [];
+    const finalSize: number = additionalData?.finalRoundRobinSize || 6;
+    const autoQualifiedCount: number = additionalData?.autoQualifiedCount || 0;
+    const autoQualifiedMemberIds: number[] = additionalData?.autoQualifiedMemberIds || [];
+
+    // Re-create preliminary config
+    await prisma.preliminaryConfig.create({
+      data: {
+        tournamentId,
+        finalSize,
+        autoQualifiedCount,
+        autoQualifiedMemberIds,
+      },
+    });
+
+    // Re-create child Round Robin tournaments for each preliminary group
+    await Promise.all(
+      groups.map(async (group: number[], index: number) => {
+        const groupPlayers = players.filter((p: any) => group.includes(p.id));
+        const groupName = `${name} - Group ${index + 1}`;
+
+        return await this.createChildTournament(
+          'ROUND_ROBIN',
+          groupName,
+          group,
+          groupPlayers,
+          tournamentId,
+          index + 1,
+          prisma
+        );
+      })
+    );
+  }
+
   protected async enrichTournamentConfig(tournament: any, prisma: any): Promise<any> {
     let enriched = { ...tournament };
     if (!tournament.preliminaryConfig) {

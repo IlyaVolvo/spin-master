@@ -8,6 +8,7 @@ import {
   TournamentStateChangeResult
 } from './TournamentPlugin';
 import { tournamentPluginRegistry } from './TournamentPluginRegistry';
+import { logger } from '../utils/logger';
 
 export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
   abstract type: string;
@@ -15,10 +16,151 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
 
   abstract createTournament(context: TournamentCreationContext): Promise<any>;
 
-  // Compound tournaments cannot be modified once created
+  // Compound tournaments can be modified if no child tournament has any played matches
   canModify(tournament: any): boolean {
-    return false;
+    const children = tournament.childTournaments;
+    if (!children) {
+      // If children aren't loaded, we can't determine — be safe and allow
+      // (the route handler will load them before calling this)
+      return true;
+    }
+
+    // Check if any child tournament has played matches (scores or forfeits)
+    for (const child of children) {
+      if (!child.matches) continue;
+      const hasPlayedMatches = child.matches.some((match: any) => {
+        const hasScore = (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0;
+        const hasForfeit = match.player1Forfeit || match.player2Forfeit;
+        return hasScore || hasForfeit;
+      });
+      if (hasPlayedMatches) return false;
+    }
+
+    return true;
   }
+
+  // Modify a compound tournament: delete all children and re-create from scratch
+  async modifyTournament(context: {
+    tournamentId: number;
+    name: string;
+    participantIds: number[];
+    players: any[];
+    prisma: any;
+    additionalData?: Record<string, any>;
+  }): Promise<any> {
+    const { tournamentId, name, participantIds, players, prisma, additionalData } = context;
+
+    logger.info('Modifying compound tournament', { tournamentId, name, participantCount: participantIds.length });
+
+    // 1. Fetch existing tournament with children
+    const existingTournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        participants: true,
+        matches: true,
+        childTournaments: {
+          include: { matches: true, bracketMatches: true, participants: true },
+        },
+      },
+    });
+
+    if (!existingTournament) {
+      throw new Error('Tournament not found');
+    }
+
+    if (!this.canModify(existingTournament)) {
+      throw new Error('Tournament cannot be modified - matches have already been played in child tournaments');
+    }
+
+    // 2. Delete all child tournament data (order matters for FK constraints)
+    const childIds = (existingTournament.childTournaments || []).map((c: any) => c.id);
+
+    if (childIds.length > 0) {
+      // Delete bracket matches for child tournaments
+      await prisma.bracketMatch.deleteMany({
+        where: { tournamentId: { in: childIds } },
+      });
+      // Delete matches for child tournaments
+      await prisma.match.deleteMany({
+        where: { tournamentId: { in: childIds } },
+      });
+      // Delete participants for child tournaments
+      await prisma.tournamentParticipant.deleteMany({
+        where: { tournamentId: { in: childIds } },
+      });
+      // Delete child tournaments themselves
+      await prisma.tournament.deleteMany({
+        where: { id: { in: childIds } },
+      });
+    }
+
+    // 3. Delete preliminary config
+    await prisma.preliminaryConfig.deleteMany({
+      where: { tournamentId },
+    });
+
+    // 4. Delete parent tournament's participants (will be re-created)
+    await prisma.tournamentParticipant.deleteMany({
+      where: { tournamentId },
+    });
+
+    // 5. Update parent tournament name and re-create participants
+    await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: {
+        name,
+        participants: {
+          create: participantIds.map((memberId: number) => {
+            const player = players.find((p: any) => p.id === memberId);
+            return {
+              memberId,
+              playerRatingAtTime: player?.rating || null,
+            };
+          }),
+        },
+      },
+    });
+
+    // 6. Let the subclass re-create children and config
+    await this.recreateChildren({
+      tournamentId,
+      name,
+      participantIds,
+      players,
+      prisma,
+      additionalData,
+    });
+
+    // 7. Reload and return the full tournament
+    const result = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        participants: { include: { member: true } },
+        matches: true,
+        preliminaryConfig: true,
+        childTournaments: {
+          include: {
+            participants: { include: { member: true } },
+            matches: true,
+          },
+        },
+      },
+    });
+
+    logger.info('Compound tournament modified successfully', { tournamentId, childCount: result?.childTournaments?.length });
+
+    return result;
+  }
+
+  // Abstract method for subclasses to re-create children and config during modification
+  protected abstract recreateChildren(context: {
+    tournamentId: number;
+    name: string;
+    participantIds: number[];
+    players: any[];
+    prisma: any;
+    additionalData?: Record<string, any>;
+  }): Promise<void>;
 
   async enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
     const { tournament, prisma } = context;
