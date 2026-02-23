@@ -6,6 +6,9 @@ export default defineConfig({
   server: {
     host: 'localhost', // Listen on localhost
     port: 3000,
+    fs: {
+      allow: ['..'],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

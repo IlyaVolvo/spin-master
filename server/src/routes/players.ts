@@ -5,8 +5,23 @@ import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import bcrypt from 'bcryptjs';
 import { emitToAll } from '../services/socketService';
+import {
+  getBirthDateBounds,
+  isValidBirthDate,
+  isValidEmailFormat,
+  isValidMemberName,
+  isValidPhoneNumber,
+  isValidRatingInput,
+} from '../utils/memberValidation';
 
 const router = express.Router();
+
+function getBirthDateValidationMessage(): string {
+  const { minDate, maxDate } = getBirthDateBounds();
+  const minDateString = minDate.toISOString().split('T')[0];
+  const maxDateString = maxDate.toISOString().split('T')[0];
+  return `Birth date must be between ${minDateString} and ${maxDateString}`;
+}
 
 // Calculate Levenshtein distance between two strings
 function levenshteinDistance(str1: string, str2: string): number {
@@ -261,23 +276,6 @@ function generateEmail(firstName: string, lastName: string): string {
   return `${firstLetter}${lastNameLower}@example.com`;
 }
 
-// Validate phone number format
-function isValidPhoneNumber(phone: string): boolean {
-  if (!phone || phone.trim() === '') return true; // Optional field, empty is valid
-  
-  // Remove common formatting characters
-  const cleaned = phone.replace(/[\s\-\(\)\.]/g, '');
-  
-  // Check if it's all digits (with optional + prefix for international)
-  if (!/^\+?\d+$/.test(cleaned)) return false;
-  
-  // Check length (minimum 10 digits, maximum 15 for international)
-  const digitsOnly = cleaned.replace(/^\+/, '');
-  if (digitsOnly.length < 10 || digitsOnly.length > 15) return false;
-  
-  return true;
-}
-
 // Validate roles array
 function isValidRoles(roles: any): boolean {
   if (!roles) return true; // Optional field
@@ -287,29 +285,6 @@ function isValidRoles(roles: any): boolean {
   return roles.every(role => typeof role === 'string' && validRoles.includes(role));
 }
 
-// Validate email format (more strict than express-validator's isEmail)
-function isValidEmailFormat(email: string): boolean {
-  if (!email || email.trim() === '') return false;
-  
-  // Basic email regex pattern
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) return false;
-  
-  // Check for valid domain (at least one dot after @)
-  const parts = email.split('@');
-  if (parts.length !== 2) return false;
-  
-  const domain = parts[1];
-  if (!domain.includes('.')) return false;
-  
-  // Check domain has valid TLD (at least 2 characters)
-  const domainParts = domain.split('.');
-  if (domainParts.length < 2) return false;
-  if (domainParts[domainParts.length - 1].length < 2) return false;
-  
-  return true;
-}
-
 // Add new member
 router.post('/', [
   body('firstName').notEmpty().trim(),
@@ -317,7 +292,7 @@ router.post('/', [
   body('email').notEmpty().trim().isEmail(),
   body('gender').optional().isIn(['MALE', 'FEMALE', 'OTHER']),
   body('birthDate').notEmpty().isISO8601().toDate(),
-  body('rating').optional().isInt({ min: 0, max: 9999 }),
+  body('rating').optional().custom((value) => isValidRatingInput(value)),
   body('phone').optional().trim(),
   body('address').optional().trim(),
   body('picture').optional().trim(),
@@ -330,9 +305,19 @@ router.post('/', [
     }
 
     const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck } = req.body;
+    const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
+    const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
     
     // Additional validation for email, phone, and roles
     const validationErrors: string[] = [];
+
+    // Validate names (required)
+    if (!isValidMemberName(trimmedFirstName)) {
+      validationErrors.push('First name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens');
+    }
+    if (!isValidMemberName(trimmedLastName)) {
+      validationErrors.push('Last name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens');
+    }
     
     // Validate email (required)
     if (!email || !email.trim()) {
@@ -344,8 +329,18 @@ router.post('/', [
     // Validate phone if provided
     if (phone) {
       if (!isValidPhoneNumber(phone.trim())) {
-        validationErrors.push('Invalid phone number format. Phone should be 10-15 digits and may include +, spaces, dashes, parentheses, or dots');
+        validationErrors.push('Invalid phone number format. Please enter a valid US phone number');
       }
+    }
+
+    // Validate birthDate (required and realistic)
+    if (!birthDate || !isValidBirthDate(birthDate)) {
+      validationErrors.push(getBirthDateValidationMessage());
+    }
+
+    // Validate rating if provided
+    if (!isValidRatingInput(rating)) {
+      validationErrors.push('Rating must be an integer between 0 and 9999');
     }
     
     // Validate roles if provided
@@ -358,7 +353,7 @@ router.post('/', [
     if (validationErrors.length > 0) {
       return res.status(400).json({ errors: validationErrors.map(msg => ({ msg, param: 'validation' })) });
     }
-    const fullName = `${firstName} ${lastName}`;
+    const fullName = `${trimmedFirstName} ${trimmedLastName}`;
 
     // Get all existing members
     const allMembers = await prisma.member.findMany({
@@ -368,8 +363,8 @@ router.post('/', [
     // Check for exact duplicate (case-insensitive) - always block exact duplicates
     const exactMatch = allMembers.find(
       (p) => 
-        p.firstName.toLowerCase() === firstName.toLowerCase() &&
-        p.lastName.toLowerCase() === lastName.toLowerCase()
+        p.firstName.toLowerCase() === trimmedFirstName.toLowerCase() &&
+        p.lastName.toLowerCase() === trimmedLastName.toLowerCase()
     );
 
     if (exactMatch) {
@@ -404,8 +399,8 @@ router.post('/', [
           requiresConfirmation: true,
           message: 'Similar member names found',
           similarNames: similarNames,
-          proposedFirstName: firstName,
-          proposedLastName: lastName,
+          proposedFirstName: trimmedFirstName,
+          proposedLastName: trimmedLastName,
           proposedBirthDate: birthDate || null,
           proposedRating: rating || null,
         });
@@ -424,7 +419,7 @@ router.post('/', [
     }
 
     // Determine gender if not provided
-    const finalGender = gender || determineGender(firstName);
+    const finalGender = gender || determineGender(trimmedFirstName);
 
     // Default password is 'changeme'
     const defaultPassword = await bcrypt.hash('changeme', 10);
@@ -440,14 +435,14 @@ router.post('/', [
     // Create member with all fields
     const member = await prisma.member.create({
       data: {
-        firstName,
-        lastName,
+        firstName: trimmedFirstName,
+        lastName: trimmedLastName,
         email: finalEmail,
         gender: finalGender,
         password: defaultPassword,
         roles: finalRoles,
         birthDate: new Date(birthDate),
-        rating: rating ? parseInt(rating) : null,
+        rating: rating !== null && rating !== undefined && rating !== '' ? parseInt(String(rating), 10) : null,
         phone: phone ? phone.trim() : null,
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
@@ -673,13 +668,8 @@ router.patch('/:id', [
   body('lastName').optional().trim().notEmpty(),
   body('email').optional().isEmail(),
   body('birthDate').optional().isISO8601().toDate(),
-  body('rating').optional().custom((value) => {
-    if (value === null || value === undefined || value === '') {
-      return true; // Allow null/empty values
-    }
-    const num = parseInt(value);
-    return !isNaN(num) && num >= 0 && num <= 9999;
-  }).withMessage('Rating must be an integer between 0 and 9999, or null'),
+  body('rating').optional().custom((value) => isValidRatingInput(value))
+    .withMessage('Rating must be an integer between 0 and 9999, or null'),
   body('isActive').optional().isBoolean(),
   body('gender').optional().isIn(['MALE', 'FEMALE', 'OTHER']),
   body('phone').optional().trim(),
@@ -730,8 +720,18 @@ router.patch('/:id', [
 
     // Build update data object (only include provided fields)
     const updateData: any = {};
-    if (firstName !== undefined) updateData.firstName = firstName.trim();
-    if (lastName !== undefined) updateData.lastName = lastName.trim();
+    if (firstName !== undefined) {
+      if (!isValidMemberName(firstName)) {
+        return res.status(400).json({ error: 'First name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens' });
+      }
+      updateData.firstName = firstName.trim();
+    }
+    if (lastName !== undefined) {
+      if (!isValidMemberName(lastName)) {
+        return res.status(400).json({ error: 'Last name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens' });
+      }
+      updateData.lastName = lastName.trim();
+    }
     
     // Email can only be changed by the member themselves or Admins
     if (email !== undefined) {
@@ -754,6 +754,9 @@ router.patch('/:id', [
     }
     
     if (birthDate !== undefined) {
+      if (birthDate && !isValidBirthDate(birthDate)) {
+        return res.status(400).json({ error: getBirthDateValidationMessage() });
+      }
       updateData.birthDate = birthDate ? new Date(birthDate) : null;
     }
     if (rating !== undefined) {
@@ -765,8 +768,8 @@ router.patch('/:id', [
       if (rating === null || rating === '' || rating === undefined) {
         updateData.rating = null;
       } else {
-        const ratingNum = parseInt(String(rating));
-        if (!isNaN(ratingNum) && ratingNum >= 0 && ratingNum <= 9999) {
+        const ratingNum = Number(rating);
+        if (Number.isInteger(ratingNum) && ratingNum >= 0 && ratingNum <= 9999) {
           updateData.rating = ratingNum;
         } else {
           return res.status(400).json({ error: 'Rating must be between 0 and 9999' });
@@ -1417,7 +1420,7 @@ router.post('/import', [
           });
           continue;
         }
-        
+
         if (!player.lastName || typeof player.lastName !== 'string') {
           results.failed.push({
             firstName: player.firstName || 'Unknown',
@@ -1429,6 +1432,24 @@ router.post('/import', [
         
         const firstName = player.firstName.trim();
         const lastName = player.lastName.trim();
+
+        if (!isValidMemberName(firstName)) {
+          results.failed.push({
+            firstName,
+            lastName,
+            error: 'First name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens',
+          });
+          continue;
+        }
+
+        if (!isValidMemberName(lastName)) {
+          results.failed.push({
+            firstName,
+            lastName,
+            error: 'Last name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens',
+          });
+          continue;
+        }
         
         if (!firstName || !lastName) {
           results.failed.push({
@@ -1459,6 +1480,16 @@ router.post('/import', [
           });
           continue;
         }
+
+        if (!isValidRatingInput(player.rating)) {
+          results.failed.push({
+            firstName,
+            lastName,
+            email,
+            error: 'Rating must be an integer between 0 and 9999',
+          });
+          continue;
+        }
         
         // Validate phone if provided
         if (player.phone) {
@@ -1468,7 +1499,7 @@ router.post('/import', [
               firstName,
               lastName,
               email,
-              error: 'Invalid phone number format. Phone should be 10-15 digits and may include +, spaces, dashes, parentheses, or dots',
+              error: 'Invalid phone number format. Please enter a valid US phone number',
             });
             continue;
           }
@@ -1502,12 +1533,12 @@ router.post('/import', [
         let birthDate: Date;
         try {
           birthDate = new Date(player.birthDate);
-          if (isNaN(birthDate.getTime())) {
+          if (isNaN(birthDate.getTime()) || !isValidBirthDate(birthDate)) {
             results.failed.push({
               firstName,
               lastName,
               email,
-              error: 'Invalid birth date format',
+              error: getBirthDateValidationMessage(),
             });
             continue;
           }
@@ -1575,7 +1606,9 @@ router.post('/import', [
             password: defaultPassword,
             roles: roles,
             birthDate: birthDate,
-            rating: player.rating ? parseInt(String(player.rating)) : null,
+            rating: player.rating !== null && player.rating !== undefined && player.rating !== ''
+              ? parseInt(String(player.rating), 10)
+              : null,
             phone: player.phone ? (typeof player.phone === 'string' ? player.phone.trim() : String(player.phone).trim()) : null,
             address: player.address ? (typeof player.address === 'string' ? player.address.trim() : String(player.address).trim()) : null,
             isActive: true,

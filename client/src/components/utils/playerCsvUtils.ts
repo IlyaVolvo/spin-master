@@ -1,6 +1,14 @@
 // Pure utility functions for player CSV export and import parsing.
 // These have no React dependencies and can be tested independently.
 
+import {
+  getBirthDateBounds,
+  isValidBirthDate,
+  isValidEmailFormat,
+  isValidPhoneNumber,
+  isValidRatingInput,
+} from '../../../../server/src/utils/memberValidation';
+
 interface ExportablePlayer {
   firstName: string;
   lastName: string;
@@ -126,6 +134,10 @@ export interface ParsedImportResult {
 }
 
 export function parsePlayersCsv(text: string): ParsedImportResult {
+  const { minDate, maxDate } = getBirthDateBounds();
+  const minDateString = minDate.toISOString().split('T')[0];
+  const maxDateString = maxDate.toISOString().split('T')[0];
+
   // Filter out empty lines and lines starting with #
   const lines = text.split('\n').filter(line => {
     const trimmed = line.trim();
@@ -158,6 +170,7 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
     const values = parseCSVLine(line);
     const player: any = {};
     const rowNumber = index + 2; // Row number (accounting for header row)
+    let rowRatingError = '';
     
     headers.forEach((header, i) => {
       const value = values[i]?.trim() || '';
@@ -177,10 +190,10 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
         case 'birthdate':
           // Try to parse date
           const date = new Date(value);
-          if (!isNaN(date.getTime())) {
+          if (isValidBirthDate(date)) {
             player.birthDate = date.toISOString().split('T')[0];
           } else {
-            errors.push(`Row ${rowNumber}: Invalid birth date format`);
+            errors.push(`Row ${rowNumber}: Birth date must be between ${minDateString} and ${maxDateString}`);
           }
           break;
         case 'gender':
@@ -212,9 +225,10 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
           player.address = value;
           break;
         case 'rating':
-          const rating = parseInt(value);
-          if (!isNaN(rating) && rating >= 0 && rating <= 9999) {
-            player.rating = rating;
+          if (isValidRatingInput(value)) {
+            player.rating = parseInt(value, 10);
+          } else {
+            rowRatingError = `Row ${rowNumber}: Rating must be an integer between 0 and 9999`;
           }
           break;
       }
@@ -231,9 +245,7 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
     if (!player.email || !player.email.trim()) {
       rowErrors.push(`Row ${rowNumber}: Email is required`);
     } else {
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(player.email.trim())) {
+      if (!isValidEmailFormat(player.email.trim())) {
         rowErrors.push(`Row ${rowNumber}: Invalid email format`);
       }
     }
@@ -242,7 +254,16 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
     if (!player.birthDate) {
       rowErrors.push(`Row ${rowNumber}: Birth date is required`);
     }
-    
+
+    // Validate phone (optional)
+    if (player.phone && !isValidPhoneNumber(player.phone.trim())) {
+      rowErrors.push(`Row ${rowNumber}: Invalid phone number format. Please enter a valid US phone number`);
+    }
+
+    if (rowRatingError) {
+      rowErrors.push(rowRatingError);
+    }
+
     if (rowErrors.length > 0) {
       errors.push(...rowErrors);
       return; // Skip this player

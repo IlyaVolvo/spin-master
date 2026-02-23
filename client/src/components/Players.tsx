@@ -14,6 +14,14 @@ import { useTournamentCreation } from './hooks/useTournamentCreation';
 import { usePlayerData, membersCache } from './hooks/usePlayerData';
 import { generatePlayersCsv, downloadCsv, parsePlayersCsv } from './utils/playerCsvUtils';
 import { matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
+import {
+  getBirthDateBounds,
+  isSuspiciousRating,
+  isValidBirthDate,
+  isValidEmailFormat,
+  isValidPhoneNumber,
+  isValidRatingInput,
+} from '../../../server/src/utils/memberValidation';
 import './tournaments/plugins';
 
 // membersCache is imported from ./hooks/usePlayerData
@@ -58,6 +66,7 @@ const Players: React.FC = () => {
   const [newPlayerLastName, setNewPlayerLastName] = useState('');
   const [newPlayerBirthDate, setNewPlayerBirthDate] = useState<Date | null>(null);
   const [newPlayerRating, setNewPlayerRating] = useState('');
+  const [lastConfirmedAddRating, setLastConfirmedAddRating] = useState('');
   const [newPlayerEmail, setNewPlayerEmail] = useState('');
   const [newPlayerGender, setNewPlayerGender] = useState<'MALE' | 'FEMALE' | 'OTHER' | ''>('');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
@@ -70,6 +79,8 @@ const Players: React.FC = () => {
   const [pendingActiveToggle, setPendingActiveToggle] = useState<{ playerId: number; isActive: boolean; playerName: string } | null>(null);
   const [nameDisplayOrder, setNameDisplayOrderState] = useState<NameDisplayOrder>(getNameDisplayOrder());
   const [showImportResults, setShowImportResults] = useState(false);
+  const suspiciousRatingConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const [showSuspiciousRatingConfirm, setShowSuspiciousRatingConfirm] = useState(false);
   const [importResults, setImportResults] = useState<{
     total: number;
     successful: number;
@@ -168,6 +179,32 @@ const Players: React.FC = () => {
   const [matchStep, setMatchStep] = useState<'password' | 'score'>('score');
   const [matchPlayer1Sets, setMatchPlayer1Sets] = useState('');
   const [matchPlayer2Sets, setMatchPlayer2Sets] = useState('');
+
+  const { minDate: minAllowedBirthDate, maxDate: maxAllowedBirthDate } = getBirthDateBounds();
+
+  const getBirthDateValidationMessage = () => {
+    const minYear = minAllowedBirthDate.getUTCFullYear();
+    const maxYear = maxAllowedBirthDate.getUTCFullYear();
+    return `Birth date must be between years ${minYear} and ${maxYear}`;
+  };
+  const suspiciousRatingConfirmMessage =
+    'The entered rating is outside the usual range (800-2100). Do you want to continue?';
+
+  const requestSuspiciousRatingConfirmation = (): Promise<boolean> => {
+    setShowSuspiciousRatingConfirm(true);
+    return new Promise((resolve) => {
+      suspiciousRatingConfirmResolverRef.current = resolve;
+    });
+  };
+
+  const resolveSuspiciousRatingConfirmation = (confirmed: boolean) => {
+    setShowSuspiciousRatingConfirm(false);
+    if (suspiciousRatingConfirmResolverRef.current) {
+      suspiciousRatingConfirmResolverRef.current(confirmed);
+      suspiciousRatingConfirmResolverRef.current = null;
+    }
+  };
+
   const [matchOpponentPassword, setMatchOpponentPassword] = useState('');
   const [matchError, setMatchError] = useState('');
   const [matchLoading, setMatchLoading] = useState(false);
@@ -184,7 +221,8 @@ const Players: React.FC = () => {
   const [editPicture, setEditPicture] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editRoles, setEditRoles] = useState<string[]>([]);
-  const [editRating, setEditRating] = useState<string>('');
+  const [editRating, setEditRating] = useState('');
+  const [lastConfirmedEditRating, setLastConfirmedEditRating] = useState('');
   
   // Password change state (only visible to the member themselves)
   const [showPasswordChange, setShowPasswordChange] = useState(false);
@@ -666,7 +704,6 @@ const Players: React.FC = () => {
   };
 
   const validateAddField = (field: string, value?: any): string => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     switch (field) {
       case 'firstName': {
         const v = (value !== undefined ? value : newPlayerFirstName).trim();
@@ -683,15 +720,13 @@ const Players: React.FC = () => {
       case 'email': {
         const v = (value !== undefined ? value : newPlayerEmail).trim();
         if (!v) return 'Email is required';
-        if (!emailRegex.test(v)) return 'Please enter a valid email address';
+        if (!isValidEmailFormat(v)) return 'Please enter a valid email address';
         return '';
       }
       case 'birthDate': {
         const v = value !== undefined ? value : newPlayerBirthDate;
         if (!v) return 'Birth date is required';
-        const d = v instanceof Date ? v : new Date(v);
-        if (isNaN(d.getTime())) return 'Invalid date';
-        if (d > new Date()) return 'Birth date cannot be in the future';
+        if (!isValidBirthDate(v)) return getBirthDateValidationMessage();
         return '';
       }
       case 'gender': {
@@ -701,17 +736,13 @@ const Players: React.FC = () => {
       }
       case 'rating': {
         const v = value !== undefined ? value : newPlayerRating;
-        if (v === '' || v === undefined || v === null) return '';
-        const num = parseInt(v);
-        if (isNaN(num)) return 'Rating must be a number';
-        if (num < 0 || num > 9999) return 'Rating must be between 0 and 9999';
-        if (String(v).includes('.')) return 'Rating must be a whole number';
+        if (!isValidRatingInput(v)) return 'Rating must be an integer between 0 and 9999';
         return '';
       }
       case 'phone': {
         const v = (value !== undefined ? value : newPlayerPhone).trim();
         if (!v) return '';
-        if (v.length < 7) return 'Phone number seems too short';
+        if (!isValidPhoneNumber(v)) return 'Please enter a valid US phone number';
         return '';
       }
       case 'picture': {
@@ -733,6 +764,35 @@ const Players: React.FC = () => {
     setAddFieldTouched(prev => ({ ...prev, [field]: true }));
     const error = validateAddField(field);
     setAddFieldErrors(prev => ({ ...prev, [field]: error }));
+  };
+
+  const handleAddRatingBlur = async () => {
+    setAddFieldTouched(prev => ({ ...prev, rating: true }));
+
+    const trimmedRating = newPlayerRating.trim();
+    const previousRating = lastConfirmedAddRating;
+
+    if (
+      trimmedRating !== '' &&
+      isValidRatingInput(trimmedRating) &&
+      isSuspiciousRating(trimmedRating) &&
+      trimmedRating !== previousRating.trim()
+    ) {
+      const shouldContinue = await requestSuspiciousRatingConfirmation();
+      if (!shouldContinue) {
+        setNewPlayerRating(previousRating);
+        const error = validateAddField('rating', previousRating);
+        setAddFieldErrors(prev => ({ ...prev, rating: error }));
+        return;
+      }
+    }
+
+    if (isValidRatingInput(trimmedRating)) {
+      setLastConfirmedAddRating(newPlayerRating);
+    }
+
+    const error = validateAddField('rating', newPlayerRating);
+    setAddFieldErrors(prev => ({ ...prev, rating: error }));
   };
 
   const handleAddFieldChange = (field: string, value: any) => {
@@ -760,7 +820,6 @@ const Players: React.FC = () => {
   };
 
   const validateEditField = (field: string, value?: any): string => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     switch (field) {
       case 'firstName': {
         const v = (value !== undefined ? value : editFirstName).trim();
@@ -777,7 +836,13 @@ const Players: React.FC = () => {
       case 'email': {
         const v = (value !== undefined ? value : editEmail).trim();
         if (!v) return 'Email is required';
-        if (!emailRegex.test(v)) return 'Please enter a valid email address';
+        if (!isValidEmailFormat(v)) return 'Please enter a valid email address';
+        return '';
+      }
+      case 'birthDate': {
+        const v = value !== undefined ? value : editBirthDate;
+        if (!v) return 'Birth date is required';
+        if (!isValidBirthDate(v)) return getBirthDateValidationMessage();
         return '';
       }
       case 'gender': {
@@ -787,17 +852,13 @@ const Players: React.FC = () => {
       }
       case 'rating': {
         const v = value !== undefined ? value : editRating;
-        if (v === '' || v === undefined || v === null) return '';
-        const num = parseInt(v);
-        if (isNaN(num)) return 'Rating must be a number';
-        if (num < 0 || num > 9999) return 'Rating must be between 0 and 9999';
-        if (String(v).includes('.')) return 'Rating must be a whole number';
+        if (!isValidRatingInput(v)) return 'Rating must be an integer between 0 and 9999';
         return '';
       }
       case 'phone': {
         const v = (value !== undefined ? value : editPhone).trim();
         if (!v) return '';
-        if (v.length < 7) return 'Phone number seems too short';
+        if (!isValidPhoneNumber(v)) return 'Please enter a valid US phone number';
         return '';
       }
       case 'picture': {
@@ -821,6 +882,35 @@ const Players: React.FC = () => {
     setEditFieldErrors(prev => ({ ...prev, [field]: error }));
   };
 
+  const handleEditRatingBlur = async () => {
+    setEditFieldTouched(prev => ({ ...prev, rating: true }));
+
+    const trimmedRating = editRating.trim();
+    const previousRating = lastConfirmedEditRating;
+
+    if (
+      trimmedRating !== '' &&
+      isValidRatingInput(trimmedRating) &&
+      isSuspiciousRating(trimmedRating) &&
+      trimmedRating !== previousRating.trim()
+    ) {
+      const shouldContinue = await requestSuspiciousRatingConfirmation();
+      if (!shouldContinue) {
+        setEditRating(previousRating);
+        const error = validateEditField('rating', previousRating);
+        setEditFieldErrors(prev => ({ ...prev, rating: error }));
+        return;
+      }
+    }
+
+    if (isValidRatingInput(trimmedRating)) {
+      setLastConfirmedEditRating(editRating);
+    }
+
+    const error = validateEditField('rating', editRating);
+    setEditFieldErrors(prev => ({ ...prev, rating: error }));
+  };
+
   const handleEditFieldChange = (field: string, value: any) => {
     if (editFieldTouched[field]) {
       const error = validateEditField(field, value);
@@ -830,7 +920,7 @@ const Players: React.FC = () => {
 
   const validateAllEditFields = (isAdmin: boolean): boolean => {
     const fields = isAdmin
-      ? ['firstName', 'lastName', 'email', 'gender', 'rating', 'phone', 'picture']
+      ? ['firstName', 'lastName', 'email', 'gender', 'birthDate', 'rating', 'phone', 'picture']
       : ['email', 'phone', 'picture'];
     const errors: Record<string, string> = {};
     const touched: Record<string, boolean> = {};
@@ -854,6 +944,22 @@ const Players: React.FC = () => {
     // Validate all fields
     if (!validateAllAddFields()) {
       return;
+    }
+
+    if (
+      newPlayerRating.trim() !== '' &&
+      isSuspiciousRating(newPlayerRating) &&
+      newPlayerRating.trim() !== lastConfirmedAddRating.trim()
+    ) {
+      const shouldContinue = await requestSuspiciousRatingConfirmation();
+      if (!shouldContinue) {
+        setNewPlayerRating(lastConfirmedAddRating);
+        const ratingError = validateAddField('rating', lastConfirmedAddRating);
+        setAddFieldTouched(prev => ({ ...prev, rating: true }));
+        setAddFieldErrors(prev => ({ ...prev, rating: ratingError }));
+        return;
+      }
+      setLastConfirmedAddRating(newPlayerRating);
     }
 
     try {
@@ -903,6 +1009,7 @@ const Players: React.FC = () => {
       setNewPlayerLastName('');
       setNewPlayerBirthDate(null);
       setNewPlayerRating('');
+      setLastConfirmedAddRating('');
       setNewPlayerEmail('');
       setNewPlayerGender('');
       setNewPlayerPhone('');
@@ -1330,6 +1437,7 @@ const Players: React.FC = () => {
       setEditIsActive(member.isActive !== undefined ? member.isActive : true);
       setEditRoles(member.roles || []);
       setEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
+      setLastConfirmedEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
       
       // Check if member can be deleted (Admin only)
       const currentMember = getMember();
@@ -1398,6 +1506,7 @@ const Players: React.FC = () => {
     setEditIsActive(true);
     setEditRoles([]);
     setEditRating('');
+    setLastConfirmedEditRating('');
     setEditFieldErrors({});
     setEditFieldTouched({});
     setShowPasswordChange(false);
@@ -1436,6 +1545,23 @@ const Players: React.FC = () => {
     // Validate all editable fields
     if (!validateAllEditFields(!!isAdminUser)) {
       return;
+    }
+
+    if (
+      isAdminUser &&
+      editRating.trim() !== '' &&
+      isSuspiciousRating(editRating) &&
+      editRating.trim() !== lastConfirmedEditRating.trim()
+    ) {
+      const shouldContinue = await requestSuspiciousRatingConfirmation();
+      if (!shouldContinue) {
+        setEditRating(lastConfirmedEditRating);
+        const ratingError = validateEditField('rating', lastConfirmedEditRating);
+        setEditFieldTouched(prev => ({ ...prev, rating: true }));
+        setEditFieldErrors(prev => ({ ...prev, rating: ratingError }));
+        return;
+      }
+      setLastConfirmedEditRating(editRating);
     }
 
     try {
@@ -2075,7 +2201,10 @@ const Players: React.FC = () => {
                   <>
                     {hasAdminButton && (
                       <button 
-                        onClick={() => setShowAddForm(true)}
+                        onClick={() => {
+                          setLastConfirmedAddRating('');
+                          setShowAddForm(true);
+                        }}
                         className="button-3d"
                         style={buttonStyle}
                         title="Add new player"
@@ -2951,6 +3080,7 @@ const Players: React.FC = () => {
                     setNewPlayerLastName('');
                     setNewPlayerBirthDate(null);
                     setNewPlayerRating('');
+                    setLastConfirmedAddRating('');
                     setNewPlayerEmail('');
                     setNewPlayerGender('');
                     setNewPlayerPhone('');
@@ -3015,7 +3145,6 @@ const Players: React.FC = () => {
                     dropdownMode="select"
                     scrollableYearDropdown
                     yearDropdownItemNumber={100}
-                    maxDate={new Date()}
                     placeholderText="Select birth date"
                     className="date-picker-input"
                     wrapperClassName="date-picker-wrapper"
@@ -3056,7 +3185,7 @@ const Players: React.FC = () => {
                     max="9999"
                     value={newPlayerRating}
                     onChange={(e) => { setNewPlayerRating(e.target.value); handleAddFieldChange('rating', e.target.value); }}
-                    onBlur={() => handleAddFieldBlur('rating')}
+                    onBlur={handleAddRatingBlur}
                     placeholder="Leave empty for unrated (0-9999)"
                   />
                   {addFieldTouched.rating && addFieldErrors.rating && <span className="field-error">{addFieldErrors.rating}</span>}
@@ -3102,6 +3231,7 @@ const Players: React.FC = () => {
                       setNewPlayerLastName('');
                       setNewPlayerBirthDate(null);
                       setNewPlayerRating('');
+                      setLastConfirmedAddRating('');
                       setNewPlayerEmail('');
                       setNewPlayerGender('');
                       setNewPlayerPhone('');
@@ -3170,6 +3300,42 @@ const Players: React.FC = () => {
                   style={{ backgroundColor: '#27ae60', color: 'white' }}
                 >
                   Confirm & Add
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showSuspiciousRatingConfirm && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10002,
+          }}>
+            <div className="card" style={{ maxWidth: '460px', width: '90%', position: 'relative' }}>
+              <h3 style={{ marginBottom: '12px', color: '#e67e22' }}>Confirm Unusual Rating</h3>
+              <p style={{ marginBottom: '20px' }}>{suspiciousRatingConfirmMessage}</p>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="button-filter"
+                  onClick={() => resolveSuspiciousRatingConfirmation(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="button-3d"
+                  onClick={() => resolveSuspiciousRatingConfirmation(true)}
+                >
+                  Confirm
                 </button>
               </div>
             </div>
@@ -4995,7 +5161,16 @@ const Players: React.FC = () => {
                             }}>
                               <DatePicker
                                 selected={editBirthDate}
-                                onChange={(date: Date | null) => setEditBirthDate(date)}
+                                onChange={(date: Date | null) => {
+                                  setEditBirthDate(date);
+                                  handleEditFieldChange('birthDate', date);
+                                  if (!editFieldTouched.birthDate) {
+                                    setEditFieldTouched(prev => ({ ...prev, birthDate: true }));
+                                  }
+                                  const err = validateEditField('birthDate', date);
+                                  setEditFieldErrors(prev => ({ ...prev, birthDate: err }));
+                                }}
+                                onBlur={() => handleEditFieldBlur('birthDate')}
                                 disabled={!isAdminUser}
                                 dateFormat="MM/dd/yyyy"
                                 showYearDropdown
@@ -5005,6 +5180,7 @@ const Players: React.FC = () => {
                                 className={!isAdminUser ? "form-control disabled" : "form-control"}
                               />
                             </div>
+                            {editFieldTouched.birthDate && editFieldErrors.birthDate && <span className="field-error">{editFieldErrors.birthDate}</span>}
                           </div>
                           <div>
                             <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Phone</label>
@@ -5063,7 +5239,7 @@ const Players: React.FC = () => {
                         type="number"
                         value={editRating}
                         onChange={(e) => { setEditRating(e.target.value); handleEditFieldChange('rating', e.target.value); }}
-                        onBlur={() => handleEditFieldBlur('rating')}
+                        onBlur={handleEditRatingBlur}
                         style={{ width: '100%', padding: '8px', border: `1px solid ${editFieldTouched.rating && editFieldErrors.rating ? '#e74c3c' : '#ddd'}`, borderRadius: '4px' }}
                         placeholder="Rating (0-9999) or leave empty"
                         min="0"
