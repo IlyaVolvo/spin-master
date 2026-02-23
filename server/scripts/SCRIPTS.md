@@ -26,7 +26,7 @@ npx tsx scripts/<script>.ts [args]
 
 ### setupNewDatabase.ts
 
-Initializes a clean database from scratch. Checks DB connection, pushes the Prisma schema, generates the Prisma client, seeds point exchange rules, and creates the system admin.
+Initializes a clean database schema from scratch. Checks DB connection, pushes the Prisma schema, and generates the Prisma client.
 
 ```bash
 npx tsx scripts/setupNewDatabase.ts
@@ -36,10 +36,33 @@ npx tsx scripts/setupNewDatabase.ts
 1. Verify PostgreSQL connection
 2. `prisma db push --skip-generate`
 3. `prisma generate`
-4. Seed point exchange rules
-5. Create system admin member
 
 **When to use:** First-time setup of a new environment (local dev, staging, production).
+
+---
+
+### setupSupabaseFresh.ts
+
+Creates a fresh Supabase-ready database baseline using the latest Prisma schema (without migrations), then seeds only required baseline data.
+
+```bash
+npm run setup-supabase-fresh
+```
+
+**What it does:**
+1. Verifies `DATABASE_URL` connection
+2. Runs `prisma db push --skip-generate`
+3. Runs `prisma generate`
+4. Seeds `point_exchange_rules` with USATT-style rules
+5. Creates/updates Sys Admin member from env vars
+
+**Result:** Schema is current, rating rules exist, Sys Admin exists, and the rest of operational data remains empty.
+
+**Environment variables (optional):**
+- `SYS_ADMIN_EMAIL` (default: `admin@pingpong.com`)
+- `SYS_ADMIN_PASSWORD` (default: `Admin123!`)
+- `SYS_ADMIN_FIRST_NAME` (default: `Sys`)
+- `SYS_ADMIN_LAST_NAME` (default: `Admin`)
 
 ---
 

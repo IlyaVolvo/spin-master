@@ -12,6 +12,7 @@
     "prisma:studio": "prisma studio",
     "validate-api-docs": "tsx scripts/validate-api-docs.ts",
     "create-sys-admin": "tsx scripts/createSysAdmin.ts",
+    "setup-supabase-fresh": "tsx scripts/setupSupabaseFresh.ts",
     "hash-password": "tsx scripts/generatePasswordHash.ts",
     "test": "jest --runInBand",
     "test:watch": "jest --runInBand --watch",

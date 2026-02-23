@@ -1,165 +1,117 @@
-# Quick Setup Guide
+# Setup Guide
 
-## Step 1: Install Dependencies
+## Prerequisites
+- Node.js 18+
+- npm
+- PostgreSQL-compatible database (local Postgres or Supabase)
+
+## 1) Install dependencies
+
+From project root:
 
 ```bash
 npm run install:all
 ```
 
-This installs dependencies for the root, server, and client.
-
-## Step 2: Database Setup
-
-### Install PostgreSQL (macOS)
-
-If you don't have PostgreSQL installed yet:
-
-**Using Homebrew (recommended):**
-```bash
-brew install postgresql@15
-# or for the latest version:
-brew install postgresql
-```
-
-**Start PostgreSQL service:**
-```bash
-brew services start postgresql@15
-# or
-brew services start postgresql
-```
-
-**Verify installation:**
-```bash
-psql --version
-```
-
-**Set up a password for the default user (optional):**
-```bash
-psql postgres
-```
-Then in the psql prompt:
-```sql
-ALTER USER postgres PASSWORD 'your_password';
-\q
-```
-
-### Alternative: PostgreSQL.app (macOS GUI)
-
-Download from: https://postgresapp.com/
-- Easy GUI installation
-- No command-line setup needed
-- Default connection: `postgresql://localhost` (no password by default)
-
-### Create the Database
-
-Once PostgreSQL is installed and running:
+## 2) Configure server environment
 
 ```bash
-createdb pingpong
+cp server/env.example server/.env
 ```
 
-Or using psql:
+Update `server/.env` at minimum:
+
+```env
+DATABASE_URL="postgresql://..."
+JWT_SECRET="replace-with-strong-secret"
+PORT=3001
+```
+
+Optional (for bootstrap admin script):
+
+```env
+SYS_ADMIN_EMAIL="admin@pingpong.com"
+SYS_ADMIN_PASSWORD="Admin123!"
+SYS_ADMIN_FIRST_NAME="Sys"
+SYS_ADMIN_LAST_NAME="Admin"
+```
+
+## 3) Initialize database
+
+You have two setup modes.
+
+### A) Standard local setup (schema push)
+
 ```bash
-psql postgres
-```
-Then in the psql prompt:
-```sql
-CREATE DATABASE pingpong;
-\q
+npx tsx server/scripts/setupNewDatabase.ts
 ```
 
-### Configure Environment Variables
-   ```bash
-   cd server
-   cp env.example .env
-   ```
+### B) Fresh Supabase setup (brand-new DB baseline)
 
-3. **Edit `.env` file:**
-   ```env
-   DATABASE_URL="postgresql://username:password@localhost:5432/pingpong?schema=public"
-   JWT_SECRET="generate-a-random-secret-key-here"
-   PORT=3001
-   ```
-
-   For cloud databases, use your provider's connection string.
-
-## Step 3: Initialize Database
+This creates latest schema + required baseline data only:
+- point exchange rules
+- Sys Admin member
 
 ```bash
 cd server
-npm run prisma:generate
-npm run prisma:migrate
+npm run setup-supabase-fresh
 ```
 
-This creates all database tables.
+For Supabase connection strings, include SSL mode, e.g.:
 
-## Step 4: Create Admin User
-
-You can create a user via the API:
-
-```bash
-curl -X POST http://localhost:3001/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"yourpassword"}'
+```env
+DATABASE_URL="postgresql://postgres:<PASSWORD>@db.<project>.supabase.co:5432/postgres?sslmode=require"
 ```
 
-Or use the login endpoint if you've already created a user.
+## 4) Run the app
 
-## Step 5: Run the Application
-
-**Option 1: Run both server and client together:**
+### Option A: from root (recommended)
 ```bash
 npm run dev
 ```
 
-**Option 2: Run separately:**
+### Option B: run services separately
 
-Terminal 1 (Server):
+Terminal 1:
 ```bash
-cd server
-npm run dev
+npm run dev --prefix server
 ```
 
-Terminal 2 (Client):
+Terminal 2:
 ```bash
-cd client
-npm start
+npm run dev --prefix client
 ```
 
-## Step 6: Access the Application
+## 5) URLs
+- Client: `http://localhost:5173`
+- API: `http://localhost:3001`
+- Health: `http://localhost:3001/api/health`
 
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:3001
-- API Health Check: http://localhost:3001/api/health
+## 6) Common troubleshooting
 
-## Troubleshooting
+### Prisma can’t connect
+- Verify `DATABASE_URL`
+- Ensure DB is reachable from your machine
+- For Supabase, ensure `sslmode=require`
 
-### Database Connection Issues
-- Verify PostgreSQL is running
-- Check DATABASE_URL format
-- Ensure database exists
-- Check firewall/network settings for cloud databases
+### Auth issues
+- Ensure `JWT_SECRET` is set
+- Re-login after changing auth settings
 
-### Port Already in Use
-- Change PORT in `.env` file
-- Update client proxy in `client/vite.config.ts` if needed
+### Build warning: prisma/client version mismatch
+- Align `prisma` and `@prisma/client` versions in `server/package.json`
 
-### Prisma Issues
-- Run `npm run prisma:generate` again
-- Check Prisma schema syntax
-- Verify database connection
+## 7) Useful commands
 
-### Authentication Issues
-- Ensure JWT_SECRET is set
-- Check token in browser localStorage
-- Verify token hasn't expired (7 days default)
+```bash
+# Generate Prisma client
+npm run prisma:generate --prefix server
 
-## Next Steps
+# Open Prisma Studio
+npm run prisma:studio --prefix server
 
-1. Login with your credentials
-2. Add some players
-3. Create a tournament
-4. Add match results
-5. Complete the tournament to see rankings update!
+# Run server tests
+npm test --prefix server
+```
 
 
