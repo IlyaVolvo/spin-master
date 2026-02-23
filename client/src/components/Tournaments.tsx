@@ -13,7 +13,7 @@ import { TournamentHeader } from './TournamentHeader';
 import { TournamentInfo } from './TournamentInfo';
 import { TournamentNameEditor } from './TournamentNameEditor';
 import { getMember, setMember } from '../utils/auth';
-import { updateMatchCountsCache, removeMatchFromCache } from './Players';
+import { updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
 import { isOrganizer } from '../utils/auth';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import { Tournament, TournamentType } from '../types/tournament';

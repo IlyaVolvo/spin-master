@@ -46,6 +46,17 @@ class TestCompoundPlugin extends BaseCompoundTournamentPlugin {
     return this._hasFinal;
   }
 
+  protected async recreateChildren(_context: {
+    tournamentId: number;
+    name: string;
+    participantIds: number[];
+    players: any[];
+    prisma: any;
+    additionalData?: Record<string, any>;
+  }): Promise<void> {
+    // no-op for tests
+  }
+
   protected async handleFinalPhaseLogic(
     parentTournament: any,
     allChildren: any[],

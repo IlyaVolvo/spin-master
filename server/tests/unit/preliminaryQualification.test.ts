@@ -12,6 +12,8 @@
  * - Edge cases: ties, forfeits, empty groups
  */
 
+export {};
+
 // ─── Extracted logic from both Preliminary plugins ────────────────────────
 
 interface GroupStanding {

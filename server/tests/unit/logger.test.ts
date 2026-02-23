@@ -8,6 +8,8 @@
  * - Environment variable configuration
  */
 
+export {};
+
 // ─── Extracted Logger logic for testing ───────────────────────────────────
 
 interface LogEntry {

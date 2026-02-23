@@ -10,6 +10,8 @@
  * - BYE/forfeit skip logic
  */
 
+export {};
+
 // ─── Extracted logic from usattRatingService.ts ───────────────────────────
 
 // Hardcoded fallback point exchange rules (same as in source)

@@ -7,218 +7,18 @@ import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder, setNameDisplayOrder, NameDisplayOrder } from '../utils/nameFormatter';
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
 import { getMember, isOrganizer, isAdmin } from '../utils/auth';
-import { connectSocket } from '../utils/socket';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import type { TournamentType } from '../types/tournament';
 import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
+import { useTournamentCreation } from './hooks/useTournamentCreation';
+import { usePlayerData, membersCache } from './hooks/usePlayerData';
+import { generatePlayersCsv, downloadCsv, parsePlayersCsv } from './utils/playerCsvUtils';
+import { matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
 import './tournaments/plugins';
 
-// Module-level cache to persist across component mounts/unmounts
-const membersCache: {
-  data: Member[] | null;
-  lastFetch: number;
-} = {
-  data: null,
-  lastFetch: 0,
-};
-
-const matchesCache: {
-  data: Array<{
-    id: number;
-    member1Id: number;
-    member2Id: number | null;
-    updatedAt: string;
-    createdAt: string;
-  }> | null;
-  lastFetch: number;
-} = {
-  data: null,
-  lastFetch: 0,
-};
-
-// Cache for match counts - stores counts for each time period configuration
-const matchCountsCache: Map<string, Map<number, number>> = new Map();
-
-// Helper function to get cache key for a time period configuration
-const getMatchCountsCacheKey = (
-  timePeriod: string,
-  customStartDate: string | null,
-  customEndDate: string | null
-): string => {
-  return `${timePeriod}_${customStartDate || ''}_${customEndDate || ''}`;
-};
-
-// Function to update match counts cache incrementally when a match is added/updated
-export const updateMatchCountsCache = (
-  match: {
-    id: number;
-    member1Id: number;
-    member2Id: number | null;
-    updatedAt: string;
-    createdAt: string;
-  },
-  isNewMatch: boolean
-) => {
-  if (!matchesCache.data) {
-    // Initialize matches cache if it doesn't exist
-    matchesCache.data = [];
-  }
-
-  // Update matches cache
-  if (isNewMatch) {
-    matchesCache.data.push(match);
-  } else {
-    const index = matchesCache.data.findIndex(m => m.id === match.id);
-    if (index !== -1) {
-      matchesCache.data[index] = match;
-    } else {
-      // Match not found, add it as new
-      matchesCache.data.push(match);
-    }
-  }
-  matchesCache.lastFetch = Date.now();
-
-  // Recalculate counts for the two players involved in this match
-  // This ensures accuracy for both new and updated matches
-  const playerIds = [match.member1Id, match.member2Id].filter(id => id !== null) as number[];
-  
-  matchCountsCache.forEach((counts, cacheKey) => {
-    // Parse cache key to get time period info
-    const parts = cacheKey.split('_');
-    const timePeriod = parts[0];
-    const customStartStr = parts.slice(1, -1).join('_') || null;
-    const customEndStr = parts[parts.length - 1] || null;
-    const customStartDate = customStartStr && customStartStr !== '' ? customStartStr : null;
-    const customEndDate = customEndStr && customEndStr !== '' ? customEndStr : null;
-
-    // Calculate date range for this cache entry
-    const now = new Date();
-    let startDate: Date;
-    let endDate: Date = now;
-
-    if (timePeriod === 'today') {
-      startDate = new Date(now);
-      startDate.setHours(0, 0, 0, 0);
-    } else if (timePeriod === 'week') {
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - 7);
-      startDate.setHours(0, 0, 0, 0);
-    } else if (timePeriod === 'month') {
-      startDate = new Date(now);
-      startDate.setMonth(now.getMonth() - 1);
-      startDate.setHours(0, 0, 0, 0);
-    } else if (timePeriod === 'custom' && customStartDate && customEndDate) {
-      startDate = new Date(customStartDate);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(customEndDate);
-      endDate.setHours(23, 59, 59, 999);
-    } else if (timePeriod === 'all') {
-      // For 'all', count all matches regardless of date
-      playerIds.forEach(playerId => {
-        let count = 0;
-        matchesCache.data!.forEach(m => {
-          if (m.member1Id === playerId || m.member2Id === playerId) {
-            count++;
-          }
-        });
-        counts.set(playerId, count);
-      });
-      return; // Early return for 'all' since we've already processed it
-    } else {
-      return; // Skip invalid cache entries
-    }
-
-    // Recalculate counts for both players from all matches in cache
-    playerIds.forEach(playerId => {
-      let count = 0;
-      matchesCache.data!.forEach(m => {
-        const mDate = new Date(m.updatedAt || m.createdAt);
-        if (mDate >= startDate && mDate <= endDate) {
-          if (m.member1Id === playerId || m.member2Id === playerId) {
-            count++;
-          }
-        }
-      });
-      counts.set(playerId, count);
-    });
-  });
-};
-
-// Function to remove a match from cache and update counts
-export const removeMatchFromCache = (matchId: number, member1Id: number, member2Id: number | null) => {
-  if (!matchesCache.data) return;
-
-  // Remove match from cache
-  const index = matchesCache.data.findIndex(m => m.id === matchId);
-  if (index !== -1) {
-    matchesCache.data.splice(index, 1);
-    matchesCache.lastFetch = Date.now();
-
-    // Recalculate counts for both players from remaining matches
-    const playerIds = [member1Id, member2Id].filter(id => id !== null) as number[];
-    
-    matchCountsCache.forEach((counts, cacheKey) => {
-      // Parse cache key to get time period info
-      const parts = cacheKey.split('_');
-      const timePeriod = parts[0];
-      const customStartStr = parts.slice(1, -1).join('_') || null;
-      const customEndStr = parts[parts.length - 1] || null;
-      const customStartDate = customStartStr && customStartStr !== '' ? customStartStr : null;
-      const customEndDate = customEndStr && customEndStr !== '' ? customEndStr : null;
-
-      // Calculate date range for this cache entry
-      const now = new Date();
-      let startDate: Date;
-      let endDate: Date = now;
-
-      if (timePeriod === 'today') {
-        startDate = new Date(now);
-        startDate.setHours(0, 0, 0, 0);
-      } else if (timePeriod === 'week') {
-        startDate = new Date(now);
-        startDate.setDate(now.getDate() - 7);
-        startDate.setHours(0, 0, 0, 0);
-      } else if (timePeriod === 'month') {
-        startDate = new Date(now);
-        startDate.setMonth(now.getMonth() - 1);
-        startDate.setHours(0, 0, 0, 0);
-      } else if (timePeriod === 'custom' && customStartDate && customEndDate) {
-        startDate = new Date(customStartDate);
-        startDate.setHours(0, 0, 0, 0);
-        endDate = new Date(customEndDate);
-        endDate.setHours(23, 59, 59, 999);
-      } else if (timePeriod === 'all') {
-        // For 'all', count all matches regardless of date
-        playerIds.forEach(playerId => {
-          let count = 0;
-          matchesCache.data!.forEach(m => {
-            if (m.member1Id === playerId || m.member2Id === playerId) {
-              count++;
-            }
-          });
-          counts.set(playerId, count);
-        });
-        return; // Early return for 'all' since we've already processed it
-      } else {
-        return; // Skip invalid cache entries
-      }
-
-      // Recalculate counts for both players from remaining matches
-      playerIds.forEach(playerId => {
-        let count = 0;
-        matchesCache.data!.forEach(m => {
-          const mDate = new Date(m.updatedAt || m.createdAt);
-        if (mDate >= startDate && mDate <= endDate) {
-          if (m.member1Id === playerId || m.member2Id === playerId) {
-            count++;
-          }
-        }
-        });
-        counts.set(playerId, count);
-      });
-    });
-  }
-};
+// membersCache is imported from ./hooks/usePlayerData
+// matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache
+// are imported from ./utils/matchCacheUtils
 
 interface Member {
   id: number;
@@ -248,12 +48,11 @@ const Players: React.FC = () => {
   const shouldRestoreScrollRef = useRef<boolean>(false);
   const savedScrollPositionRef = useRef<number | null>(null);
   const [headerHeight, setHeaderHeight] = useState<number>(40);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
-  const currentMember = getMember();
-  const isUserOrganizer = isOrganizer();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const { members, setMembers, loading, setLoading, fetchMembers } = usePlayerData({ setError });
+  const currentMember = getMember();
+  const isUserOrganizer = isOrganizer();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newPlayerFirstName, setNewPlayerFirstName] = useState('');
   const [newPlayerLastName, setNewPlayerLastName] = useState('');
@@ -313,22 +112,47 @@ const Players: React.FC = () => {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [showRoleFilter, setShowRoleFilter] = useState(false);
   const roleFilterButtonRef = useRef<HTMLButtonElement>(null);
-  const lastClickedPlayerIdRef = useRef<number | null>(null);
   const [filtersCollapsed, setFiltersCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('players_filtersCollapsed');
     return saved === 'true';
   });
-  const [isCreatingTournament, setIsCreatingTournament] = useState(false);
-  const [editingTournamentId, setEditingTournamentId] = useState<number | null>(null);
-  const [repeatingTournament, setRepeatingTournament] = useState(false);
-  const [existingParticipantIds, setExistingParticipantIds] = useState<Set<number>>(new Set());
-  const [tournamentCreationStep, setTournamentCreationStep] = useState<'type_selection' | 'player_selection' | 'plugin_flow'>('type_selection');
-  const [selectedPlayersForTournament, setSelectedPlayersForTournament] = useState<number[]>([]);
-  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
-  const [tournamentName, setTournamentName] = useState('');
-  const [tournamentType, setTournamentType] = useState<TournamentType>('');
-  const [creationTournamentType, setCreationTournamentType] = useState<TournamentType | null>(null);
-  const [expandedMenuGroups, setExpandedMenuGroups] = useState<Set<string>>(new Set());
+  const fetchMembersRef = useRef<(() => void) | null>(null);
+  // Tournament creation/modification/repeat — delegated to custom hook
+  const {
+    isCreatingTournament,
+    editingTournamentId,
+    existingParticipantIds,
+    tournamentCreationStep,
+    setTournamentCreationStep,
+    selectedPlayersForTournament,
+    setSelectedPlayersForTournament,
+    showCancelConfirmation,
+    setShowCancelConfirmation,
+    tournamentName,
+    setTournamentName,
+    tournamentType,
+    setTournamentType,
+    creationTournamentType,
+    setCreationTournamentType,
+    expandedMenuGroups,
+    setExpandedMenuGroups,
+    creationPlugin,
+    creationFlow,
+    isUsingPluginWizard,
+    handleStartTournamentCreation,
+    handleCancelTournamentCreation,
+    handleConfirmCancelTournament,
+    handleCancelCancelTournament,
+    handleTogglePlayerForTournament,
+    handleFinishPlayerSelection,
+    handleTournamentCreated,
+  } = useTournamentCreation({
+    members,
+    fetchMembersRef,
+    setError,
+    filtersCollapsed,
+    setFiltersCollapsed,
+  });
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
   const [isSelectingForHistory, setIsSelectingForHistory] = useState(false);
@@ -456,69 +280,7 @@ const Players: React.FC = () => {
     // If admin and showing all roles, fetch all members (happens automatically via showAllRoles state)
   }, []);
 
-  useEffect(() => {
-    // Use cache if available, otherwise fetch
-    if (membersCache.data !== null) {
-      setMembers(membersCache.data);
-      setLoading(false);
-    } else {
-      fetchMembers();
-    }
-  }, []);
-
-  // Set up Socket.io connection for real-time player updates
-  useEffect(() => {
-    const socket = connectSocket();
-
-    // Listen for player creation
-    socket?.on('player:created', (data: { player: Member; timestamp: number }) => {
-      // Update cache with new player
-      if (membersCache.data) {
-        membersCache.data = [...membersCache.data, data.player];
-        membersCache.lastFetch = Date.now();
-        // Update state if component is mounted
-        setMembers([...membersCache.data]);
-      } else {
-        // Cache not initialized, fetch fresh data
-        fetchMembers();
-      }
-    });
-
-    // Listen for player updates
-    socket?.on('player:updated', (data: { player: Member; timestamp: number }) => {
-      // Update cache with updated player
-      if (membersCache.data) {
-        const index = membersCache.data.findIndex(p => p.id === data.player.id);
-        if (index !== -1) {
-          membersCache.data[index] = data.player;
-        } else {
-          // Player not in cache, add it
-          membersCache.data.push(data.player);
-        }
-        membersCache.lastFetch = Date.now();
-        // Update state if component is mounted
-        setMembers([...membersCache.data]);
-      } else {
-        // Cache not initialized, fetch fresh data
-        fetchMembers();
-      }
-    });
-
-    // Listen for player imports (refresh entire list)
-    socket?.on('players:imported', () => {
-      // Invalidate cache and fetch fresh data
-      membersCache.data = null;
-      membersCache.lastFetch = 0;
-      fetchMembers();
-    });
-
-    return () => {
-      // Clean up socket listeners
-      socket?.off('player:created');
-      socket?.off('player:updated');
-      socket?.off('players:imported');
-    };
-  }, []);
+  // Initial fetch and socket listeners are handled by usePlayerData hook
 
   // Handle edit own profile from header Settings button
   useEffect(() => {
@@ -538,67 +300,7 @@ const Players: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.editOwnProfile, location.state?.memberId, members.length, editingPlayerId]);
 
-  // Handle tournament modification from Tournaments component
-  useEffect(() => {
-    if (location.state?.modifyTournament === true && location.state?.tournamentId && !isCreatingTournament && members.length > 0) {
-      const tournamentId = location.state.tournamentId;
-      const participantIds = location.state.participantIds || [];
-      
-      setEditingTournamentId(tournamentId);
-      setExistingParticipantIds(new Set(participantIds));
-      setIsCreatingTournament(true);
-      setTournamentCreationStep('player_selection');
-      setSelectedPlayersForTournament(participantIds);
-      setTournamentName(location.state.tournamentName || '');
-      if (!location.state.tournamentType) {
-        throw new Error('tournamentType is required in navigation state for modifyTournament');
-      }
-      setTournamentType(location.state.tournamentType);
-      setCreationTournamentType(location.state.tournamentType);
-      
-      // Clear the state to prevent re-triggering
-      navigate('/players', { 
-        state: { ...location.state, modifyTournament: false },
-        replace: true 
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state?.modifyTournament, location.state?.tournamentId, members.length, isCreatingTournament]);
-
-  // Handle tournament repeat from Tournaments component
-  useEffect(() => {
-    if (location.state?.repeatTournament === true && !isCreatingTournament && members.length > 0) {
-      const participantIds = location.state.participantIds || [];
-      
-      setEditingTournamentId(null);
-      setRepeatingTournament(true);
-      setExistingParticipantIds(new Set(participantIds));
-      setIsCreatingTournament(true);
-      setTournamentCreationStep('player_selection');
-      setSelectedPlayersForTournament(participantIds);
-      setTournamentName(location.state.tournamentName || '');
-      if (!location.state.tournamentType) {
-        throw new Error('tournamentType is required in navigation state for repeatTournament');
-      }
-      setTournamentType(location.state.tournamentType);
-      setCreationTournamentType(location.state.tournamentType);
-      
-      // Clear the state to prevent re-triggering
-      navigate('/players', { 
-        state: { ...location.state, repeatTournament: false },
-        replace: true 
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state?.repeatTournament, members.length, isCreatingTournament]);
-
-  // Auto-expand filters when in player selection mode for tournaments
-  useEffect(() => {
-    if (isCreatingTournament && tournamentCreationStep === 'player_selection' && filtersCollapsed) {
-      setFiltersCollapsed(false);
-      // Don't save to localStorage - this is temporary for player selection
-    }
-  }, [isCreatingTournament, tournamentCreationStep, filtersCollapsed]);
+  // Tournament modification, repeat, and auto-expand filters effects are handled by useTournamentCreation hook
 
   // Auto-dismiss success messages after 3 seconds
   useEffect(() => {
@@ -923,22 +625,8 @@ const Players: React.FC = () => {
     );
   }, [nameFilter, minRating, maxRating, minAge, maxAge, showAllPlayers, members, isSelectingForHistory, selectedPlayerForHistory]);
 
-  const fetchMembers = async () => {
-    try {
-      setLoading(true);
-      // For admins, always fetch all members; for others, fetch only players (members with PLAYER role)
-      const endpoint = isAdmin() ? '/players/all-members' : '/players';
-      const response = await api.get(endpoint);
-      setMembers(response.data);
-      // Update cache
-      membersCache.data = response.data;
-      membersCache.lastFetch = Date.now();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to fetch members');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // fetchMembers is provided by usePlayerData hook
+  fetchMembersRef.current = fetchMembers;
 
   const fetchMatches = async () => {
     try {
@@ -1263,7 +951,6 @@ const Players: React.FC = () => {
     }
 
     try {
-      // Filter to only selected players from the filtered list
       const selectedPlayers = filteredPlayers.filter(player => selectedPlayersForExport.has(player.id));
 
       if (selectedPlayers.length === 0) {
@@ -1271,79 +958,8 @@ const Players: React.FC = () => {
         return;
       }
 
-      // Convert to CSV using the specified fields
-      const headers = ['firstname', 'lastname', 'email', 'date of birth', 'gender', 'roles', 'phone', 'address', 'rating'];
-      const csvRows = [
-        headers.join(','),
-        ...selectedPlayers.map((player) => {
-          return headers.map(header => {
-            let value: any;
-            switch (header) {
-              case 'firstname':
-                value = player.firstName;
-                break;
-              case 'lastname':
-                value = player.lastName;
-                break;
-              case 'email':
-                value = player.email;
-                break;
-              case 'date of birth':
-                value = player.birthDate;
-                // Format birthDate if it's a date string
-                if (value) {
-                  const date = new Date(value);
-                  if (!isNaN(date.getTime())) {
-                    value = date.toISOString().split('T')[0];
-                  }
-                }
-                break;
-              case 'gender':
-                value = player.gender;
-                break;
-              case 'roles':
-                // Convert roles to comma-separated first letters
-                if (player.roles && player.roles.length > 0) {
-                  value = player.roles.map(role => role.charAt(0)).join(', ');
-                } else {
-                  value = '';
-                }
-                break;
-              case 'phone':
-                value = player.phone || '';
-                break;
-              case 'address':
-                value = player.address || '';
-                break;
-              case 'rating':
-                value = player.rating || '';
-                break;
-              default:
-                value = '';
-            }
-            
-            if (value === null || value === undefined) return '';
-            
-            // Escape commas and quotes in CSV
-            const stringValue = String(value);
-            if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-              return `"${stringValue.replace(/"/g, '""')}"`;
-            }
-            return stringValue;
-          }).join(',');
-        }),
-      ];
-
-      const csvContent = csvRows.join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `players_export_${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const csvContent = generatePlayersCsv(selectedPlayers);
+      downloadCsv(csvContent, `players_export_${new Date().toISOString().split('T')[0]}.csv`);
       setShowExportSelection(false);
       setSelectedPlayersForExport(new Set());
       setSuccess(`Successfully exported ${selectedPlayers.length} player(s)`);
@@ -1359,170 +975,14 @@ const Players: React.FC = () => {
 
     try {
       const text = await file.text();
-      // Filter out empty lines and lines starting with #
-      const lines = text.split('\n').filter(line => {
-        const trimmed = line.trim();
-        return trimmed && !trimmed.startsWith('#');
-      });
-      
-      if (lines.length < 2) {
-        setError('CSV file must have at least a header row and one data row');
-        return;
-      }
+      const { players, errors: parseErrors } = parsePlayersCsv(text);
 
-      // Parse CSV (simple parser - handles quoted values)
-      const parseCSVLine = (line: string): string[] => {
-        const result: string[] = [];
-        let current = '';
-        let inQuotes = false;
-        
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (char === '"') {
-            if (inQuotes && line[i + 1] === '"') {
-              current += '"';
-              i++; // Skip next quote
-            } else {
-              inQuotes = !inQuotes;
-            }
-          } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
-          }
-        }
-        result.push(current.trim());
-        return result;
-      };
-
-      const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
-      const requiredHeaders = ['firstname', 'lastname', 'email'];
-      const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
-      
-      // Check for birthdate (can be 'birthdate' or 'date of birth')
-      const hasBirthdate = headers.includes('birthdate') || headers.includes('date of birth');
-      if (!hasBirthdate) {
-        missingHeaders.push('birthdate (or "date of birth")');
-      }
-      
-      if (missingHeaders.length > 0) {
-        setError(`Missing required columns: ${missingHeaders.join(', ')}`);
-        return;
-      }
-
-      // Map headers to player fields
-      const players: any[] = [];
-      const errors: string[] = [];
-      
-      lines.slice(1).forEach((line, index) => {
-        const values = parseCSVLine(line);
-        const player: any = {};
-        const rowNumber = index + 2; // Row number (accounting for header row)
-        
-        headers.forEach((header, i) => {
-          const value = values[i]?.trim() || '';
-          if (value === '') return;
-          
-          switch (header) {
-            case 'firstname':
-              player.firstName = value;
-              break;
-            case 'lastname':
-              player.lastName = value;
-              break;
-            case 'email':
-              player.email = value;
-              break;
-            case 'date of birth':
-            case 'birthdate':
-              // Try to parse date
-              const date = new Date(value);
-              if (!isNaN(date.getTime())) {
-                player.birthDate = date.toISOString().split('T')[0];
-              } else {
-                errors.push(`Row ${rowNumber}: Invalid birth date format`);
-              }
-              break;
-            case 'gender':
-              const genderUpper = value.toUpperCase();
-              if (['MALE', 'FEMALE', 'OTHER'].includes(genderUpper)) {
-                player.gender = genderUpper;
-              }
-              break;
-            case 'roles':
-              // Parse comma-separated first letters back to full role names
-              const roleLetters = value.split(',').map(r => r.trim().toUpperCase());
-              const roleMap: { [key: string]: string } = {
-                'P': 'PLAYER',
-                'C': 'COACH',
-                'A': 'ADMIN',
-                'O': 'ORGANIZER'
-              };
-              const roles = roleLetters
-                .map(letter => roleMap[letter])
-                .filter(role => role !== undefined);
-              if (roles.length > 0) {
-                player.roles = roles;
-              }
-              break;
-            case 'phone':
-              player.phone = value;
-              break;
-            case 'address':
-              player.address = value;
-              break;
-            case 'rating':
-              const rating = parseInt(value);
-              if (!isNaN(rating) && rating >= 0 && rating <= 9999) {
-                player.rating = rating;
-              }
-              break;
-          }
-        });
-        
-        // Validate required fields
-        const rowErrors: string[] = [];
-        
-        if (!player.firstName || !player.lastName) {
-          rowErrors.push(`Row ${rowNumber}: Missing required fields (firstName, lastName)`);
-        }
-        
-        // Validate email (required)
-        if (!player.email || !player.email.trim()) {
-          rowErrors.push(`Row ${rowNumber}: Email is required`);
-        } else {
-          // Validate email format
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(player.email.trim())) {
-            rowErrors.push(`Row ${rowNumber}: Invalid email format`);
-          }
-        }
-        
-        // Validate birthdate (required)
-        if (!player.birthDate) {
-          rowErrors.push(`Row ${rowNumber}: Birth date is required`);
-        }
-        
-        if (rowErrors.length > 0) {
-          errors.push(...rowErrors);
-          return; // Skip this player
-        }
-        
-        // Set mustResetPassword to true for all imported players
-        player.mustResetPassword = true;
-        
-        players.push(player);
-      });
-      
-      // If there are validation errors, show them and stop
-      if (errors.length > 0) {
-        setError(`Import validation errors:\n${errors.join('\n')}`);
+      if (parseErrors.length > 0) {
+        setError(`Import validation errors:\n${parseErrors.join('\n')}`);
         event.target.value = '';
         return;
       }
-      
-      // Check if we have any valid players
+
       if (players.length === 0) {
         setError('No valid players to import. Please check your CSV file.');
         event.target.value = '';
@@ -2205,16 +1665,7 @@ const Players: React.FC = () => {
   
   // Close move menu when clicking outside
 
-  const handleStartTournamentCreation = () => {
-    setIsCreatingTournament(true);
-    setTournamentCreationStep('type_selection');
-    setSelectedPlayersForTournament([]);
-    setTournamentName('');
-    setTournamentType('');
-    setCreationTournamentType(null);
-    setExpandedMenuGroups(new Set());
-    lastClickedPlayerIdRef.current = null;
-  };
+  // handleStartTournamentCreation is provided by useTournamentCreation hook
 
   const handleStartRecordMatch = () => {
     setMatchError('');
@@ -2342,158 +1793,10 @@ const Players: React.FC = () => {
     }
   };
 
-  const creationPlugin = useMemo(() => {
-    if (!creationTournamentType) return null;
-    try {
-      return tournamentPluginRegistry.get(creationTournamentType);
-    } catch {
-      return null;
-    }
-  }, [creationTournamentType]);
-
-  const creationFlow = useMemo(() => {
-    return creationPlugin?.getCreationFlow?.();
-  }, [creationPlugin]);
-
-  const isUsingPluginWizard = Boolean(creationPlugin && creationFlow && creationFlow.steps.length > 0);
-
-  const handleCancelTournamentCreation = () => {
-    // In modify or repeat mode, cancel goes back to tournaments page
-    if (editingTournamentId || repeatingTournament) {
-      setIsCreatingTournament(false);
-      setEditingTournamentId(null);
-      setRepeatingTournament(false);
-      setExistingParticipantIds(new Set());
-      setSelectedPlayersForTournament([]);
-      setTournamentName('');
-      setTournamentType('');
-      setShowCancelConfirmation(false);
-      navigate('/tournaments');
-      return;
-    }
-
-    if (tournamentCreationStep === 'type_selection') {
-      // Exit tournament creation entirely
-      setIsCreatingTournament(false);
-      setEditingTournamentId(null);
-      setRepeatingTournament(false);
-      setExistingParticipantIds(new Set());
-      setSelectedPlayersForTournament([]);
-      setTournamentName('');
-      setTournamentType('');
-      setShowCancelConfirmation(false);
-    } else if (tournamentCreationStep === 'player_selection') {
-      setTournamentCreationStep('type_selection');
-    } else if (tournamentCreationStep === 'plugin_flow') {
-      // Back from plugin flow goes to player selection
-      setTournamentCreationStep('player_selection');
-    }
-  };
-
-  const handleConfirmCancelTournament = () => {
-    setShowCancelConfirmation(false);
-    setIsCreatingTournament(false);
-    setEditingTournamentId(null);
-    setRepeatingTournament(false);
-    setExistingParticipantIds(new Set());
-    setSelectedPlayersForTournament([]);
-    setTournamentName('');
-    setTournamentType('');
-  };
-
-  const handleCancelCancelTournament = () => {
-    setShowCancelConfirmation(false);
-  };
-
-  const handleTogglePlayerForTournament = (playerId: number, shiftKey?: boolean, visiblePlayerIds?: number[]) => {
-    // Disable selection during plugin flow phase
-    if (tournamentCreationStep === 'plugin_flow') {
-      return;
-    }
-    
-    // Ensure player is active before allowing selection
-    const player = members.find(p => p.id === playerId);
-    if (!player || !player.isActive) {
-      setError('Only active players can be selected for tournaments or matches.');
-      return;
-    }
-
-    // Shift+click range selection: add or remove based on clicked player's current state
-    if (shiftKey && lastClickedPlayerIdRef.current !== null && visiblePlayerIds && visiblePlayerIds.length > 0) {
-      const lastIdx = visiblePlayerIds.indexOf(lastClickedPlayerIdRef.current);
-      const currIdx = visiblePlayerIds.indexOf(playerId);
-      if (lastIdx !== -1 && currIdx !== -1 && lastIdx !== currIdx) {
-        const start = Math.min(lastIdx, currIdx);
-        const end = Math.max(lastIdx, currIdx);
-        const rangeIds = visiblePlayerIds.slice(start, end + 1);
-        const isDeselecting = selectedPlayersForTournament.includes(playerId);
-        let newSelection: number[];
-        if (isDeselecting) {
-          // Remove all players in range
-          const rangeSet = new Set(rangeIds);
-          newSelection = selectedPlayersForTournament.filter(id => !rangeSet.has(id));
-        } else {
-          // Add all active players in range
-          newSelection = [...selectedPlayersForTournament];
-          for (const id of rangeIds) {
-            if (!newSelection.includes(id)) {
-              const p = members.find(m => m.id === id);
-              if (p && p.isActive) {
-                newSelection.push(id);
-              }
-            }
-          }
-        }
-        setSelectedPlayersForTournament(newSelection);
-        lastClickedPlayerIdRef.current = playerId;
-        return;
-      }
-    }
-    
-    if (selectedPlayersForTournament.includes(playerId)) {
-      setSelectedPlayersForTournament(selectedPlayersForTournament.filter(id => id !== playerId));
-    } else {
-      const newSelection = [...selectedPlayersForTournament, playerId];
-      setSelectedPlayersForTournament(newSelection);
-    }
-    lastClickedPlayerIdRef.current = playerId;
-  };
-
-  const handleFinishPlayerSelection = () => {
-    const minPlayers = creationFlow?.minPlayers ?? 2;
-    const maxPlayers = creationFlow?.maxPlayers ?? -1;
-
-    if (selectedPlayersForTournament.length < minPlayers) {
-      setError(`Select at least ${minPlayers} players`);
-      return;
-    }
-
-    if (maxPlayers > 0 && selectedPlayersForTournament.length > maxPlayers) {
-      setError(`Select at most ${maxPlayers} players`);
-      return;
-    }
-
-    // Delegate to plugin's post-selection flow
-    setTournamentCreationStep('plugin_flow');
-  };
-
-  // Called by plugin post-selection flow when tournament is created successfully
-  const handleTournamentCreated = () => {
-    setIsCreatingTournament(false);
-    setEditingTournamentId(null);
-    setRepeatingTournament(false);
-    setExistingParticipantIds(new Set());
-    setTournamentCreationStep('type_selection');
-    setSelectedPlayersForTournament([]);
-    setTournamentName('');
-    setTournamentType('');
-    setCreationTournamentType(null);
-    fetchMembers();
-
-    setTimeout(() => {
-      navigate('/tournaments');
-    }, 1000);
-  };
+  // Tournament creation handlers (creationPlugin, creationFlow, isUsingPluginWizard,
+  // handleCancelTournamentCreation, handleConfirmCancelTournament, handleCancelCancelTournament,
+  // handleTogglePlayerForTournament, handleFinishPlayerSelection, handleTournamentCreated)
+  // are all provided by useTournamentCreation hook
 
   const handleStartStatsSelection = () => {
     setIsSelectingForStats(true);

@@ -11,6 +11,8 @@
  * rather than importing the service directly.
  */
 
+export {};
+
 // ─── Extracted logic from tournamentEventService.ts ───────────────────────
 
 interface TournamentStateChangeResult {

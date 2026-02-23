@@ -11,6 +11,8 @@
  * - Rating change = K * (actual - expected)
  */
 
+export {};
+
 // ─── Rating Calculation Logic (extracted from matchRatingService) ──────────
 
 function calculateExpectedScore(ratingDiff: number): number {

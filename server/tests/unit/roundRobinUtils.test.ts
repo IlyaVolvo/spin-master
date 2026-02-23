@@ -10,6 +10,8 @@
  * - buildResultsMatrix
  */
 
+export {};
+
 // ─── Extracted logic from roundRobinUtils.ts ──────────────────────────────
 
 function computeGroupCapacities(totalPlayers: number, desiredSize: number): number[] {

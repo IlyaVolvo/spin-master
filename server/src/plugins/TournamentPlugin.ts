@@ -44,7 +44,7 @@ export interface TournamentDeletionContext {
 export interface MatchCompletedEvent {
   tournament: any;
   match: any;
-  winnerId: number;
+  winnerId: number | null;
   bracketMatchId?: number | null;
   prisma: any;
 }

@@ -47,15 +47,29 @@ export class TournamentEventService {
       }
 
       const plugin = tournamentPluginRegistry.get(tournament.type);
+      const winnerId = match.player1Sets > match.player2Sets
+        ? match.member1Id
+        : match.player2Sets > match.player1Sets
+          ? match.member2Id
+          : match.player1Forfeit
+            ? match.member2Id
+            : match.player2Forfeit
+              ? match.member1Id
+              : null;
 
       // Calculate ratings if plugin requires it
-      if (plugin.shouldRecalculateRatings(tournament) && plugin.calculateMatchRatings) {
-        await plugin.calculateMatchRatings({ tournament, match, prisma });
+      if (
+        plugin.onMatchRatingCalculation &&
+        winnerId !== null &&
+        match.member1Id !== 0 &&
+        match.member2Id !== 0
+      ) {
+        await plugin.onMatchRatingCalculation({ tournament, match, winnerId, prisma });
         logger.info(`Ratings calculated for match ${matchId} in tournament ${tournamentId}`);
       }
 
       // Notify plugin of match completion
-      const event: MatchCompletedEvent = { tournament, match, prisma };
+      const event: MatchCompletedEvent = { tournament, match, winnerId, prisma };
       const result = await plugin.onMatchCompleted?.(event);
 
       // Execute state changes

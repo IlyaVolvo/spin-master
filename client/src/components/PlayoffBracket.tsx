@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { TraditionalBracket } from './TraditionalBracket';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { MatchEntryPopup } from './MatchEntryPopup';
-import { updateMatchCountsCache } from './Players';
+import { updateMatchCountsCache } from './utils/matchCacheUtils';
 import api from '../utils/api';
 
 interface Member {

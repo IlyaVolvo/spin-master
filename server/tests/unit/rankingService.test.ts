@@ -10,6 +10,8 @@
  * - BYE and forfeit handling
  */
 
+export {};
+
 // ─── Extracted ranking logic ──────────────────────────────────────────────
 
 interface PlayerStats {
