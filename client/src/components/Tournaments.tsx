@@ -759,6 +759,41 @@ const Tournaments: React.FC = () => {
     </div>
   );
 
+  const getParticipantDisplayRating = (participant: TournamentParticipant): number | null => {
+    return participant.playerRatingAtTime ?? participant.member.rating;
+  };
+
+  const getSortedParticipantsWithRating = (participants: TournamentParticipant[]): TournamentParticipant[] => {
+    return [...participants].sort((a, b) => {
+      const ratingA = getParticipantDisplayRating(a);
+      const ratingB = getParticipantDisplayRating(b);
+
+      if (ratingA === null && ratingB === null) {
+        const nameA = formatPlayerName(a.member.firstName, a.member.lastName, getNameDisplayOrder());
+        const nameB = formatPlayerName(b.member.firstName, b.member.lastName, getNameDisplayOrder());
+        return nameA.localeCompare(nameB);
+      }
+
+      if (ratingA === null) return 1;
+      if (ratingB === null) return -1;
+      if (ratingB !== ratingA) return ratingB - ratingA;
+
+      const nameA = formatPlayerName(a.member.firstName, a.member.lastName, getNameDisplayOrder());
+      const nameB = formatPlayerName(b.member.firstName, b.member.lastName, getNameDisplayOrder());
+      return nameA.localeCompare(nameB);
+    });
+  };
+
+  const formatParticipantsWithRating = (participants: TournamentParticipant[]): string => {
+    return getSortedParticipantsWithRating(participants)
+      .map((p) => {
+        const rating = getParticipantDisplayRating(p);
+        const name = formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder());
+        return `${name} (${rating ?? '—'})`;
+      })
+      .join(', ');
+  };
+
 
 
   const handleCompleteTournament = async (tournamentId: number) => {
@@ -2240,7 +2275,7 @@ const Tournaments: React.FC = () => {
                         <div style={{ padding: '8px 15px', backgroundColor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
                           <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
                             <strong>All Participants ({tournament.participants.length}):</strong>{' '}
-                            {tournament.participants.map(p => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                            {formatParticipantsWithRating(tournament.participants as TournamentParticipant[])}
                           </p>
                         </div>
                       )}
@@ -2329,7 +2364,7 @@ const Tournaments: React.FC = () => {
                                   {/* Child participants */}
                                   {expandedParticipants.has(child.id) && (
                                     <p style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
-                                      Participants: {child.participants.map((p: any) => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                                      Participants: {formatParticipantsWithRating(child.participants as TournamentParticipant[])}
                                     </p>
                                   )}
 
@@ -2609,7 +2644,7 @@ const Tournaments: React.FC = () => {
                   {/* Participants section - independent of details */}
                   {expandedParticipants.has(tournament.id) && (
                   <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
-                    Participants: {tournament.participants.map(p => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                    Participants: {formatParticipantsWithRating(tournament.participants as TournamentParticipant[])}
                   </p>
                   )}
 
@@ -3307,7 +3342,7 @@ const Tournaments: React.FC = () => {
                             <div style={{ padding: '8px 15px', backgroundColor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
                               <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
                                 <strong>All Participants ({tournament.participants.length}):</strong>{' '}
-                                {tournament.participants.map(p => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                                {formatParticipantsWithRating(tournament.participants as TournamentParticipant[])}
                               </p>
                             </div>
                           )}
@@ -3381,7 +3416,7 @@ const Tournaments: React.FC = () => {
                                       {/* Child participants */}
                                       {expandedParticipants.has(child.id) && (
                                         <p style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
-                                          Participants: {child.participants.map((p: any) => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                                          Participants: {formatParticipantsWithRating(child.participants as TournamentParticipant[])}
                                         </p>
                                       )}
 
@@ -3554,7 +3589,7 @@ const Tournaments: React.FC = () => {
                         {/* Participants section */}
                         {expandedParticipants.has(tournament.id) && (
                           <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
-                            Participants: {tournament.participants.map(p => formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder())).join(', ')}
+                            Participants: {formatParticipantsWithRating(tournament.participants as TournamentParticipant[])}
                           </p>
                         )}
 
