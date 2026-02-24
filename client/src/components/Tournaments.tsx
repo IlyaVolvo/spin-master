@@ -19,6 +19,7 @@ import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry
 import { Tournament, TournamentType } from '../types/tournament';
 import './tournaments/plugins'; // This will auto-register all plugins
 import { calculateStandings, buildResultsMatrix, generateRoundRobinSchedule } from './tournaments/plugins/roundRobinUtils';
+import { formatParticipantsWithRating } from './tournaments/utils/participantSort';
 
 // Module-level cache to persist across component mounts/unmounts
 const tournamentsCache: {
@@ -758,41 +759,6 @@ const Tournaments: React.FC = () => {
       <span>{formatPlayerName(member.firstName, member.lastName, getNameDisplayOrder())}</span>
     </div>
   );
-
-  const getParticipantDisplayRating = (participant: TournamentParticipant): number | null => {
-    return participant.playerRatingAtTime ?? participant.member.rating;
-  };
-
-  const getSortedParticipantsWithRating = (participants: TournamentParticipant[]): TournamentParticipant[] => {
-    return [...participants].sort((a, b) => {
-      const ratingA = getParticipantDisplayRating(a);
-      const ratingB = getParticipantDisplayRating(b);
-
-      if (ratingA === null && ratingB === null) {
-        const nameA = formatPlayerName(a.member.firstName, a.member.lastName, getNameDisplayOrder());
-        const nameB = formatPlayerName(b.member.firstName, b.member.lastName, getNameDisplayOrder());
-        return nameA.localeCompare(nameB);
-      }
-
-      if (ratingA === null) return 1;
-      if (ratingB === null) return -1;
-      if (ratingB !== ratingA) return ratingB - ratingA;
-
-      const nameA = formatPlayerName(a.member.firstName, a.member.lastName, getNameDisplayOrder());
-      const nameB = formatPlayerName(b.member.firstName, b.member.lastName, getNameDisplayOrder());
-      return nameA.localeCompare(nameB);
-    });
-  };
-
-  const formatParticipantsWithRating = (participants: TournamentParticipant[]): string => {
-    return getSortedParticipantsWithRating(participants)
-      .map((p) => {
-        const rating = getParticipantDisplayRating(p);
-        const name = formatPlayerName(p.member.firstName, p.member.lastName, getNameDisplayOrder());
-        return `${name} (${rating ?? '—'})`;
-      })
-      .join(', ');
-  };
 
 
 

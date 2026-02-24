@@ -3,6 +3,7 @@ import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
 import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
+import { sortParticipantsByRating } from '../utils/participantSort';
 import './RoundRobinActivePanel.css';
 
 interface PlayerStats {
@@ -35,8 +36,8 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
 
   // Build results matrix for display and editing
   const buildResultsMatrix = (tournament: any) => {
-    const participants = tournament.participants;
-    const participantData = tournament.participants;
+    const participants = sortParticipantsByRating(tournament.participants);
+    const participantData = participants;
     const matrix: { [key: number]: { [key: number]: string } } = {};
     const matchMap: { [key: string]: any } = {};
     

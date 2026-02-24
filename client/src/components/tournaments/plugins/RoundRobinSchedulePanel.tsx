@@ -1,6 +1,7 @@
 import React from 'react';
 import { TournamentScheduleProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { sortParticipantsByRating } from '../utils/participantSort';
 
 // Types for schedule generation
 interface ScheduleMatch {
@@ -34,7 +35,7 @@ const generateRoundRobinSchedule = (tournament: any): ScheduleRound[] => {
     return [];
   }
 
-  const participants = tournament.participants;
+  const participants = sortParticipantsByRating(tournament.participants);
   const n = participants.length;
   
   if (n < 2) {

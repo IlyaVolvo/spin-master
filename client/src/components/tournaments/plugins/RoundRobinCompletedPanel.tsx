@@ -2,6 +2,7 @@ import React from 'react';
 import { TournamentCompletedProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { isLikelyRanking } from '../../../utils/ratingFormatter';
+import { sortParticipantsByRating } from '../utils/participantSort';
 
 interface PlayerStats {
   memberId: number;
@@ -33,8 +34,8 @@ interface Match {
 }
 
 const buildResultsMatrix = (tournament: any) => {
-  const participants = tournament.participants;
-  const participantData = tournament.participants; // Keep participant data for ratings
+  const participants = sortParticipantsByRating(tournament.participants);
+  const participantData = participants; // Keep participant data for ratings
   const matrix: { [key: number]: { [key: number]: string } } = {};
   const matchMap: { [key: string]: Match } = {}; // Store match data for editing
   

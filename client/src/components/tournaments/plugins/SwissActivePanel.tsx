@@ -37,6 +37,26 @@ interface PlayerStandingRow {
   roundResults: Map<number, RoundResult>;
 }
 
+interface RoundMatchRow {
+  id: number;
+  member1Id: number;
+  member2Id: number;
+  player1Sets: number;
+  player2Sets: number;
+  player1Forfeit: boolean;
+  player2Forfeit: boolean;
+  completed: boolean;
+}
+
+interface DisplayRoundMatch extends RoundMatchRow {
+  originalMember1Id: number;
+  originalMember2Id: number;
+  member1Points: number;
+  member2Points: number;
+  member1Rating: number;
+  member2Rating: number;
+}
+
 export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
   tournament,
   onTournamentUpdate,
@@ -52,7 +72,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
   const currentRound = swissData?.currentRound ?? 1;
 
   // Get current round matches (the ones to display in the pairs table)
-  const currentRoundMatches = useMemo(() => {
+  const currentRoundMatches = useMemo<RoundMatchRow[]>(() => {
     return [...tournament.matches]
       .filter(m => (m.round || 1) === currentRound)
       .sort((a, b) => a.id - b.id)
@@ -158,6 +178,62 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
     return pts;
   }, [tournament.participants, tournament.matches, currentRound]);
 
+  const getNumericRating = (memberId: number) => {
+    const participant = tournament.participants.find((p: any) => p.member.id === memberId);
+    return participant?.playerRatingAtTime ?? participant?.member.rating ?? 0;
+  };
+
+  const currentRoundMatchesForDisplay = useMemo<DisplayRoundMatch[]>(() => {
+    const getPoints = (memberId: number) => priorRoundPoints.get(memberId) ?? 0;
+
+    const orientedMatches = currentRoundMatches.map((match) => {
+      const p1Points = getPoints(match.member1Id);
+      const p2Points = getPoints(match.member2Id);
+      const p1Rating = getNumericRating(match.member1Id);
+      const p2Rating = getNumericRating(match.member2Id);
+
+      const shouldSwap =
+        p2Points > p1Points ||
+        (p2Points === p1Points && p2Rating > p1Rating);
+
+      if (!shouldSwap) {
+        return {
+          ...match,
+          originalMember1Id: match.member1Id,
+          originalMember2Id: match.member2Id,
+          member1Points: p1Points,
+          member2Points: p2Points,
+          member1Rating: p1Rating,
+          member2Rating: p2Rating,
+        };
+      }
+
+      return {
+        ...match,
+        member1Id: match.member2Id,
+        member2Id: match.member1Id,
+        player1Sets: match.player2Sets,
+        player2Sets: match.player1Sets,
+        player1Forfeit: match.player2Forfeit,
+        player2Forfeit: match.player1Forfeit,
+        originalMember1Id: match.member1Id,
+        originalMember2Id: match.member2Id,
+        member1Points: p2Points,
+        member2Points: p1Points,
+        member1Rating: p2Rating,
+        member2Rating: p1Rating,
+      };
+    });
+
+    return orientedMatches.sort((a, b) => {
+      if (b.member1Points !== a.member1Points) return b.member1Points - a.member1Points;
+      if (b.member1Rating !== a.member1Rating) return b.member1Rating - a.member1Rating;
+      if (b.member2Points !== a.member2Points) return b.member2Points - a.member2Points;
+      if (b.member2Rating !== a.member2Rating) return b.member2Rating - a.member2Rating;
+      return a.id - b.id;
+    });
+  }, [currentRoundMatches, priorRoundPoints, tournament.participants]);
+
   // Determine which rounds have at least one played match (for the standings table columns)
   const roundsWithResults = useMemo(() => {
     const rounds: number[] = [];
@@ -239,40 +315,22 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
     if (!printWindow) return;
 
     const tournamentName = tournament.name || `Tournament ${new Date(tournament.createdAt).toLocaleDateString()}`;
-    const getPoints = (memberId: number) => priorRoundPoints.get(memberId) ?? 0;
-    const getNumericRating = (memberId: number) => {
-      const p = tournament.participants.find((pp: any) => pp.member.id === memberId);
-      return p?.playerRatingAtTime ?? p?.member.rating ?? 0;
-    };
-
-    // Sort matches by points category: highest max-points first, then by P1 rating desc within group
-    const sortedMatches = [...currentRoundMatches].sort((a, b) => {
-      const aMax = Math.max(getPoints(a.member1Id), getPoints(a.member2Id));
-      const bMax = Math.max(getPoints(b.member1Id), getPoints(b.member2Id));
-      if (bMax !== aMax) return bMax - aMax;
-      const aMin = Math.min(getPoints(a.member1Id), getPoints(a.member2Id));
-      const bMin = Math.min(getPoints(b.member1Id), getPoints(b.member2Id));
-      if (bMin !== aMin) return bMin - aMin;
-      return getNumericRating(b.member1Id) - getNumericRating(a.member1Id);
-    });
-
     let lastPointGroup = -1;
-    const matchRows = sortedMatches.map((match, idx) => {
+    const matchRows = currentRoundMatchesForDisplay.map((match, idx) => {
       const p1 = getPlayer(match.member1Id);
       const p2 = getPlayer(match.member2Id);
       const p1Name = p1 ? formatPlayerName(p1.firstName, p1.lastName, getNameDisplayOrder()) : 'TBD';
       const p2Name = p2 ? formatPlayerName(p2.firstName, p2.lastName, getNameDisplayOrder()) : 'TBD';
       const p1Rating = getRatingDisplay(match.member1Id);
       const p2Rating = getRatingDisplay(match.member2Id);
-      const p1Pts = getPoints(match.member1Id);
-      const p2Pts = getPoints(match.member2Id);
-      const maxPts = Math.max(p1Pts, p2Pts);
+      const p1Pts = match.member1Points;
+      const p2Pts = match.member2Points;
       const isPlayed = match.completed;
 
       let sectionHeader = '';
-      if (maxPts !== lastPointGroup) {
-        lastPointGroup = maxPts;
-        sectionHeader = `<tr class="section-header"><td colspan="4">${maxPts} point${maxPts !== 1 ? 's' : ''}</td></tr>`;
+      if (p1Pts !== lastPointGroup) {
+        lastPointGroup = p1Pts;
+        sectionHeader = `<tr class="section-header"><td colspan="4">${p1Pts} point${p1Pts !== 1 ? 's' : ''}</td></tr>`;
       }
 
       return `${sectionHeader}<tr class="${isPlayed ? 'played' : ''}">
@@ -352,34 +410,20 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
           </button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {currentRoundMatches.length > 0 ? (
+          {currentRoundMatchesForDisplay.length > 0 ? (
             (() => {
-              const getPoints = (memberId: number) => priorRoundPoints.get(memberId) ?? 0;
-              const getNumericRating = (memberId: number) => {
-                const p = tournament.participants.find((pp: any) => pp.member.id === memberId);
-                return p?.playerRatingAtTime ?? p?.member.rating ?? 0;
-              };
-              const sorted = [...currentRoundMatches].sort((a, b) => {
-                const aMax = Math.max(getPoints(a.member1Id), getPoints(a.member2Id));
-                const bMax = Math.max(getPoints(b.member1Id), getPoints(b.member2Id));
-                if (bMax !== aMax) return bMax - aMax;
-                const aMin = Math.min(getPoints(a.member1Id), getPoints(a.member2Id));
-                const bMin = Math.min(getPoints(b.member1Id), getPoints(b.member2Id));
-                if (bMin !== aMin) return bMin - aMin;
-                return getNumericRating(b.member1Id) - getNumericRating(a.member1Id);
-              });
               let lastPtGroup = -1;
-              return sorted.map((match) => {
-                const maxPts = Math.max(getPoints(match.member1Id), getPoints(match.member2Id));
+              return currentRoundMatchesForDisplay.map((match) => {
+                const p1Pts = match.member1Points;
                 let header: React.ReactNode = null;
-                if (maxPts !== lastPtGroup) {
-                  lastPtGroup = maxPts;
+                if (p1Pts !== lastPtGroup) {
+                  lastPtGroup = p1Pts;
                   header = (
-                    <div key={`hdr-${maxPts}`} style={{
+                    <div key={`hdr-${p1Pts}`} style={{
                       padding: '4px 10px', backgroundColor: '#eaf2f8', fontWeight: 'bold',
                       fontSize: '12px', color: '#2c3e50', borderBottom: '1px solid #ccc',
                     }}>
-                      {maxPts} point{maxPts !== 1 ? 's' : ''}
+                      {p1Pts} point{p1Pts !== 1 ? 's' : ''}
                     </div>
                   );
                 }
@@ -434,13 +478,13 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
                       ({getRatingDisplay(match.member1Id)})
                     </span>
                     <span style={{ fontSize: '11px', color: '#27ae60', fontWeight: 'bold', marginLeft: '4px' }}>
-                      [{priorRoundPoints.get(match.member1Id) ?? 0}]
+                      [{match.member1Points}]
                     </span>
                   </span>
 
                   {/* Score / Enter score */}
                   <div
-                    onClick={() => handleMatchClick(match.member1Id, match.member2Id, match.id)}
+                    onClick={() => handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id)}
                     style={{
                       cursor: 'pointer', display: 'flex', alignItems: 'center',
                       justifyContent: 'center', minWidth: '70px', flexShrink: 0,
@@ -466,7 +510,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleMatchClick(match.member1Id, match.member2Id, match.id);
+                          handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id);
                         }}
                         title="Enter score"
                       >
@@ -492,7 +536,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                   }}>
                     <span style={{ fontSize: '11px', color: '#27ae60', fontWeight: 'bold', marginRight: '4px' }}>
-                      [{priorRoundPoints.get(match.member2Id) ?? 0}]
+                      [{match.member2Points}]
                     </span>
                     <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal', marginRight: '3px' }}>
                       ({getRatingDisplay(match.member2Id)})
