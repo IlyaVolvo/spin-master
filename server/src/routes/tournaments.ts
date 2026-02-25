@@ -1295,11 +1295,18 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
 // Cancel tournament
 // Only Organizers can cancel tournaments
 // For ACTIVE tournaments:
-//   - No matches played → physically deletes the tournament
-//   - Matches played → marks as cancelled + COMPLETED, preserves matches
+//   - No played matches → physically deletes the tournament
+//   - One or more played matches → marks as cancelled + COMPLETED, preserves matches
 // For compound tournaments: propagates to all children automatically
-router.patch('/:id/cancel', async (req: AuthRequest, res) => {
+router.patch('/:id/cancel', [
+  body('password').optional().isString().trim(),
+], async (req: AuthRequest, res: Response) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
     // Check if user has ORGANIZER role
     const hasOrganizerAccess = await isOrganizer(req);
     if (!hasOrganizerAccess) {
@@ -1341,22 +1348,54 @@ router.patch('/:id/cancel', async (req: AuthRequest, res) => {
     // Determine if this is a compound tournament (has children)
     const isCompound = tournament.childTournaments && tournament.childTournaments.length > 0;
 
-    // Count total matches across the tournament (including children for compound)
-    let totalMatches = tournament.matches.length;
+    const isPlayedMatch = (match: { player1Sets: number; player2Sets: number; player1Forfeit?: boolean; player2Forfeit?: boolean }) => {
+      const hasScore = (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0;
+      const hasForfeit = !!match.player1Forfeit || !!match.player2Forfeit;
+      return hasScore || hasForfeit;
+    };
+
+    // Count played matches across the tournament (including children for compound)
+    let playedMatches = tournament.matches.filter(isPlayedMatch).length;
     if (isCompound) {
       for (const child of tournament.childTournaments) {
-        totalMatches += child.matches.length;
+        playedMatches += child.matches.filter(isPlayedMatch).length;
         // Also count grandchildren (e.g. prelim groups under compound)
         if (child.childTournaments) {
           for (const grandchild of (child as any).childTournaments) {
-            totalMatches += grandchild.matches?.length ?? 0;
+            playedMatches += (grandchild.matches ?? []).filter(isPlayedMatch).length;
           }
         }
       }
     }
 
-    if (totalMatches === 0) {
-      // No matches anywhere → physically delete the entire tournament tree
+    if (playedMatches > 0) {
+      const currentMemberId = req.memberId || req.member?.id;
+      if (!currentMemberId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const { password } = req.body as { password?: string };
+      if (!password || password.trim() === '') {
+        return res.status(400).json({ error: 'Password confirmation is required to cancel started tournaments' });
+      }
+
+      const organizer = await prisma.member.findUnique({
+        where: { id: currentMemberId },
+        select: { password: true },
+      });
+
+      if (!organizer) {
+        return res.status(404).json({ error: 'Organizer account not found' });
+      }
+
+      const isValidPassword = await bcrypt.compare(password, organizer.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: 'Invalid password confirmation' });
+      }
+    }
+
+    if (playedMatches === 0) {
+      // No played matches anywhere → physically delete the entire tournament tree
       // Cascade delete handles children, matches, participants, bracket matches, etc.
       await prisma.tournament.delete({
         where: { id: tournamentId },

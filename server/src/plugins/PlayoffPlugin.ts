@@ -647,7 +647,6 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
           player2Sets,
           player1Forfeit,
           player2Forfeit,
-          winnerId,
         },
         include: { tournament: true },
       });
@@ -655,14 +654,13 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
       // Create new match linked to bracketMatch
       updatedMatch = await prisma.match.create({
         data: {
-          tournamentId,
+          tournament: { connect: { id: tournamentId } },
           member1Id,
           member2Id,
           player1Sets,
           player2Sets,
           player1Forfeit,
           player2Forfeit,
-          winnerId,
         },
         include: { tournament: true },
       });
