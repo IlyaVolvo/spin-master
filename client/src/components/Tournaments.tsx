@@ -155,6 +155,9 @@ const Tournaments: React.FC = () => {
   const [activeSectionCollapsed, setActiveSectionCollapsed] = useState<boolean>(false);
   const [completedSectionCollapsed, setCompletedSectionCollapsed] = useState<boolean>(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState<{ tournamentId: number; matchCount: number } | null>(null);
+  const [cancelPassword, setCancelPassword] = useState<string>('');
+  const [cancelPasswordErrorModal, setCancelPasswordErrorModal] = useState<string | null>(null);
+  const cancelPasswordInputRef = useRef<HTMLInputElement | null>(null);
   const [hoveredIcon, setHoveredIcon] = useState<{ type: string; tournamentId: number; x: number; y: number } | null>(null);
   const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
 
@@ -1049,7 +1052,7 @@ const Tournaments: React.FC = () => {
     }
   };
 
-  const handleCancelTournament = async (tournamentId: number) => {
+  const handleCancelTournament = async (tournamentId: number, password?: string) => {
     const tournament = activeTournaments.find(t => t.id === tournamentId);
     if (!tournament) return;
 
@@ -1057,7 +1060,9 @@ const Tournaments: React.FC = () => {
     setSuccess('');
 
     try {
-      const response = await api.patch(`/tournaments/${tournamentId}/cancel`);
+      const response = await api.patch(`/tournaments/${tournamentId}/cancel`, {
+        password,
+      });
       const data = response.data;
       if (data.deleted) {
         setSuccess('Tournament removed (no matches were played).');
@@ -1066,12 +1071,23 @@ const Tournaments: React.FC = () => {
       }
       
       setShowCancelConfirmation(null);
+      setCancelPassword('');
       fetchData();
       if (selectedTournament?.id === tournamentId) {
         setSelectedTournament(null);
       }
     } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
+      const apiError = response?.data?.error;
+      const isInvalidPassword =
+        response?.status === 401 && (apiError ?? '').toLowerCase().includes('invalid password');
+
+      if (isInvalidPassword && showCancelConfirmation && showCancelConfirmation.matchCount > 0) {
+        setCancelPasswordErrorModal('Invalid password. Please try again.');
+        setCancelPassword('');
+        return;
+      }
+
       setError(apiError || 'Failed to cancel tournament');
     }
   };
@@ -1080,15 +1096,42 @@ const Tournaments: React.FC = () => {
     const tournament = activeTournaments.find(t => t.id === tournamentId);
     if (!tournament) return;
 
-    // Count matches (including children for compound tournaments)
-    let matchCount = tournament.matches.length;
+    const isPlayedMatch = (match: { player1Sets: number; player2Sets: number; player1Forfeit?: boolean; player2Forfeit?: boolean }) => {
+      const hasScore = (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0;
+      const hasForfeit = !!match.player1Forfeit || !!match.player2Forfeit;
+      return hasScore || hasForfeit;
+    };
+
+    // Count played matches (including children for compound tournaments)
+    let matchCount = tournament.matches.filter(isPlayedMatch).length;
     if (tournament.childTournaments) {
       for (const child of tournament.childTournaments) {
-        matchCount += child.matches?.length ?? 0;
+        matchCount += (child.matches ?? []).filter(isPlayedMatch).length;
+        const grandChildren = (child as any).childTournaments;
+        if (grandChildren) {
+          for (const grandchild of grandChildren) {
+            matchCount += (grandchild.matches ?? []).filter(isPlayedMatch).length;
+          }
+        }
       }
     }
 
     setShowCancelConfirmation({ tournamentId, matchCount });
+    setCancelPassword('');
+    setCancelPasswordErrorModal(null);
+  };
+
+  const closeCancelConfirmation = () => {
+    setShowCancelConfirmation(null);
+    setCancelPassword('');
+    setCancelPasswordErrorModal(null);
+  };
+
+  const closeCancelPasswordErrorModal = () => {
+    setCancelPasswordErrorModal(null);
+    requestAnimationFrame(() => {
+      cancelPasswordInputRef.current?.focus();
+    });
   };
 
   // Generate schedule for Round Robin tournament
@@ -3643,16 +3686,38 @@ const Tournaments: React.FC = () => {
             boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
           }}>
             <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#e74c3c' }}>
-              Cancel Tournament?
+              Dangerous Operation: Cancel Tournament
             </h3>
             {showCancelConfirmation.matchCount > 0 ? (
               <>
+                <p style={{ marginBottom: '10px', fontWeight: 'bold', color: '#c0392b' }}>
+                  This action is destructive and cannot be undone.
+                </p>
                 <p style={{ marginBottom: '10px' }}>
                   This tournament has <strong>{showCancelConfirmation.matchCount}</strong> completed {showCancelConfirmation.matchCount === 1 ? 'match' : 'matches'}.
                 </p>
                 <p style={{ marginBottom: '20px' }}>
                   Cancelling will move the tournament to completed status and preserve all match results and rating changes.
                 </p>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#444', fontWeight: 'bold' }}>
+                  Enter your password to confirm cancellation:
+                </label>
+                <input
+                  ref={cancelPasswordInputRef}
+                  type="password"
+                  value={cancelPassword}
+                  onChange={(e) => setCancelPassword(e.target.value)}
+                  autoComplete="current-password"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '10px 12px',
+                    border: '1px solid #d0d7de',
+                    borderRadius: '6px',
+                    marginBottom: '20px',
+                    fontSize: '14px',
+                  }}
+                />
               </>
             ) : (
               <p style={{ marginBottom: '20px' }}>
@@ -3661,7 +3726,7 @@ const Tournaments: React.FC = () => {
             )}
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setShowCancelConfirmation(null)}
+                onClick={closeCancelConfirmation}
                 style={{
                   padding: '10px 20px',
                   border: '2px solid #27ae60',
@@ -3678,22 +3743,74 @@ const Tournaments: React.FC = () => {
               <button
                 onClick={async () => {
                   if (showCancelConfirmation) {
-                    await handleCancelTournament(showCancelConfirmation.tournamentId);
-                    setShowCancelConfirmation(null);
+                    await handleCancelTournament(
+                      showCancelConfirmation.tournamentId,
+                      showCancelConfirmation.matchCount > 0 ? cancelPassword : undefined,
+                    );
                   }
                 }}
+                disabled={showCancelConfirmation.matchCount > 0 && cancelPassword.trim() === ''}
                 style={{
                   padding: '10px 20px',
                   border: 'none',
                   borderRadius: '4px',
-                  backgroundColor: '#e74c3c',
+                  backgroundColor: showCancelConfirmation.matchCount > 0 && cancelPassword.trim() === '' ? '#f1a9a0' : '#e74c3c',
                   color: 'white',
-                  cursor: 'pointer',
+                  cursor: showCancelConfirmation.matchCount > 0 && cancelPassword.trim() === '' ? 'not-allowed' : 'pointer',
                   fontSize: '14px',
                   fontWeight: 'bold',
                 }}
               >
                 Cancel Tournament
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invalid Password Error Popup */}
+      {cancelPasswordErrorModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10002,
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            maxWidth: '420px',
+            width: '90%',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#c0392b' }}>
+              Authentication failed
+            </h3>
+            <p style={{ marginBottom: '18px', color: '#333' }}>
+              {cancelPasswordErrorModal}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={closeCancelPasswordErrorModal}
+                style={{
+                  padding: '10px 18px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  backgroundColor: '#e74c3c',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                }}
+              >
+                Try again
               </button>
             </div>
           </div>
