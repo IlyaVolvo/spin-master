@@ -49,8 +49,10 @@ npm run setup-supabase-fresh
 
 This creates:
 - latest Prisma schema (no migrations required)
-- `point_exchange_rules`
-- Sys Admin member
+- `point_exchange_rules` (current USATT table)
+- exactly one Sys Admin member (ORGANIZER role only)
+
+Default Sys Admin email: `sys-admin@fake.local`
 
 ### 4. Start app
 ```bash

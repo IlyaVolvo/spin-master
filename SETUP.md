@@ -49,13 +49,15 @@ npx tsx server/scripts/setupNewDatabase.ts
 ### B) Fresh Supabase setup (brand-new DB baseline)
 
 This creates latest schema + required baseline data only:
-- point exchange rules
-- Sys Admin member
+- point exchange rules (current USATT table)
+- exactly one Sys Admin member (ORGANIZER role only)
 
 ```bash
 cd server
 npm run setup-supabase-fresh
 ```
+
+Default Sys Admin email: `sys-admin@fake.local`
 
 For Supabase connection strings, include SSL mode, e.g.:
 

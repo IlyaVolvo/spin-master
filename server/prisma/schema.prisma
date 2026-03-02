@@ -54,6 +54,9 @@ model Member {
   passwordResetToken String? // Token for password reset (forgot password flow)
   passwordResetTokenExpiry DateTime? // Expiration time for reset token
 
+  // QR-based authentication token hash
+  qrTokenHash String @unique
+
   // Rating history
   ratingHistory RatingHistory[]
 

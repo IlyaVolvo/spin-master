@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { createHash, randomBytes } from 'crypto';
 
 const execAsync = promisify(exec);
 const prisma = new PrismaClient();
@@ -11,11 +12,19 @@ const prisma = new PrismaClient();
 const envPath = path.resolve(__dirname, '../.env');
 dotenv.config({ path: envPath });
 
+function getRequiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 const DEFAULT_SYS_ADMIN = {
-  email: process.env.SYS_ADMIN_EMAIL || 'admin@pingpong.com',
-  password: process.env.SYS_ADMIN_PASSWORD || 'Admin123!',
-  firstName: process.env.SYS_ADMIN_FIRST_NAME || 'Sys',
-  lastName: process.env.SYS_ADMIN_LAST_NAME || 'Admin',
+  email: getRequiredEnv('SYS_ADMIN_EMAIL'),
+  password: getRequiredEnv('SYS_ADMIN_PASSWORD'),
+  firstName: getRequiredEnv('SYS_ADMIN_FIRST_NAME'),
+  lastName: getRequiredEnv('SYS_ADMIN_LAST_NAME'),
 };
 
 const POINT_EXCHANGE_RULES = [
@@ -43,6 +52,12 @@ const POINT_EXCHANGE_RULES = [
   { minDiff: 513, maxDiff: 99999, expectedPoints: 0, upsetPoints: 100 },
 ];
 
+function generateQrTokenHash(): string {
+  return createHash('sha256')
+    .update(`${randomBytes(32).toString('hex')}:${Date.now()}:${Math.random()}`)
+    .digest('hex');
+}
+
 async function runCommand(command: string) {
   const { stdout, stderr } = await execAsync(command);
   if (stdout) process.stdout.write(stdout);
@@ -65,8 +80,22 @@ async function pushSchema() {
   console.log('   ✓ Prisma client generated\n');
 }
 
+async function resetToInitialBaseline() {
+  console.log('4) Resetting DB to initial baseline (required data only)...');
+
+  // Remove operational data first.
+  await prisma.ratingHistory.deleteMany({});
+  await prisma.tournament.deleteMany({}); // cascades tournament children + linked data
+  await prisma.match.deleteMany({}); // removes standalone matches (tournamentId = null)
+
+  // Ensure only one member will remain after setup.
+  await prisma.member.deleteMany({});
+
+  console.log('   ✓ Cleared operational data and members\n');
+}
+
 async function seedPointExchangeRules() {
-  console.log('4) Seeding required rating table (point_exchange_rules)...');
+  console.log('5) Seeding required rating table (point_exchange_rules)...');
 
   // Keep this idempotent and deterministic.
   await prisma.pointExchangeRule.deleteMany({});
@@ -83,29 +112,9 @@ async function seedPointExchangeRules() {
 }
 
 async function createSysAdmin() {
-  console.log('5) Creating required Sys Admin member...');
+  console.log('6) Creating required Sys Admin member...');
 
   const hashedPassword = await bcrypt.hash(DEFAULT_SYS_ADMIN.password, 10);
-
-  const existing = await prisma.member.findUnique({
-    where: { email: DEFAULT_SYS_ADMIN.email },
-  });
-
-  if (existing) {
-    await prisma.member.update({
-      where: { id: existing.id },
-      data: {
-        firstName: DEFAULT_SYS_ADMIN.firstName,
-        lastName: DEFAULT_SYS_ADMIN.lastName,
-        password: hashedPassword,
-        roles: [MemberRole.ADMIN],
-        isActive: true,
-        gender: 'OTHER',
-      },
-    });
-    console.log(`   ✓ Updated existing admin: ${DEFAULT_SYS_ADMIN.email}\n`);
-    return;
-  }
 
   await prisma.member.create({
     data: {
@@ -113,14 +122,15 @@ async function createSysAdmin() {
       lastName: DEFAULT_SYS_ADMIN.lastName,
       email: DEFAULT_SYS_ADMIN.email,
       password: hashedPassword,
-      roles: [MemberRole.ADMIN],
+      roles: [MemberRole.ORGANIZER],
       isActive: true,
       gender: 'OTHER',
+      qrTokenHash: generateQrTokenHash(),
       mustResetPassword: false,
     },
   });
 
-  console.log(`   ✓ Created admin: ${DEFAULT_SYS_ADMIN.email}\n`);
+  console.log(`   ✓ Created Sys Admin organizer: ${DEFAULT_SYS_ADMIN.email}\n`);
 }
 
 async function printSummary() {
@@ -142,13 +152,12 @@ async function printSummary() {
 
 async function main() {
   try {
-    if (!process.env.DATABASE_URL) {
-      throw new Error('DATABASE_URL is not set. Point it to your new Supabase database first.');
-    }
+    getRequiredEnv('DATABASE_URL');
 
     console.log('=== Fresh Supabase DB Setup (Schema + Required Baseline Data) ===\n');
     await verifyConnection();
     await pushSchema();
+    await resetToInitialBaseline();
     await seedPointExchangeRules();
     await createSysAdmin();
     await printSummary();

@@ -16,10 +16,17 @@
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import * as dotenv from 'dotenv';
+import { createHash, randomBytes } from 'crypto';
 
 dotenv.config({ path: '.env' });
 
 const prisma = new PrismaClient();
+
+const SEED_DEFAULT_PASSWORD = process.env.SEED_DEFAULT_PASSWORD?.trim() || 'changeme';
+const SYS_ADMIN_EMAIL = process.env.SYS_ADMIN_EMAIL?.trim() || 'admin@pingpong.com';
+const SYS_ADMIN_PASSWORD = process.env.SYS_ADMIN_PASSWORD?.trim() || SEED_DEFAULT_PASSWORD;
+const SYS_ADMIN_FIRST_NAME = process.env.SYS_ADMIN_FIRST_NAME?.trim() || 'Sys';
+const SYS_ADMIN_LAST_NAME = process.env.SYS_ADMIN_LAST_NAME?.trim() || 'Admin';
 
 // MemberRole enum values (matching Prisma schema)
 const MemberRole = {
@@ -204,6 +211,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function generateQrTokenHash(): string {
+  return createHash('sha256')
+    .update(`${randomBytes(32).toString('hex')}:${Date.now()}:${Math.random()}`)
+    .digest('hex');
+}
+
 /**
  * Generate age with normal distribution (peak at 45, range 10-80)
  */
@@ -382,7 +395,7 @@ async function clearDatabase() {
   console.log('✓ Database cleared and reset to brand new state\n');
 }
 
-async function createPlayers() {
+async function createPlayers(): Promise<any[]> {
   console.log('=== Creating 130 Members ===\n');
   
   const members: Array<{
@@ -394,13 +407,14 @@ async function createPlayers() {
     roles: MemberRoleType[];
     birthDate: Date;
     rating: number;
+    qrTokenHash: string;
     isActive: boolean;
     mustResetPassword: boolean;
   }> = [];
   const usedNames = new Set<string>();
   const usedEmails = new Set<string>();
   const bcrypt = await import('bcryptjs');
-  const defaultPassword = await bcrypt.default.hash('changeme', 10);
+  const defaultPassword = await bcrypt.default.hash(SEED_DEFAULT_PASSWORD, 10);
   
   for (let i = 0; i < 130; i++) {
     let name;
@@ -439,6 +453,7 @@ async function createPlayers() {
       roles: [MemberRole.PLAYER],
       birthDate,
       rating,
+      qrTokenHash: generateQrTokenHash(),
       isActive: true,
       mustResetPassword: false, // Set to false for all users in generation script
     });
@@ -1786,11 +1801,11 @@ async function main() {
     console.log('=== Creating Sys Admin Member (First Entry) ===\n');
     
     const bcrypt = await import('bcryptjs');
-    const adminPassword = await bcrypt.default.hash('changeme', 10);
+    const adminPassword = await bcrypt.default.hash(SYS_ADMIN_PASSWORD, 10);
     
     // Check if System Admin already exists
     const existingSystemAdmin = await prisma.member.findUnique({
-      where: { email: 'admin@pingpong.com' },
+      where: { email: SYS_ADMIN_EMAIL },
     });
     
     if (!existingSystemAdmin) {
@@ -1804,20 +1819,21 @@ async function main() {
         // Create Admin within the same transaction
         return await tx.member.create({
           data: {
-            firstName: 'Sys',
-            lastName: 'Admin',
-            email: 'admin@pingpong.com',
+            firstName: SYS_ADMIN_FIRST_NAME,
+            lastName: SYS_ADMIN_LAST_NAME,
+            email: SYS_ADMIN_EMAIL,
             gender: 'OTHER',
             password: adminPassword,
             roles: [MemberRole.ADMIN],
             isActive: true,
             rating: null, // Admin has no rating
+            qrTokenHash: generateQrTokenHash(),
             mustResetPassword: false, // Set to false for all users in generation script
           },
         });
       });
       
-      console.log(`  ✓ Created System Admin member (admin@pingpong.com) as first entry (ID: ${admin.id})\n`);
+      console.log(`  ✓ Created System Admin member (${SYS_ADMIN_EMAIL}) as first entry (ID: ${admin.id})\n`);
       console.log('    - Gender: OTHER\n');
       console.log('    - Rating: NULL\n');
       console.log('    - Will be excluded from matches and tournaments\n');

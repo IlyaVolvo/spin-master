@@ -18,20 +18,26 @@ This is a condensed version of the deployment guide. Follow these steps in order
    - Replace `[YOUR-PASSWORD]` with your password
    - Example: `postgresql://postgres:mypassword@db.xxxxx.supabase.co:5432/postgres`
 
-## Step 2: Run Database Migrations (2 minutes)
+## Step 2: Deploy Initial Database Baseline (2 minutes)
 
 ```bash
 cd server
 
 # Edit .env file, set DATABASE_URL to Supabase connection string
-# DATABASE_URL="postgresql://postgres:YOUR-PASSWORD@db.xxxxx.supabase.co:5432/postgres"
+# DATABASE_URL="postgresql://postgres:YOUR-PASSWORD@db.xxxxx.supabase.co:5432/postgres?sslmode=require"
 
-# Run migrations
-npx prisma migrate deploy
-
-# Generate Prisma client
-npm run prisma:generate
+# Deploy initial DB baseline (schema + required baseline data)
+npm run setup-supabase-initial
 ```
+
+This initializes:
+- latest schema (including `members.qrTokenHash`)
+- current `point_exchange_rules` table
+- exactly one member: Sys Admin (`ORGANIZER` role only)
+
+Default Sys Admin login:
+- email: `sys-admin@fake.local`
+- password: `Admin123!` (override via `SYS_ADMIN_PASSWORD`)
 
 ## Step 3: Deploy Backend to Render (10 minutes)
 
@@ -80,24 +86,10 @@ npm run prisma:generate
    - Deployments → "..." → Redeploy
    - Or push a commit
 
-## Step 5: Create Admin User (2 minutes)
-
-```bash
-cd server
-
-# Edit .env to use Supabase connection string
-# DATABASE_URL="postgresql://postgres:YOUR-PASSWORD@db.xxxxx.supabase.co:5432/postgres"
-
-# Create admin
-export SYS_ADMIN_EMAIL="admin@pingpong.com"
-export SYS_ADMIN_PASSWORD="Admin123!"
-npm run create-sys-admin
-```
-
-## Step 6: Test (1 minute)
+## Step 5: Test (1 minute)
 
 1. Visit: `https://ping-pong-tournament-management-sys.vercel.app`
-2. Login with: `admin@pingpong.com` / `Admin123!`
+2. Login with: `sys-admin@fake.local` / `Admin123!`
 3. Should work! ✅
 
 ## Troubleshooting
@@ -105,7 +97,7 @@ npm run create-sys-admin
 **Backend won't start:**
 - Check Render logs for errors
 - Verify DATABASE_URL is correct
-- Make sure migrations ran successfully
+- Make sure `npm run setup-supabase-initial` completed successfully
 
 **Frontend can't connect:**
 - Check VITE_API_URL is set in Vercel

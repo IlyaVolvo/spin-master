@@ -154,8 +154,9 @@ Compound:
 ## Operational notes
 - For fresh Supabase environments, use `server/scripts/setupSupabaseFresh.ts`:
   - pushes schema via Prisma `db push`
+  - clears operational data and existing members
   - seeds `point_exchange_rules`
-  - creates/updates Sys Admin
+  - creates exactly one Sys Admin (`ORGANIZER` role only)
 - Application-level validation enforces:
   - US phone format
   - rating bounds (`0..9999`)

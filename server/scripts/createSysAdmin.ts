@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import path from 'path';
+import { createHash, randomBytes } from 'crypto';
 
 // Load environment variables
 const envPath = path.resolve(__dirname, '../.env');
@@ -9,12 +10,27 @@ dotenv.config({ path: envPath });
 
 const prisma = new PrismaClient();
 
+function getRequiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+function generateQrTokenHash(): string {
+  return createHash('sha256')
+    .update(`${randomBytes(32).toString('hex')}:${Date.now()}:${Math.random()}`)
+    .digest('hex');
+}
+
 async function createSysAdmin() {
   try {
-    const email = process.env.SYS_ADMIN_EMAIL || 'admin@pingpong.com';
-    const password = process.env.SYS_ADMIN_PASSWORD || 'Admin123!';
-    const firstName = process.env.SYS_ADMIN_FIRST_NAME || 'System';
-    const lastName = process.env.SYS_ADMIN_LAST_NAME || 'Administrator';
+    getRequiredEnv('DATABASE_URL');
+    const email = getRequiredEnv('SYS_ADMIN_EMAIL');
+    const password = getRequiredEnv('SYS_ADMIN_PASSWORD');
+    const firstName = getRequiredEnv('SYS_ADMIN_FIRST_NAME');
+    const lastName = getRequiredEnv('SYS_ADMIN_LAST_NAME');
 
     console.log('Creating Sys Admin member...');
     console.log(`Email: ${email}`);
@@ -42,15 +58,13 @@ async function createSysAdmin() {
       console.log(`Member ID: ${updatedMember.id}`);
       console.log(`Roles: ${updatedMember.roles.join(', ')}`);
       
-      // Update password if provided
-      if (process.env.SYS_ADMIN_PASSWORD) {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await prisma.member.update({
-          where: { id: existingMember.id },
-          data: { password: hashedPassword },
-        });
-        console.log('✅ Password updated!');
-      }
+      // Keep credentials in sync with configured values
+      const hashedPassword = await bcrypt.hash(password, 10);
+      await prisma.member.update({
+        where: { id: existingMember.id },
+        data: { password: hashedPassword },
+      });
+      console.log('✅ Password updated!');
       
       return;
     }
@@ -68,6 +82,7 @@ async function createSysAdmin() {
         roles: ['ADMIN'],
         isActive: true,
         gender: 'OTHER', // Default gender
+        qrTokenHash: generateQrTokenHash(),
       },
     });
 

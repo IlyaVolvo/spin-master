@@ -11,7 +11,7 @@ CREATE TYPE "RatingChangeReason" AS ENUM ('TOURNAMENT_COMPLETED', 'MATCH_COMPLET
 CREATE TYPE "TournamentStatus" AS ENUM ('ACTIVE', 'COMPLETED');
 
 -- CreateEnum
-CREATE TYPE "TournamentType" AS ENUM ('ROUND_ROBIN', 'PLAYOFF', 'MULTI', 'SINGLE_MATCH');
+CREATE TYPE "TournamentType" AS ENUM ('ROUND_ROBIN', 'PLAYOFF', 'SWISS', 'MULTI_ROUND_ROBINS', 'PRELIMINARY_WITH_FINAL_PLAYOFF', 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN');
 
 -- CreateTable
 CREATE TABLE "members" (
@@ -33,6 +33,7 @@ CREATE TABLE "members" (
     "mustResetPassword" BOOLEAN NOT NULL DEFAULT false,
     "passwordResetToken" TEXT,
     "passwordResetTokenExpiry" TIMESTAMP(3),
+    "qrTokenHash" TEXT NOT NULL,
 
     CONSTRAINT "members_pkey" PRIMARY KEY ("id")
 );
@@ -60,6 +61,8 @@ CREATE TABLE "tournaments" (
     "cancelled" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "recordedAt" TIMESTAMP(3) NOT NULL,
+    "parentTournamentId" INTEGER,
+    "groupNumber" INTEGER,
 
     CONSTRAINT "tournaments_pkey" PRIMARY KEY ("id")
 );
@@ -83,6 +86,7 @@ CREATE TABLE "bracket_matches" (
     "member1Id" INTEGER,
     "member2Id" INTEGER,
     "nextMatchId" INTEGER,
+    "matchId" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -92,14 +96,14 @@ CREATE TABLE "bracket_matches" (
 -- CreateTable
 CREATE TABLE "matches" (
     "id" SERIAL NOT NULL,
-    "tournamentId" INTEGER NOT NULL,
-    "bracketMatchId" INTEGER,
+    "tournamentId" INTEGER,
     "member1Id" INTEGER NOT NULL,
     "member2Id" INTEGER,
     "player1Sets" INTEGER NOT NULL DEFAULT 0,
     "player2Sets" INTEGER NOT NULL DEFAULT 0,
     "player1Forfeit" BOOLEAN NOT NULL DEFAULT false,
     "player2Forfeit" BOOLEAN NOT NULL DEFAULT false,
+    "round" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -120,8 +124,34 @@ CREATE TABLE "point_exchange_rules" (
     CONSTRAINT "point_exchange_rules_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "preliminary_configs" (
+    "id" SERIAL NOT NULL,
+    "tournamentId" INTEGER NOT NULL,
+    "finalSize" INTEGER NOT NULL DEFAULT 0,
+    "autoQualifiedCount" INTEGER NOT NULL DEFAULT 0,
+    "autoQualifiedMemberIds" INTEGER[],
+
+    CONSTRAINT "preliminary_configs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "swiss_tournament_data" (
+    "id" SERIAL NOT NULL,
+    "tournamentId" INTEGER NOT NULL,
+    "numberOfRounds" INTEGER NOT NULL,
+    "pairByRating" BOOLEAN NOT NULL DEFAULT true,
+    "currentRound" INTEGER NOT NULL DEFAULT 0,
+    "isCompleted" BOOLEAN NOT NULL DEFAULT false,
+
+    CONSTRAINT "swiss_tournament_data_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "members_email_key" ON "members"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "members_qrTokenHash_key" ON "members"("qrTokenHash");
 
 -- CreateIndex
 CREATE INDEX "members_email_idx" ON "members"("email");
@@ -157,13 +187,16 @@ CREATE INDEX "bracket_matches_tournamentId_round_position_idx" ON "bracket_match
 CREATE INDEX "bracket_matches_nextMatchId_idx" ON "bracket_matches"("nextMatchId");
 
 -- CreateIndex
+CREATE INDEX "bracket_matches_matchId_idx" ON "bracket_matches"("matchId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "bracket_matches_tournamentId_round_position_key" ON "bracket_matches"("tournamentId", "round", "position");
 
 -- CreateIndex
-CREATE INDEX "matches_tournamentId_idx" ON "matches"("tournamentId");
+CREATE UNIQUE INDEX "bracket_matches_matchId_key" ON "bracket_matches"("matchId");
 
 -- CreateIndex
-CREATE INDEX "matches_bracketMatchId_idx" ON "matches"("bracketMatchId");
+CREATE INDEX "matches_tournamentId_idx" ON "matches"("tournamentId");
 
 -- CreateIndex
 CREATE INDEX "matches_member1Id_idx" ON "matches"("member1Id");
@@ -175,16 +208,22 @@ CREATE INDEX "matches_member2Id_idx" ON "matches"("member2Id");
 CREATE INDEX "matches_member1Id_member2Id_idx" ON "matches"("member1Id", "member2Id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "matches_bracketMatchId_key" ON "matches"("bracketMatchId");
-
--- CreateIndex
 CREATE INDEX "point_exchange_rules_effectiveFrom_idx" ON "point_exchange_rules"("effectiveFrom");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "point_exchange_rules_minDiff_maxDiff_effectiveFrom_key" ON "point_exchange_rules"("minDiff", "maxDiff", "effectiveFrom");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "preliminary_configs_tournamentId_key" ON "preliminary_configs"("tournamentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "swiss_tournament_data_tournamentId_key" ON "swiss_tournament_data"("tournamentId");
+
 -- AddForeignKey
 ALTER TABLE "rating_history" ADD CONSTRAINT "rating_history_memberId_fkey" FOREIGN KEY ("memberId") REFERENCES "members"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "tournaments" ADD CONSTRAINT "tournaments_parentTournamentId_fkey" FOREIGN KEY ("parentTournamentId") REFERENCES "tournaments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "tournament_participants" ADD CONSTRAINT "tournament_participants_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "tournaments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -199,9 +238,14 @@ ALTER TABLE "bracket_matches" ADD CONSTRAINT "bracket_matches_tournamentId_fkey"
 ALTER TABLE "bracket_matches" ADD CONSTRAINT "bracket_matches_nextMatchId_fkey" FOREIGN KEY ("nextMatchId") REFERENCES "bracket_matches"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "bracket_matches" ADD CONSTRAINT "bracket_matches_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "matches"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "matches" ADD CONSTRAINT "matches_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "tournaments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "matches" ADD CONSTRAINT "matches_bracketMatchId_fkey" FOREIGN KEY ("bracketMatchId") REFERENCES "bracket_matches"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "preliminary_configs" ADD CONSTRAINT "preliminary_configs_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "tournaments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- AddForeignKey
+ALTER TABLE "swiss_tournament_data" ADD CONSTRAINT "swiss_tournament_data_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "tournaments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

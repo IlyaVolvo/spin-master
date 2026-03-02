@@ -47,22 +47,27 @@ Creates a fresh Supabase-ready database baseline using the latest Prisma schema 
 
 ```bash
 npm run setup-supabase-fresh
+# alias
+npm run setup-supabase-initial
 ```
 
 **What it does:**
 1. Verifies `DATABASE_URL` connection
 2. Runs `prisma db push --skip-generate`
 3. Runs `prisma generate`
-4. Seeds `point_exchange_rules` with USATT-style rules
-5. Creates/updates Sys Admin member from env vars
+4. Clears operational data and existing members (fresh baseline)
+5. Seeds `point_exchange_rules` with USATT-style rules
+6. Creates a single Sys Admin member with `ORGANIZER` role only
 
-**Result:** Schema is current, rating rules exist, Sys Admin exists, and the rest of operational data remains empty.
+**Result:** Schema is current, rating rules exist, and the database contains exactly one member (Sys Admin organizer) plus the rating rule table.
 
 **Environment variables (optional):**
-- `SYS_ADMIN_EMAIL` (default: `admin@pingpong.com`)
+- `SYS_ADMIN_EMAIL` (default: `sys-admin@fake.local`)
 - `SYS_ADMIN_PASSWORD` (default: `Admin123!`)
 - `SYS_ADMIN_FIRST_NAME` (default: `Sys`)
 - `SYS_ADMIN_LAST_NAME` (default: `Admin`)
+
+**⚠️ Destructive:** Deletes existing members and operational tournament/match/rating-history data.
 
 ---
 
