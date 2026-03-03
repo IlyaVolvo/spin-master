@@ -89,16 +89,41 @@ export function generatePlayersCsv(players: ExportablePlayer[]): string {
   return csvRows.join('\n');
 }
 
-export function downloadCsv(csvContent: string, filename: string): void {
+export interface CsvDownloadResult {
+  saved: boolean;
+  reason?: 'cancelled' | 'unsupported' | 'failed';
+}
+
+export async function downloadCsv(csvContent: string, filename: string): Promise<CsvDownloadResult> {
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+
+  // Full save functionality (name + location) requires File System Access API.
+  const saveFilePicker = (window as any).showSaveFilePicker;
+  if (typeof saveFilePicker !== 'function') {
+    return { saved: false, reason: 'unsupported' };
+  }
+
+  try {
+    const handle = await saveFilePicker({
+      suggestedName: filename,
+      types: [
+        {
+          description: 'CSV files',
+          accept: { 'text/csv': ['.csv'] },
+        },
+      ],
+    });
+
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return { saved: true };
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      return { saved: false, reason: 'cancelled' };
+    }
+    return { saved: false, reason: 'failed' };
+  }
 }
 
 // ─── CSV Import Parsing ─────────────────────────────────────────────────────

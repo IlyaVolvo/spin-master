@@ -103,6 +103,7 @@ const Players: React.FC = () => {
   } | null>(null);
   const [showExportSelection, setShowExportSelection] = useState(false);
   const [selectedPlayersForExport, setSelectedPlayersForExport] = useState<Set<number>>(new Set());
+  const [exportCandidates, setExportCandidates] = useState<Member[]>([]);
   const [showAllPlayers, setShowAllPlayers] = useState(false);
   const [showAllRoles, setShowAllRoles] = useState(false);
   const [showIdColumn, setShowIdColumn] = useState(false);
@@ -183,6 +184,7 @@ const Players: React.FC = () => {
   const [selectedPlayerForHistory, setSelectedPlayerForHistory] = useState<number | null>(null);
   const [selectedOpponentsForHistory, setSelectedOpponentsForHistory] = useState<number[]>([]);
   const [lastHistorySelectionMode, setLastHistorySelectionMode] = useState<'againstPlayers' | 'ratingHistory' | null>(null);
+  const supportsFullSaveDialog = typeof (window as any).showSaveFilePicker === 'function';
   const [showSelectedFirst, setShowSelectedFirst] = useState(true);
   
   // Record Match state
@@ -1082,14 +1084,17 @@ const Players: React.FC = () => {
   };
 
   const handleExportPlayers = () => {
-    // Initialize with all filtered players selected
-    const allPlayerIds = new Set(filteredPlayers.map(p => p.id));
+    // Snapshot the currently visible/sorted players so export selection remains stable
+    // even if filters/data update while the modal is open.
+    const candidates = getSortedPlayers();
+    const allPlayerIds = new Set(candidates.map(p => p.id));
+    setExportCandidates(candidates);
     setSelectedPlayersForExport(allPlayerIds);
     setShowExportSelection(true);
   };
 
   const handleSelectAllForExport = () => {
-    const allPlayerIds = new Set(filteredPlayers.map(p => p.id));
+    const allPlayerIds = new Set(exportCandidates.map(p => p.id));
     setSelectedPlayersForExport(allPlayerIds);
   };
 
@@ -1107,14 +1112,14 @@ const Players: React.FC = () => {
     setSelectedPlayersForExport(newSelection);
   };
 
-  const handlePerformExport = () => {
+  const handlePerformExport = async () => {
     if (selectedPlayersForExport.size === 0) {
       setError('Please select at least one player to export');
       return;
     }
 
     try {
-      const selectedPlayers = filteredPlayers.filter(player => selectedPlayersForExport.has(player.id));
+      const selectedPlayers = exportCandidates.filter(player => selectedPlayersForExport.has(player.id));
 
       if (selectedPlayers.length === 0) {
         setError('No players selected for export');
@@ -1122,9 +1127,20 @@ const Players: React.FC = () => {
       }
 
       const csvContent = generatePlayersCsv(selectedPlayers);
-      downloadCsv(csvContent, `players_export_${new Date().toISOString().split('T')[0]}.csv`);
+      const saveResult = await downloadCsv(csvContent, `players_export_${new Date().toISOString().split('T')[0]}.csv`);
+
+      if (!saveResult.saved) {
+        if (saveResult.reason === 'unsupported') {
+          setError('Full Save As is not supported in this browser. Use a Chromium browser (Chrome/Edge) on localhost or HTTPS.');
+        } else if (saveResult.reason === 'failed') {
+          setError('Failed to save export file. Please try again.');
+        }
+        return;
+      }
+
       setShowExportSelection(false);
       setSelectedPlayersForExport(new Set());
+      setExportCandidates([]);
       setSuccess(`Successfully exported ${selectedPlayers.length} player(s)`);
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to export players';
@@ -3663,6 +3679,7 @@ const Players: React.FC = () => {
                   onClick={() => {
                     setShowExportSelection(false);
                     setSelectedPlayersForExport(new Set());
+                    setExportCandidates([]);
                   }}
                   style={{
                     background: 'none',
@@ -3711,7 +3728,7 @@ const Players: React.FC = () => {
                   Deselect All
                 </button>
                 <span style={{ marginLeft: '10px', fontSize: '14px', color: '#666' }}>
-                  {selectedPlayersForExport.size} of {filteredPlayers.length} selected
+                  {selectedPlayersForExport.size} of {exportCandidates.length} selected
                 </span>
               </div>
 
@@ -3722,7 +3739,7 @@ const Players: React.FC = () => {
                       <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd', width: '40px' }}>
                         <input
                           type="checkbox"
-                          checked={selectedPlayersForExport.size === filteredPlayers.length && filteredPlayers.length > 0}
+                          checked={selectedPlayersForExport.size === exportCandidates.length && exportCandidates.length > 0}
                           onChange={(e) => {
                             if (e.target.checked) {
                               handleSelectAllForExport();
@@ -3739,7 +3756,7 @@ const Players: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPlayers.map((player) => (
+                    {exportCandidates.map((player) => (
                       <tr key={player.id} style={{ backgroundColor: selectedPlayersForExport.has(player.id) ? '#e8f5e9' : 'white' }}>
                         <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
                           <input
@@ -3768,6 +3785,7 @@ const Players: React.FC = () => {
                   onClick={() => {
                     setShowExportSelection(false);
                     setSelectedPlayersForExport(new Set());
+                    setExportCandidates([]);
                   }}
                   className="button-filter"
                   style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
@@ -4258,7 +4276,7 @@ const Players: React.FC = () => {
           }}
           style={{ 
             maxHeight: filtersCollapsed ? 'calc(100vh - 200px)' : 'calc(100vh - 300px)', 
-            overflowY: 'auto' 
+            overflowY: showSettingsMenu ? 'visible' : 'auto'
           }}
         >
         <table style={{ marginTop: 0, width: '100%', borderCollapse: 'collapse' }}>
@@ -4685,33 +4703,48 @@ const Players: React.FC = () => {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
                             {(() => {
                               const isDisabled = isSelectingForStats || isSelectingForHistory;
-                              const buttonStyle: React.CSSProperties = {
+                              const isExportDisabled = isDisabled || !supportsFullSaveDialog;
+                              const buttonBaseStyle: React.CSSProperties = {
                                 padding: '6px 12px',
                                 fontSize: '12px',
-                                backgroundColor: isDisabled ? '#95a5a6' : '#3498db',
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '4px',
-                                cursor: isDisabled ? 'not-allowed' : 'pointer',
-                                opacity: isDisabled ? 0.7 : 1,
                                 width: '100%',
                                 textAlign: 'center',
+                              };
+                              const exportButtonStyle: React.CSSProperties = {
+                                ...buttonBaseStyle,
+                                backgroundColor: isExportDisabled ? '#95a5a6' : '#3498db',
+                                cursor: isExportDisabled ? 'not-allowed' : 'pointer',
+                                opacity: isExportDisabled ? 0.7 : 1,
+                              };
+                              const importButtonStyle: React.CSSProperties = {
+                                ...buttonBaseStyle,
+                                backgroundColor: isDisabled ? '#95a5a6' : '#3498db',
+                                cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                opacity: isDisabled ? 0.7 : 1,
                               };
                               
                               return (
                                 <>
                                   <button 
                                     onClick={handleExportPlayers}
-                                    disabled={isDisabled}
+                                    disabled={isExportDisabled}
                                     className="button-3d"
-                                    style={buttonStyle}
-                                    title="Export players to CSV"
+                                    style={exportButtonStyle}
+                                    title={supportsFullSaveDialog ? 'Export players to CSV' : 'Full Save As (name + location) is not supported in Safari. Use Chrome/Edge.'}
                                   >
                                     📥 Export
                                   </button>
+                                  {!supportsFullSaveDialog && (
+                                    <div style={{ fontSize: '11px', color: '#a65b00', lineHeight: 1.3 }}>
+                                      Full Save As is unavailable in Safari. Use Chrome/Edge for location + name selection.
+                                    </div>
+                                  )}
                                   <label
                                     className="button-3d"
-                                    style={buttonStyle}
+                                    style={importButtonStyle}
                                     title="Import players from CSV"
                                   >
                                     📤 Import
