@@ -19,6 +19,7 @@ import {
   isSuspiciousRating,
   isValidBirthDate,
   isValidEmailFormat,
+  isValidMemberName,
   isValidPhoneNumber,
   isValidRatingInput,
 } from '../../../server/src/utils/memberValidation';
@@ -72,9 +73,21 @@ const Players: React.FC = () => {
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
   const [newPlayerAddress, setNewPlayerAddress] = useState('');
   const [newPlayerPicture, setNewPlayerPicture] = useState('');
+  const [newPlayerRoles, setNewPlayerRoles] = useState<string[]>(['PLAYER']);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [similarNames, setSimilarNames] = useState<SimilarName[]>([]);
-  const [pendingPlayerData, setPendingPlayerData] = useState<{ firstName: string; lastName: string; birthDate: string | null; rating: number | null } | null>(null);
+  const [pendingPlayerData, setPendingPlayerData] = useState<{
+    firstName: string;
+    lastName: string;
+    email: string;
+    gender: 'MALE' | 'FEMALE' | 'OTHER';
+    birthDate: string | null;
+    rating: number | null;
+    phone: string | null;
+    address: string | null;
+    picture: string | null;
+    roles: string[];
+  } | null>(null);
   const [showActiveConfirmation, setShowActiveConfirmation] = useState(false);
   const [pendingActiveToggle, setPendingActiveToggle] = useState<{ playerId: number; isActive: boolean; playerName: string } | null>(null);
   const [nameDisplayOrder, setNameDisplayOrderState] = useState<NameDisplayOrder>(getNameDisplayOrder());
@@ -229,10 +242,13 @@ const Players: React.FC = () => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showEnteredPasswords, setShowEnteredPasswords] = useState(false);
+  const [isValidatingCurrentPassword, setIsValidatingCurrentPassword] = useState(false);
+  const [isCurrentPasswordVerified, setIsCurrentPasswordVerified] = useState(false);
+  const [currentPasswordValidationMessage, setCurrentPasswordValidationMessage] = useState('');
   
   // Password reset state (only visible to Admins)
-  const [showPasswordReset, setShowPasswordReset] = useState(false);
-  const [resetPassword, setResetPassword] = useState('');
+  const [isPasswordResetLocked, setIsPasswordResetLocked] = useState(false);
   
   // Delete member state
   const [canDeleteMember, setCanDeleteMember] = useState(false);
@@ -577,8 +593,8 @@ const Players: React.FC = () => {
       const minRatingNum = minRating === '' ? 0 : parseInt(minRating) || 0;
       const maxRatingNum = maxRating === '' ? 9999 : parseInt(maxRating) || 9999;
       filtered = filtered.filter(p => {
-        if (p.rating === null) return false;
-        return p.rating >= minRatingNum && p.rating <= maxRatingNum;
+        const effectiveRating = p.rating ?? 0;
+        return effectiveRating >= minRatingNum && effectiveRating <= maxRatingNum;
       });
     }
     
@@ -634,8 +650,8 @@ const Players: React.FC = () => {
       filtered = filtered.filter(p => {
         // Always include the selected player for history
         if (p.id === selectedPlayerForHistory) return true;
-        if (p.rating === null) return false;
-        return p.rating >= minRatingNum && p.rating <= maxRatingNum;
+        const effectiveRating = p.rating ?? 0;
+        return effectiveRating >= minRatingNum && effectiveRating <= maxRatingNum;
       });
     }
     
@@ -708,13 +724,13 @@ const Players: React.FC = () => {
       case 'firstName': {
         const v = (value !== undefined ? value : newPlayerFirstName).trim();
         if (!v) return 'First name is required';
-        if (v.length < 2) return 'First name must be at least 2 characters';
+        if (!isValidMemberName(v)) return 'First name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens';
         return '';
       }
       case 'lastName': {
         const v = (value !== undefined ? value : newPlayerLastName).trim();
         if (!v) return 'Last name is required';
-        if (v.length < 2) return 'Last name must be at least 2 characters';
+        if (!isValidMemberName(v)) return 'Last name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens';
         return '';
       }
       case 'email': {
@@ -754,6 +770,11 @@ const Players: React.FC = () => {
         } catch {
           return 'Please enter a valid URL';
         }
+      }
+      case 'roles': {
+        const v = value !== undefined ? value : newPlayerRoles;
+        if (!Array.isArray(v) || v.length === 0) return 'At least one role must be selected';
+        return '';
       }
       default:
         return '';
@@ -804,7 +825,7 @@ const Players: React.FC = () => {
   };
 
   const validateAllAddFields = (): boolean => {
-    const fields = ['firstName', 'lastName', 'email', 'birthDate', 'gender', 'rating', 'phone', 'picture'];
+    const fields = ['firstName', 'lastName', 'email', 'birthDate', 'gender', 'roles', 'rating', 'phone', 'picture'];
     const errors: Record<string, string> = {};
     const touched: Record<string, boolean> = {};
     let hasError = false;
@@ -824,13 +845,13 @@ const Players: React.FC = () => {
       case 'firstName': {
         const v = (value !== undefined ? value : editFirstName).trim();
         if (!v) return 'First name is required';
-        if (v.length < 2) return 'First name must be at least 2 characters';
+        if (!isValidMemberName(v)) return 'First name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens';
         return '';
       }
       case 'lastName': {
         const v = (value !== undefined ? value : editLastName).trim();
         if (!v) return 'Last name is required';
-        if (v.length < 2) return 'Last name must be at least 2 characters';
+        if (!isValidMemberName(v)) return 'Last name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens';
         return '';
       }
       case 'email': {
@@ -968,8 +989,7 @@ const Players: React.FC = () => {
         lastName: newPlayerLastName.trim(),
         email: newPlayerEmail.trim(),
         gender: newPlayerGender,
-        password: 'changeme', // Auto-set as per requirements
-        roles: ['PLAYER'], // Default role
+        roles: newPlayerRoles,
         birthDate: newPlayerBirthDate!.toISOString().split('T')[0],
       };
       
@@ -993,18 +1013,24 @@ const Players: React.FC = () => {
       // Check if confirmation is required
       if (response.data.requiresConfirmation) {
         setSimilarNames(response.data.similarNames);
-        setPendingPlayerData({
-          firstName: response.data.proposedFirstName,
-          lastName: response.data.proposedLastName,
-          birthDate: response.data.proposedBirthDate,
-          rating: response.data.proposedRating,
+        setPendingPlayerData(response.data.proposedMemberData || {
+          firstName: playerData.firstName,
+          lastName: playerData.lastName,
+          email: playerData.email,
+          gender: playerData.gender,
+          birthDate: playerData.birthDate,
+          rating: playerData.rating ?? null,
+          phone: playerData.phone ?? null,
+          address: playerData.address ?? null,
+          picture: playerData.picture ?? null,
+          roles: playerData.roles,
         });
         setShowConfirmation(true);
         return;
       }
 
       // No similar names, proceed normally
-      setSuccess('Player added successfully');
+      setSuccess('Member created and invitation email sent');
       setNewPlayerFirstName('');
       setNewPlayerLastName('');
       setNewPlayerBirthDate(null);
@@ -1012,6 +1038,7 @@ const Players: React.FC = () => {
       setLastConfirmedAddRating('');
       setNewPlayerEmail('');
       setNewPlayerGender('');
+      setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
       setNewPlayerAddress('');
       setNewPlayerPicture('');
@@ -1118,25 +1145,38 @@ const Players: React.FC = () => {
       const playerData: any = {
         firstName: pendingPlayerData.firstName,
         lastName: pendingPlayerData.lastName,
+        email: pendingPlayerData.email,
+        gender: pendingPlayerData.gender,
+        roles: pendingPlayerData.roles,
       };
       
       if (pendingPlayerData.birthDate) {
         playerData.birthDate = pendingPlayerData.birthDate;
       }
       
-      if (pendingPlayerData.rating) {
+      if (pendingPlayerData.rating !== null) {
         playerData.rating = pendingPlayerData.rating;
+      }
+      if (pendingPlayerData.phone) {
+        playerData.phone = pendingPlayerData.phone;
+      }
+      if (pendingPlayerData.address) {
+        playerData.address = pendingPlayerData.address;
+      }
+      if (pendingPlayerData.picture) {
+        playerData.picture = pendingPlayerData.picture;
       }
 
       // Make a second request with a flag to skip similarity check
       await api.post('/players', { ...playerData, skipSimilarityCheck: true });
-      setSuccess('Player added successfully');
+      setSuccess('Member created and invitation email sent');
       setNewPlayerFirstName('');
       setNewPlayerLastName('');
       setNewPlayerBirthDate(null);
       setNewPlayerRating('');
       setNewPlayerEmail('');
       setNewPlayerGender('');
+      setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
       setNewPlayerAddress('');
       setNewPlayerPicture('');
@@ -1227,11 +1267,8 @@ const Players: React.FC = () => {
       filtered = filtered.filter(p => {
         // Always include the selected player for history
         if (isSelectingForHistory && p.id === selectedPlayerForHistory) return true;
-        // When showing all members, allow non-players (those without ratings) to pass through
-        if (p.rating === null) {
-          return showAllRoles && isAdmin();
-        }
-        return p.rating >= minRatingNum && p.rating <= maxRatingNum;
+        const effectiveRating = p.rating ?? 0;
+        return effectiveRating >= minRatingNum && effectiveRating <= maxRatingNum;
       });
     }
     
@@ -1438,6 +1475,7 @@ const Players: React.FC = () => {
       setEditRoles(member.roles || []);
       setEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
       setLastConfirmedEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
+      setIsPasswordResetLocked(false);
       
       // Check if member can be deleted (Admin only)
       const currentMember = getMember();
@@ -1512,11 +1550,14 @@ const Players: React.FC = () => {
     setShowPasswordChange(false);
     setCurrentPassword('');
     setNewPassword('');
+    setShowEnteredPasswords(false);
     setCanDeleteMember(false);
     setShowDeleteConfirm(false);
     setConfirmPassword('');
-    setShowPasswordReset(false);
-    setResetPassword('');
+    setIsPasswordResetLocked(false);
+    setIsValidatingCurrentPassword(false);
+    setIsCurrentPasswordVerified(false);
+    setCurrentPasswordValidationMessage('');
     // Clear editOwnProfile state if it exists to prevent re-triggering
     if (location.state?.editOwnProfile) {
       navigate('/players', { 
@@ -1535,6 +1576,7 @@ const Players: React.FC = () => {
     const currentMember = getMember();
     const isAdminUser = currentMember && currentMember.roles && currentMember.roles.includes('ADMIN');
     const isEditingSelf = currentMember && currentMember.id === editingPlayerId;
+    const canEditRestrictedProfileFields = !!isAdminUser && !isEditingSelf;
 
     // Validate permissions
     if (!isAdminUser && !isEditingSelf) {
@@ -1543,12 +1585,12 @@ const Players: React.FC = () => {
     }
 
     // Validate all editable fields
-    if (!validateAllEditFields(!!isAdminUser)) {
+    if (!validateAllEditFields(canEditRestrictedProfileFields)) {
       return;
     }
 
     if (
-      isAdminUser &&
+      canEditRestrictedProfileFields &&
       editRating.trim() !== '' &&
       isSuspiciousRating(editRating) &&
       editRating.trim() !== lastConfirmedEditRating.trim()
@@ -1567,8 +1609,8 @@ const Players: React.FC = () => {
     try {
       const updateData: any = {};
       
-      if (isAdminUser) {
-        // Admin can edit all fields
+      if (canEditRestrictedProfileFields) {
+        // Admin editing another member can edit restricted profile fields
         updateData.firstName = editFirstName.trim();
         updateData.lastName = editLastName.trim();
         updateData.gender = editGender;
@@ -1582,8 +1624,7 @@ const Players: React.FC = () => {
         updateData.isActive = editIsActive;
         updateData.roles = editRoles;
       } else {
-        // Regular member can only edit: email, phone, address, picture
-        // Name, gender, birthDate, rating, roles, isActive are restricted
+        // Self-edit and non-admin edit path: restricted profile fields are read-only
       }
       
       // Both admin and regular members can edit these fields
@@ -1614,34 +1655,80 @@ const Players: React.FC = () => {
     setError('');
     setSuccess('');
 
+    const normalizedCurrentPassword = currentPassword.replace(/\s+/g, '').trim();
+    const normalizedNewPassword = newPassword.replace(/\s+/g, '').trim();
+    const normalizedConfirmPassword = confirmPassword.replace(/\s+/g, '').trim();
+
+    if (!isCurrentPasswordVerified) {
+      setError('Please verify your current password first');
+      return;
+    }
+
     // Validate passwords
-    if (!currentPassword || !newPassword || !confirmPassword) {
+    if (!normalizedCurrentPassword || !normalizedNewPassword || !normalizedConfirmPassword) {
       setError('All password fields are required');
       return;
     }
 
-    if (newPassword.length < 6) {
+    if (normalizedNewPassword.length < 6) {
       setError('New password must be at least 6 characters long');
       return;
     }
 
-    if (newPassword !== confirmPassword) {
+    if (normalizedNewPassword !== normalizedConfirmPassword) {
       setError('New password and confirmation do not match');
       return;
     }
 
     try {
       await api.post('/auth/member/change-password', {
-        currentPassword,
-        newPassword,
+        currentPassword: normalizedCurrentPassword,
+        newPassword: normalizedNewPassword,
       });
       setSuccess('Password changed successfully');
       setShowPasswordChange(false);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setShowEnteredPasswords(false);
+      setIsCurrentPasswordVerified(false);
+      setCurrentPasswordValidationMessage('');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to change password');
+    }
+  };
+
+  const validateCurrentPasswordForChange = async () => {
+    const passwordToValidate = currentPassword.replace(/\s+/g, '').trim();
+
+    if (!passwordToValidate) {
+      setIsCurrentPasswordVerified(false);
+      setCurrentPasswordValidationMessage('Current password is required');
+      return;
+    }
+
+    setIsValidatingCurrentPassword(true);
+    setCurrentPasswordValidationMessage('Validating current password...');
+
+    try {
+      const response = await api.post('/auth/member/validate-current-password', {
+        currentPassword: passwordToValidate,
+      });
+
+      if (response.data?.valid) {
+        setIsCurrentPasswordVerified(true);
+        setCurrentPasswordValidationMessage('Current password verified');
+      } else {
+        setIsCurrentPasswordVerified(false);
+        setCurrentPasswordValidationMessage(response.data?.error || 'Current password is incorrect');
+      }
+    } catch (err: any) {
+      setIsCurrentPasswordVerified(false);
+      // Keep fields locked, but avoid noisy generic errors here.
+      // Explicit invalid-password feedback is handled by the API's valid:false response path.
+      setCurrentPasswordValidationMessage('');
+    } finally {
+      setIsValidatingCurrentPassword(false);
     }
   };
 
@@ -1651,19 +1738,28 @@ const Players: React.FC = () => {
     setError('');
     setSuccess('');
 
-    // If resetPassword is provided, validate it; otherwise use default 'changeme'
-    if (resetPassword && resetPassword.length < 6) {
-      setError('Password must be at least 6 characters long');
+    const targetEmail = editEmail.trim();
+    if (!targetEmail) {
+      setError('Email is required before reset');
+      return;
+    }
+
+    if (!isValidEmailFormat(targetEmail)) {
+      setError('Please enter a valid email address before reset');
+      return;
+    }
+
+    const confirmed = window.confirm(`Confirm Password Reset\n\nSend password reset link to ${targetEmail}?`);
+    if (!confirmed) {
       return;
     }
 
     try {
       await api.post(`/auth/member/${editingPlayerId}/reset-password`, {
-        newPassword: resetPassword || undefined, // If empty, backend will use 'changeme'
+        email: targetEmail,
       });
-      setSuccess('Password reset successfully');
-      setShowPasswordReset(false);
-      setResetPassword('');
+      setSuccess(`Password reset email sent to ${targetEmail}`);
+      setIsPasswordResetLocked(true);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to reset password');
     }
@@ -2081,11 +2177,8 @@ const Players: React.FC = () => {
       const minRatingNum = minRating === '' ? 0 : parseInt(minRating) || 0;
       const maxRatingNum = maxRating === '' ? 9999 : parseInt(maxRating) || 9999;
       filtered = filtered.filter(p => {
-        // When showing all members, allow non-players (those without ratings) to pass through
-        if (p.rating === null) {
-          return showAllRoles && isAdmin();
-        }
-        return p.rating >= minRatingNum && p.rating <= maxRatingNum;
+        const effectiveRating = p.rating ?? 0;
+        return effectiveRating >= minRatingNum && effectiveRating <= maxRatingNum;
       });
     }
     
@@ -2203,6 +2296,7 @@ const Players: React.FC = () => {
                       <button 
                         onClick={() => {
                           setLastConfirmedAddRating('');
+                          setNewPlayerRoles(['PLAYER']);
                           setShowAddForm(true);
                         }}
                         className="button-3d"
@@ -3083,6 +3177,7 @@ const Players: React.FC = () => {
                     setLastConfirmedAddRating('');
                     setNewPlayerEmail('');
                     setNewPlayerGender('');
+                    setNewPlayerRoles(['PLAYER']);
                     setNewPlayerPhone('');
                     setNewPlayerAddress('');
                     setNewPlayerPicture('');
@@ -3176,6 +3271,53 @@ const Players: React.FC = () => {
                   </select>
                   {addFieldTouched.gender && addFieldErrors.gender && <span className="field-error">{addFieldErrors.gender}</span>}
                 </div>
+                <div className={`form-group ${addFieldErrors.roles && addFieldTouched.roles ? 'has-error' : addFieldTouched.roles && !addFieldErrors.roles ? 'is-valid' : ''}`}>
+                  <label>Roles *</label>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))',
+                      columnGap: '16px',
+                      rowGap: '8px',
+                      paddingTop: '4px',
+                    }}
+                  >
+                    {['PLAYER', 'COACH', 'ORGANIZER', 'ADMIN'].map((role) => (
+                      <label
+                        key={role}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          margin: 0,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={newPlayerRoles.includes(role)}
+                          onChange={(e) => {
+                            const nextRoles = e.target.checked
+                              ? [...newPlayerRoles, role]
+                              : newPlayerRoles.filter((r) => r !== role);
+                            setNewPlayerRoles(nextRoles);
+                            handleAddFieldChange('roles', nextRoles);
+                            if (!addFieldTouched.roles) {
+                              setAddFieldTouched((prev) => ({ ...prev, roles: true }));
+                            }
+                            const err = validateAddField('roles', nextRoles);
+                            setAddFieldErrors((prev) => ({ ...prev, roles: err }));
+                          }}
+                          style={{ cursor: 'pointer', margin: 0 }}
+                        />
+                        <span>{role}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {addFieldTouched.roles && addFieldErrors.roles && <span className="field-error">{addFieldErrors.roles}</span>}
+                </div>
                 <div className={`form-group ${addFieldErrors.rating && addFieldTouched.rating ? 'has-error' : ''}`}>
                   <label>Initial Rating (optional)</label>
                   <input
@@ -3234,6 +3376,7 @@ const Players: React.FC = () => {
                       setLastConfirmedAddRating('');
                       setNewPlayerEmail('');
                       setNewPlayerGender('');
+                      setNewPlayerRoles(['PLAYER']);
                       setNewPlayerPhone('');
                       setNewPlayerAddress('');
                       setNewPlayerPicture('');
@@ -3245,7 +3388,7 @@ const Players: React.FC = () => {
                   >
                     Cancel
                   </button>
-                  <button type="submit" className="button-3d">Add Player</button>
+                  <button type="submit" className="button-3d">Save Member & Send Invitation</button>
                 </div>
               </form>
             </div>
@@ -5001,6 +5144,7 @@ const Players: React.FC = () => {
         const currentMember = getMember();
         const isEditingSelf = currentMember && currentMember.id === editingPlayerId;
         const isAdminUser = currentMember && currentMember.roles && currentMember.roles.includes('ADMIN');
+        const canEditRestrictedProfileFields = !!isAdminUser && !isEditingSelf;
         
         return (
           <div 
@@ -5052,25 +5196,25 @@ const Players: React.FC = () => {
                               marginBottom: '4px', 
                               fontSize: '13px', 
                               fontWeight: 'bold',
-                              color: !isAdminUser ? '#999' : 'inherit'
+                              color: !canEditRestrictedProfileFields ? '#999' : 'inherit'
                             }}>First Name *</label>
                             <input
                               type="text"
                               value={editFirstName}
                               onChange={(e) => { setEditFirstName(e.target.value); handleEditFieldChange('firstName', e.target.value); }}
                               onBlur={() => handleEditFieldBlur('firstName')}
-                              disabled={!isAdminUser}
+                              disabled={!canEditRestrictedProfileFields}
                               style={{ 
                                 width: '100%', 
                                 padding: '8px', 
                                 border: `1px solid ${editFieldTouched.firstName && editFieldErrors.firstName ? '#e74c3c' : '#ddd'}`, 
                                 borderRadius: '4px',
-                                backgroundColor: !isAdminUser ? '#f5f5f5' : 'white',
-                                color: !isAdminUser ? '#999' : 'inherit',
-                                cursor: !isAdminUser ? 'not-allowed' : 'text',
-                                opacity: !isAdminUser ? 0.7 : 1
+                                backgroundColor: !canEditRestrictedProfileFields ? '#f5f5f5' : 'white',
+                                color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
+                                cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text',
+                                opacity: !canEditRestrictedProfileFields ? 0.7 : 1
                               }}
-                              autoFocus={isAdminUser || undefined}
+                              autoFocus={canEditRestrictedProfileFields || undefined}
                             />
                             {editFieldTouched.firstName && editFieldErrors.firstName && <span className="field-error">{editFieldErrors.firstName}</span>}
                           </div>
@@ -5080,23 +5224,23 @@ const Players: React.FC = () => {
                               marginBottom: '4px', 
                               fontSize: '13px', 
                               fontWeight: 'bold',
-                              color: !isAdminUser ? '#999' : 'inherit'
+                              color: !canEditRestrictedProfileFields ? '#999' : 'inherit'
                             }}>Last Name *</label>
                             <input
                               type="text"
                               value={editLastName}
                               onChange={(e) => { setEditLastName(e.target.value); handleEditFieldChange('lastName', e.target.value); }}
                               onBlur={() => handleEditFieldBlur('lastName')}
-                              disabled={!isAdminUser}
+                              disabled={!canEditRestrictedProfileFields}
                               style={{ 
                                 width: '100%', 
                                 padding: '8px', 
                                 border: `1px solid ${editFieldTouched.lastName && editFieldErrors.lastName ? '#e74c3c' : '#ddd'}`, 
                                 borderRadius: '4px',
-                                backgroundColor: !isAdminUser ? '#f5f5f5' : 'white',
-                                color: !isAdminUser ? '#999' : 'inherit',
-                                cursor: !isAdminUser ? 'not-allowed' : 'text',
-                                opacity: !isAdminUser ? 0.7 : 1
+                                backgroundColor: !canEditRestrictedProfileFields ? '#f5f5f5' : 'white',
+                                color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
+                                cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text',
+                                opacity: !canEditRestrictedProfileFields ? 0.7 : 1
                               }}
                             />
                             {editFieldTouched.lastName && editFieldErrors.lastName && <span className="field-error">{editFieldErrors.lastName}</span>}
@@ -5217,12 +5361,22 @@ const Players: React.FC = () => {
                   {/* Active Status - Only visible to Admins */}
                   {isAdminUser && (
                           <div>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                            <label
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'pointer',
+                                fontSize: '13px',
+                                color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
+                              }}
+                            >
                               <input
                                 type="checkbox"
                                 checked={editIsActive}
+                                disabled={!canEditRestrictedProfileFields}
                                 onChange={(e) => setEditIsActive(e.target.checked)}
-                                style={{ cursor: 'pointer' }}
+                                style={{ cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'pointer' }}
                               />
                               <span>Active</span>
                             </label>
@@ -5231,8 +5385,8 @@ const Players: React.FC = () => {
                         </div>
                         
                 {/* Rating Section */}
-                {isAdminUser && (
-                  <div style={{ marginTop: '16px', padding: '12px', background: '#e3f2fd', borderRadius: '4px', border: '1px solid #2196F3' }}>
+                {(isAdminUser || isEditingSelf) && (
+                  <div style={{ marginTop: '16px', padding: '12px', background: !canEditRestrictedProfileFields ? '#f5f5f5' : '#e3f2fd', borderRadius: '4px', border: `1px solid ${!canEditRestrictedProfileFields ? '#d9d9d9' : '#2196F3'}` }}>
                     <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>Rating</h5>
                     <div>
                       <input
@@ -5240,7 +5394,17 @@ const Players: React.FC = () => {
                         value={editRating}
                         onChange={(e) => { setEditRating(e.target.value); handleEditFieldChange('rating', e.target.value); }}
                         onBlur={handleEditRatingBlur}
-                        style={{ width: '100%', padding: '8px', border: `1px solid ${editFieldTouched.rating && editFieldErrors.rating ? '#e74c3c' : '#ddd'}`, borderRadius: '4px' }}
+                        disabled={!canEditRestrictedProfileFields}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: `1px solid ${editFieldTouched.rating && editFieldErrors.rating ? '#e74c3c' : '#ddd'}`,
+                          borderRadius: '4px',
+                          backgroundColor: !canEditRestrictedProfileFields ? '#f5f5f5' : 'white',
+                          color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
+                          cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text',
+                          opacity: !canEditRestrictedProfileFields ? 0.7 : 1,
+                        }}
                         placeholder="Rating (0-9999) or leave empty"
                         min="0"
                         max="9999"
@@ -5254,15 +5418,16 @@ const Players: React.FC = () => {
                 )}
                 
                 {/* Roles Section */}
-                {isAdminUser && (
-                  <div style={{ marginTop: '16px', padding: '12px', background: '#e8f5e9', borderRadius: '4px', border: '1px solid #4caf50' }}>
+                {(isAdminUser || isEditingSelf) && (
+                  <div style={{ marginTop: '16px', padding: '12px', background: !canEditRestrictedProfileFields ? '#f5f5f5' : '#e8f5e9', borderRadius: '4px', border: `1px solid ${!canEditRestrictedProfileFields ? '#d9d9d9' : '#4caf50'}` }}>
                     <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>Roles</h5>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {['PLAYER', 'COACH', 'ORGANIZER', 'ADMIN'].map((role) => (
-                        <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                        <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'pointer', fontSize: '13px', color: !canEditRestrictedProfileFields ? '#999' : 'inherit' }}>
                           <input
                             type="checkbox"
                             checked={editRoles.includes(role)}
+                            disabled={!canEditRestrictedProfileFields}
                             onChange={(e) => {
                               if (e.target.checked) {
                                 setEditRoles([...editRoles, role]);
@@ -5270,7 +5435,7 @@ const Players: React.FC = () => {
                                 setEditRoles(editRoles.filter(r => r !== role));
                               }
                             }}
-                            style={{ cursor: 'pointer' }}
+                            style={{ cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'pointer' }}
                           />
                           <span>{role}</span>
                         </label>
@@ -5291,51 +5456,125 @@ const Players: React.FC = () => {
                                       Change Password
                                     </button>
                                   ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <form
+                                      onSubmit={(e) => {
+                                        e.preventDefault();
+                                        void handleChangePassword();
+                                      }}
+                                      style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+                                    >
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={showEnteredPasswords}
+                                          onChange={(e) => setShowEnteredPasswords(e.target.checked)}
+                                          style={{ cursor: 'pointer' }}
+                                        />
+                                        <span>Show passwords</span>
+                                      </label>
                                       <div>
                                         <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 'bold' }}>Current Password *</label>
                                         <input
-                                          type="password"
+                                          type={showEnteredPasswords ? 'text' : 'password'}
                                           value={currentPassword}
-                                          onChange={(e) => setCurrentPassword(e.target.value)}
+                                          onFocus={() => {
+                                            setCurrentPasswordValidationMessage('');
+                                          }}
+                                          onChange={(e) => {
+                                            setCurrentPassword(e.target.value.replace(/\s+/g, ''));
+                                            setIsCurrentPasswordVerified(false);
+                                            setCurrentPasswordValidationMessage('');
+                                            setNewPassword('');
+                                            setConfirmPassword('');
+                                          }}
+                                          onBlur={() => {
+                                            void validateCurrentPasswordForChange();
+                                          }}
+                                          autoComplete="current-password"
                                           style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px' }}
                                           placeholder="Enter current password"
                                         />
+                                        {currentPasswordValidationMessage && (
+                                          <div
+                                            style={{
+                                              marginTop: '4px',
+                                              fontSize: '12px',
+                                              color: isValidatingCurrentPassword
+                                                ? '#666'
+                                                : isCurrentPasswordVerified
+                                                  ? '#2e7d32'
+                                                  : '#d32f2f',
+                                            }}
+                                          >
+                                            {currentPasswordValidationMessage}
+                                          </div>
+                                        )}
                                       </div>
                                       <div>
                                         <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 'bold' }}>New Password *</label>
                                         <input
-                                          type="password"
+                                          type={showEnteredPasswords ? 'text' : 'password'}
                                           value={newPassword}
-                                          onChange={(e) => setNewPassword(e.target.value)}
-                                          style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px' }}
+                                          onChange={(e) => setNewPassword(e.target.value.replace(/\s+/g, ''))}
+                                          autoComplete="new-password"
+                                          disabled={!isCurrentPasswordVerified}
+                                          style={{
+                                            width: '100%',
+                                            padding: '6px',
+                                            border: '1px solid #ddd',
+                                            borderRadius: '4px',
+                                            backgroundColor: !isCurrentPasswordVerified ? '#f5f5f5' : 'white',
+                                            color: !isCurrentPasswordVerified ? '#999' : 'inherit',
+                                            cursor: !isCurrentPasswordVerified ? 'not-allowed' : 'text',
+                                          }}
                                           placeholder="Enter new password (min 6 characters)"
                                         />
                                       </div>
                                       <div>
                                         <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 'bold' }}>Confirm New Password *</label>
                                         <input
-                                          type="password"
+                                          type={showEnteredPasswords ? 'text' : 'password'}
                                           value={confirmPassword}
-                                          onChange={(e) => setConfirmPassword(e.target.value)}
-                                          style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px' }}
+                                          onChange={(e) => setConfirmPassword(e.target.value.replace(/\s+/g, ''))}
+                                          autoComplete="new-password"
+                                          disabled={!isCurrentPasswordVerified}
+                                          style={{
+                                            width: '100%',
+                                            padding: '6px',
+                                            border: '1px solid #ddd',
+                                            borderRadius: '4px',
+                                            backgroundColor: !isCurrentPasswordVerified ? '#f5f5f5' : 'white',
+                                            color: !isCurrentPasswordVerified ? '#999' : 'inherit',
+                                            cursor: !isCurrentPasswordVerified ? 'not-allowed' : 'text',
+                                          }}
                                           placeholder="Confirm new password"
                                         />
                                       </div>
                                       <div style={{ display: 'flex', gap: '8px' }}>
                                         <button
-                                          onClick={handleChangePassword}
+                                          type="submit"
+                                          disabled={!isCurrentPasswordVerified || isValidatingCurrentPassword}
                                           className="button-3d success"
-                                          style={{ fontSize: '12px', padding: '6px 12px' }}
+                                          style={{
+                                            fontSize: '12px',
+                                            padding: '6px 12px',
+                                            opacity: !isCurrentPasswordVerified || isValidatingCurrentPassword ? 0.65 : 1,
+                                            cursor: !isCurrentPasswordVerified || isValidatingCurrentPassword ? 'not-allowed' : 'pointer',
+                                          }}
                                         >
                                           Change Password
                                         </button>
                                         <button
+                                          type="button"
                                           onClick={() => {
                                             setShowPasswordChange(false);
                                             setCurrentPassword('');
                                             setNewPassword('');
                                             setConfirmPassword('');
+                                            setShowEnteredPasswords(false);
+                                            setIsCurrentPasswordVerified(false);
+                                            setCurrentPasswordValidationMessage('');
+                                            setIsValidatingCurrentPassword(false);
                                           }}
                                           className="button-filter"
                                           style={{ fontSize: '12px', padding: '6px 12px' }}
@@ -5343,7 +5582,7 @@ const Players: React.FC = () => {
                                           Cancel
                                         </button>
                                       </div>
-                                    </div>
+                                    </form>
                                   )}
                                 </div>
                               )}
@@ -5352,54 +5591,26 @@ const Players: React.FC = () => {
                 {isAdminUser && !isEditingSelf && (
                                 <div style={{ marginTop: '16px', padding: '12px', background: '#fff3cd', borderRadius: '4px', border: '1px solid #ffc107' }}>
                                   <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>Reset Password</h5>
-                                  {!showPasswordReset ? (
-                                    <button
-                                      onClick={() => setShowPasswordReset(true)}
-                                      className="button-3d"
-                                      style={{ fontSize: '13px', padding: '6px 12px', background: '#ffc107', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                                    >
-                                      Reset Password
-                                    </button>
-                                  ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                      {!resetPassword && (
-                                        <div style={{ padding: '8px', background: '#e7f3ff', border: '1px solid #2196F3', borderRadius: '4px', fontSize: '12px', color: '#1976D2' }}>
-                                          <strong>⚠️ Password Reset Notice:</strong> Leaving the password field empty will reset the password. The member will be required to set a new password on their next login.
-                                        </div>
-                                      )}
-                                      <div>
-                                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 'bold' }}>
-                                          New Password {!resetPassword && <span style={{ color: '#d32f2f', fontWeight: 'normal' }}>(leave empty to force password reset on next login)</span>}
-                                        </label>
-                                        <input
-                                          type="password"
-                                          value={resetPassword}
-                                          onChange={(e) => setResetPassword(e.target.value)}
-                                          style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px' }}
-                                          placeholder={resetPassword ? 'Enter new password' : "Leave empty to force password reset on next login"}
-                                        />
-                                      </div>
-                                      <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button
-                                          onClick={handleResetPassword}
-                                          className="button-3d"
-                                          style={{ fontSize: '12px', padding: '6px 12px', background: '#ffc107', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                                        >
-                                          {resetPassword ? 'Set New Password' : 'Reset Password (Force Setup on Login)'}
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setShowPasswordReset(false);
-                                            setResetPassword('');
-                                          }}
-                                          className="button-filter"
-                                          style={{ fontSize: '12px', padding: '6px 12px' }}
-                                        >
-                                          Cancel
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
+                                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>
+                                    Sends a one-time reset link to the current Email value in this form.
+                                  </p>
+                                  <button
+                                    onClick={handleResetPassword}
+                                    disabled={isPasswordResetLocked}
+                                    className="button-3d"
+                                    style={{
+                                      fontSize: '13px',
+                                      padding: '6px 12px',
+                                      background: isPasswordResetLocked ? '#9e9e9e' : '#ffc107',
+                                      color: isPasswordResetLocked ? '#fff' : '#000',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      cursor: isPasswordResetLocked ? 'not-allowed' : 'pointer',
+                                      opacity: isPasswordResetLocked ? 0.9 : 1,
+                                    }}
+                                  >
+                                    Reset Password
+                                  </button>
                                 </div>
                               )}
                 

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from '../utils/api';
-import { setMember, setToken } from '../utils/auth';
+import { removeMember, removeToken, setMember, setToken } from '../utils/auth';
 import { getErrorMessage } from '../utils/errorHandler';
 
 interface LoginProps {
@@ -29,6 +29,31 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
   const [resetPasswordError, setResetPasswordError] = useState('');
   const [resettingPassword, setResettingPassword] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isResetFlow = params.get('reset') === '1';
+    const tokenFromUrl = params.get('token')?.trim() || '';
+    const emailFromUrl = params.get('email')?.trim() || '';
+
+    if (!isResetFlow || !tokenFromUrl) {
+      return;
+    }
+
+    // Hard reset local browser auth/settings context so stale token/session is never reused.
+    removeMember();
+    removeToken();
+    localStorage.clear();
+    sessionStorage.clear();
+
+    setShowForgotPassword(false);
+    setForgotPasswordSuccess(false);
+    setResetToken(tokenFromUrl);
+    setResetPasswordToken(tokenFromUrl);
+    setResetPasswordEmail(emailFromUrl);
+    setShowResetPassword(true);
+    setError('');
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

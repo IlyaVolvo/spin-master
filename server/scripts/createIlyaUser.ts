@@ -1,10 +1,17 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import * as dotenv from 'dotenv';
+import { createHash, randomBytes } from 'crypto';
 
 dotenv.config({ path: '.env' });
 
 const prisma = new PrismaClient();
+
+function generateQrTokenHash(): string {
+  return createHash('sha256')
+    .update(`${randomBytes(32).toString('hex')}:${Date.now()}:${Math.random()}`)
+    .digest('hex');
+}
 
 async function createIlyaUser() {
   try {
@@ -25,6 +32,7 @@ async function createIlyaUser() {
         gender: 'MALE',
         roles: ['PLAYER', 'ORGANIZER', 'ADMIN'],
         isActive: true,
+        qrTokenHash: generateQrTokenHash(),
         mustResetPassword: false,
       },
     });

@@ -51,6 +51,21 @@ function App() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
+    const resetParams = new URLSearchParams(window.location.search);
+    const isResetLinkFlow = resetParams.get('reset') === '1' && !!resetParams.get('token');
+
+    if (isResetLinkFlow) {
+      // Never reuse stale login state when arriving via reset link.
+      removeMember();
+      removeToken();
+      localStorage.clear();
+      sessionStorage.clear();
+      setIsAuth(false);
+      setShowPasswordReset(false);
+      setIsCheckingAuth(false);
+      return;
+    }
+
     // Check authentication status on mount
     let isMounted = true;
     let timeoutCleared = false;

@@ -102,10 +102,10 @@ router.get('/', async (req: AuthRequest, res: Response) => {
           ...match,
           member1,
           member2,
-          player1RatingBefore: player1RatingHistory ? (player1RatingHistory.rating || 0) - (player1RatingHistory.ratingChange || 0) : null,
-          player1RatingChange: player1RatingHistory?.ratingChange || null,
-          player2RatingBefore: player2RatingHistory ? (player2RatingHistory.rating || 0) - (player2RatingHistory.ratingChange || 0) : null,
-          player2RatingChange: player2RatingHistory?.ratingChange || null,
+          player1RatingBefore: player1RatingHistory ? (player1RatingHistory.rating ?? 0) - (player1RatingHistory.ratingChange ?? 0) : null,
+          player1RatingChange: player1RatingHistory?.ratingChange ?? null,
+          player2RatingBefore: player2RatingHistory ? (player2RatingHistory.rating ?? 0) - (player2RatingHistory.ratingChange ?? 0) : null,
+          player2RatingChange: player2RatingHistory?.ratingChange ?? null,
         };
       })
     );
@@ -240,10 +240,10 @@ router.post('/', [
       ...createdMatch,
       member1: member1WithDetails,
       member2: member2WithDetails,
-      player1RatingBefore: player1RatingHistory ? (player1RatingHistory.rating || 0) - (player1RatingHistory.ratingChange || 0) : null,
-      player1RatingChange: player1RatingHistory?.ratingChange || null,
-      player2RatingBefore: player2RatingHistory ? (player2RatingHistory.rating || 0) - (player2RatingHistory.ratingChange || 0) : null,
-      player2RatingChange: player2RatingHistory?.ratingChange || null,
+      player1RatingBefore: player1RatingHistory ? (player1RatingHistory.rating ?? 0) - (player1RatingHistory.ratingChange ?? 0) : null,
+      player1RatingChange: player1RatingHistory?.ratingChange ?? null,
+      player2RatingBefore: player2RatingHistory ? (player2RatingHistory.rating ?? 0) - (player2RatingHistory.ratingChange ?? 0) : null,
+      player2RatingChange: player2RatingHistory?.ratingChange ?? null,
     };
 
     logger.info('Standalone match created', { matchId: match.id, member1Id, member2Id });

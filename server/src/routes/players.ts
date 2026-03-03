@@ -4,6 +4,8 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import bcrypt from 'bcryptjs';
+import nodemailer from 'nodemailer';
+import { createHash, randomBytes } from 'crypto';
 import { emitToAll } from '../services/socketService';
 import {
   getBirthDateBounds,
@@ -21,6 +23,105 @@ function getBirthDateValidationMessage(): string {
   const minDateString = minDate.toISOString().split('T')[0];
   const maxDateString = maxDate.toISOString().split('T')[0];
   return `Birth date must be between ${minDateString} and ${maxDateString}`;
+}
+
+function asBool(value: string | undefined, fallback = false): boolean {
+  if (value === undefined) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function parseSmtpPort(value: string | undefined, fallback = 587): number {
+  if (!value) return fallback;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid SMTP_PORT: ${value}`);
+  }
+  return port;
+}
+
+function getClientBaseUrl(): string {
+  return (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
+}
+
+function generateInvitationToken(): string {
+  return randomBytes(32).toString('hex');
+}
+
+function getInvitationExpiryDate(): Date {
+  const expiry = new Date();
+  expiry.setHours(expiry.getHours() + 48);
+  return expiry;
+}
+
+function buildInvitationLink(email: string, token: string): string {
+  return `${getClientBaseUrl()}/login?reset=1&email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
+}
+
+async function sendMemberInvitationEmail(params: {
+  toEmail: string;
+  firstName: string;
+  invitationLink: string;
+  expiresAt: Date;
+}): Promise<void> {
+  const host = process.env.SMTP_HOST?.trim();
+  const port = parseSmtpPort(process.env.SMTP_PORT, 587);
+  const secure = process.env.SMTP_SECURE ? asBool(process.env.SMTP_SECURE) : port === 465;
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASS?.trim();
+  const from = process.env.SMTP_FROM?.trim() || user;
+
+  if (!host) {
+    throw new Error('SMTP_HOST is not set. Unable to send invitation email.');
+  }
+  if (!from) {
+    throw new Error('SMTP_FROM or SMTP_USER must be set. Unable to send invitation email.');
+  }
+  if ((user && !pass) || (!user && pass)) {
+    throw new Error('SMTP_USER and SMTP_PASS must both be provided when using SMTP auth.');
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: user && pass ? { user, pass } : undefined,
+    requireTLS: asBool(process.env.SMTP_REQUIRE_TLS, false),
+    ignoreTLS: asBool(process.env.SMTP_IGNORE_TLS, false),
+    tls: {
+      rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED
+        ? asBool(process.env.SMTP_TLS_REJECT_UNAUTHORIZED)
+        : true,
+    },
+  });
+
+  await transporter.verify();
+
+  const subject = 'Spin Master Account Invitation';
+  const text = [
+    `Hi ${params.firstName},`,
+    '',
+    'You were invited to Spin Master.',
+    'Use this link to set your password and activate your member access:',
+    params.invitationLink,
+    '',
+    `This invitation link expires at ${params.expiresAt.toISOString()}.`,
+  ].join('\n');
+
+  const html = `
+    <p>Hi ${params.firstName},</p>
+    <p>You were invited to Spin Master.</p>
+    <p>Please use this link to set your password and activate your member access:</p>
+    <p><a href="${params.invitationLink}">Set password</a></p>
+    <p>This invitation link expires at <strong>${params.expiresAt.toISOString()}</strong>.</p>
+  `;
+
+  await transporter.sendMail({
+    from,
+    to: params.toEmail,
+    subject,
+    text,
+    html,
+  });
 }
 
 // Calculate Levenshtein distance between two strings
@@ -63,6 +164,17 @@ function calculateSimilarity(str1: string, str2: string): number {
   const maxLength = Math.max(str1.length, str2.length);
   if (maxLength === 0) return 100;
   return ((maxLength - distance) / maxLength) * 100;
+}
+
+function generateQrTokenHash(): string {
+  return createHash('sha256')
+    .update(`${randomBytes(32).toString('hex')}:${Date.now()}:${Math.random()}`)
+    .digest('hex');
+}
+
+function stripSensitiveMemberFields<T extends { password?: string; qrTokenHash?: string | null }>(member: T) {
+  const { password, qrTokenHash, ...memberWithoutSensitiveFields } = member;
+  return memberWithoutSensitiveFields;
 }
 
 // All routes require authentication
@@ -137,10 +249,9 @@ router.get('/', async (req, res) => {
       ],
     });
 
-    // Exclude sensitive fields (password) - rating is already included in the query
+    // Exclude sensitive fields
     const membersWithoutPassword = members.map((member: any) => {
-      const { password, ...memberWithoutPassword } = member;
-      return memberWithoutPassword;
+      return stripSensitiveMemberFields(member);
     });
 
     res.json(membersWithoutPassword);
@@ -204,10 +315,9 @@ router.get('/active', async (req, res) => {
       ],
     });
 
-    // Exclude sensitive fields (password) - rating is already included in the query
+    // Exclude sensitive fields
     const membersWithoutPassword = members.map((member: any) => {
-      const { password, ...memberWithoutPassword } = member;
-      return memberWithoutPassword;
+      return stripSensitiveMemberFields(member);
     });
 
     res.json(membersWithoutPassword);
@@ -239,8 +349,8 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Member not found' });
     }
 
-    // Exclude password from response
-    const { password, ...memberWithoutPassword } = member;
+    // Exclude sensitive fields from response
+    const memberWithoutPassword = stripSensitiveMemberFields(member);
     res.json(memberWithoutPassword);
   } catch (error) {
     logger.error('Error fetching member', { error: error instanceof Error ? error.message : String(error), memberId: req.params.id });
@@ -290,13 +400,13 @@ router.post('/', [
   body('firstName').notEmpty().trim(),
   body('lastName').notEmpty().trim(),
   body('email').notEmpty().trim().isEmail(),
-  body('gender').optional().isIn(['MALE', 'FEMALE', 'OTHER']),
+  body('gender').notEmpty().isIn(['MALE', 'FEMALE', 'OTHER']),
   body('birthDate').notEmpty().isISO8601().toDate(),
   body('rating').optional().custom((value) => isValidRatingInput(value)),
   body('phone').optional().trim(),
   body('address').optional().trim(),
   body('picture').optional().trim(),
-  body('roles').optional().isArray(),
+  body('roles').isArray({ min: 1 }),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -343,11 +453,11 @@ router.post('/', [
       validationErrors.push('Rating must be an integer between 0 and 9999');
     }
     
-    // Validate roles if provided
-    if (roles !== undefined) {
-      if (!isValidRoles(roles)) {
-        validationErrors.push('Invalid roles. Roles must be an array containing only: PLAYER, COACH, ADMIN, ORGANIZER');
-      }
+    // Validate roles (required)
+    if (!roles || !Array.isArray(roles) || roles.length === 0) {
+      validationErrors.push('At least one role must be selected');
+    } else if (!isValidRoles(roles)) {
+      validationErrors.push('Invalid roles. Roles must be an array containing only: PLAYER, COACH, ADMIN, ORGANIZER');
     }
     
     if (validationErrors.length > 0) {
@@ -401,8 +511,18 @@ router.post('/', [
           similarNames: similarNames,
           proposedFirstName: trimmedFirstName,
           proposedLastName: trimmedLastName,
-          proposedBirthDate: birthDate || null,
-          proposedRating: rating || null,
+          proposedMemberData: {
+            firstName: trimmedFirstName,
+            lastName: trimmedLastName,
+            email: email.trim(),
+            gender,
+            birthDate: birthDate || null,
+            rating: rating || null,
+            phone: phone || null,
+            address: address || null,
+            picture: picture || null,
+            roles,
+          },
         });
       }
     }
@@ -418,14 +538,14 @@ router.post('/', [
       return res.status(400).json({ error: 'A member with this email already exists' });
     }
 
-    // Determine gender if not provided
-    const finalGender = gender || determineGender(trimmedFirstName);
+    const finalGender = gender;
+    const finalRoles = roles;
+    const invitationToken = generateInvitationToken();
+    const invitationExpiry = getInvitationExpiryDate();
+    const invitationLink = buildInvitationLink(finalEmail, invitationToken);
 
-    // Default password is 'changeme'
-    const defaultPassword = await bcrypt.hash('changeme', 10);
-
-    // Default roles is ['PLAYER']
-    const finalRoles = roles && Array.isArray(roles) && roles.length > 0 ? roles : ['PLAYER'];
+    // Set non-guessable temporary password hash. Member sets real password via invitation link.
+    const temporaryPasswordHash = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
 
     // Validate birthDate is provided
     if (!birthDate) {
@@ -439,19 +559,42 @@ router.post('/', [
         lastName: trimmedLastName,
         email: finalEmail,
         gender: finalGender,
-        password: defaultPassword,
+        password: temporaryPasswordHash,
         roles: finalRoles,
         birthDate: new Date(birthDate),
         rating: rating !== null && rating !== undefined && rating !== '' ? parseInt(String(rating), 10) : null,
         phone: phone ? phone.trim() : null,
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
+        qrTokenHash: generateQrTokenHash(),
         isActive: true,
+        mustResetPassword: true,
+        passwordResetToken: invitationToken,
+        passwordResetTokenExpiry: invitationExpiry,
       },
     });
 
-    // Exclude password from response
-    const { password, ...memberWithoutPassword } = member;
+    try {
+      await sendMemberInvitationEmail({
+        toEmail: finalEmail,
+        firstName: trimmedFirstName,
+        invitationLink,
+        expiresAt: invitationExpiry,
+      });
+    } catch (emailError) {
+      await prisma.member.delete({ where: { id: member.id } });
+      logger.error('Invitation email failed during member creation; rolling back member', {
+        memberId: member.id,
+        email: finalEmail,
+        error: emailError instanceof Error ? emailError.message : String(emailError),
+      });
+      return res.status(500).json({
+        error: 'Failed to send invitation email. Member was not created.',
+      });
+    }
+
+    // Exclude sensitive fields from response
+    const memberWithoutPassword = stripSensitiveMemberFields(member);
     
     // Emit socket notification for player creation
     emitToAll('player:created', {
@@ -459,7 +602,10 @@ router.post('/', [
       timestamp: Date.now(),
     });
     
-    res.status(201).json(memberWithoutPassword);
+    res.status(201).json({
+      ...memberWithoutPassword,
+      invitationEmailSent: true,
+    });
   } catch (error) {
     logger.error('Error creating member', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
@@ -479,7 +625,7 @@ router.patch('/:id/deactivate', async (req: AuthRequest, res) => {
       data: { isActive: false },
     });
 
-    const { password, ...memberWithoutPassword } = member;
+    const memberWithoutPassword = stripSensitiveMemberFields(member);
     
     // Emit socket notification for player update
     emitToAll('player:updated', {
@@ -654,7 +800,7 @@ router.patch('/:id/activate', async (req: AuthRequest, res) => {
       data: { isActive: true },
     });
 
-    const { password, ...memberWithoutPassword } = member;
+    const memberWithoutPassword = stripSensitiveMemberFields(member);
     res.json(memberWithoutPassword);
   } catch (error) {
     logger.error('Error reactivating member', { error: error instanceof Error ? error.message : String(error), memberId: req.params.id });
@@ -895,7 +1041,7 @@ router.patch('/:id', [
       });
     }
 
-    const { password, ...memberWithoutPassword } = updatedMember;
+    const memberWithoutPassword = stripSensitiveMemberFields(updatedMember);
     
     // Emit socket notification for player update
     emitToAll('player:updated', {
@@ -1611,6 +1757,7 @@ router.post('/import', [
               : null,
             phone: player.phone ? (typeof player.phone === 'string' ? player.phone.trim() : String(player.phone).trim()) : null,
             address: player.address ? (typeof player.address === 'string' ? player.address.trim() : String(player.address).trim()) : null,
+            qrTokenHash: generateQrTokenHash(),
             isActive: true,
             mustResetPassword: mustResetPassword,
           },
@@ -1627,7 +1774,7 @@ router.post('/import', [
         });
         
         // Emit socket notification for each imported player
-        const { password: _, ...memberWithoutPassword } = member;
+        const memberWithoutPassword = stripSensitiveMemberFields(member);
         emitToAll('player:created', {
           player: memberWithoutPassword,
           timestamp: Date.now(),
