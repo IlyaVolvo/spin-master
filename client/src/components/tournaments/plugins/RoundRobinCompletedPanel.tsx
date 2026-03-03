@@ -198,7 +198,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
               {playerStats.map((stats) => {
                 const participant = tournament.participants.find(p => p.memberId === stats.memberId);
                 const preRating = participant?.playerRatingAtTime;
-                const postRating = (participant as any)?.postRatingAtTime ?? participant?.member?.rating;
+                const postRating = (participant as any)?.postRatingAtTime ?? null;
                 const showRating = preRating !== null && preRating !== undefined && !isLikelyRanking(preRating)
                   && postRating !== null && postRating !== undefined;
                 const ratingDiff = showRating ? (postRating as number) - (preRating as number) : null;

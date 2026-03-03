@@ -8,13 +8,18 @@ export async function recalculateRankings(tournamentId: number) {
   // Get all completed tournaments (including the one just completed)
   const completedTournaments = await prisma.tournament.findMany({
     where: { status: 'COMPLETED' },
-    include: {
-      participants: {
-        include: {
-            member: true,
+    select: {
+      id: true,
+      matches: {
+        select: {
+          member1Id: true,
+          member2Id: true,
+          player1Sets: true,
+          player2Sets: true,
+          player1Forfeit: true,
+          player2Forfeit: true,
         },
       },
-      matches: true,
     },
     orderBy: { createdAt: 'asc' }, // Process tournaments chronologically
   });
@@ -22,6 +27,7 @@ export async function recalculateRankings(tournamentId: number) {
   // Get all active players
   const allPlayers = await prisma.member.findMany({
     where: { isActive: true },
+    select: { id: true },
   });
 
   // Initialize player stats

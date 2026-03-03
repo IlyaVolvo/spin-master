@@ -3,6 +3,58 @@ import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
+const FALLBACK_POINT_EXCHANGE_RULES = [
+  { minDiff: 0, maxDiff: 12, expectedPoints: 8, upsetPoints: 8 },
+  { minDiff: 13, maxDiff: 37, expectedPoints: 7, upsetPoints: 10 },
+  { minDiff: 38, maxDiff: 62, expectedPoints: 6, upsetPoints: 13 },
+  { minDiff: 63, maxDiff: 87, expectedPoints: 5, upsetPoints: 16 },
+  { minDiff: 88, maxDiff: 112, expectedPoints: 4, upsetPoints: 20 },
+  { minDiff: 113, maxDiff: 137, expectedPoints: 3, upsetPoints: 25 },
+  { minDiff: 138, maxDiff: 162, expectedPoints: 2, upsetPoints: 30 },
+  { minDiff: 163, maxDiff: 187, expectedPoints: 2, upsetPoints: 35 },
+  { minDiff: 188, maxDiff: 212, expectedPoints: 1, upsetPoints: 40 },
+  { minDiff: 213, maxDiff: 237, expectedPoints: 1, upsetPoints: 45 },
+  { minDiff: 238, maxDiff: 262, expectedPoints: 0, upsetPoints: 50 },
+  { minDiff: 263, maxDiff: 287, expectedPoints: 0, upsetPoints: 55 },
+  { minDiff: 288, maxDiff: 312, expectedPoints: 0, upsetPoints: 60 },
+  { minDiff: 313, maxDiff: 337, expectedPoints: 0, upsetPoints: 65 },
+  { minDiff: 338, maxDiff: 362, expectedPoints: 0, upsetPoints: 70 },
+  { minDiff: 363, maxDiff: 387, expectedPoints: 0, upsetPoints: 75 },
+  { minDiff: 388, maxDiff: 412, expectedPoints: 0, upsetPoints: 80 },
+  { minDiff: 413, maxDiff: 437, expectedPoints: 0, upsetPoints: 85 },
+  { minDiff: 438, maxDiff: 462, expectedPoints: 0, upsetPoints: 90 },
+  { minDiff: 463, maxDiff: 487, expectedPoints: 0, upsetPoints: 95 },
+  { minDiff: 488, maxDiff: 512, expectedPoints: 0, upsetPoints: 100 },
+  { minDiff: 513, maxDiff: 99999, expectedPoints: 0, upsetPoints: 100 },
+];
+
+async function getPointExchange(ratingDiff: number, isUpset: boolean): Promise<number> {
+  const now = new Date();
+  const allRules = await prisma.pointExchangeRule.findMany({
+    where: {
+      effectiveFrom: {
+        lte: now,
+      },
+    },
+    orderBy: [
+      { effectiveFrom: 'desc' },
+      { minDiff: 'asc' },
+    ],
+  });
+
+  const activeRules = allRules.length > 0
+    ? allRules.filter((rule) => rule.effectiveFrom.getTime() === allRules[0].effectiveFrom.getTime())
+    : FALLBACK_POINT_EXCHANGE_RULES;
+
+  for (const rule of activeRules) {
+    if (ratingDiff >= rule.minDiff && ratingDiff <= rule.maxDiff) {
+      return isUpset ? rule.upsetPoints : rule.expectedPoints;
+    }
+  }
+
+  return 0;
+}
+
 export interface MatchRatingResult {
   player1RatingBefore: number | null;
   player1RatingChange: number | null;
@@ -57,7 +109,7 @@ export async function processMatchRating(
     
     if (!member1 || !member2) {
       throw new Error('Player not found');
-    }
+  }
     
     rating1 = member1.rating;
     rating2 = member2.rating;
@@ -88,25 +140,24 @@ export async function processMatchRating(
     rating2 = participant2.playerRatingAtTime;
   }
 
+  // Unrated players default to 1200 for single-match processing.
+  const rating1Before = rating1 ?? 1200;
+  const rating2Before = rating2 ?? 1200;
+
   // Store ratings before changes
   const player1RatingBefore = rating1;
   const player2RatingBefore = rating2;
 
-  // Calculate rating changes using point exchange rules
-  const ratingDiff = rating2! - rating1!;
-  const expectedScore1 = 1 / (1 + Math.pow(10, -ratingDiff / 400));
-  const expectedScore2 = 1 - expectedScore1;
+  // Calculate rating changes using USATT-style point exchange rules.
+  const ratingDiff = rating2Before - rating1Before;
+  const isUpset = (player1Won && ratingDiff > 0) || (!player1Won && ratingDiff < 0);
+  const points = await getPointExchange(Math.abs(ratingDiff), isUpset);
 
-  const actualScore1 = player1Won ? 1 : 0;
-  const actualScore2 = player1Won ? 0 : 1;
+  const ratingChange1 = player1Won ? points : -points;
+  const ratingChange2 = -ratingChange1;
 
-  const kFactor = 32; // Standard K-factor for chess-like rating systems
-
-  const ratingChange1 = Math.round(kFactor * (actualScore1 - expectedScore1));
-  const ratingChange2 = Math.round(kFactor * (actualScore2 - expectedScore2));
-
-  const newRating1 = rating1! + ratingChange1;
-  const newRating2 = rating2! + ratingChange2;
+  const newRating1 = Math.max(0, Math.round(rating1Before + ratingChange1));
+  const newRating2 = Math.max(0, Math.round(rating2Before + ratingChange2));
 
   // Update player ratings
   await prisma.member.update({
