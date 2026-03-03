@@ -195,6 +195,35 @@ const Players: React.FC = () => {
 
   const { minDate: minAllowedBirthDate, maxDate: maxAllowedBirthDate } = getBirthDateBounds();
 
+  const toDateOnlyString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseBirthDateToLocalDate = (value: string): Date => {
+    const datePart = value.split('T')[0];
+    const [yearRaw, monthRaw, dayRaw] = datePart.split('-');
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+
+    if (
+      Number.isInteger(year) &&
+      Number.isInteger(month) &&
+      Number.isInteger(day) &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= 31
+    ) {
+      return new Date(year, month - 1, day);
+    }
+
+    return new Date(value);
+  };
+
   const getBirthDateValidationMessage = () => {
     const minYear = minAllowedBirthDate.getUTCFullYear();
     const maxYear = maxAllowedBirthDate.getUTCFullYear();
@@ -990,7 +1019,7 @@ const Players: React.FC = () => {
         email: newPlayerEmail.trim(),
         gender: newPlayerGender,
         roles: newPlayerRoles,
-        birthDate: newPlayerBirthDate!.toISOString().split('T')[0],
+        birthDate: toDateOnlyString(newPlayerBirthDate!),
       };
       
       if (newPlayerRating) {
@@ -1467,7 +1496,7 @@ const Players: React.FC = () => {
       setEditLastName(member.lastName || '');
       setEditEmail(member.email || '');
       setEditGender(member.gender || '');
-      setEditBirthDate(member.birthDate ? new Date(member.birthDate) : null);
+      setEditBirthDate(member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null);
       setEditPhone(member.phone || '');
       setEditAddress(member.address || '');
       setEditPicture(member.picture || '');
@@ -1614,7 +1643,7 @@ const Players: React.FC = () => {
         updateData.firstName = editFirstName.trim();
         updateData.lastName = editLastName.trim();
         updateData.gender = editGender;
-        updateData.birthDate = editBirthDate ? editBirthDate.toISOString().split('T')[0] : null;
+        updateData.birthDate = editBirthDate ? toDateOnlyString(editBirthDate) : null;
         
         if (editRating.trim() === '') {
           updateData.rating = null;
@@ -2140,7 +2169,7 @@ const Players: React.FC = () => {
   // Calculate age from birth date
   const calculateAge = (birthDate: string | null): number | null => {
     if (!birthDate) return null;
-    const birth = new Date(birthDate);
+    const birth = parseBirthDateToLocalDate(birthDate);
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
@@ -5132,7 +5161,7 @@ const Players: React.FC = () => {
               lastName: editLastName || '',
               email: editEmail || '',
               gender: (editGender || 'MALE') as 'MALE' | 'FEMALE' | 'OTHER',
-              birthDate: editBirthDate ? editBirthDate.toISOString().split('T')[0] : null,
+              birthDate: editBirthDate ? toDateOnlyString(editBirthDate) : null,
               isActive: editIsActive,
               rating: editRating ? parseInt(editRating) : null,
               roles: editRoles || [],
