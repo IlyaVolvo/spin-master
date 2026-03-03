@@ -1848,7 +1848,12 @@ async function main() {
     await generateMatches(players, 150, timestampTracker);
     
     // Step 5: Create tournaments
-    await createTournaments(timestampTracker);
+    // Use a separate tracker anchored further in the past so every generated
+    // tournament match timestamp stays before "now".
+    const tournamentStartDate = new Date();
+    tournamentStartDate.setDate(tournamentStartDate.getDate() - 120);
+    const tournamentTimestampTracker = new TimestampTracker(tournamentStartDate);
+    await createTournaments(tournamentTimestampTracker);
     
     // Step 6: Recalculate all ratings to ensure all matches affect ratings
     console.log('=== Recalculating All Ratings ===\n');
