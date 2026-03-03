@@ -1060,7 +1060,7 @@ async function completeTournament(tournamentId: number, type: string) {
   if (t && t.status !== 'COMPLETED') {
     await prisma.tournament.update({
       where: { id: tournamentId },
-      data: { status: 'COMPLETED' },
+      data: { status: 'COMPLETED', recordedAt: new Date() },
     });
   }
 
@@ -1071,8 +1071,30 @@ async function completeTournament(tournamentId: number, type: string) {
   for (const child of activeChildren) {
     await prisma.tournament.update({
       where: { id: child.id },
-      data: { status: 'COMPLETED' },
+      data: { status: 'COMPLETED', recordedAt: new Date() },
     });
+  }
+
+  // Run plugin completion rating logic (e.g. ROUND_ROBIN tournament-level rating history)
+  const { tournamentPluginRegistry } = await import('../src/plugins/TournamentPluginRegistry');
+  const plugin = tournamentPluginRegistry.get(type);
+  if (plugin.onTournamentCompletionRatingCalculation) {
+    const completedTournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        participants: { include: { member: true } },
+        matches: true,
+        childTournaments: true,
+        bracketMatches: true,
+      },
+    });
+
+    if (completedTournament) {
+      await plugin.onTournamentCompletionRatingCalculation({
+        tournament: completedTournament,
+        prisma,
+      });
+    }
   }
 
   // Recalculate rankings
