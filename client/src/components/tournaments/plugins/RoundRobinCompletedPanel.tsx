@@ -119,19 +119,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
         stats2.setsLost += match.player1Sets || 0;
       }
 
-      // Determine winner and update points
-      const player1Won = (match.player1Sets || 0) > (match.player2Sets || 0);
-      const player2Won = (match.player2Sets || 0) > (match.player1Sets || 0);
-
-      if (player1Won && stats1) {
-        stats1.wins += 1;
-        stats1.points += 2;
-      } else if (player2Won && stats2) {
-        stats2.wins += 1;
-        stats2.points += 2;
-      }
-
-      // Handle forfeits
+      // Handle forfeits first
       if (match.player1Forfeit && stats2) {
         stats2.wins += 1;
         stats2.points += 2;
@@ -140,6 +128,20 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
         stats1.wins += 1;
         stats1.points += 2;
         if (stats2) stats2.losses += 1;
+      } else {
+        // Determine winner and update wins/losses for regular matches
+        const player1Won = (match.player1Sets || 0) > (match.player2Sets || 0);
+        const player2Won = (match.player2Sets || 0) > (match.player1Sets || 0);
+
+        if (player1Won && stats1) {
+          stats1.wins += 1;
+          stats1.points += 2;
+          if (stats2) stats2.losses += 1;
+        } else if (player2Won && stats2) {
+          stats2.wins += 1;
+          stats2.points += 2;
+          if (stats1) stats1.losses += 1;
+        }
       }
     });
 
