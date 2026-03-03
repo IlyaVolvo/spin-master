@@ -20,12 +20,6 @@ From `server/`:
 npm run setup-supabase-initial
 ```
 
-Alias:
-
-```bash
-npm run setup-supabase-fresh
-```
-
 ## Required env
 
 Set `DATABASE_URL` to your Supabase connection string, for example:

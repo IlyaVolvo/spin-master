@@ -44,7 +44,7 @@ npx tsx server/scripts/setupNewDatabase.ts
 #### Fresh Supabase baseline (schema + required seed only)
 ```bash
 cd server
-npm run setup-supabase-fresh
+npm run setup-supabase-initial
 ```
 
 This creates:

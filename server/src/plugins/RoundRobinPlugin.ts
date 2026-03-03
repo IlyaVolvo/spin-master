@@ -51,7 +51,10 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
     
     const participantsWithPostRating = tournament.participants.map((participant: any) => {
       const key = `${tournament.id}-${participant.memberId}`;
-      const postRating = postRatingMap?.get(key) ?? participant.member.rating;
+      const postRatingFromMap = postRatingMap && postRatingMap.has(key)
+        ? postRatingMap.get(key)
+        : undefined;
+      const postRating = postRatingFromMap ?? participant.playerRatingAtTime ?? participant.member.rating;
       return {
         ...participant,
         postRatingAtTime: postRating,

@@ -113,7 +113,7 @@ For brand-new environments:
 2. Seed rating rules table
 3. Create/update Sys Admin account
 
-Implemented via `server/scripts/setupSupabaseFresh.ts` and `npm run setup-supabase-fresh`.
+Implemented via `server/scripts/setupSupabaseFresh.ts` and `npm run setup-supabase-initial`.
 
 ## Known constraints / debt
 

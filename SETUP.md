@@ -54,7 +54,7 @@ This creates latest schema + required baseline data only:
 
 ```bash
 cd server
-npm run setup-supabase-fresh
+npm run setup-supabase-initial
 ```
 
 Default Sys Admin email: `sys-admin@fake.local`

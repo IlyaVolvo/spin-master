@@ -66,7 +66,7 @@ Key ones:
 - `createSysAdmin.ts` — create/update admin from env vars
 
 NPM shortcut:
-- `npm run setup-supabase-fresh` (run inside `server/`)
+- `npm run setup-supabase-initial` (run inside `server/`)
 
 ## Known technical debt
 - `client/src/components/Players.tsx` is still large and multi-concern
