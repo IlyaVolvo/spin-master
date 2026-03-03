@@ -384,6 +384,47 @@ async function calculateMatchRating(match: any, tournamentId: number) {
   await adjustRatingsForSingleMatch(match.member1Id, match.member2Id, player1Won, tournamentId, match.id);
 }
 
+/**
+ * Marks a child tournament complete and runs completion-time rating logic.
+ * Exported for unit testing script completion flows.
+ */
+export async function completeChildTournamentWithRatings(
+  childId: number,
+  childType: string,
+  prismaClient: any,
+): Promise<void> {
+  const { tournamentPluginRegistry } = await import('../src/plugins/TournamentPluginRegistry');
+
+  await prismaClient.tournament.update({
+    where: { id: childId },
+    data: { status: 'COMPLETED', recordedAt: new Date() },
+  });
+
+  const childPlugin = tournamentPluginRegistry.get(childType);
+  if (!childPlugin?.onTournamentCompletionRatingCalculation) {
+    return;
+  }
+
+  const completedChild = await prismaClient.tournament.findUnique({
+    where: { id: childId },
+    include: {
+      participants: { include: { member: true } },
+      matches: true,
+      childTournaments: true,
+      bracketMatches: true,
+    },
+  });
+
+  if (!completedChild) {
+    return;
+  }
+
+  await childPlugin.onTournamentCompletionRatingCalculation({
+    tournament: completedChild,
+    prisma: prismaClient,
+  });
+}
+
 // ─── Round Robin ─────────────────────────────────────────────────────────────
 
 async function generateRoundRobin(players: Player[], opts: Opts) {
@@ -898,10 +939,7 @@ async function simulateRoundRobinChild(
 
     // If the plugin says the child tournament should be marked complete, do it
     if (result.tournamentStateChange?.shouldMarkComplete) {
-      await prisma.tournament.update({
-        where: { id: child.id },
-        data: { status: 'COMPLETED' },
-      });
+      await completeChildTournamentWithRatings(child.id, child.type, prisma);
 
       // Notify parent plugin
       if (child.parentTournamentId) {
@@ -1010,10 +1048,7 @@ async function simulateGroupsInterleaved(
 
       // Handle child completion
       if (result.tournamentStateChange?.shouldMarkComplete) {
-        await prisma.tournament.update({
-          where: { id: gq.child.id },
-          data: { status: 'COMPLETED' },
-        });
+        await completeChildTournamentWithRatings(gq.child.id, gq.child.type, prisma);
 
         if (gq.child.parentTournamentId) {
           const parentTournament = await (prisma as any).tournament.findUnique({
@@ -1538,10 +1573,12 @@ async function main() {
   console.log(`TOURNAMENT_ID=${tournamentId}`);
 }
 
-main()
-  .catch((err) => {
-    console.error('❌ Fatal error:', err instanceof Error ? err.message : String(err));
-    if (err instanceof Error && err.stack) console.error(err.stack);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+if (require.main === module) {
+  main()
+    .catch((err) => {
+      console.error('❌ Fatal error:', err instanceof Error ? err.message : String(err));
+      if (err instanceof Error && err.stack) console.error(err.stack);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}

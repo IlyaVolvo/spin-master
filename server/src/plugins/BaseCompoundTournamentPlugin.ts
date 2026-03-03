@@ -183,9 +183,48 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
 
     // For compound tournaments, enrich child tournaments using their respective plugins
     if (children && children.length > 0) {
+      const postRatingMap = new Map<string, number | null>();
+
+      // Build post-ratings for completed children so completed panels can show deltas
+      const completedChildren = children.filter((child: any) => child.status === 'COMPLETED');
+      if (completedChildren.length > 0) {
+        const { getCachedPostTournamentRating } = await import('../services/cacheService');
+        const { getPostTournamentRating } = await import('../services/usattRatingService');
+
+        const postRatingPromises: Array<Promise<[string, number | null | undefined]>> = [];
+
+        for (const child of completedChildren) {
+          for (const participant of child.participants || []) {
+            const key = `${child.id}-${participant.memberId}`;
+            const cached = getCachedPostTournamentRating(child.id, participant.memberId);
+            if (cached !== undefined) {
+              postRatingMap.set(key, cached);
+            } else {
+              postRatingPromises.push(
+                getPostTournamentRating(child.id, participant.memberId).then(
+                  rating => [key, rating] as [string, number | null | undefined]
+                )
+              );
+            }
+          }
+        }
+
+        const postRatingResults = await Promise.all(postRatingPromises);
+        postRatingResults.forEach(([key, rating]) => {
+          postRatingMap.set(key, rating ?? null);
+        });
+      }
+
       const enrichedChildren = await Promise.all(
         children.map(async (child: any) => {
           const childPlugin = tournamentPluginRegistry.get(child.type);
+          if (child.status === 'COMPLETED') {
+            return await childPlugin.enrichCompletedTournament({
+              tournament: child,
+              postRatingMap,
+              prisma,
+            });
+          }
           return await childPlugin.enrichActiveTournament({ tournament: child, prisma });
         })
       );
@@ -298,6 +337,17 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
 
   async onChildTournamentCompleted(event: ChildTournamentCompletedEvent): Promise<TournamentStateChangeResult> {
     const { parentTournament, childTournament, prisma } = event;
+
+    // Ensure child completion-time rating logic runs for compound flows as well.
+    if (childTournament.status === 'COMPLETED') {
+      const childPlugin = tournamentPluginRegistry.get(childTournament.type);
+      if (childPlugin.onTournamentCompletionRatingCalculation) {
+        await childPlugin.onTournamentCompletionRatingCalculation({
+          tournament: childTournament,
+          prisma,
+        });
+      }
+    }
     
     // Fetch all child tournaments to check status
     const allChildren = await prisma.tournament.findMany({

@@ -25,6 +25,14 @@ jest.mock('../../src/plugins/TournamentPluginRegistry', () => {
   };
 });
 
+jest.mock('../../src/services/cacheService', () => ({
+  getCachedPostTournamentRating: jest.fn(() => undefined),
+}));
+
+jest.mock('../../src/services/usattRatingService', () => ({
+  getPostTournamentRating: jest.fn(async () => 1510),
+}));
+
 import { BaseCompoundTournamentPlugin } from '../../src/plugins/BaseCompoundTournamentPlugin';
 import { tournamentPluginRegistry } from '../../src/plugins/TournamentPluginRegistry';
 
@@ -216,6 +224,46 @@ describe('BaseCompoundTournamentPlugin.onMatchCompleted', () => {
 
 describe('BaseCompoundTournamentPlugin.onChildTournamentCompleted (no final phase)', () => {
   const plugin = new TestCompoundPlugin(false); // no final phase
+  const mockPlugins = (tournamentPluginRegistry as any)._mockPlugins;
+
+  beforeEach(() => {
+    mockPlugins.clear();
+  });
+
+  it('invokes child completion rating hook when child is completed', async () => {
+    const completionHook = jest.fn().mockResolvedValue(undefined);
+    mockPlugins.set('ROUND_ROBIN', {
+      onTournamentCompletionRatingCalculation: completionHook,
+    });
+
+    const mockPrisma = {
+      tournament: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 2, status: 'COMPLETED' },
+        ]),
+      },
+    };
+
+    const childTournament = {
+      id: 2,
+      type: 'ROUND_ROBIN',
+      status: 'COMPLETED',
+      participants: [],
+      matches: [],
+    };
+
+    await plugin.onChildTournamentCompleted({
+      parentTournament: { id: 1 },
+      childTournament,
+      prisma: mockPrisma,
+    });
+
+    expect(completionHook).toHaveBeenCalledTimes(1);
+    expect(completionHook).toHaveBeenCalledWith({
+      tournament: childTournament,
+      prisma: mockPrisma,
+    });
+  });
 
   it('returns shouldMarkComplete when all children are complete', async () => {
     const mockPrisma = {
@@ -253,6 +301,30 @@ describe('BaseCompoundTournamentPlugin.onChildTournamentCompleted (no final phas
     });
 
     expect(result).toEqual({});
+  });
+
+  it('does not invoke child completion rating hook when child is not completed', async () => {
+    const completionHook = jest.fn().mockResolvedValue(undefined);
+    mockPlugins.set('ROUND_ROBIN', {
+      onTournamentCompletionRatingCalculation: completionHook,
+    });
+
+    const mockPrisma = {
+      tournament: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 2, status: 'ACTIVE' },
+          { id: 3, status: 'ACTIVE' },
+        ]),
+      },
+    };
+
+    await plugin.onChildTournamentCompleted({
+      parentTournament: { id: 1 },
+      childTournament: { id: 2, type: 'ROUND_ROBIN', status: 'ACTIVE' },
+      prisma: mockPrisma,
+    });
+
+    expect(completionHook).not.toHaveBeenCalled();
   });
 });
 
@@ -394,6 +466,47 @@ describe('BaseCompoundTournamentPlugin.enrichActiveTournament', () => {
 
     const result = await plugin.enrichActiveTournament({ tournament, prisma: {} });
     expect(result.bracketMatches).toEqual([]);
+  });
+
+  it('uses completed enrichment for completed children and passes postRatingMap', async () => {
+    const mockPrisma = {
+      tournament: { findMany: jest.fn() },
+    };
+
+    const enrichCompletedTournament = jest.fn().mockImplementation(async ({ tournament: child, postRatingMap }) => ({
+      ...child,
+      participants: child.participants.map((p: any) => ({
+        ...p,
+        postRatingAtTime: postRatingMap.get(`${child.id}-${p.memberId}`),
+      })),
+    }));
+
+    mockPlugins.set('ROUND_ROBIN', {
+      enrichActiveTournament: jest.fn().mockResolvedValue({}),
+      enrichCompletedTournament,
+    });
+
+    const tournament = {
+      id: 1,
+      type: 'TEST_COMPOUND',
+      status: 'ACTIVE',
+      participants: [],
+      matches: [],
+      childTournaments: [
+        {
+          id: 2,
+          type: 'ROUND_ROBIN',
+          status: 'COMPLETED',
+          participants: [{ memberId: 10, member: { id: 10 } }],
+          matches: [],
+        },
+      ],
+    };
+
+    const result = await plugin.enrichActiveTournament({ tournament, prisma: mockPrisma });
+
+    expect(enrichCompletedTournament).toHaveBeenCalledTimes(1);
+    expect((result.childTournaments[0] as any).participants[0].postRatingAtTime).toBe(1510);
   });
 });
 

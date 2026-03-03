@@ -562,11 +562,11 @@ export async function recalculateAllRatings(): Promise<void> {
         if (opponentPass3 === undefined) continue;
 
         const ratingDiff = opponentPass3 - rating;
-        // An upset occurs when the lower-rated player wins
-        // Player wins as underdog: match.won && ratingDiff > 0 (opponent is higher rated)
-        // Player loses as favorite: !match.won && ratingDiff < 0 (opponent is lower rated) - this is an upset from opponent's perspective
-        // For this player's calculation, upset = they won against a higher-rated opponent
-        const isUpset = match.won && ratingDiff > 0;
+        // An upset occurs when the lower-rated player wins.
+        // Symmetric rule (same as Pass 1):
+        // - player wins as underdog
+        // - player loses as favorite
+        const isUpset = (match.won && ratingDiff > 0) || (!match.won && ratingDiff < 0);
         const points = await getPointExchange(Math.abs(ratingDiff), isUpset);
 
         if (match.won) {
@@ -604,8 +604,13 @@ export async function recalculateAllRatings(): Promise<void> {
 
 /**
  * Get the rating of a player after a specific tournament completed
- * This is used for display purposes to show the correct rating change for that tournament
- * First checks the cache, then recalculates if not available
+ * This is used for display purposes to show the correct rating change for that tournament.
+ *
+ * IMPORTANT:
+ * - No read-time chronological recomputation is performed here.
+ * - Ratings should be materialized at match/tournament completion time via RatingHistory.
+ * - For tournament types that only adjust ratings per match (e.g. playoff), completion-time
+ *   calculation is effectively a no-op and this function reads the last in-tournament history entry.
  */
 export async function getPostTournamentRating(tournamentId: number, memberId: number): Promise<number | null | undefined> {
   // Check cache service first (persistent cache)
@@ -622,80 +627,78 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
   if (memoryCached !== undefined) {
     return memoryCached;
   }
-  
-  // Not in cache, need to recalculate
-  // First get the tournament to find its createdAt date (avoid nested query)
+
   const tournamentInfo = await prisma.tournament.findUnique({
     where: { id: tournamentId },
-    select: { createdAt: true },
+    select: {
+      type: true,
+      participants: {
+        where: { memberId },
+        select: { playerRatingAtTime: true },
+      },
+    },
   });
-  
+
   if (!tournamentInfo) {
     return undefined;
   }
-  
-  // Get all tournaments up to and including this one, in chronological order
-  const tournaments = await prisma.tournament.findMany({
-    where: { 
-      status: 'COMPLETED',
-      createdAt: { lte: tournamentInfo.createdAt },
-    },
-    orderBy: { createdAt: 'asc' },
-    include: {
-      participants: {
-        include: { member: true },
-      },
-      matches: true,
-    },
-  });
-  
-  // Find the specific tournament
-  const targetTournament = tournaments.find(t => t.id === tournamentId);
-  if (!targetTournament) return undefined;
-  
-  // Recalculate ratings up to this tournament only
-  const rating = await calculateRatingAfterTournament(tournaments, tournamentId, memberId);
-  return rating;
-}
 
-/**
- * Calculate what a player's rating was after a specific tournament
- * Uses RatingHistory records created when the tournament was completed
- */
-async function calculateRatingAfterTournament(
-  tournaments: any[],
-  targetTournamentId: number,
-  memberId: number
-): Promise<number | null> {
-  // Find the target tournament
-  const targetTournament = tournaments.find(t => t.id === targetTournamentId);
-  if (!targetTournament) return null;
-  
-  const participant = targetTournament.participants.find((p: any) => p.memberId === memberId);
-  if (!participant) return null;
-  
-  const playerRatingAtTime = participant.playerRatingAtTime;
-  if (playerRatingAtTime === null) return null;
-  
-  // Look up RatingHistory entries for this tournament and member
-  // RoundRobin: single entry with reason 'TOURNAMENT_COMPLETED', matchId = null
-  // Playoff: per-match entries with matchId set
-  const ratingHistoryEntries = await (prisma as any).ratingHistory.findMany({
-    where: {
-      memberId,
-      tournamentId: targetTournamentId,
-    },
-    orderBy: { timestamp: 'asc' },
-  });
-  
-  if (ratingHistoryEntries.length === 0) {
-    // No rating history - rating didn't change
-    return playerRatingAtTime;
+  const participant = tournamentInfo.participants[0];
+  if (!participant) {
+    return undefined;
   }
-  
-  // The last entry's rating field is the final rating after all changes
-  const lastEntry = ratingHistoryEntries[ratingHistoryEntries.length - 1];
-  return lastEntry.rating ?? playerRatingAtTime;
+
+  const playerRatingAtTime = participant.playerRatingAtTime;
+  if (playerRatingAtTime === null) {
+    return null;
+  }
+
+  let lastEntry: { rating: number | null } | null = null;
+
+  // For Round Robin, completion-time rating is authoritative.
+  // Prefer TOURNAMENT_COMPLETED to avoid legacy duplicate match-level entries
+  // created after completion from old route flow.
+  if (tournamentInfo.type === 'ROUND_ROBIN') {
+    lastEntry = await (prisma as any).ratingHistory.findFirst({
+      where: {
+        memberId,
+        tournamentId,
+        reason: 'TOURNAMENT_COMPLETED',
+      },
+      orderBy: [
+        { timestamp: 'desc' },
+        { id: 'desc' },
+      ],
+      select: {
+        rating: true,
+      },
+    });
+  }
+
+  if (!lastEntry) {
+    // Fallback for non-RR tournaments and RR tournaments without completion history
+    lastEntry = await (prisma as any).ratingHistory.findFirst({
+      where: {
+        memberId,
+        tournamentId,
+      },
+      orderBy: [
+        { timestamp: 'desc' },
+        { id: 'desc' },
+      ],
+      select: {
+        rating: true,
+      },
+    });
+  }
+
+  const resolved = lastEntry?.rating ?? playerRatingAtTime;
+
+  // Backfill caches so future reads are O(1)
+  setCachedPostTournamentRating(tournamentId, memberId, resolved);
+  postTournamentRatings.set(`${tournamentId}-${memberId}`, resolved);
+
+  return resolved;
 }
 
 /**
@@ -834,7 +837,7 @@ async function calculateRatingsForRoundRobinTournament(tournament: any): Promise
       if (opponentPass3 === undefined) continue;
 
       const ratingDiff = opponentPass3 - rating;
-      const isUpset = match.won && ratingDiff > 0;
+      const isUpset = (match.won && ratingDiff > 0) || (!match.won && ratingDiff < 0);
       const points = await getPointExchange(Math.abs(ratingDiff), isUpset);
 
       if (match.won) {

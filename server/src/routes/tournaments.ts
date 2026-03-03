@@ -224,14 +224,21 @@ router.get('/', async (req, res) => {
       },
     });
 
-    // For completed tournaments, calculate post-tournament rating for each participant
-    // Optimized: Batch queries instead of N+1 queries
+    // For completed tournaments, calculate post-tournament rating for each participant.
+    // IMPORTANT: include completed child tournaments too, since compound tournament
+    // completed panels render child RR standings with postRatingAtTime.
     const completedTournaments = tournaments.filter(t => t.status === 'COMPLETED');
     
     if (completedTournaments.length > 0) {
-      // Get the earliest and latest completed tournament dates
-      const earliestDate = completedTournaments.reduce((earliest, t) => 
-        t.createdAt < earliest ? t.createdAt : earliest, completedTournaments[0].createdAt
+      const completedTournamentsForRatings = await prisma.tournament.findMany({
+        where: { status: 'COMPLETED' },
+        include: { participants: true },
+      });
+
+      // Get the earliest completed tournament date across all completed tournaments
+      const earliestDate = completedTournamentsForRatings.reduce((earliest, t) =>
+        t.createdAt < earliest ? t.createdAt : earliest,
+        completedTournamentsForRatings[0].createdAt
       );
       
       // Get all tournaments created after the earliest completed tournament
@@ -254,7 +261,7 @@ router.get('/', async (req, res) => {
       const postRatingMap = new Map<string, number | null>();
       
       // Process tournaments in chronological order to calculate post-ratings
-      const sortedCompletedTournaments = [...completedTournaments].sort(
+      const sortedCompletedTournaments = [...completedTournamentsForRatings].sort(
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
       
@@ -1049,9 +1056,21 @@ router.patch('/:tournamentId/matches/:matchId', [
         data: { status: 'COMPLETED', recordedAt: new Date() },
       });
 
+      const completedTournament = await prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        include: {
+          participants: { include: { member: true } },
+          matches: true,
+        },
+      });
+
+      if (!completedTournament) {
+        return res.status(404).json({ error: 'Tournament not found after completion update' });
+      }
+
       // Calculate completion ratings if plugin supports it
       if (plugin.onTournamentCompletionRatingCalculation) {
-        await plugin.onTournamentCompletionRatingCalculation({ tournament, prisma });
+        await plugin.onTournamentCompletionRatingCalculation({ tournament: completedTournament, prisma });
       }
 
       // Recalculate rankings
@@ -1059,9 +1078,9 @@ router.patch('/:tournamentId/matches/:matchId', [
       await recalculateRankings(tournamentId);
 
       // Propagate to parent tournament if this is a child
-      if (tournament.parentTournamentId) {
+      if (completedTournament.parentTournamentId) {
         const parentTournament = await prisma.tournament.findUnique({
-          where: { id: tournament.parentTournamentId },
+          where: { id: completedTournament.parentTournamentId },
           include: { 
             childTournaments: {
               include: { participants: { include: { member: true } }, matches: true },
@@ -1075,7 +1094,7 @@ router.patch('/:tournamentId/matches/:matchId', [
           if (parentPlugin.onChildTournamentCompleted) {
             const parentResult = await parentPlugin.onChildTournamentCompleted({
               parentTournament,
-              childTournament: tournament,
+              childTournament: completedTournament,
               prisma,
             });
             
@@ -1088,16 +1107,6 @@ router.patch('/:tournamentId/matches/:matchId', [
           }
         }
       }
-    }
-    
-    // Calculate per-match ratings if match has a winner
-    if (updatedMatch.winnerId && plugin.onMatchRatingCalculation) {
-      await plugin.onMatchRatingCalculation({
-        tournament,
-        match: updatedMatch,
-        winnerId: updatedMatch.winnerId,
-        prisma,
-      });
     }
 
     // Invalidate cache and emit notifications
@@ -1265,7 +1274,7 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
     // Update tournament status
     const updatedTournament = await prisma.tournament.update({
       where: { id: tournamentId },
-      data: { status: 'COMPLETED' },
+      data: { status: 'COMPLETED', recordedAt: new Date() },
       include: {
         participants: {
           include: {
@@ -1284,6 +1293,41 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
     if (plugin.onTournamentCompletionRatingCalculation) {
       await plugin.onTournamentCompletionRatingCalculation({ tournament: updatedTournament, prisma });
     }
+
+    // Propagate to parent if this completed tournament is a child
+    if (updatedTournament.parentTournamentId) {
+      const parentTournament = await prisma.tournament.findUnique({
+        where: { id: updatedTournament.parentTournamentId },
+        include: {
+          childTournaments: {
+            include: { participants: { include: { member: true } }, matches: true },
+          },
+          participants: { include: { member: true } },
+        },
+      });
+
+      if (parentTournament) {
+        const parentPlugin = tournamentPluginRegistry.get(parentTournament.type);
+        if (parentPlugin.onChildTournamentCompleted) {
+          const parentResult = await parentPlugin.onChildTournamentCompleted({
+            parentTournament,
+            childTournament: updatedTournament,
+            prisma,
+          });
+
+          if (parentResult?.shouldMarkComplete) {
+            await prisma.tournament.update({
+              where: { id: parentTournament.id },
+              data: { status: 'COMPLETED', recordedAt: new Date() },
+            });
+          }
+        }
+      }
+    }
+
+    await invalidateCacheAfterTournament(tournamentId);
+    emitTournamentUpdate(updatedTournament);
+    emitCacheInvalidation(tournamentId);
 
     res.json(updatedTournament);
   } catch (error) {
