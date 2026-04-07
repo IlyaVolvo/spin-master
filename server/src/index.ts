@@ -1,11 +1,13 @@
 // Load environment variables FIRST, before any other imports that might use them
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 
 // Load .env file from server directory (where package.json is located)
 // When running with tsx, process.cwd() should be the server directory
 const envPath = path.resolve(process.cwd(), '.env');
 const result = dotenv.config({ path: envPath });
+const isMissingPrimaryEnvFile = result.error && 'code' in result.error && result.error.code === 'ENOENT';
 
 // Fallback: if DATABASE_URL is still not set, try loading from parent directory
 if (!process.env.DATABASE_URL) {
@@ -24,7 +26,7 @@ if (process.env.DATABASE_URL) {
 console.log('Current working directory:', process.cwd());
 console.log('Loading .env from:', envPath);
 console.log('DATABASE_URL set:', !!process.env.DATABASE_URL);
-if (result.error) {
+if (result.error && !isMissingPrimaryEnvFile) {
   console.error('Error loading .env file:', result.error);
 }
 if (!process.env.DATABASE_URL) {
@@ -128,6 +130,19 @@ app.use('/api/matches', matchRoutes);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
+
+const clientBuildPath = path.resolve(process.cwd(), '..', 'client', 'dist');
+if (process.env.NODE_ENV === 'production' && fs.existsSync(clientBuildPath)) {
+  app.use(express.static(clientBuildPath));
+
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
