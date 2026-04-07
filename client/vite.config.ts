@@ -5,13 +5,13 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: 'localhost', // Listen on localhost
-    port: 3000,
+    port: 5173,
     fs: {
       allow: ['..'],
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:10000',
         changeOrigin: true,
         secure: false,
         ws: true, // Enable WebSocket proxying if needed
