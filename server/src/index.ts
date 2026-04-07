@@ -1,7 +1,21 @@
 // Load environment variables FIRST, before any other imports that might use them
 import dotenv from 'dotenv';
+import express from 'express';
 import fs from 'fs';
+import { createServer } from 'http';
 import path from 'path';
+import { PrismaClient } from '@prisma/client';
+import cors from 'cors';
+import session from 'express-session';
+import { Server } from 'socket.io';
+import { requestLogger } from './middleware/requestLogger';
+import authRoutes from './routes/auth';
+import matchRoutes from './routes/matches';
+import playerRoutes from './routes/players';
+import tournamentRoutes from './routes/tournaments';
+import { initializeCache } from './services/cacheService';
+import { setIO } from './services/socketService';
+import { logger } from './utils/logger';
 
 // Load .env file from server directory (where package.json is located)
 // When running with tsx, process.cwd() should be the server directory
@@ -13,13 +27,6 @@ const isMissingPrimaryEnvFile = result.error && 'code' in result.error && result
 if (!process.env.DATABASE_URL) {
   const fallbackPath = path.resolve(process.cwd(), '..', 'server', '.env');
   dotenv.config({ path: fallbackPath });
-}
-
-// CRITICAL: Set DATABASE_URL as an environment variable for Prisma
-// Prisma reads this from process.env when validating the schema
-if (process.env.DATABASE_URL) {
-  // Ensure it's available to child processes and Prisma
-  process.env.DATABASE_URL = process.env.DATABASE_URL;
 }
 
 // Log for debugging
@@ -34,21 +41,6 @@ if (!process.env.DATABASE_URL) {
   console.error('Server will not start without DATABASE_URL.');
   // Don't exit here - let it fail naturally so we can see the error
 }
-
-import express from 'express';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import cors from 'cors';
-import session from 'express-session';
-import { PrismaClient } from '@prisma/client';
-import playerRoutes from './routes/players';
-import tournamentRoutes from './routes/tournaments';
-import authRoutes from './routes/auth';
-import matchRoutes from './routes/matches';
-import { requestLogger } from './middleware/requestLogger';
-import { logger } from './utils/logger';
-import { setIO } from './services/socketService';
-import { initializeCache } from './services/cacheService';
 
 const app = express();
 
