@@ -17,23 +17,26 @@ class Logger {
   private debugEnabled: boolean = false;
 
   constructor() {
-    // Support DEBUG=true to enable everything for debugging
-    const debugMode = process.env.DEBUG === 'true';
-    
-    // Enable logging if DEBUG=true OR ENABLE_LOGGING=true
-    this.enabled = debugMode || process.env.ENABLE_LOGGING === 'true';
-    
-    // Enable console logging if DEBUG=true OR LOG_TO_CONSOLE=true
-    this.logToConsole = debugMode || process.env.LOG_TO_CONSOLE === 'true';
-    
-    // Set log level (debug mode enables debug level)
-    this.logLevel = debugMode ? 'debug' : (process.env.LOG_LEVEL || 'info');
-    this.debugEnabled = this.logLevel === 'debug';
-    
     // Use __dirname to ensure logs are always in server/logs regardless of where the command is run from
     const serverDir = path.resolve(__dirname, '..', '..');
     this.logDir = path.join(serverDir, 'logs');
     this.logFile = path.join(this.logDir, `server-${new Date().toISOString().split('T')[0]}.log`);
+
+    this.refreshConfig();
+
+    // Create logs directory if it doesn't exist (and logging is enabled)
+    if (this.enabled && !fs.existsSync(this.logDir)) {
+      fs.mkdirSync(this.logDir, { recursive: true });
+    }
+  }
+
+  refreshConfig(): void {
+    const debugMode = process.env.DEBUG === 'true';
+
+    this.enabled = debugMode || process.env.ENABLE_LOGGING === 'true';
+    this.logToConsole = debugMode || process.env.LOG_TO_CONSOLE === 'true';
+    this.logLevel = debugMode ? 'debug' : (process.env.LOG_LEVEL || 'info');
+    this.debugEnabled = this.logLevel === 'debug';
 
     // Create logs directory if it doesn't exist (and logging is enabled)
     if (this.enabled && !fs.existsSync(this.logDir)) {
