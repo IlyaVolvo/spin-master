@@ -43,6 +43,8 @@ if (!process.env.DATABASE_URL) {
   // Don't exit here - let it fail naturally so we can see the error
 }
 
+logger.refreshConfig();
+
 const app = express();
 
 // Ensure DATABASE_URL is set before creating PrismaClient

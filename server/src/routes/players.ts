@@ -3,7 +3,6 @@ import { body, validationResult } from 'express-validator';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
-import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import { createHash, randomBytes } from 'crypto';
 import { emitToAll } from '../services/socketService';
@@ -43,44 +42,35 @@ function getClientBaseUrl(): string {
   return (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
 }
 
-function generateInvitationToken(): string {
+function generatePasswordResetToken(): string {
   return randomBytes(32).toString('hex');
 }
 
-function getInvitationExpiryDate(): Date {
+function getPasswordResetExpiryDate(): Date {
   const expiry = new Date();
-  expiry.setHours(expiry.getHours() + 48);
+  expiry.setHours(expiry.getHours() + 1);
   return expiry;
 }
 
-function buildInvitationLink(email: string, token: string): string {
+function buildResetLink(email: string, token: string): string {
   return `${getClientBaseUrl()}/login?reset=1&email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
 }
 
-async function sendMemberInvitationEmail(params: {
-  toEmail: string;
-  firstName: string;
-  invitationLink: string;
-  expiresAt: Date;
-}): Promise<void> {
+function createSmtpTransporter() {
   const host = process.env.SMTP_HOST?.trim();
   const port = parseSmtpPort(process.env.SMTP_PORT, 587);
   const secure = process.env.SMTP_SECURE ? asBool(process.env.SMTP_SECURE) : port === 465;
   const user = process.env.SMTP_USER?.trim();
   const pass = process.env.SMTP_PASS?.trim();
-  const from = process.env.SMTP_FROM?.trim() || user;
 
   if (!host) {
-    throw new Error('SMTP_HOST is not set. Unable to send invitation email.');
-  }
-  if (!from) {
-    throw new Error('SMTP_FROM or SMTP_USER must be set. Unable to send invitation email.');
+    throw new Error('SMTP_HOST is not set. Unable to send password reset email.');
   }
   if ((user && !pass) || (!user && pass)) {
     throw new Error('SMTP_USER and SMTP_PASS must both be provided when using SMTP auth.');
   }
 
-  const transporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host,
     port,
     secure,
@@ -93,26 +83,56 @@ async function sendMemberInvitationEmail(params: {
         : true,
     },
   });
+}
 
-  await transporter.verify();
+async function sendPasswordResetEmail(params: {
+  toEmail: string;
+  firstName: string;
+  resetLink: string;
+  expiresAt: Date;
+  transporter?: nodemailer.Transporter;
+}): Promise<void> {
+  const host = process.env.SMTP_HOST?.trim();
+  const port = parseSmtpPort(process.env.SMTP_PORT, 587);
+  const secure = process.env.SMTP_SECURE ? asBool(process.env.SMTP_SECURE) : port === 465;
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASS?.trim();
+  const from = process.env.SMTP_FROM?.trim() || user;
 
-  const subject = 'Spin Master Account Invitation';
+  if (!host) {
+    throw new Error('SMTP_HOST is not set. Unable to send password reset email.');
+  }
+  if (!from) {
+    throw new Error('SMTP_FROM or SMTP_USER must be set. Unable to send password reset email.');
+  }
+  if ((user && !pass) || (!user && pass)) {
+    throw new Error('SMTP_USER and SMTP_PASS must both be provided when using SMTP auth.');
+  }
+
+  const transporter = params.transporter ?? createSmtpTransporter();
+
+  if (!params.transporter) {
+    await transporter.verify();
+  }
+
+  const subject = 'Spin Master Password Reset';
   const text = [
     `Hi ${params.firstName},`,
     '',
-    'You were invited to Spin Master.',
-    'Use this link to set your password and activate your member access:',
-    params.invitationLink,
+    'A password reset was requested for your Spin Master account.',
+    'Use the link below to reset your password:',
+    params.resetLink,
     '',
-    `This invitation link expires at ${params.expiresAt.toISOString()}.`,
+    `This link expires at ${params.expiresAt.toISOString()}.`,
+    'If you did not request this reset, please ignore this email.',
   ].join('\n');
 
   const html = `
     <p>Hi ${params.firstName},</p>
-    <p>You were invited to Spin Master.</p>
-    <p>Please use this link to set your password and activate your member access:</p>
-    <p><a href="${params.invitationLink}">Set password</a></p>
-    <p>This invitation link expires at <strong>${params.expiresAt.toISOString()}</strong>.</p>
+    <p>A password reset was requested for your Spin Master account.</p>
+    <p><a href="${params.resetLink}">Reset your password</a></p>
+    <p>This link expires at <strong>${params.expiresAt.toISOString()}</strong>.</p>
+    <p>If you did not request this reset, you can ignore this email.</p>
   `;
 
   await transporter.sendMail({
@@ -540,12 +560,9 @@ router.post('/', [
 
     const finalGender = gender;
     const finalRoles = roles;
-    const invitationToken = generateInvitationToken();
-    const invitationExpiry = getInvitationExpiryDate();
-    const invitationLink = buildInvitationLink(finalEmail, invitationToken);
-
-    // Set non-guessable temporary password hash. Member sets real password via invitation link.
-    const temporaryPasswordHash = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
+    const passwordResetToken = generatePasswordResetToken();
+    const passwordResetExpiry = getPasswordResetExpiryDate();
+    const resetLink = buildResetLink(finalEmail, passwordResetToken);
 
     // Validate birthDate is provided
     if (!birthDate) {
@@ -559,7 +576,7 @@ router.post('/', [
         lastName: trimmedLastName,
         email: finalEmail,
         gender: finalGender,
-        password: temporaryPasswordHash,
+        password: '',
         roles: finalRoles,
         birthDate: new Date(birthDate),
         rating: rating !== null && rating !== undefined && rating !== '' ? parseInt(String(rating), 10) : null,
@@ -569,27 +586,27 @@ router.post('/', [
         qrTokenHash: generateQrTokenHash(),
         isActive: true,
         mustResetPassword: true,
-        passwordResetToken: invitationToken,
-        passwordResetTokenExpiry: invitationExpiry,
+        passwordResetToken: passwordResetToken,
+        passwordResetTokenExpiry: passwordResetExpiry,
       },
     });
 
     try {
-      await sendMemberInvitationEmail({
+      await sendPasswordResetEmail({
         toEmail: finalEmail,
         firstName: trimmedFirstName,
-        invitationLink,
-        expiresAt: invitationExpiry,
+        resetLink,
+        expiresAt: passwordResetExpiry,
       });
     } catch (emailError) {
       await prisma.member.delete({ where: { id: member.id } });
-      logger.error('Invitation email failed during member creation; rolling back member', {
+      logger.error('Password reset email failed during member creation; rolling back member', {
         memberId: member.id,
         email: finalEmail,
         error: emailError instanceof Error ? emailError.message : String(emailError),
       });
       return res.status(500).json({
-        error: 'Failed to send invitation email. Member was not created.',
+        error: 'Failed to send password setup email. Member was not created.',
       });
     }
 
@@ -604,7 +621,7 @@ router.post('/', [
     
     res.status(201).json({
       ...memberWithoutPassword,
-      invitationEmailSent: true,
+      passwordResetEmailSent: true,
     });
   } catch (error) {
     logger.error('Error creating member', { error: error instanceof Error ? error.message : String(error) });
@@ -1554,6 +1571,8 @@ router.post('/import', [
       nameMap.set(`${m.firstName.toLowerCase()}|${m.lastName.toLowerCase()}`, true);
     });
 
+    let importEmailTransporter: nodemailer.Transporter | null = null;
+
     // Process each player
     for (const player of players) {
       try {
@@ -1729,9 +1748,6 @@ router.post('/import', [
         // Determine gender if not provided
         const finalGender = player.gender || determineGender(firstName);
 
-        // Default password is 'changeme'
-        const defaultPassword = await bcrypt.hash('changeme', 10);
-
         // Use provided roles or default to PLAYER (already validated above)
         const roles = (player.roles && Array.isArray(player.roles) && player.roles.length > 0) 
           ? player.roles 
@@ -1741,6 +1757,9 @@ router.post('/import', [
         const mustResetPassword = player.mustResetPassword !== undefined 
           ? player.mustResetPassword 
           : true;
+        const passwordResetToken = generatePasswordResetToken();
+        const passwordResetExpiry = getPasswordResetExpiryDate();
+        const resetLink = buildResetLink(finalEmail, passwordResetToken);
 
         // Create member
         const member = await prisma.member.create({
@@ -1749,7 +1768,7 @@ router.post('/import', [
             lastName,
             email: finalEmail,
             gender: finalGender,
-            password: defaultPassword,
+            password: '',
             roles: roles,
             birthDate: birthDate,
             rating: player.rating !== null && player.rating !== undefined && player.rating !== ''
@@ -1760,8 +1779,44 @@ router.post('/import', [
             qrTokenHash: generateQrTokenHash(),
             isActive: true,
             mustResetPassword: mustResetPassword,
+            passwordResetToken: passwordResetToken,
+            passwordResetTokenExpiry: passwordResetExpiry,
           },
         });
+
+        try {
+          if (!importEmailTransporter) {
+            importEmailTransporter = createSmtpTransporter();
+            await importEmailTransporter.verify();
+          }
+
+          await sendPasswordResetEmail({
+            toEmail: finalEmail,
+            firstName,
+            resetLink,
+            expiresAt: passwordResetExpiry,
+            transporter: importEmailTransporter,
+          });
+          logger.info('Password reset email sent during member import', {
+            memberId: member.id,
+            email: finalEmail,
+            expiresAt: passwordResetExpiry.toISOString(),
+          });
+        } catch (emailError) {
+          await prisma.member.delete({ where: { id: member.id } });
+          logger.error('Password reset email failed during member import; rolling back member', {
+            memberId: member.id,
+            email: finalEmail,
+            error: emailError instanceof Error ? emailError.message : String(emailError),
+          });
+          results.failed.push({
+            firstName,
+            lastName,
+            email: finalEmail,
+            error: 'Failed to send password setup email',
+          });
+          continue;
+        }
 
         // Add to maps to prevent duplicates within the same import
         emailMap.set(finalEmail.toLowerCase(), true);
