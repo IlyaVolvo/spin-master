@@ -12,7 +12,7 @@ import type { TournamentType } from '../types/tournament';
 import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
 import { useTournamentCreation } from './hooks/useTournamentCreation';
 import { usePlayerData, membersCache } from './hooks/usePlayerData';
-import { generatePlayersCsv, downloadCsv, parsePlayersCsv } from './utils/playerCsvUtils';
+import { generatePlayersCsv, downloadCsv } from './utils/playerCsvUtils';
 import { matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
 import {
   getBirthDateBounds,
@@ -1153,23 +1153,10 @@ const Players: React.FC = () => {
     if (!file) return;
 
     try {
-      const text = await file.text();
-      const { players, errors: parseErrors } = parsePlayersCsv(text);
+      const formData = new FormData();
+      formData.append('file', file);
 
-      if (parseErrors.length > 0) {
-        setError(`Import validation errors:\n${parseErrors.join('\n')}`);
-        event.target.value = '';
-        return;
-      }
-
-      if (players.length === 0) {
-        setError('No valid players to import. Please check your CSV file.');
-        event.target.value = '';
-        return;
-      }
-
-      // Send to backend
-      const response = await api.post('/players/import', { players });
+      const response = await api.post('/players/import', formData);
       setImportResults(response.data);
       setShowImportResults(true);
       fetchMembers(); // Refresh player list

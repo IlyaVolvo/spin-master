@@ -1,5 +1,7 @@
 import express, { Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import multer from 'multer';
+import { MemberRole } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
@@ -16,6 +18,195 @@ import {
 } from '../utils/memberValidation';
 
 const router = express.Router();
+const importUpload = multer({ storage: multer.memoryStorage() });
+
+interface ImportedPlayerPayload {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  birthDate?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER';
+  roles?: MemberRole[];
+  phone?: string;
+  address?: string;
+  rating?: number;
+  mustResetPassword?: boolean;
+}
+
+type UploadedImportFile = {
+  buffer: Buffer;
+};
+
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current.trim());
+  return result;
+}
+
+function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; errors: string[] } {
+  const { minDate, maxDate } = getBirthDateBounds();
+  const minDateString = minDate.toISOString().split('T')[0];
+  const maxDateString = maxDate.toISOString().split('T')[0];
+  const lines = text.split('\n').filter(line => {
+    const trimmed = line.trim();
+    return trimmed && !trimmed.startsWith('#');
+  });
+
+  if (lines.length < 2) {
+    return { players: [], errors: ['CSV file must have at least a header row and one data row'] };
+  }
+
+  const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase().trim());
+  const requiredHeaders = ['firstname', 'lastname', 'email'];
+  const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+  const hasBirthdate = headers.includes('birthdate') || headers.includes('date of birth');
+
+  if (!hasBirthdate) {
+    missingHeaders.push('birthdate (or "date of birth")');
+  }
+
+  if (missingHeaders.length > 0) {
+    return { players: [], errors: [`Missing required columns: ${missingHeaders.join(', ')}`] };
+  }
+
+  const players: ImportedPlayerPayload[] = [];
+  const errors: string[] = [];
+
+  lines.slice(1).forEach((line, index) => {
+    const values = parseCsvLine(line);
+    const player: ImportedPlayerPayload = {};
+    const rowNumber = index + 2;
+    let rowRatingError = '';
+
+    headers.forEach((header, i) => {
+      const value = values[i]?.trim() || '';
+      if (value === '') return;
+
+      switch (header) {
+        case 'firstname':
+          player.firstName = value;
+          break;
+        case 'lastname':
+          player.lastName = value;
+          break;
+        case 'email':
+          player.email = value;
+          break;
+        case 'date of birth':
+        case 'birthdate': {
+          const date = new Date(value);
+          if (isValidBirthDate(date)) {
+            player.birthDate = date.toISOString().split('T')[0];
+          } else {
+            errors.push(`Row ${rowNumber}: Birth date must be between ${minDateString} and ${maxDateString}`);
+          }
+          break;
+        }
+        case 'gender': {
+          const genderUpper = value.toUpperCase();
+          if (['MALE', 'FEMALE', 'OTHER'].includes(genderUpper)) {
+            player.gender = genderUpper as 'MALE' | 'FEMALE' | 'OTHER';
+          }
+          break;
+        }
+        case 'roles': {
+          const roleLetters = value.split(',').map(r => r.trim().toUpperCase());
+          const roleMap: Record<string, MemberRole> = {
+            P: 'PLAYER',
+            C: 'COACH',
+            A: 'ADMIN',
+            O: 'ORGANIZER',
+          };
+          const roles = roleLetters.map(letter => roleMap[letter]).filter((role): role is MemberRole => role !== undefined);
+          if (roles.length > 0) {
+            player.roles = roles;
+          }
+          break;
+        }
+        case 'phone':
+          player.phone = value;
+          break;
+        case 'address':
+          player.address = value;
+          break;
+        case 'rating':
+          if (isValidRatingInput(value)) {
+            player.rating = parseInt(value, 10);
+          } else {
+            rowRatingError = `Row ${rowNumber}: Rating must be an integer between 0 and 9999`;
+          }
+          break;
+      }
+    });
+
+    const rowErrors: string[] = [];
+
+    if (!player.firstName || !player.lastName) {
+      rowErrors.push(`Row ${rowNumber}: Missing required fields (firstName, lastName)`);
+    }
+
+    if (!player.email || !player.email.trim()) {
+      rowErrors.push(`Row ${rowNumber}: Email is required`);
+    } else if (!isValidEmailFormat(player.email.trim())) {
+      rowErrors.push(`Row ${rowNumber}: Invalid email format`);
+    }
+
+    if (!player.birthDate) {
+      rowErrors.push(`Row ${rowNumber}: Birth date is required`);
+    }
+
+    if (player.phone && !isValidPhoneNumber(player.phone.trim())) {
+      rowErrors.push(`Row ${rowNumber}: Invalid phone number format. Please enter a valid US phone number`);
+    }
+
+    if (rowRatingError) {
+      rowErrors.push(rowRatingError);
+    }
+
+    if (rowErrors.length > 0) {
+      errors.push(...rowErrors);
+      return;
+    }
+
+    player.mustResetPassword = true;
+    players.push(player);
+  });
+
+  return { players, errors };
+}
+
+function getImportedPlayers(req: AuthRequest & { file?: UploadedImportFile }): { players: ImportedPlayerPayload[]; errors: string[] } {
+  if (Array.isArray(req.body?.players)) {
+    return { players: req.body.players as ImportedPlayerPayload[], errors: [] };
+  }
+
+  if (!req.file) {
+    return { players: [], errors: ['CSV file is required'] };
+  }
+
+  const csvText = req.file.buffer.toString('utf-8');
+  return parsePlayersCsv(csvText);
+}
 
 function getBirthDateValidationMessage(): string {
   const { minDate, maxDate } = getBirthDateBounds();
@@ -1524,30 +1715,19 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
 });
 
 // Bulk import players
-router.post('/import', [
-  body('players').isArray({ min: 1 }),
-  body('players.*.firstName').notEmpty().trim(),
-  body('players.*.lastName').notEmpty().trim(),
-  body('players.*.email').notEmpty().trim().isEmail(),
-  body('players.*.gender').optional().isIn(['MALE', 'FEMALE', 'OTHER']),
-  body('players.*.birthDate').notEmpty().isISO8601().toDate(),
-  body('players.*.phone').optional().trim(),
-  body('players.*.address').optional().trim(),
-  body('players.*.roles').optional().isArray(),
-  body('players.*.mustResetPassword').optional().isBoolean(),
-], async (req: AuthRequest, res: Response) => {
+router.post('/import', importUpload.single('file'), async (req: AuthRequest & { file?: UploadedImportFile }, res: Response) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+    const imported = getImportedPlayers(req);
+    if (imported.errors.length > 0) {
+      return res.status(400).json({ error: `Import validation errors:\n${imported.errors.join('\n')}` });
     }
 
-    const { players } = req.body;
-    
-    // Validate that players array is properly formatted
-    if (!Array.isArray(players)) {
-      return res.status(400).json({ error: 'Players must be an array' });
+    const { players } = imported;
+
+    if (!Array.isArray(players) || players.length === 0) {
+      return res.status(400).json({ error: 'No valid players to import. Please check your CSV file.' });
     }
+
     const results = {
       successful: [] as Array<{ firstName: string; lastName: string; email: string }>,
       failed: [] as Array<{ firstName: string; lastName: string; email?: string; error: string }>,
@@ -1749,7 +1929,7 @@ router.post('/import', [
         const finalGender = player.gender || determineGender(firstName);
 
         // Use provided roles or default to PLAYER (already validated above)
-        const roles = (player.roles && Array.isArray(player.roles) && player.roles.length > 0) 
+        const roles: MemberRole[] = (player.roles && Array.isArray(player.roles) && player.roles.length > 0) 
           ? player.roles 
           : ['PLAYER'];
 
@@ -1771,7 +1951,7 @@ router.post('/import', [
             password: '',
             roles: roles,
             birthDate: birthDate,
-            rating: player.rating !== null && player.rating !== undefined && player.rating !== ''
+            rating: player.rating !== null && player.rating !== undefined
               ? parseInt(String(player.rating), 10)
               : null,
             phone: player.phone ? (typeof player.phone === 'string' ? player.phone.trim() : String(player.phone).trim()) : null,

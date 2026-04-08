@@ -44,7 +44,6 @@ export const isAuthenticated = (): boolean => {
 export const getAuthHeaders = () => {
   const token = getToken();
   return {
-    'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` }),
   };
 };
