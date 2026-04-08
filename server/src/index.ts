@@ -21,7 +21,8 @@ import { logger } from './utils/logger';
 // When running with tsx, process.cwd() should be the server directory
 const envPath = path.resolve(process.cwd(), '.env');
 const result = dotenv.config({ path: envPath });
-const isMissingPrimaryEnvFile = result.error && 'code' in result.error && result.error.code === 'ENOENT';
+const primaryEnvErrorCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
+const isMissingPrimaryEnvFile = primaryEnvErrorCode === 'ENOENT';
 
 // Fallback: if DATABASE_URL is still not set, try loading from parent directory
 if (!process.env.DATABASE_URL) {
@@ -33,7 +34,7 @@ if (!process.env.DATABASE_URL) {
 console.log('Current working directory:', process.cwd());
 console.log('Loading .env from:', envPath);
 console.log('DATABASE_URL set:', !!process.env.DATABASE_URL);
-if (result.error && !isMissingPrimaryEnvFile) {
+if (result.error && primaryEnvErrorCode !== 'ENOENT') {
   console.error('Error loading .env file:', result.error);
 }
 if (!process.env.DATABASE_URL) {
@@ -123,8 +124,15 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-const clientBuildPath = path.resolve(process.cwd(), '..', 'client', 'dist');
-if (process.env.NODE_ENV === 'production' && fs.existsSync(clientBuildPath)) {
+const clientBuildCandidates = [
+  path.resolve(process.cwd(), '..', 'client', 'dist'),
+  path.resolve(process.cwd(), 'client', 'dist'),
+  path.resolve(process.cwd(), '..', 'dist'),
+];
+const clientBuildPath = clientBuildCandidates.find((candidate) => fs.existsSync(candidate));
+
+if (clientBuildPath) {
+  logger.info('Serving client build', { clientBuildPath });
   app.use(express.static(clientBuildPath));
 
   app.get('*', (req, res, next) => {
@@ -134,6 +142,8 @@ if (process.env.NODE_ENV === 'production' && fs.existsSync(clientBuildPath)) {
 
     res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
+} else {
+  logger.warn('Client build directory not found', { clientBuildCandidates });
 }
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
