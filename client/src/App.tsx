@@ -366,6 +366,7 @@ function Header({ onLogout }: { onLogout: () => void }) {
   const location = useLocation();
   const [userName, setUserName] = useState<string>('');
   const [userRoles, setUserRoles] = useState<string[]>([]);
+  const changesetId = (import.meta.env.VITE_CHANGESET_ID || 'devbuild').slice(0, 7);
   
   const isPlayersActive = location.pathname === '/players';
   const isTournamentsActive = location.pathname === '/tournaments';
@@ -577,7 +578,18 @@ function Header({ onLogout }: { onLogout: () => void }) {
           </span>
           <span>🏓</span>
         </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+          <span style={{
+            color: 'rgba(255, 255, 255, 0.75)',
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            letterSpacing: '0.08em',
+            lineHeight: 1,
+            paddingRight: '2px'
+          }}>
+            {changesetId}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {userName && (
             <>
               <button
@@ -645,6 +657,7 @@ function Header({ onLogout }: { onLogout: () => void }) {
           }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}>
             Logout
           </button>
+          </div>
         </div>
       </div>
     </div>
