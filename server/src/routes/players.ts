@@ -281,6 +281,7 @@ async function sendPasswordResetEmail(params: {
   firstName: string;
   resetLink: string;
   expiresAt: Date;
+  messageVariant?: 'reset' | 'invite';
   transporter?: nodemailer.Transporter;
 }): Promise<void> {
   const host = process.env.SMTP_HOST?.trim();
@@ -306,19 +307,37 @@ async function sendPasswordResetEmail(params: {
     await transporter.verify();
   }
 
-  const subject = 'Spin Master Password Reset';
-  const text = [
-    `Hi ${params.firstName},`,
-    '',
-    'A password reset was requested for your Spin Master account.',
-    'Use the link below to reset your password:',
-    params.resetLink,
-    '',
-    `This link expires at ${params.expiresAt.toISOString()}.`,
-    'If you did not request this reset, please ignore this email.',
-  ].join('\n');
+  const isInvite = params.messageVariant === 'invite';
+  const subject = isInvite ? 'You are invited to Spin Master' : 'Spin Master Password Reset';
+  const text = isInvite
+    ? [
+        `Hi ${params.firstName},`,
+        '',
+        'You are invited to Spin Master.',
+        'Use the link below to set your password and activate your account:',
+        params.resetLink,
+        '',
+        `This link expires at ${params.expiresAt.toISOString()}.`,
+      ].join('\n')
+    : [
+        `Hi ${params.firstName},`,
+        '',
+        'A password reset was requested for your Spin Master account.',
+        'Use the link below to reset your password:',
+        params.resetLink,
+        '',
+        `This link expires at ${params.expiresAt.toISOString()}.`,
+        'If you did not request this reset, please ignore this email.',
+      ].join('\n');
 
-  const html = `
+  const html = isInvite
+    ? `
+    <p>Hi ${params.firstName},</p>
+    <p>You are invited to Spin Master.</p>
+    <p><a href="${params.resetLink}">Set your password and activate your account</a></p>
+    <p>This link expires at <strong>${params.expiresAt.toISOString()}</strong>.</p>
+  `
+    : `
     <p>Hi ${params.firstName},</p>
     <p>A password reset was requested for your Spin Master account.</p>
     <p><a href="${params.resetLink}">Reset your password</a></p>
@@ -788,6 +807,12 @@ router.post('/', [
         firstName: trimmedFirstName,
         resetLink,
         expiresAt: passwordResetExpiry,
+        messageVariant: 'invite',
+      });
+      logger.info('Password reset email sent during member creation', {
+        memberId: member.id,
+        email: finalEmail,
+        expiresAt: passwordResetExpiry.toISOString(),
       });
     } catch (emailError) {
       await prisma.member.delete({ where: { id: member.id } });
@@ -1975,6 +2000,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
             firstName,
             resetLink,
             expiresAt: passwordResetExpiry,
+            messageVariant: 'invite',
             transporter: importEmailTransporter,
           });
           logger.info('Password reset email sent during member import', {
