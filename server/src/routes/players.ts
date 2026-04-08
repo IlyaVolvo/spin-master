@@ -1756,6 +1756,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
     const results = {
       successful: [] as Array<{ firstName: string; lastName: string; email: string }>,
       failed: [] as Array<{ firstName: string; lastName: string; email?: string; error: string }>,
+      emailFailed: [] as Array<{ firstName: string; lastName: string; email: string; error: string }>,
     };
 
     // Get all existing members for duplicate checking
@@ -2009,19 +2010,17 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
             expiresAt: passwordResetExpiry.toISOString(),
           });
         } catch (emailError) {
-          await prisma.member.delete({ where: { id: member.id } });
-          logger.error('Password reset email failed during member import; rolling back member', {
+          logger.error('Password reset email failed during member import; keeping imported member', {
             memberId: member.id,
             email: finalEmail,
             error: emailError instanceof Error ? emailError.message : String(emailError),
           });
-          results.failed.push({
+          results.emailFailed.push({
             firstName,
             lastName,
             email: finalEmail,
-            error: 'Failed to send password setup email',
+            error: emailError instanceof Error ? emailError.message : String(emailError),
           });
-          continue;
         }
 
         // Add to maps to prevent duplicates within the same import
@@ -2055,6 +2054,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
       total: players.length,
       successful: results.successful.length,
       failed: results.failed.length,
+      emailFailed: results.emailFailed.length,
       timestamp: Date.now(),
     });
 
@@ -2062,8 +2062,10 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
       total: players.length,
       successful: results.successful.length,
       failed: results.failed.length,
+      emailFailed: results.emailFailed.length,
       successfulPlayers: results.successful,
       failedPlayers: results.failed,
+      emailFailedPlayers: results.emailFailed,
     });
   } catch (error) {
     logger.error('Error importing members', { error: error instanceof Error ? error.message : String(error) });

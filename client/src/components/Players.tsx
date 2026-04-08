@@ -98,8 +98,10 @@ const Players: React.FC = () => {
     total: number;
     successful: number;
     failed: number;
+    emailFailed: number;
     successfulPlayers: Array<{ firstName: string; lastName: string; email: string }>;
     failedPlayers: Array<{ firstName: string; lastName: string; email?: string; error: string }>;
+    emailFailedPlayers: Array<{ firstName: string; lastName: string; email: string; error: string }>;
   } | null>(null);
   const [showExportSelection, setShowExportSelection] = useState(false);
   const [selectedPlayersForExport, setSelectedPlayersForExport] = useState<Set<number>>(new Set());
@@ -3564,6 +3566,10 @@ const Players: React.FC = () => {
                     <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#27ae60' }}>{importResults.successful}</div>
                     <div style={{ fontSize: '14px', color: '#666' }}>Successfully Imported</div>
                   </div>
+                  <div style={{ flex: 1, padding: '10px', backgroundColor: '#fff8e1', borderRadius: '4px' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f39c12' }}>{importResults.emailFailed}</div>
+                    <div style={{ fontSize: '14px', color: '#666' }}>Imported, Email Failed</div>
+                  </div>
                   <div style={{ flex: 1, padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px' }}>
                     <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#e74c3c' }}>{importResults.failed}</div>
                     <div style={{ fontSize: '14px', color: '#666' }}>Failed</div>
@@ -3574,6 +3580,37 @@ const Players: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {importResults.emailFailed > 0 && (
+                <div style={{ marginBottom: '20px' }}>
+                  <h4 style={{ marginBottom: '10px', color: '#f39c12' }}>Imported Players With Email Delivery Issues:</h4>
+                  <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#fff8e1', borderRadius: '4px', color: '#8a6d3b' }}>
+                    These players were imported successfully, but their invitation/password setup email could not be sent.
+                  </div>
+                  <div style={{ maxHeight: '200px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#f5f5f5' }}>
+                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>First Name</th>
+                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Last Name</th>
+                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email</th>
+                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email Error</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importResults.emailFailedPlayers.map((player, index) => (
+                          <tr key={index}>
+                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
+                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
+                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email}</td>
+                            <td style={{ padding: '8px', borderBottom: '1px solid #eee', color: '#f39c12' }}>{player.error}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {importResults.failed > 0 && (
                 <div style={{ marginBottom: '20px' }}>
