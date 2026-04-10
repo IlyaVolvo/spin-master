@@ -1155,13 +1155,18 @@ const Players: React.FC = () => {
     if (!file) return;
 
     try {
+      setError('');
+      setSuccess('');
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await api.post('/players/import', formData);
+      const response = await api.post('/players/import', formData, {
+        timeout: 10000,
+      });
       setImportResults(response.data);
       setShowImportResults(true);
-      fetchMembers(); // Refresh player list
+      await fetchMembers(); // Refresh player list
+      setSuccess(`Import completed: ${response.data.successful} imported, ${response.data.emailFailed ?? 0} email issue(s), ${response.data.failed} failed`);
       
       // Reset file input
       event.target.value = '';
