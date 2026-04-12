@@ -505,23 +505,13 @@ router.get('/all-members', async (req: AuthRequest, res) => {
         { lastName: 'asc' },
         { firstName: 'asc' }
       ],
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        gender: true,
-        birthDate: true,
-        phone: true,
-        address: true,
-        picture: true,
-        rating: true,
-        roles: true,
-        isActive: true,
-      },
     });
 
-    res.json(members);
+    const membersWithoutPassword = members.map((member: any) => {
+      return stripSensitiveMemberFields(member);
+    });
+
+    res.json(membersWithoutPassword);
   } catch (error) {
     logger.error('Error fetching all members', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
@@ -794,11 +784,12 @@ router.post('/', [
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
         qrTokenHash: generateQrTokenHash(),
-        isActive: true,
+        isActive: false,
+        emailConfirmedAt: null,
         mustResetPassword: true,
         passwordResetToken: passwordResetToken,
         passwordResetTokenExpiry: passwordResetExpiry,
-      },
+      } as any,
     });
 
     try {
@@ -1034,6 +1025,12 @@ router.patch('/:id/activate', async (req: AuthRequest, res) => {
     });
 
     const memberWithoutPassword = stripSensitiveMemberFields(member);
+    
+    emitToAll('player:updated', {
+      player: memberWithoutPassword,
+      timestamp: Date.now(),
+    });
+
     res.json(memberWithoutPassword);
   } catch (error) {
     logger.error('Error reactivating member', { error: error instanceof Error ? error.message : String(error), memberId: req.params.id });
@@ -1983,11 +1980,12 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
             phone: player.phone ? (typeof player.phone === 'string' ? player.phone.trim() : String(player.phone).trim()) : null,
             address: player.address ? (typeof player.address === 'string' ? player.address.trim() : String(player.address).trim()) : null,
             qrTokenHash: generateQrTokenHash(),
-            isActive: true,
+            isActive: false,
+            emailConfirmedAt: null,
             mustResetPassword: mustResetPassword,
             passwordResetToken: passwordResetToken,
             passwordResetTokenExpiry: passwordResetExpiry,
-          },
+          } as any,
         });
 
         try {

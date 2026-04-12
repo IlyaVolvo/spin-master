@@ -130,6 +130,10 @@ router.post('/member/login', [
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    if (!member.isActive) {
+      return res.status(403).json({ error: 'Member account is inactive' });
+    }
+
     // Check if password is empty (admin reset) - allow login but force password setup
     if (member.password === '') {
       // Password is empty, user must set a new password
@@ -293,25 +297,29 @@ router.post('/member/login', [
 
     // Exclude password from response and ensure all fields are serializable
     const { password: _, ...memberWithoutPassword } = member;
+    const memberRecord = memberWithoutPassword as typeof memberWithoutPassword & {
+      emailConfirmedAt?: Date | null;
+    };
     
     // Ensure member object is JSON-serializable
     // Convert all potential non-serializable values to strings/primitives
     const safeMember = {
-      id: Number(memberWithoutPassword.id),
-      email: String(memberWithoutPassword.email),
-      firstName: String(memberWithoutPassword.firstName),
-      lastName: String(memberWithoutPassword.lastName),
-      birthDate: memberWithoutPassword.birthDate ? new Date(memberWithoutPassword.birthDate).toISOString() : null,
-      isActive: Boolean(memberWithoutPassword.isActive),
-      rating: memberWithoutPassword.rating !== null ? Number(memberWithoutPassword.rating) : null,
-      gender: String(memberWithoutPassword.gender),
+      id: Number(memberRecord.id),
+      email: String(memberRecord.email),
+      firstName: String(memberRecord.firstName),
+      lastName: String(memberRecord.lastName),
+      birthDate: memberRecord.birthDate ? new Date(memberRecord.birthDate).toISOString() : null,
+      isActive: Boolean(memberRecord.isActive),
+      emailConfirmedAt: memberRecord.emailConfirmedAt ? new Date(memberRecord.emailConfirmedAt).toISOString() : null,
+      rating: memberRecord.rating !== null ? Number(memberRecord.rating) : null,
+      gender: String(memberRecord.gender),
       roles: rolesArray, // Already processed as string array
-      phone: memberWithoutPassword.phone ? String(memberWithoutPassword.phone) : null,
-      address: memberWithoutPassword.address ? String(memberWithoutPassword.address) : null,
-      picture: memberWithoutPassword.picture ? String(memberWithoutPassword.picture) : null,
-      mustResetPassword: Boolean(memberWithoutPassword.mustResetPassword || false),
-      createdAt: memberWithoutPassword.createdAt ? new Date(memberWithoutPassword.createdAt).toISOString() : null,
-      updatedAt: memberWithoutPassword.updatedAt ? new Date(memberWithoutPassword.updatedAt).toISOString() : null,
+      phone: memberRecord.phone ? String(memberRecord.phone) : null,
+      address: memberRecord.address ? String(memberRecord.address) : null,
+      picture: memberRecord.picture ? String(memberRecord.picture) : null,
+      mustResetPassword: Boolean(memberRecord.mustResetPassword || false),
+      createdAt: memberRecord.createdAt ? new Date(memberRecord.createdAt).toISOString() : null,
+      updatedAt: memberRecord.updatedAt ? new Date(memberRecord.updatedAt).toISOString() : null,
     };
     
     logger.info('Member logged in', { 
@@ -474,10 +482,12 @@ router.post('/member/reset-password-with-token', [
       where: { id: member.id },
       data: {
         password: hashedPassword,
+        isActive: true,
+        emailConfirmedAt: new Date(),
         mustResetPassword: false,
         passwordResetToken: null,
         passwordResetTokenExpiry: null,
-      },
+      } as any,
     });
 
     logger.info('Password reset via token successful', { memberId: member.id });
@@ -633,8 +643,10 @@ router.post('/member/change-password', [
       where: { id: memberId },
       data: { 
         password: hashedPassword,
+        isActive: true,
+        emailConfirmedAt: new Date(),
         mustResetPassword: false, // Clear the reset flag after password change
-      },
+      } as any,
     });
 
     res.json({ message: 'Password changed successfully' });

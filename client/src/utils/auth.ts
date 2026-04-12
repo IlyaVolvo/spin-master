@@ -7,6 +7,8 @@ export interface Member {
   firstName: string;
   lastName: string;
   roles: string[];
+  isActive?: boolean;
+  emailConfirmedAt?: string | null;
   mustResetPassword?: boolean;
 }
 

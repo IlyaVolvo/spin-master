@@ -25,13 +25,14 @@ enum MemberRole {
 }
 
 model Member {
-  id        Int       @id @default(autoincrement()) // Primary key - ensures unique IDs
-  firstName String
-  lastName  String
-  birthDate DateTime? // Optional birth date for filtering and tournament selection
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id              Int       @id @default(autoincrement()) // Primary key - ensures unique IDs
+  firstName       String
+  lastName        String
+  birthDate       DateTime? // Optional birth date for filtering and tournament selection
+  isActive        Boolean   @default(true)
+  emailConfirmedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // USATT-style rating (numeric rating like 1200, 1500, etc.)
   rating Int?

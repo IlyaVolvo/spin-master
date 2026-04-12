@@ -9,6 +9,7 @@ interface Member {
   lastName: string;
   birthDate: string | null;
   isActive: boolean;
+  emailConfirmedAt?: string | null;
   rating: number | null;
   email: string;
   gender: 'MALE' | 'FEMALE' | 'OTHER';

@@ -35,6 +35,7 @@ interface Member {
   lastName: string;
   birthDate: string | null;
   isActive: boolean;
+  emailConfirmedAt?: string | null;
   rating: number | null;
   email: string;
   gender: 'MALE' | 'FEMALE' | 'OTHER';
@@ -87,9 +88,10 @@ const Players: React.FC = () => {
     address: string | null;
     picture: string | null;
     roles: string[];
+    emailConfirmedAt?: string | null;
   } | null>(null);
   const [showActiveConfirmation, setShowActiveConfirmation] = useState(false);
-  const [pendingActiveToggle, setPendingActiveToggle] = useState<{ playerId: number; isActive: boolean; playerName: string } | null>(null);
+  const [pendingActiveToggle, setPendingActiveToggle] = useState<{ playerId: number; isActive: boolean; emailConfirmedAt?: string | null; playerName: string } | null>(null);
   const [nameDisplayOrder, setNameDisplayOrderState] = useState<NameDisplayOrder>(getNameDisplayOrder());
   const [showImportResults, setShowImportResults] = useState(false);
   const suspiciousRatingConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
@@ -1428,8 +1430,26 @@ const Players: React.FC = () => {
     return [...filtered].sort((a, b) => getComparison(a, b));
   };
 
-  const handleToggleActiveClick = (playerId: number, isActive: boolean, playerName: string) => {
-    setPendingActiveToggle({ playerId, isActive, playerName });
+  const getPlayerStatusIndicator = (player: Pick<Member, 'isActive' | 'emailConfirmedAt'>) => {
+    const isConfirmed = Boolean(player.emailConfirmedAt);
+
+    if (!player.isActive && !isConfirmed) {
+      return { symbol: '+', color: '#f39c12', label: 'Email unconfirmed' };
+    }
+
+    if (player.isActive && !isConfirmed) {
+      return { symbol: '✓', color: '#f1c40f', label: 'Active (admin override, email unconfirmed)' };
+    }
+
+    if (player.isActive && isConfirmed) {
+      return { symbol: '✓', color: '#27ae60', label: 'Active' };
+    }
+
+    return { symbol: '', color: '#999', label: 'Inactive' };
+  };
+
+  const handleToggleActiveClick = (playerId: number, isActive: boolean, emailConfirmedAt: string | null | undefined, playerName: string) => {
+    setPendingActiveToggle({ playerId, isActive, emailConfirmedAt, playerName });
     setShowActiveConfirmation(true);
   };
 
@@ -1443,7 +1463,8 @@ const Players: React.FC = () => {
     try {
       const endpoint = pendingActiveToggle.isActive ? 'deactivate' : 'activate';
       await api.patch(`/players/${pendingActiveToggle.playerId}/${endpoint}`);
-      setSuccess(`Player ${pendingActiveToggle.isActive ? 'deactivated' : 'reactivated'} successfully`);
+      const activatedWithOverride = !pendingActiveToggle.isActive && !pendingActiveToggle.emailConfirmedAt;
+      setSuccess(activatedWithOverride ? 'Player activated before email confirmation' : `Player ${pendingActiveToggle.isActive ? 'deactivated' : 'reactivated'} successfully`);
       fetchMembers();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to update player');
@@ -4373,6 +4394,11 @@ const Players: React.FC = () => {
                   )}
                 </div>
               </th>
+              {showStatusColumn && (
+                <th style={{ backgroundColor: '#f8f9fa', textAlign: 'center' }}>
+                  Status
+                </th>
+              )}
               {showAllRoles && isAdmin() && (
                 <th style={{ backgroundColor: '#f8f9fa', textAlign: 'center' }}>
                   Roles
@@ -4655,6 +4681,19 @@ const Players: React.FC = () => {
                             style={{ cursor: 'pointer', margin: 0 }}
                           />
                           <span>Show Age Column</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
+                          <input
+                            type="checkbox"
+                            checked={showStatusColumn}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setShowStatusColumn(checked);
+                              localStorage.setItem('players_showStatusColumn', checked.toString());
+                            }}
+                            style={{ cursor: 'pointer', margin: 0 }}
+                          />
+                          <span>Show Status Column</span>
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
                           <input
@@ -5100,9 +5139,9 @@ const Players: React.FC = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleToggleActiveClick(player.id, player.isActive, formatPlayerName(player.firstName, player.lastName, nameDisplayOrder));
+                                handleToggleActiveClick(player.id, player.isActive, player.emailConfirmedAt, formatPlayerName(player.firstName, player.lastName, nameDisplayOrder));
                               }}
-                              title={player.isActive ? 'Deactivate player' : 'Activate player'}
+                              title={player.isActive ? 'Deactivate player' : (player.emailConfirmedAt ? 'Activate player' : 'Activate player before email confirmation')}
                               style={{
                                 padding: '2px 6px',
                                 border: 'none',
@@ -5152,6 +5191,11 @@ const Players: React.FC = () => {
                     </span>
                   </div>
                 </td>
+                {showStatusColumn && (
+                  <td style={{ textAlign: 'center', fontWeight: 'bold' }} title={getPlayerStatusIndicator(player).label}>
+                    <span style={{ color: getPlayerStatusIndicator(player).color }}>{getPlayerStatusIndicator(player).symbol}</span>
+                  </td>
+                )}
                 {showAllRoles && isAdmin() && (
                   <td style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold' }}>
                     {player.roles && player.roles.length > 0 
@@ -5225,6 +5269,7 @@ const Players: React.FC = () => {
               gender: (editGender || 'MALE') as 'MALE' | 'FEMALE' | 'OTHER',
               birthDate: editBirthDate ? toDateOnlyString(editBirthDate) : null,
               isActive: editIsActive,
+              emailConfirmedAt: null,
               rating: editRating ? parseInt(editRating) : null,
               roles: editRoles || [],
               phone: editPhone || null,
@@ -5832,7 +5877,7 @@ const Players: React.FC = () => {
               {pendingActiveToggle.isActive ? '⚠️ Deactivate Player?' : '✓ Activate Player?'}
             </h3>
             <p style={{ marginBottom: '20px' }}>
-              Are you sure you want to {pendingActiveToggle.isActive ? 'deactivate' : 'activate'} <strong>{pendingActiveToggle.playerName}</strong>?
+              Are you sure you want to {pendingActiveToggle.isActive ? 'deactivate' : 'activate'} <strong>{pendingActiveToggle.playerName}</strong>{!pendingActiveToggle.isActive && !pendingActiveToggle.emailConfirmedAt ? ' before they confirm their email address' : ''}?
             </p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button
@@ -5854,7 +5899,7 @@ const Players: React.FC = () => {
                   cursor: 'pointer' 
                 }}
               >
-                {pendingActiveToggle.isActive ? 'Deactivate' : 'Activate'}
+                {pendingActiveToggle.isActive ? 'Deactivate' : (pendingActiveToggle.emailConfirmedAt ? 'Activate' : 'Activate Override')}
               </button>
             </div>
           </div>

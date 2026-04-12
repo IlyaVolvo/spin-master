@@ -1851,7 +1851,7 @@ async function main() {
     // Use a separate tracker anchored further in the past so every generated
     // tournament match timestamp stays before "now".
     const tournamentStartDate = new Date();
-    tournamentStartDate.setDate(tournamentStartDate.getDate() - 120);
+    tournamentStartDate.setDate(tournamentStartDate.getDate() - 25);
     const tournamentTimestampTracker = new TimestampTracker(tournamentStartDate);
     await createTournaments(tournamentTimestampTracker);
     
