@@ -410,6 +410,7 @@ async function createPlayers(): Promise<any[]> {
     qrTokenHash: string;
     isActive: boolean;
     mustResetPassword: boolean;
+    emailConfirmedAt: Date;
   }> = [];
   const usedNames = new Set<string>();
   const usedEmails = new Set<string>();
@@ -456,6 +457,7 @@ async function createPlayers(): Promise<any[]> {
       qrTokenHash: generateQrTokenHash(),
       isActive: true,
       mustResetPassword: false, // Set to false for all users in generation script
+      emailConfirmedAt: new Date(), // Mark as confirmed so status shows green
     });
   }
   

@@ -143,6 +143,10 @@ const Players: React.FC = () => {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [showRoleFilter, setShowRoleFilter] = useState(false);
   const roleFilterButtonRef = useRef<HTMLButtonElement>(null);
+  const ALL_STATUSES = ['active', 'inactive', 'active_no_password', 'waiting'] as const;
+  type PlayerStatus = typeof ALL_STATUSES[number];
+  const [selectedStatuses, setSelectedStatuses] = useState<PlayerStatus[]>([...ALL_STATUSES]);
+  const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('players_filtersCollapsed');
     return saved === 'true';
@@ -1360,6 +1364,14 @@ const Players: React.FC = () => {
         return p.roles.some(role => selectedRoles.includes(role));
       });
     }
+
+    // Filter by status (only if not all statuses are selected)
+    if (selectedStatuses.length > 0 && selectedStatuses.length < ALL_STATUSES.length) {
+      filtered = filtered.filter(p => {
+        if (isSelectingForHistory && p.id === selectedPlayerForHistory) return true;
+        return selectedStatuses.includes(getPlayerStatusKey(p));
+      });
+    }
     
     // Helper function to get comparison value for sorting
     const getComparison = (a: Member, b: Member): number => {
@@ -1435,22 +1447,23 @@ const Players: React.FC = () => {
     return [...filtered].sort((a, b) => getComparison(a, b));
   };
 
+  const getPlayerStatusKey = (player: Pick<Member, 'isActive' | 'emailConfirmedAt'>): PlayerStatus => {
+    const passwordSet = Boolean(player.emailConfirmedAt);
+    if (player.isActive && passwordSet) return 'active';
+    if (!player.isActive && passwordSet) return 'inactive';
+    if (player.isActive && !passwordSet) return 'active_no_password';
+    return 'waiting';
+  };
+
+  const STATUS_META: Record<PlayerStatus, { symbol: string; color: string; label: string }> = {
+    active:             { symbol: '✓',  color: '#27ae60', label: 'Active' },
+    inactive:           { symbol: '🛑', color: '#e74c3c', label: 'Inactive' },
+    active_no_password: { symbol: '✓',  color: '#f1c40f', label: 'Active (password not set)' },
+    waiting:            { symbol: '⏳', color: '#f39c12', label: 'Waiting (password not set, not active)' },
+  };
+
   const getPlayerStatusIndicator = (player: Pick<Member, 'isActive' | 'emailConfirmedAt'>) => {
-    const isConfirmed = Boolean(player.emailConfirmedAt);
-
-    if (!player.isActive && !isConfirmed) {
-      return { symbol: '+', color: '#f39c12', label: 'Email unconfirmed' };
-    }
-
-    if (player.isActive && !isConfirmed) {
-      return { symbol: '✓', color: '#f1c40f', label: 'Active (admin override, email unconfirmed)' };
-    }
-
-    if (player.isActive && isConfirmed) {
-      return { symbol: '✓', color: '#27ae60', label: 'Active' };
-    }
-
-    return { symbol: '', color: '#999', label: 'Inactive' };
+    return STATUS_META[getPlayerStatusKey(player)];
   };
 
   const handleToggleActiveClick = (playerId: number, isActive: boolean, emailConfirmedAt: string | null | undefined, playerName: string) => {
@@ -1839,6 +1852,7 @@ const Players: React.FC = () => {
     setMinGames('');
     setMaxGames('');
     setSelectedRoles([]);
+    setSelectedStatuses([...ALL_STATUSES]);
     // Clear sticky filters from localStorage
     localStorage.removeItem('players_nameFilter');
     localStorage.removeItem('players_minRating');
@@ -1848,10 +1862,11 @@ const Players: React.FC = () => {
     localStorage.removeItem('players_minGames');
     localStorage.removeItem('players_maxGames');
     localStorage.removeItem('players_selectedRoles');
+    localStorage.removeItem('players_selectedStatuses');
   };
 
   const hasActiveFilters = () => {
-    return nameFilter.trim() !== '' || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '' || selectedRoles.length > 0;
+    return nameFilter.trim() !== '' || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '' || selectedRoles.length > 0 || selectedStatuses.length < ALL_STATUSES.length;
   };
 
   
@@ -2268,9 +2283,14 @@ const Players: React.FC = () => {
         return p.roles.some(role => selectedRoles.includes(role));
       });
     }
+
+    // Filter by status (only if not all statuses are selected)
+    if (selectedStatuses.length > 0 && selectedStatuses.length < ALL_STATUSES.length) {
+      filtered = filtered.filter(p => selectedStatuses.includes(getPlayerStatusKey(p)));
+    }
     
     return filtered;
-  }, [members, showAllRoles, nameFilter, minRating, maxRating, minAge, maxAge, showAllPlayers, selectedRoles]);
+  }, [members, showAllRoles, nameFilter, minRating, maxRating, minAge, maxAge, showAllPlayers, selectedRoles, selectedStatuses]);
 
   if (loading) {
     return <div className="card">Loading...</div>;
@@ -4193,6 +4213,136 @@ const Players: React.FC = () => {
                 )}
               </div>
             )}
+            {isAdmin() && showAllPlayers && (
+              <div className="form-group" style={{ marginBottom: 0, flex: '1', minWidth: '150px', position: 'relative' }}>
+                <label htmlFor="statusFilter" style={{ display: 'inline-block', marginBottom: '6px', fontWeight: 'bold', fontSize: '13px', textAlign: 'center', backgroundColor: '#e8e8e8', padding: '4px 8px', borderRadius: '4px', width: '100%' }}>
+                  Status
+                </label>
+                <button
+                  id="statusFilter"
+                  type="button"
+                  onClick={() => setShowStatusFilter(true)}
+                  className="button-filter"
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <span>{selectedStatuses.length === ALL_STATUSES.length ? 'All' : selectedStatuses.map(s => STATUS_META[s].symbol).join(' ')}</span>
+                  <span style={{ fontSize: '12px', color: 'white' }}>▼</span>
+                </button>
+                {showStatusFilter && (
+                  <>
+                    <div style={{
+                      position: 'fixed',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: 'transparent',
+                      zIndex: 10001
+                    }}
+                    onClick={() => setShowStatusFilter(false)}
+                    />
+                    <div 
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        marginTop: '4px',
+                        backgroundColor: 'white',
+                        padding: '15px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                        minWidth: '240px',
+                        zIndex: 10001,
+                        border: '1px solid #ddd'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '16px', color: '#3498db', fontWeight: 'bold' }}>▼</span>
+                          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>Filter by Status</h3>
+                        </div>
+                        <button
+                          onClick={() => setShowStatusFilter(false)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            fontSize: '20px',
+                            cursor: 'pointer',
+                            padding: '0',
+                            width: '24px',
+                            height: '24px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#666'
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '6px'
+                      }}>
+                        {ALL_STATUSES.map(status => {
+                          const meta = STATUS_META[status];
+                          const isSelected = selectedStatuses.includes(status);
+                          const wouldLeaveNone = isSelected && selectedStatuses.length === 1;
+                          return (
+                            <label key={status} style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '10px', 
+                              cursor: wouldLeaveNone ? 'not-allowed' : 'pointer', 
+                              fontSize: '14px',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              backgroundColor: isSelected ? '#e8f4f8' : 'transparent',
+                              opacity: wouldLeaveNone ? 0.5 : 1,
+                            }}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (!e.target.checked && wouldLeaveNone) return;
+                                  const next = e.target.checked
+                                    ? [...selectedStatuses, status]
+                                    : selectedStatuses.filter(s => s !== status);
+                                  setSelectedStatuses(next as PlayerStatus[]);
+                                  localStorage.setItem('players_selectedStatuses', JSON.stringify(next));
+                                }}
+                                style={{ cursor: wouldLeaveNone ? 'not-allowed' : 'pointer', margin: 0, width: '16px', height: '16px' }}
+                              />
+                              <span style={{ color: meta.color, fontSize: '16px' }}>{meta.symbol}</span>
+                              <span>{meta.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 0 }}>
               <button
                 onClick={handleClearFilters}
@@ -4250,6 +4400,9 @@ const Players: React.FC = () => {
             }
             if (selectedRoles.length > 0) {
               filterDescriptions.push(`Roles: ${selectedRoles.join(', ')}`);
+            }
+            if (selectedStatuses.length < ALL_STATUSES.length) {
+              filterDescriptions.push(`Status: ${selectedStatuses.map(s => STATUS_META[s].symbol).join(' ')}`);
             }
             
             const hasFilters = filterDescriptions.length > 0;
@@ -5155,31 +5308,6 @@ const Players: React.FC = () => {
                         >
                           📜
                         </button>
-                        {showAllPlayers && (
-                          <>
-                            <span style={{ marginLeft: '4px' }}></span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleActiveClick(player.id, player.isActive, player.emailConfirmedAt, formatPlayerName(player.firstName, player.lastName, nameDisplayOrder));
-                              }}
-                              title={player.isActive ? 'Deactivate player' : (player.emailConfirmedAt ? 'Activate player' : 'Activate player before email confirmation')}
-                              style={{
-                                padding: '2px 6px',
-                                border: 'none',
-                                background: 'transparent',
-                                cursor: 'pointer',
-                                fontSize: '14px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: player.isActive ? '#27ae60' : '#e74c3c',
-                              }}
-                            >
-                              {player.isActive ? '✓' : '✗'}
-                            </button>
-                          </>
-                        )}
                       </>
                     )}
                     <span style={{ color: player.isActive ? '#000' : '#666', display: 'flex', alignItems: 'center', gap: '2px' }}>
