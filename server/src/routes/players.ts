@@ -1745,6 +1745,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
     }
 
     const { players } = imported;
+    const sendEmail = req.body?.sendEmail !== 'false';
 
     if (!Array.isArray(players) || players.length === 0) {
       return res.status(400).json({ error: 'No valid players to import. Please check your CSV file.' });
@@ -1988,36 +1989,43 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
           } as any,
         });
 
-        try {
-          if (!importEmailTransporter) {
-            importEmailTransporter = createSmtpTransporter();
-            await importEmailTransporter.verify();
-          }
+        if (sendEmail) {
+          try {
+            if (!importEmailTransporter) {
+              importEmailTransporter = createSmtpTransporter();
+              await importEmailTransporter.verify();
+            }
 
-          await sendPasswordResetEmail({
-            toEmail: finalEmail,
-            firstName,
-            resetLink,
-            expiresAt: passwordResetExpiry,
-            messageVariant: 'invite',
-            transporter: importEmailTransporter,
-          });
-          logger.info('Password reset email sent during member import', {
+            await sendPasswordResetEmail({
+              toEmail: finalEmail,
+              firstName,
+              resetLink,
+              expiresAt: passwordResetExpiry,
+              messageVariant: 'invite',
+              transporter: importEmailTransporter,
+            });
+            logger.info('Password reset email sent during member import', {
+              memberId: member.id,
+              email: finalEmail,
+              expiresAt: passwordResetExpiry.toISOString(),
+            });
+          } catch (emailError) {
+            logger.error('Password reset email failed during member import; keeping imported member', {
+              memberId: member.id,
+              email: finalEmail,
+              error: emailError instanceof Error ? emailError.message : String(emailError),
+            });
+            results.emailFailed.push({
+              firstName,
+              lastName,
+              email: finalEmail,
+              error: emailError instanceof Error ? emailError.message : String(emailError),
+            });
+          }
+        } else {
+          logger.info('Skipping invitation email during member import (sendEmail=false)', {
             memberId: member.id,
             email: finalEmail,
-            expiresAt: passwordResetExpiry.toISOString(),
-          });
-        } catch (emailError) {
-          logger.error('Password reset email failed during member import; keeping imported member', {
-            memberId: member.id,
-            email: finalEmail,
-            error: emailError instanceof Error ? emailError.message : String(emailError),
-          });
-          results.emailFailed.push({
-            firstName,
-            lastName,
-            email: finalEmail,
-            error: emailError instanceof Error ? emailError.message : String(emailError),
           });
         }
 

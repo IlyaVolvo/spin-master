@@ -8,6 +8,7 @@ type TournamentCreationStep = 'type_selection' | 'player_selection' | 'plugin_fl
 interface TournamentCreationMember {
   id: number;
   isActive: boolean;
+  roles: string[];
 }
 
 interface UseTournamentCreationParams {
@@ -176,9 +177,9 @@ export function useTournamentCreation({
       return;
     }
     
-    // Ensure player is active before allowing selection
+    // Ensure player is active and has PLAYER role before allowing selection
     const player = members.find(p => p.id === playerId);
-    if (!player || !player.isActive) {
+    if (!player || !player.isActive || !player.roles?.includes('PLAYER')) {
       setError('Only active players can be selected for tournaments or matches.');
       return;
     }

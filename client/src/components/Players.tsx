@@ -101,10 +101,12 @@ const Players: React.FC = () => {
     successful: number;
     failed: number;
     emailFailed: number;
+    emailSent: boolean;
     successfulPlayers: Array<{ firstName: string; lastName: string; email: string }>;
     failedPlayers: Array<{ firstName: string; lastName: string; email?: string; error: string }>;
     emailFailedPlayers: Array<{ firstName: string; lastName: string; email: string; error: string }>;
   } | null>(null);
+  const [importSendEmail, setImportSendEmail] = useState(true);
   const [showExportSelection, setShowExportSelection] = useState(false);
   const [selectedPlayersForExport, setSelectedPlayersForExport] = useState<Set<number>>(new Set());
   const [exportCandidates, setExportCandidates] = useState<Member[]>([]);
@@ -1161,14 +1163,16 @@ const Players: React.FC = () => {
       setSuccess('');
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('sendEmail', importSendEmail ? 'true' : 'false');
 
       const response = await api.post('/players/import', formData, {
         timeout: 10000,
       });
-      setImportResults(response.data);
+      setImportResults({ ...response.data, emailSent: importSendEmail });
       setShowImportResults(true);
       await fetchMembers(); // Refresh player list
-      setSuccess(`Import completed: ${response.data.successful} imported, ${response.data.emailFailed ?? 0} email issue(s), ${response.data.failed} failed`);
+      const emailNote = !importSendEmail ? ' (emails not sent)' : (response.data.emailFailed > 0 ? `, ${response.data.emailFailed} email issue(s)` : '');
+      setSuccess(`Import completed: ${response.data.successful} imported${emailNote}${response.data.failed > 0 ? `, ${response.data.failed} failed` : ''}`);
       
       // Reset file input
       event.target.value = '';
@@ -1266,7 +1270,8 @@ const Players: React.FC = () => {
     let allData: Member[] = [...members];
     
     // Filter by role: by default show only PLAYER role, unless Admin/Organizer toggles showAllRoles
-    if (!showAllRoles) {
+    // When creating tournaments, always filter to PLAYER role regardless of showAllRoles
+    if (!showAllRoles || isCreatingTournament) {
       allData = allData.filter(m => m.roles && m.roles.includes('PLAYER'));
     }
     
@@ -3592,9 +3597,9 @@ const Players: React.FC = () => {
                     <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#27ae60' }}>{importResults.successful}</div>
                     <div style={{ fontSize: '14px', color: '#666' }}>Successfully Imported</div>
                   </div>
-                  <div style={{ flex: 1, padding: '10px', backgroundColor: '#fff8e1', borderRadius: '4px' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f39c12' }}>{importResults.emailFailed}</div>
-                    <div style={{ fontSize: '14px', color: '#666' }}>Imported, Email Failed</div>
+                  <div style={{ flex: 1, padding: '10px', backgroundColor: importResults.emailSent ? '#fff8e1' : '#e3f2fd', borderRadius: '4px' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: importResults.emailSent ? '#f39c12' : '#1976d2' }}>{importResults.emailSent ? importResults.emailFailed : '—'}</div>
+                    <div style={{ fontSize: '14px', color: '#666' }}>{importResults.emailSent ? 'Imported, Email Failed' : 'Emails Not Sent'}</div>
                   </div>
                   <div style={{ flex: 1, padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px' }}>
                     <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#e74c3c' }}>{importResults.failed}</div>
@@ -3607,7 +3612,15 @@ const Players: React.FC = () => {
                 </div>
               </div>
 
-              {importResults.emailFailed > 0 && (
+              {!importResults.emailSent && (
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '4px', color: '#1565c0' }}>
+                    Invitation emails were not sent. You can send them later using the Reset Password feature for each player.
+                  </div>
+                </div>
+              )}
+
+              {importResults.emailSent && importResults.emailFailed > 0 && (
                 <div style={{ marginBottom: '20px' }}>
                   <h4 style={{ marginBottom: '10px', color: '#f39c12' }}>Imported Players With Email Delivery Issues:</h4>
                   <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#fff8e1', borderRadius: '4px', color: '#8a6d3b' }}>
@@ -4803,7 +4816,7 @@ const Players: React.FC = () => {
                                     style={exportButtonStyle}
                                     title={supportsFullSaveDialog ? 'Export players to CSV' : 'Full Save As (name + location) is not supported in Safari. Use Chrome/Edge.'}
                                   >
-                                    📥 Export
+                                    Export
                                   </button>
                                   {!supportsFullSaveDialog && (
                                     <div style={{ fontSize: '11px', color: '#a65b00', lineHeight: 1.3 }}>
@@ -4823,6 +4836,15 @@ const Players: React.FC = () => {
                                       disabled={isDisabled}
                                       style={{ display: 'none' }}
                                     />
+                                  </label>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#555', cursor: 'pointer', marginTop: '2px' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={importSendEmail}
+                                      onChange={(e) => setImportSendEmail(e.target.checked)}
+                                      style={{ margin: 0, cursor: 'pointer' }}
+                                    />
+                                    Send invitation email
                                   </label>
                                 </>
                               );
