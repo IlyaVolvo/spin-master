@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spin Master — Tester Guide</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #333; }
+  h1 { font-size: 24px; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  h2 { font-size: 20px; margin-top: 32px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  h3 { font-size: 16px; margin-top: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }
+  th { background-color: #f5f5f5; font-weight: bold; }
+  code { background-color: #f0f0f0; padding: 2px 5px; font-family: Consolas, monospace; font-size: 14px; }
+  pre { background-color: #f0f0f0; padding: 12px; overflow-x: auto; font-family: Consolas, monospace; font-size: 13px; }
+  ul, ol { margin: 8px 0; }
+  li { margin: 4px 0; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 28px 0; }
+</style>
+</head>
+<body>
+
+<h1>Spin Master — Tester Guide</h1>
+
+<h2>Overview</h2>
+
+<p>The Spin Master is a web application for managing a table tennis club. It handles member registration, tournament creation and execution across multiple formats, match result recording, and player rating tracking over time.</p>
+
+<p>The system is built around a <b>plugin architecture</b> for tournament types — each format (Round Robin, Playoff, Swiss, etc.) is a self-contained plugin that drives its own creation wizard, match management, and completion logic.</p>
+
+<p>Key capabilities:</p>
+<ul>
+  <li><b>Member management</b> — add, edit, import/export players with roles, ratings, and contact info</li>
+  <li><b>Tournament creation</b> — six supported formats, from simple round robins to multi-phase compound tournaments</li>
+  <li><b>Live tournament management</b> — enter match scores, track standings, advance brackets</li>
+  <li><b>Ratings</b> — USATT-style numeric ratings that update after matches and tournaments</li>
+  <li><b>Statistics &amp; History</b> — rating trends, head-to-head records, match chronology</li>
+</ul>
+
+<hr>
+
+<h2>1. Logging In</h2>
+
+<p>Navigate to the deployed application URL.</p>
+
+<p><b>System Administrator account:</b></p>
+<ul>
+  <li><b>Email:</b> <code>admin@pingpong.com</code></li>
+  <li><b>Password:</b> <i>(will be provided directly)</i></li>
+</ul>
+
+<p>After logging in you will have full Admin + Organizer privileges, which means you can manage all members, create tournaments, and enter results.</p>
+
+<p>If you are ever prompted to reset your password on first login, follow the on-screen instructions.</p>
+
+<hr>
+
+<h2>2. Adding a Player</h2>
+
+<p>From the <b>Players</b> page:</p>
+
+<ol>
+  <li>Click the <b>Add Player</b> button.</li>
+  <li>Fill in the required fields:
+    <ul>
+      <li><b>First Name</b> and <b>Last Name</b> — 2–50 characters, letters only (hyphens, apostrophes, spaces allowed between parts)</li>
+      <li><b>Email</b> — must be unique across all members</li>
+      <li><b>Birth Date</b> — within the allowed range (age 5–105)</li>
+      <li><b>Gender</b> — Male, Female, or Other</li>
+      <li><b>Role(s)</b> — at least one: Player, Coach, Admin, Organizer</li>
+    </ul>
+  </li>
+  <li>Optionally fill in:
+    <ul>
+      <li><b>Rating</b> — integer 0–9999 (USATT-style)</li>
+      <li><b>Phone</b> — valid US phone number format</li>
+      <li><b>Address</b></li>
+      <li><b>Picture URL</b></li>
+    </ul>
+  </li>
+  <li>Confirm and save.</li>
+</ol>
+
+<p>The system creates the account and sends a password-setup invitation email to the new member. They complete onboarding via a one-time secure link.</p>
+
+<hr>
+
+<h2>3. Importing Players (Bulk)</h2>
+
+<p>This is the most efficient way to populate the club roster. The import accepts a <b>CSV file</b>.</p>
+
+<h3>CSV Format</h3>
+
+<p><b>Required columns:</b></p>
+
+<table>
+  <tr><th>Column</th><th>Notes</th></tr>
+  <tr><td><code>firstname</code></td><td></td></tr>
+  <tr><td><code>lastname</code></td><td></td></tr>
+  <tr><td><code>email</code></td><td>Must be unique, valid format</td></tr>
+  <tr><td><code>birthdate</code> or <code>date of birth</code></td><td>YYYY-MM-DD recommended; any parseable date format works</td></tr>
+</table>
+
+<p><b>Optional columns:</b></p>
+
+<table>
+  <tr><th>Column</th><th>Notes</th></tr>
+  <tr><td><code>gender</code></td><td>MALE, FEMALE, or OTHER</td></tr>
+  <tr><td><code>roles</code></td><td>Comma-separated first letters: P = Player, C = Coach, A = Admin, O = Organizer</td></tr>
+  <tr><td><code>phone</code></td><td>US phone number format</td></tr>
+  <tr><td><code>address</code></td><td>Free text</td></tr>
+  <tr><td><code>rating</code></td><td>Integer 0–9999</td></tr>
+</table>
+
+<p><b>Example CSV:</b></p>
+
+<pre>firstname,lastname,email,birthdate,gender,roles,phone,rating
+John,Smith,john.smith@example.com,1985-03-15,MALE,"P, C",(555) 123-4567,1450
+Jane,Doe,jane.doe@example.com,1990-07-22,FEMALE,P,,1200
+Bob,Johnson,bob.j@example.com,1978-11-03,MALE,P,555-987-6543,1800</pre>
+
+<p>Lines starting with <code>#</code> are treated as comments and ignored.</p>
+
+<h3>How to Import</h3>
+
+<ol>
+  <li>Go to the <b>Players</b> page.</li>
+  <li>Click the <b>Import</b> button.</li>
+  <li>Select your <code>.csv</code> file.</li>
+  <li>The system validates every row and shows a detailed results summary:
+    <ul>
+      <li><b>Successfully imported</b> — count and list of created members</li>
+      <li><b>Failed</b> — rows that did not pass validation, with per-row error details</li>
+      <li><b>Email issues</b> — members created but whose invitation email could not be delivered</li>
+    </ul>
+  </li>
+  <li>You can toggle whether invitation emails are sent during import.</li>
+</ol>
+
+<h3>Preparing Data from Other Systems</h3>
+
+<p>If you have player data in another system (USATT database export, Omnipong, club spreadsheet, league management software, etc.):</p>
+
+<ol>
+  <li><b>Export from the source system</b> — most systems support CSV or Excel export.</li>
+  <li><b>Open in a spreadsheet application</b> — Google Sheets, Excel, LibreOffice Calc, or Numbers all work.</li>
+  <li><b>Rename/map columns</b> to match the expected header names: <code>firstname</code>, <code>lastname</code>, <code>email</code>, <code>birthdate</code>, and optionally <code>gender</code>, <code>roles</code>, <code>phone</code>, <code>address</code>, <code>rating</code>.</li>
+  <li><b>Clean the data:</b>
+    <ul>
+      <li>Ensure every row has a unique, valid email address.</li>
+      <li>Format birth dates as <code>YYYY-MM-DD</code> for best results.</li>
+      <li>Ratings should be plain integers (no commas, no text).</li>
+      <li>Phone numbers should be US format (10 digits, optionally with country code 1).</li>
+    </ul>
+  </li>
+  <li><b>Save/export as CSV</b> (<code>.csv</code> file with UTF-8 encoding).
+    <ul>
+      <li>Google Sheets: File → Download → Comma Separated Values (.csv)</li>
+      <li>Excel: File → Save As → CSV UTF-8</li>
+      <li>LibreOffice Calc: File → Save As → Text CSV, ensure UTF-8 charset</li>
+    </ul>
+  </li>
+</ol>
+
+<p>The system also supports <b>exporting</b> your current player list to CSV from the Players page, which you can use as a template for the import format.</p>
+
+<h3>Duplicate Handling</h3>
+
+<p>The import checks for duplicates by <b>email</b> and by <b>first name + last name</b> combination. Duplicate rows are rejected with a clear error message — existing members are never overwritten.</p>
+
+<hr>
+
+<h2>4. Tournament Types</h2>
+
+<p>All tournaments are created from the <b>Players</b> page:</p>
+
+<ol>
+  <li>Click to start tournament creation.</li>
+  <li><b>Select a tournament type</b> from the menu.</li>
+  <li>Optionally name the tournament.</li>
+  <li><b>Select participating players</b> (only active members are available; use filters, Select All / Deselect All as needed).</li>
+  <li>Continue — the rest of the flow is <b>type-specific</b> and guided by the creation wizard for that format.</li>
+</ol>
+
+<h3>Round Robin</h3>
+
+<p>Every player plays every other player once. Best for smaller groups (3+ players).</p>
+<ul>
+  <li>Full all-play-all schedule is generated automatically.</li>
+  <li>Standings update as results are entered.</li>
+</ul>
+
+<h3>Playoff / Bracket</h3>
+
+<p>Single-elimination bracket. Requires 6+ players.</p>
+<ul>
+  <li>Seeded bracket structure with a preview before creation.</li>
+  <li>You can review and adjust seeding/bracket positions before confirming.</li>
+  <li>Winners advance through rounds until a champion is determined.</li>
+</ul>
+
+<h3>Multi Round Robin</h3>
+
+<p>Players are split into multiple separate round-robin groups (6+ players).</p>
+<ul>
+  <li>You configure group sizes and review group assignments (snake-draft seeding with drag-and-drop adjustment).</li>
+  <li>Each group runs as its own independent round robin.</li>
+</ul>
+
+<h3>Preliminary + Final Round Robin</h3>
+
+<p>Two-phase compound tournament (8+ players):</p>
+<ul>
+  <li><b>Phase 1:</b> Players compete in preliminary round-robin groups.</li>
+  <li><b>Phase 2:</b> Top qualifiers from each group advance to a final round-robin.</li>
+  <li>Supports <b>auto-qualified players</b> — highest-rated players skip preliminaries and go directly to the final.</li>
+  <li>Qualification order: auto-qualified → all 1st-place finishers → fill remaining spots from 2nd/3rd places by rating.</li>
+</ul>
+
+<h3>Preliminary + Final Playoff</h3>
+
+<p>Two-phase compound tournament (8+ players):</p>
+<ul>
+  <li><b>Phase 1:</b> Preliminary round-robin groups (same as above).</li>
+  <li><b>Phase 2:</b> Top qualifiers advance to a final playoff bracket.</li>
+  <li>Same auto-qualification and filling logic as Preliminary + Final Round Robin.</li>
+</ul>
+
+<h3>Swiss System</h3>
+
+<p>Multiple rounds of pairings based on performance (6+ players).</p>
+<ul>
+  <li>You configure the number of rounds.</li>
+  <li>Players are paired each round against opponents with similar records.</li>
+  <li>No one is eliminated — all players compete in every round.</li>
+  <li>Best for larger groups where a full round robin would be impractical.</li>
+</ul>
+
+<hr>
+
+<h2>5. Future Work</h2>
+
+<p>The following features are planned for future development:</p>
+
+<h3>Club Check-In via QR Scanner</h3>
+<ul>
+  <li>Members will be able to check in to the club by scanning a personal QR code.</li>
+  <li>The system already supports QR token infrastructure on member accounts.</li>
+  <li>A scanner station (tablet or phone at the entrance) will read QR codes and register attendance.</li>
+  <li>This enables session tracking, attendance history, and automated club-night rosters.</li>
+</ul>
+
+<h3>Payment Integration</h3>
+<ul>
+  <li>Pluggable payment methods connected to the system.</li>
+  <li>Support for membership dues, lesson payments, and event entry fees.</li>
+  <li>Integration with payment providers (Stripe, Square, etc.) for online and in-person transactions.</li>
+  <li>Payment status tracked per member with history and receipt generation.</li>
+</ul>
+
+<h3>Coach Schedules</h3>
+<ul>
+  <li>Coaches will be able to publish their available time slots.</li>
+  <li>Schedule management integrated into the coach's profile.</li>
+  <li>Visibility for all club members to see coach availability.</li>
+</ul>
+
+<h3>Individual Lesson Scheduling</h3>
+<ul>
+  <li>Members can browse available coach time slots and book individual lessons directly through the system.</li>
+  <li>Booking confirmation, reminders, and cancellation flow.</li>
+  <li>Lesson history tracked per member and per coach.</li>
+</ul>
+
+<h3>Group Lessons</h3>
+<ul>
+  <li>Coaches can create group lesson sessions with capacity limits.</li>
+  <li>Members can sign up for open group lesson slots.</li>
+  <li>Waitlist support when sessions reach capacity.</li>
+  <li>Recurring lesson schedules for regular group sessions.</li>
+</ul>
+
+</body>
+</html>
