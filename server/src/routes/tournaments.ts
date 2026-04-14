@@ -928,7 +928,7 @@ router.patch('/:tournamentId/matches/:matchId', [
     if (tournament.status !== 'ACTIVE') {
       return res.status(400).json({ error: 'Tournament is not active' });
     }
-    
+
     const plugin = tournamentPluginRegistry.get(tournament.type);
 
     // Process forfeit scores
@@ -967,7 +967,7 @@ router.patch('/:tournamentId/matches/:matchId', [
       }
       throw err;
     }
-    
+
     const updatedMatch = result.match;
 
     // Calculate match ratings if plugin supports per-match rating calculation

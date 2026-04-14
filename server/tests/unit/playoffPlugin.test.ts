@@ -352,7 +352,7 @@ describe('PlayoffPlugin', () => {
   describe('updateMatch', () => {
     const mockPrisma: {
       match?: { findFirst: jest.Mock; update: jest.Mock };
-      bracketMatch?: { findFirst: jest.Mock };
+      bracketMatch?: { findFirst: jest.Mock; findUnique: jest.Mock };
     } = {};
 
     beforeEach(() => {
@@ -369,6 +369,7 @@ describe('PlayoffPlugin', () => {
       };
       mockPrisma.bracketMatch = {
         findFirst: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue(null),
       };
     });
 
@@ -399,6 +400,50 @@ describe('PlayoffPlugin', () => {
       });
       expect(result.match.id).toBe(100);
       expect(result.tournamentStateChange).toBeUndefined();
+      expect(mockPrisma.bracketMatch!.findUnique).toHaveBeenCalledWith({
+        where: { id: 5 },
+        include: { match: true },
+      });
+    });
+
+    it('records first-time bracket result when BracketMatch id collides with an unrelated Match id', async () => {
+      const { recordPlayoffBracketMatchResult } = require('../../src/services/playoffBracketService');
+      mockPrisma.bracketMatch!.findUnique.mockResolvedValue({
+        id: 5,
+        tournamentId: 1,
+        match: null,
+      });
+      mockPrisma.match!.findFirst.mockResolvedValue({
+        id: 5,
+        tournamentId: 1,
+        member1Id: 9,
+        member2Id: 10,
+      });
+      (recordPlayoffBracketMatchResult as jest.Mock).mockResolvedValue({
+        match: { id: 100, member1Id: 1, member2Id: 2 },
+        tournamentCompleted: false,
+      });
+
+      const result = await plugin.updateMatch({
+        matchId: 5,
+        tournamentId: 1,
+        player1Sets: 3,
+        player2Sets: 1,
+        player1Forfeit: false,
+        player2Forfeit: false,
+        prisma: mockPrisma,
+      });
+
+      expect(recordPlayoffBracketMatchResult).toHaveBeenCalledWith(mockPrisma, {
+        tournamentId: 1,
+        bracketMatchId: 5,
+        player1Sets: 3,
+        player2Sets: 1,
+        player1Forfeit: false,
+        player2Forfeit: false,
+      });
+      expect(mockPrisma.match!.update).not.toHaveBeenCalled();
+      expect(result.match.id).toBe(100);
     });
 
     it('updates an existing Match when matchId refers to a Match in this tournament (edit path)', async () => {
