@@ -1,7 +1,7 @@
 import express, { Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import multer from 'multer';
-import { MemberRole } from '@prisma/client';
+import { MemberRole, RatingChangeReason } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
@@ -19,6 +19,113 @@ import {
 
 const router = express.Router();
 const importUpload = multer({ storage: multer.memoryStorage() });
+
+/** Snapshot row when a member is created with a numeric rating (not a delta). */
+async function createInitialRatingHistoryEntry(memberId: number, rating: number | null): Promise<void> {
+  if (rating == null) return;
+  await prisma.ratingHistory.create({
+    data: {
+      memberId,
+      rating,
+      ratingChange: null,
+      reason: RatingChangeReason.INITIAL_RATING,
+      tournamentId: null,
+      matchId: null,
+    },
+  });
+}
+
+/** Load tournament display names and parent links (follow chain for hierarchy-aware sorting). */
+async function loadTournamentNamesAndParentMap(tournamentIds: number[]): Promise<{
+  nameById: Map<number, string>;
+  parentById: Map<number, number | null>;
+}> {
+  const nameById = new Map<number, string>();
+  const parentById = new Map<number, number | null>();
+  if (tournamentIds.length === 0) {
+    return { nameById, parentById };
+  }
+  const seen = new Set<number>();
+  let frontier = [...new Set(tournamentIds)];
+  while (frontier.length > 0) {
+    const rows = await prisma.tournament.findMany({
+      where: { id: { in: frontier } },
+      select: { id: true, name: true, parentTournamentId: true },
+    });
+    const next: number[] = [];
+    for (const row of rows) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      nameById.set(row.id, row.name || 'Unknown Tournament');
+      parentById.set(row.id, row.parentTournamentId ?? null);
+      if (row.parentTournamentId != null && !seen.has(row.parentTournamentId)) {
+        next.push(row.parentTournamentId);
+      }
+    }
+    frontier = next;
+  }
+  return { nameById, parentById };
+}
+
+/** Steps up parentTournamentId to root; child groups under a compound tournament have higher depth. */
+function tournamentDepthFromParentMap(
+  tournamentId: number,
+  parentByTournamentId: Map<number, number | null>,
+  memo: Map<number, number>
+): number {
+  if (memo.has(tournamentId)) return memo.get(tournamentId)!;
+  let steps = 0;
+  let cur: number | null = tournamentId;
+  const chain = new Set<number>();
+  while (cur != null && !chain.has(cur)) {
+    chain.add(cur);
+    const p = parentByTournamentId.get(cur);
+    if (p == null) break;
+    steps++;
+    cur = p;
+  }
+  memo.set(tournamentId, steps);
+  return steps;
+}
+
+/** Prefer the match's tournament when present (rating_history.tournamentId can be stale vs matches.tournamentId). */
+function effectiveTournamentIdForHistoryRow(
+  record: { tournamentId: number | null; matchId: number | null },
+  matchTournamentIdByMatchId: Map<number, number | null>
+): number | null {
+  if (record.matchId != null) {
+    const tid = matchTournamentIdByMatchId.get(record.matchId);
+    if (tid !== undefined && tid !== null) {
+      return tid;
+    }
+  }
+  return record.tournamentId;
+}
+
+/**
+ * Same timestamp: process deeper (child) tournaments before ancestors so sequential
+ * rating inference matches actual completion order (group RR before parent compound).
+ */
+function sortRatingHistoryRecordsChronologically(
+  records: Array<{ id: number; timestamp: Date; tournamentId: number | null; matchId: number | null }>,
+  parentByTournamentId: Map<number, number | null>,
+  matchTournamentIdByMatchId: Map<number, number | null>
+): void {
+  const depthMemo = new Map<number, number>();
+  records.sort((a, b) => {
+    const ta = a.timestamp.getTime();
+    const tb = b.timestamp.getTime();
+    if (ta !== tb) return ta - tb;
+    const aid = effectiveTournamentIdForHistoryRow(a, matchTournamentIdByMatchId);
+    const bid = effectiveTournamentIdForHistoryRow(b, matchTournamentIdByMatchId);
+    if (aid != null && bid != null && aid !== bid) {
+      const da = tournamentDepthFromParentMap(aid, parentByTournamentId, depthMemo);
+      const db = tournamentDepthFromParentMap(bid, parentByTournamentId, depthMemo);
+      if (da !== db) return db - da;
+    }
+    return a.id - b.id;
+  });
+}
 
 interface ImportedPlayerPayload {
   firstName?: string;
@@ -817,6 +924,8 @@ router.post('/', [
       });
     }
 
+    await createInitialRatingHistoryEntry(member.id, member.rating);
+
     // Exclude sensitive fields from response
     const memberWithoutPassword = stripSensitiveMemberFields(member);
     
@@ -1329,67 +1438,205 @@ router.post('/rating-history', [
       orderBy: { timestamp: 'asc' },
     });
 
-    // Get tournament names for display
-    const tournamentIds = [...new Set(ratingHistoryRecords.map((r: any) => r.tournamentId).filter((id: any): id is number => id !== null))];
-    const tournamentMap = new Map<number, string>();
-    if (tournamentIds.length > 0) {
-      const tournaments = await prisma.tournament.findMany({
-        where: { id: { in: tournamentIds as number[] } },
-        select: { id: true, name: true },
+    const matchIdList: number[] = ratingHistoryRecords
+      .map((r: any) => r.matchId as number | null | undefined)
+      .filter((id: number | null | undefined): id is number => typeof id === 'number');
+    const matchIdsForHistory: number[] = [...new Set(matchIdList)];
+    const matchTournamentIdByMatchId = new Map<number, number | null>();
+    if (matchIdsForHistory.length > 0) {
+      const matchRows = await prisma.match.findMany({
+        where: { id: { in: matchIdsForHistory } },
+        select: { id: true, tournamentId: true },
       });
-      tournaments.forEach(t => tournamentMap.set(t.id, t.name || 'Unknown Tournament'));
-    }
-
-    // Build rating history for each member from RatingHistory records
-    const ratingHistory: { [memberId: number]: Array<{ date: string; rating: number | null; tournamentId: number | null; tournamentName: string | null; matchId: number | null }> } = {};
-
-    // Initialize empty history for all members
-    members.forEach(member => {
-      ratingHistory[member.id] = [];
-    });
-
-    // Process rating history records
-    for (const record of ratingHistoryRecords) {
-      const memberId = record.memberId;
-      let tournamentName: string | null = null;
-      
-      if (record.tournamentId) {
-        tournamentName = tournamentMap.get(record.tournamentId) || 'Unknown Tournament';
-      } else if (record.reason === 'MANUAL_ADJUSTMENT') {
-        // Set display name for manual adjustments
-        tournamentName = 'Manual Adjustment';
-      } else if (record.reason === 'MEMBER_DEACTIVATED') {
-        tournamentName = 'Member Deactivated';
-      } else {
-        tournamentName = 'Initial Rating';
+      for (const m of matchRows) {
+        matchTournamentIdByMatchId.set(m.id, m.tournamentId);
       }
-      
-      ratingHistory[memberId].push({
-        date: record.timestamp.toISOString(),
-        rating: record.rating,
-        tournamentId: record.tournamentId,
-        tournamentName: tournamentName,
-        matchId: record.matchId,
-      });
     }
 
-    // Add current rating as final point if different from last recorded
-    // Only add if member has some history (meaning they had a rating at some point)
-    members.forEach(member => {
-      const history = ratingHistory[member.id];
-      if (history.length > 0 && member.rating !== null) {
-        const lastEntry = history[history.length - 1];
-        if (lastEntry.rating !== member.rating) {
-          history.push({
-            date: new Date().toISOString(),
-            rating: member.rating,
-            tournamentId: null,
-            tournamentName: 'Current',
-            matchId: null,
-          });
+    // Tournament names + parent chain (include ids from matches so labels match the actual match context)
+    const tournamentIds = [
+      ...new Set([
+        ...ratingHistoryRecords.map((r: any) => r.tournamentId).filter((id: any): id is number => id !== null),
+        ...[...matchTournamentIdByMatchId.values()].filter((id): id is number => id != null),
+      ]),
+    ];
+    const { nameById: tournamentMap, parentById: tournamentParentById } =
+      await loadTournamentNamesAndParentMap(tournamentIds as number[]);
+
+    const recordsByMember = new Map<number, typeof ratingHistoryRecords>();
+    for (const r of ratingHistoryRecords) {
+      if (!recordsByMember.has(r.memberId)) recordsByMember.set(r.memberId, []);
+      recordsByMember.get(r.memberId)!.push(r);
+    }
+    for (const list of recordsByMember.values()) {
+      sortRatingHistoryRecordsChronologically(list as any, tournamentParentById, matchTournamentIdByMatchId);
+    }
+
+    // TOURNAMENT_COMPLETED rows with missing ratingChange: delta vs enrollment (same as rating calculation)
+    const tournamentRatingBaselineByMemberTournament = new Map<string, number>();
+    const tcBaselinePairs: { memberId: number; tournamentId: number }[] = [];
+    const seenTcPair = new Set<string>();
+    for (const r of ratingHistoryRecords) {
+      if (
+        r.reason === 'TOURNAMENT_COMPLETED' &&
+        r.tournamentId != null &&
+        (r.ratingChange === null || r.ratingChange === undefined) &&
+        r.rating != null
+      ) {
+        const k = `${r.memberId}:${r.tournamentId}`;
+        if (!seenTcPair.has(k)) {
+          seenTcPair.add(k);
+          tcBaselinePairs.push({ memberId: r.memberId, tournamentId: r.tournamentId });
         }
       }
+    }
+    if (tcBaselinePairs.length > 0) {
+      const participants = await prisma.tournamentParticipant.findMany({
+        where: {
+          OR: tcBaselinePairs.map(p => ({ memberId: p.memberId, tournamentId: p.tournamentId })),
+        },
+        select: { memberId: true, tournamentId: true, playerRatingAtTime: true },
+      });
+      for (const p of participants) {
+        const baseline = p.playerRatingAtTime ?? 1200;
+        tournamentRatingBaselineByMemberTournament.set(`${p.memberId}:${p.tournamentId}`, baseline);
+      }
+    }
+
+    const tournamentNameForRecord = (record: (typeof ratingHistoryRecords)[0]): string | null => {
+      const tid = effectiveTournamentIdForHistoryRow(record, matchTournamentIdByMatchId);
+      if (tid != null) {
+        return tournamentMap.get(tid) || 'Unknown Tournament';
+      }
+      if (record.reason === 'MANUAL_ADJUSTMENT') return 'Manual Adjustment';
+      if (record.reason === 'INITIAL_RATING') return 'Initial rating';
+      return 'Completed Match';
+    };
+
+    type HistoryPointDto = {
+      date: string;
+      rating: number | null;
+      ratingBefore: number | null;
+      ratingChange: number | null;
+      tournamentId: number | null;
+      tournamentName: string | null;
+      matchId: number | null;
+      reason: string | null;
+    };
+
+    const ratingHistory: { [memberId: number]: HistoryPointDto[] } = {};
+    members.forEach((m) => {
+      ratingHistory[m.id] = [];
     });
+
+    for (const member of members) {
+      const records = recordsByMember.get(member.id) ?? [];
+      const points: HistoryPointDto[] = [];
+
+      const first = records[0];
+      if (
+        first &&
+        first.reason !== 'INITIAL_RATING' &&
+        first.rating != null &&
+        first.ratingChange != null
+      ) {
+        const startingRating = first.rating - first.ratingChange;
+        points.push({
+          date: member.createdAt.toISOString(),
+          rating: startingRating,
+          ratingBefore: null,
+          ratingChange: null,
+          tournamentId: null,
+          tournamentName: 'Starting rating',
+          matchId: null,
+          reason: null,
+        });
+      }
+
+      /** Rating after the previous history row (for inferring delta when DB has rating but null ratingChange). */
+      let lastRatingAfter: number | null =
+        points.length > 0 && points[points.length - 1].rating != null
+          ? points[points.length - 1].rating
+          : null;
+
+      for (const record of records) {
+        const ratingAfter = record.rating;
+        let ratingChange: number | null | undefined = record.ratingChange;
+
+        if (
+          (ratingChange === null || ratingChange === undefined) &&
+          record.reason === 'TOURNAMENT_COMPLETED' &&
+          record.tournamentId != null &&
+          ratingAfter != null
+        ) {
+          const baseline = tournamentRatingBaselineByMemberTournament.get(
+            `${member.id}:${record.tournamentId}`
+          );
+          if (baseline !== undefined) {
+            ratingChange = ratingAfter - baseline;
+          }
+        }
+
+        // Sequential diff only when DB did not store an event-specific delta (never for tournament/match rows:
+        // those deltas are vs enrollment / match baseline, not vs the previous history row).
+        if (
+          (ratingChange === null || ratingChange === undefined) &&
+          record.reason !== 'INITIAL_RATING' &&
+          record.reason !== 'TOURNAMENT_COMPLETED' &&
+          record.reason !== 'MATCH_COMPLETED' &&
+          ratingAfter != null &&
+          lastRatingAfter != null
+        ) {
+          ratingChange = ratingAfter - lastRatingAfter;
+        }
+        const ratingBefore =
+          ratingAfter != null && ratingChange != null ? ratingAfter - ratingChange : null;
+
+        points.push({
+          date: record.timestamp.toISOString(),
+          rating: ratingAfter,
+          ratingBefore,
+          ratingChange: ratingChange ?? null,
+          tournamentId: effectiveTournamentIdForHistoryRow(record, matchTournamentIdByMatchId),
+          tournamentName: tournamentNameForRecord(record),
+          matchId: record.matchId,
+          reason: record.reason,
+        });
+
+        if (ratingAfter != null) {
+          lastRatingAfter = ratingAfter;
+        }
+      }
+
+      if (points.length === 0 && member.rating != null) {
+        points.push({
+          date: member.createdAt.toISOString(),
+          rating: member.rating,
+          ratingBefore: null,
+          ratingChange: null,
+          tournamentId: null,
+          tournamentName: 'Initial rating',
+          matchId: null,
+          reason: null,
+        });
+      }
+
+      const last = points[points.length - 1];
+      if (last && member.rating != null && last.rating !== member.rating) {
+        points.push({
+          date: new Date().toISOString(),
+          rating: member.rating,
+          ratingBefore: last.rating,
+          ratingChange: member.rating - (last.rating ?? 0),
+          tournamentId: null,
+          tournamentName: 'Current (live)',
+          matchId: null,
+          reason: null,
+        });
+      }
+
+      ratingHistory[member.id] = points;
+    }
 
     // Format response
     const result = members.map(member => ({
@@ -1988,6 +2235,8 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
             passwordResetTokenExpiry: passwordResetExpiry,
           } as any,
         });
+
+        await createInitialRatingHistoryEntry(member.id, member.rating);
 
         if (sendEmail) {
           try {

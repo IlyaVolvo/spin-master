@@ -3,14 +3,17 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
+import { RatingWithChangeCell } from '../utils/ratingHistoryDisplay';
 
 interface RatingHistoryPoint {
   date: string;
   rating: number | null;
+  ratingBefore?: number | null;
+  ratingChange?: number | null;
+  reason?: string | null;
   tournamentId: number | null;
   tournamentName: string | null;
   matchId: number | null;
-  reason?: string;
 }
 
 interface PlayerRatingHistory {
@@ -288,26 +291,26 @@ const Statistics: React.FC = () => {
                       <tbody>
                         {[...player.history]
                           .sort((a, b) => {
-                            // Sort in descending order (most recent first)
-                            // "Current" entries (tournamentName === 'Current') should appear first
-                            if (a.tournamentName === 'Current' && b.tournamentName !== 'Current') return -1;
-                            if (b.tournamentName === 'Current' && a.tournamentName !== 'Current') return 1;
-                            // Then sort by date descending
+                            if (a.tournamentName?.startsWith('Current') && !b.tournamentName?.startsWith('Current')) return -1;
+                            if (b.tournamentName?.startsWith('Current') && !a.tournamentName?.startsWith('Current')) return 1;
                             return new Date(b.date).getTime() - new Date(a.date).getTime();
                           })
                           .map((point, idx) => {
-                          // Determine what to link to based on available data
                           const hasTournament = point.tournamentId !== null;
                           const hasMatch = point.matchId !== null;
-                          const eventName = point.tournamentName || 'Initial Rating';
-                          
+                          const eventName = point.tournamentName || 'Rating';
+
                           return (
                           <tr key={idx}>
                             <td style={{ padding: '8px' }}>
                               {new Date(point.date).toLocaleDateString()}
                             </td>
-                            <td style={{ padding: '8px', textAlign: 'center', fontWeight: 'bold' }}>
-                              {point.rating !== null ? point.rating : '-'}
+                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                              <RatingWithChangeCell
+                                rating={point.rating}
+                                ratingChange={point.ratingChange}
+                                ratingBefore={point.ratingBefore}
+                              />
                             </td>
                             <td style={{ padding: '8px' }}>
                                 {hasTournament || hasMatch ? (

@@ -92,7 +92,7 @@ enum RatingChangeReason {
   MATCH_COMPLETED
   RESULT_CORRECTED
   MANUAL_ADJUSTMENT
-  MEMBER_DEACTIVATED
+  INITIAL_RATING
 }
 
 // Tournament table: Contains information pertinent to ALL tournaments
