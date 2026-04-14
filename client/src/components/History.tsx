@@ -4,9 +4,19 @@ import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { RatingWithChangeCell } from '../utils/ratingHistoryDisplay';
 
+/** Label for match history row; standalone matches have no tournament — show blank, not "Tournament #null". */
+function matchHistoryTournamentLabel(match: {
+  tournamentName: string | null;
+  tournamentId: number | null | undefined;
+}): string {
+  if (match.tournamentName) return match.tournamentName;
+  if (match.tournamentId != null) return `Tournament #${match.tournamentId}`;
+  return '';
+}
+
 interface MatchHistory {
   id: number;
-  tournamentId: number;
+  tournamentId: number | null;
   tournamentName: string | null;
   tournamentStatus: string;
   tournamentType?: string;
@@ -422,10 +432,10 @@ const History: React.FC = () => {
                                     cursor: 'pointer'
                                   }}
                                 >
-                                  {match.tournamentName || `Tournament #${match.tournamentId}`}
+                                  {matchHistoryTournamentLabel(match)}
                                 </a>
                               ) : (
-                                match.tournamentName || `Tournament #${match.tournamentId}`
+                                matchHistoryTournamentLabel(match)
                               )}
                               {match.tournamentStatus === 'ACTIVE' && (
                                 <span style={{ marginLeft: '8px', fontSize: '12px', color: '#f39c12' }}>
