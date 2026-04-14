@@ -344,8 +344,15 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
         participants={participants}
         matches={matches.map(m => ({
           ...m,
-          player1Id: m.member1Id,
-          player2Id: m.member2Id,
+          id: m.id,
+          round: m.round,
+          position: m.position,
+          player1Id: m.member1Id ?? null,
+          player2Id: m.member2Id ?? null,
+          player1IsBye: m.member1Id === 0,
+          player2IsBye: m.member2Id === 0,
+          matchId: m.match?.id,
+          match: m.match ?? null,
           player1Sets: m.player1Sets ?? (m as any).match?.player1Sets ?? undefined,
           player2Sets: m.player2Sets ?? (m as any).match?.player2Sets ?? undefined,
           player1Forfeit: m.player1Forfeit ?? (m as any).match?.player1Forfeit ?? undefined,

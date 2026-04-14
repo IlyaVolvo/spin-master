@@ -3,6 +3,7 @@ import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { MatchEntryPopup } from './MatchEntryPopup';
 import { isOrganizer } from '../utils/auth';
+import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
 
 interface Member {
   id: number;
@@ -78,6 +79,10 @@ interface MatchNode {
   player2Sets?: number;
   player1Forfeit?: boolean;
   player2Forfeit?: boolean;
+  /** Raw BracketMatch.member1Id (0 = BYE); for playoff first-result guard */
+  bracketMember1Id?: number | null;
+  bracketMember2Id?: number | null;
+  linkedMatch?: unknown | null;
   matchRatingData?: {
     player1RatingBefore: number | null;
     player1RatingChange: number | null;
@@ -470,6 +475,15 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       
       // Create MatchNode directly from BracketMatch
       // Include match rating data if available
+      const raw1 =
+        bracketMatch.player1Id ??
+        (bracketMatch as { member1Id?: number | null }).member1Id ??
+        null;
+      const raw2 =
+        bracketMatch.player2Id ??
+        (bracketMatch as { member2Id?: number | null }).member2Id ??
+        null;
+
       const matchNode: MatchNode = {
         round,
         position,
@@ -484,6 +498,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         player2Sets: bracketMatch.player2Sets || 0,
         player1Forfeit: bracketMatch.player1Forfeit || false,
         player2Forfeit: bracketMatch.player2Forfeit || false,
+        bracketMember1Id: raw1,
+        bracketMember2Id: raw2,
+        linkedMatch: bracketMatch.match ?? null,
         // Store match rating data for use in display
         matchRatingData: bracketMatch.match ? {
           player1RatingBefore: bracketMatch.match.player1RatingBefore,
@@ -564,7 +581,20 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     // Calculate clickability first (before early returns)
     const hasPrevMatch = prevMatch && prevMatch.player1 && prevMatch.player2;
     const prevMatchIsBye = prevMatch ? checkIsByeMatch(prevMatch) : false;
-    const isClickableForScoreEntry = !isReadOnly && round > 1 && hasPrevMatch && !prevMatchIsBye;
+    const prevFirstResultBlocked =
+      tournamentId && prevMatch && !prevMatch.matchId
+        ? getPlayoffFirstResultBlockedReason({
+            member1Id: prevMatch.bracketMember1Id ?? null,
+            member2Id: prevMatch.bracketMember2Id ?? null,
+            linkedMatch: prevMatch.linkedMatch ?? null,
+          })
+        : null;
+    const isClickableForScoreEntry =
+      !isReadOnly &&
+      round > 1 &&
+      hasPrevMatch &&
+      !prevMatchIsBye &&
+      !prevFirstResultBlocked;
     
     // For round 1, show BYE only if it's actually a BYE (memberId === 0)
     // For later rounds or unknown players (memberId === null), show empty slot
@@ -675,7 +705,11 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               e.currentTarget.style.boxShadow = 'none';
             }
           }}
-          title={isClickableForScoreEntry ? 'Click to enter match result' : ''}
+          title={
+            isClickableForScoreEntry
+              ? 'Click to enter match result'
+              : prevFirstResultBlocked || ''
+          }
         >
           {isClickableForScoreEntry ? (
             <svg 
@@ -883,7 +917,15 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             e.currentTarget.style.boxShadow = 'none';
           }
         }}
-        title={isClickableForScoreEntry ? 'Click to enter/edit match result' : round === 1 ? 'Round 1 - Players are manually placed' : prevMatchIsBye ? 'BYE - No score entry needed' : ''}
+        title={
+          isClickableForScoreEntry
+            ? 'Click to enter/edit match result'
+            : round === 1
+              ? 'Round 1 - Players are manually placed'
+              : prevMatchIsBye
+                ? 'BYE - No score entry needed'
+                : prevFirstResultBlocked || ''
+        }
       >
         <div style={{ 
           fontWeight: 'bold', 
@@ -1121,7 +1163,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           })()}
         </div>
         {/* Show score box indicator - smaller box with score or "Score" text */}
-        {showScoreBox && (
+        {showScoreBox && !prevFirstResultBlocked && (
           <div 
             style={{
               marginTop: '4px',
@@ -1156,6 +1198,18 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                 
                 // Use bracketMatchId from prevMatch, or matchId, or 0 as fallback
                 const matchIdToUse = prevMatch.matchId || prevMatch.bracketMatchId || 0;
+
+                if (!prevMatch.matchId) {
+                  const block = getPlayoffFirstResultBlockedReason({
+                    member1Id: prevMatch.bracketMember1Id ?? null,
+                    member2Id: prevMatch.bracketMember2Id ?? null,
+                    linkedMatch: prevMatch.linkedMatch ?? null,
+                  });
+                  if (block) {
+                    alert(block);
+                    return;
+                  }
+                }
                 
                 setEditingMatch({
                   matchId: matchIdToUse,
@@ -1187,7 +1241,23 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     
     // Determine if match can be edited - only organizers can edit, and match must be valid
     const isUserOrganizer = isOrganizer();
-    const canEditMatch = isUserOrganizer && !isReadOnly && tournamentId && player1 && player2 && !player1IsBye && !player2IsBye;
+    const firstResultBlocked =
+      tournamentId && !match.matchId
+        ? getPlayoffFirstResultBlockedReason({
+            member1Id: match.bracketMember1Id ?? null,
+            member2Id: match.bracketMember2Id ?? null,
+            linkedMatch: match.linkedMatch ?? null,
+          })
+        : null;
+    const canEditMatch =
+      isUserOrganizer &&
+      !isReadOnly &&
+      tournamentId &&
+      player1 &&
+      player2 &&
+      !player1IsBye &&
+      !player2IsBye &&
+      !firstResultBlocked;
     
     // Get scores
     const player1Sets = match.player1Sets ?? 0;
@@ -1275,7 +1345,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             e.currentTarget.style.boxShadow = 'none';
           }
         }}
-        title={canEditMatch ? 'Click to enter/edit match result' : ''}
+        title={canEditMatch ? 'Click to enter/edit match result' : firstResultBlocked || ''}
       >
         {/* Player 1 */}
         <div style={{ 
@@ -1601,6 +1671,18 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           } else {
             throw new Error('Bracket match not found');
           }
+        }
+      }
+
+      if (editingMatch.matchId === 0 && matchBeingSaved) {
+        const block = getPlayoffFirstResultBlockedReason({
+          member1Id: matchBeingSaved.bracketMember1Id ?? null,
+          member2Id: matchBeingSaved.bracketMember2Id ?? null,
+          linkedMatch: matchBeingSaved.linkedMatch ?? null,
+        });
+        if (block) {
+          alert(block);
+          return;
         }
       }
       

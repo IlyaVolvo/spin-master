@@ -58,25 +58,36 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           player2Forfeit: editingMatch.player2Forfeit,
         };
 
-        await playoffUpdater.createMatch(matchData, editingBracketMatchId, {
-          onSuccess,
-          onError,
-          onTournamentUpdate,
-          onMatchUpdate,
-          onBracketUpdate: () => {
-            // Refresh tournament data to update bracket display
-            if (onTournamentUpdate) {
-              fetch(`/api/tournaments/${tournament.id}`)
-                .then(res => res.json())
-                .then(updatedTournament => {
-                  onTournamentUpdate(updatedTournament);
-                })
-                .catch(err => {
-                  console.error('Failed to refresh tournament:', err);
-                });
-            }
+        const bm = tournament.bracketMatches?.find(b => b.id === editingBracketMatchId);
+        await playoffUpdater.createMatch(
+          matchData,
+          editingBracketMatchId,
+          {
+            onSuccess,
+            onError,
+            onTournamentUpdate,
+            onMatchUpdate,
+            onBracketUpdate: () => {
+              if (onTournamentUpdate) {
+                fetch(`/api/tournaments/${tournament.id}`)
+                  .then(res => res.json())
+                  .then(updatedTournament => {
+                    onTournamentUpdate(updatedTournament);
+                  })
+                  .catch(err => {
+                    console.error('Failed to refresh tournament:', err);
+                  });
+              }
+            },
           },
-        });
+          bm
+            ? {
+                member1Id: bm.member1Id,
+                member2Id: bm.member2Id,
+                linkedMatch: bm.match ?? null,
+              }
+            : null
+        );
       } else {
         // Update existing match
         await playoffUpdater.updateMatch(editingMatch.matchId, matchData, {
@@ -150,10 +161,10 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           id: bm.id,
           round: bm.round,
           position: bm.position,
-          player1Id: bm.member1Id || null,
-          player2Id: bm.member2Id || null,
-          player1IsBye: !bm.member1Id,
-          player2IsBye: !bm.member2Id,
+          player1Id: bm.member1Id ?? null,
+          player2Id: bm.member2Id ?? null,
+          player1IsBye: bm.member1Id === 0,
+          player2IsBye: bm.member2Id === 0,
           matchId: bm.match?.id || undefined,
           winnerId: undefined, // Not available in Match interface
           nextMatchId: bm.nextMatchId || undefined,

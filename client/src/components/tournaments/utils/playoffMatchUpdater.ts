@@ -1,5 +1,11 @@
 import { MatchData, MatchUpdateCallbacks } from './matchUpdater';
 import api from '../../../utils/api';
+import {
+  getPlayoffFirstResultBlockedReason,
+  type PlayoffBracketSlotForGuard,
+} from './playoffBracketPlayability';
+
+export type { PlayoffBracketSlotForGuard };
 
 export interface PlayoffMatchUpdateCallbacks extends MatchUpdateCallbacks {
   onBracketUpdate?: () => void;
@@ -37,16 +43,26 @@ export class PlayoffMatchUpdater {
   /**
    * Create a new match for a bracket match
    * Uses bracketMatchId as the matchId parameter - server handles the linkage
+   * @param bracketSlot — when provided, enforces the same rules as the server before PATCH
    */
   async createMatch(
-    matchData: MatchData, 
+    matchData: MatchData,
     bracketMatchId: number,
-    callbacks: PlayoffMatchUpdateCallbacks = {}
+    callbacks: PlayoffMatchUpdateCallbacks = {},
+    bracketSlot?: PlayoffBracketSlotForGuard | null
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
       callbacks.onError?.(validationError);
       throw new Error(validationError);
+    }
+
+    if (bracketSlot) {
+      const blocked = getPlayoffFirstResultBlockedReason(bracketSlot);
+      if (blocked) {
+        callbacks.onError?.(blocked);
+        throw new Error(blocked);
+      }
     }
 
     try {

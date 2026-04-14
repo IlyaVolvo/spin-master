@@ -23,6 +23,7 @@ import { PlayoffPlugin } from '../../src/plugins/PlayoffPlugin';
 jest.mock('../../src/services/playoffBracketService', () => ({
   createPlayoffBracketWithPositions: jest.fn().mockResolvedValue(undefined),
   advanceWinner: jest.fn().mockResolvedValue({ tournamentCompleted: false }),
+  recordPlayoffBracketMatchResult: jest.fn(),
   getBracketStructure: jest.fn().mockResolvedValue({ bracketMatches: [] }),
   generateSeeding: jest.fn((participants: any[]) => participants),
   generateBracketPositions: jest.fn(() => []),
@@ -31,6 +32,12 @@ jest.mock('../../src/services/playoffBracketService', () => ({
     while (size < n) size *= 2;
     return size;
   }),
+  PlayoffBracketResultError: class PlayoffBracketResultError extends Error {
+    constructor(message: string, public readonly statusCode: number = 400) {
+      super(message);
+      this.name = 'PlayoffBracketResultError';
+    }
+  },
 }));
 
 // Mock the match rating service (dynamically imported by the plugin)
@@ -343,152 +350,34 @@ describe('PlayoffPlugin', () => {
   // ─── updateMatch ───────────────────────────────────────────────────────
 
   describe('updateMatch', () => {
-    function makeMockPrisma(opts: {
-      existingMatch?: any;
-      bracketMatch?: any;
-      bracketMatchByMatchId?: any;
-    } = {}) {
-      return {
-        match: {
-          findUnique: jest.fn().mockResolvedValue(opts.existingMatch ?? null),
-          create: jest.fn().mockImplementation(async (args: any) => ({
-            id: 100,
-            ...args.data,
-          })),
-          update: jest.fn().mockImplementation(async (args: any) => ({
-            ...(opts.existingMatch ?? {}),
-            ...args.data,
-          })),
-        },
-        bracketMatch: {
-          findUnique: jest.fn().mockResolvedValue(opts.bracketMatch ?? null),
-          findFirst: jest.fn().mockResolvedValue(opts.bracketMatchByMatchId ?? null),
-          update: jest.fn().mockResolvedValue({}),
-        },
-        tournament: {
-          findUnique: jest.fn().mockResolvedValue({ id: 1, status: 'ACTIVE' }),
-        },
-      };
-    }
+    const mockPrisma: {
+      match?: { findFirst: jest.Mock; update: jest.Mock };
+      bracketMatch?: { findFirst: jest.Mock };
+    } = {};
 
-    it('should throw when match not found and bracketMatch not found', async () => {
-      const mockPrisma = makeMockPrisma();
-
-      await expect(plugin.updateMatch({
-        matchId: 999,
-        tournamentId: 1,
-        player1Sets: 3,
-        player2Sets: 0,
-        player1Forfeit: false,
-        player2Forfeit: false,
-        prisma: mockPrisma,
-      })).rejects.toThrow('Match not found');
-    });
-
-    it('should throw when bracketMatch belongs to different tournament', async () => {
-      const mockPrisma = makeMockPrisma({
-        bracketMatch: {
-          id: 5,
-          tournamentId: 99, // Different tournament
+    beforeEach(() => {
+      const { recordPlayoffBracketMatchResult } = require('../../src/services/playoffBracketService');
+      (recordPlayoffBracketMatchResult as jest.Mock).mockReset();
+      mockPrisma.match = {
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({
+          id: 200,
           member1Id: 1,
           member2Id: 2,
-          match: null,
-        },
-      });
-
-      await expect(plugin.updateMatch({
-        matchId: 5,
-        tournamentId: 1,
-        player1Sets: 3,
-        player2Sets: 0,
-        player1Forfeit: false,
-        player2Forfeit: false,
-        prisma: mockPrisma,
-      })).rejects.toThrow('Match not found');
-    });
-
-    it('should throw when trying to update a BYE match (member2Id=0)', async () => {
-      const mockPrisma = makeMockPrisma({
-        bracketMatch: {
-          id: 5,
-          tournamentId: 1,
-          member1Id: 1,
-          member2Id: 0, // BYE
-          match: null,
-        },
-      });
-
-      await expect(plugin.updateMatch({
-        matchId: 5,
-        tournamentId: 1,
-        player1Sets: 3,
-        player2Sets: 0,
-        player1Forfeit: false,
-        player2Forfeit: false,
-        prisma: mockPrisma,
-      })).rejects.toThrow('Cannot update BYE match');
-    });
-
-    it('should throw when trying to update a BYE match (member1Id=0)', async () => {
-      const mockPrisma = makeMockPrisma({
-        bracketMatch: {
-          id: 5,
-          tournamentId: 1,
-          member1Id: 0, // BYE
-          member2Id: 2,
-          match: null,
-        },
-      });
-
-      await expect(plugin.updateMatch({
-        matchId: 5,
-        tournamentId: 1,
-        player1Sets: 3,
-        player2Sets: 0,
-        player1Forfeit: false,
-        player2Forfeit: false,
-        prisma: mockPrisma,
-      })).rejects.toThrow('Cannot update BYE match');
-    });
-
-    it('should throw when trying to update a BYE match (member2Id=null)', async () => {
-      const mockPrisma = makeMockPrisma({
-        bracketMatch: {
-          id: 5,
-          tournamentId: 1,
-          member1Id: 1,
-          member2Id: null, // No opponent yet
-          match: null,
-        },
-      });
-
-      await expect(plugin.updateMatch({
-        matchId: 5,
-        tournamentId: 1,
-        player1Sets: 3,
-        player2Sets: 0,
-        player1Forfeit: false,
-        player2Forfeit: false,
-        prisma: mockPrisma,
-      })).rejects.toThrow('Cannot update BYE match');
-    });
-
-    it('should create new match when bracketMatch has no linked match', async () => {
-      const bracketMatch = {
-        id: 5,
-        tournamentId: 1,
-        member1Id: 1,
-        member2Id: 2,
-        match: null,
+          tournament: { id: 1 },
+        }),
       };
-      const mockPrisma = makeMockPrisma({ bracketMatch });
-      // Also mock the second findUnique call for getting member IDs
-      mockPrisma.bracketMatch.findUnique
-        .mockResolvedValueOnce(bracketMatch)  // First call: resolve matchId
-        .mockResolvedValueOnce(bracketMatch); // Second call: get member IDs
+      mockPrisma.bracketMatch = {
+        findFirst: jest.fn(),
+      };
+    });
 
-      const { advanceWinner } = require('../../src/services/playoffBracketService');
-      (advanceWinner as jest.Mock).mockResolvedValue({ tournamentCompleted: false });
+    it('delegates to recordPlayoffBracketMatchResult with bracketMatchId as matchId when no Match row exists', async () => {
+      const { recordPlayoffBracketMatchResult } = require('../../src/services/playoffBracketService');
+      (recordPlayoffBracketMatchResult as jest.Mock).mockResolvedValue({
+        match: { id: 100, member1Id: 1, member2Id: 2 },
+        tournamentCompleted: false,
+      });
 
       const result = await plugin.updateMatch({
         matchId: 5,
@@ -500,40 +389,30 @@ describe('PlayoffPlugin', () => {
         prisma: mockPrisma,
       });
 
-      expect(mockPrisma.match.create).toHaveBeenCalled();
-      expect(mockPrisma.bracketMatch.update).toHaveBeenCalledWith({
-        where: { id: 5 },
-        data: { matchId: 100 }, // Links new match to bracket
+      expect(recordPlayoffBracketMatchResult).toHaveBeenCalledWith(mockPrisma, {
+        tournamentId: 1,
+        bracketMatchId: 5,
+        player1Sets: 3,
+        player2Sets: 1,
+        player1Forfeit: false,
+        player2Forfeit: false,
       });
-      expect(result.match).toBeDefined();
+      expect(result.match.id).toBe(100);
+      expect(result.tournamentStateChange).toBeUndefined();
     });
 
-    it('should update existing match when bracketMatch has linked match', async () => {
-      const existingMatch = {
-        id: 10,
+    it('updates an existing Match when matchId refers to a Match in this tournament (edit path)', async () => {
+      const { recordPlayoffBracketMatchResult } = require('../../src/services/playoffBracketService');
+      mockPrisma.match!.findFirst.mockResolvedValue({
+        id: 42,
         tournamentId: 1,
         member1Id: 1,
         member2Id: 2,
-        player1Sets: 0,
-        player2Sets: 0,
-      };
-      const bracketMatch = {
-        id: 5,
-        tournamentId: 1,
-        member1Id: 1,
-        member2Id: 2,
-        match: existingMatch,
-        matchId: 10,
-      };
-      const mockPrisma = makeMockPrisma({
-        bracketMatch,
       });
-
-      const { advanceWinner } = require('../../src/services/playoffBracketService');
-      (advanceWinner as jest.Mock).mockResolvedValue({ tournamentCompleted: false });
+      mockPrisma.bracketMatch!.findFirst.mockResolvedValue({ id: 5, matchId: 42 });
 
       const result = await plugin.updateMatch({
-        matchId: 5,
+        matchId: 42,
         tournamentId: 1,
         player1Sets: 3,
         player2Sets: 2,
@@ -542,25 +421,26 @@ describe('PlayoffPlugin', () => {
         prisma: mockPrisma,
       });
 
-      expect(mockPrisma.match.update).toHaveBeenCalled();
-      expect(result.match).toBeDefined();
+      expect(recordPlayoffBracketMatchResult).not.toHaveBeenCalled();
+      expect(mockPrisma.match!.update).toHaveBeenCalledWith({
+        where: { id: 42 },
+        data: {
+          player1Sets: 3,
+          player2Sets: 2,
+          player1Forfeit: false,
+          player2Forfeit: false,
+        },
+        include: { tournament: true },
+      });
+      expect(result.match.id).toBe(200);
     });
 
-    it('should signal tournament completion when advanceWinner returns tournamentCompleted', async () => {
-      const bracketMatch = {
-        id: 5,
-        tournamentId: 1,
-        member1Id: 1,
-        member2Id: 2,
-        match: null,
-      };
-      const mockPrisma = makeMockPrisma({ bracketMatch });
-      mockPrisma.bracketMatch.findUnique
-        .mockResolvedValueOnce(bracketMatch)
-        .mockResolvedValueOnce(bracketMatch);
-
-      const { advanceWinner } = require('../../src/services/playoffBracketService');
-      (advanceWinner as jest.Mock).mockResolvedValue({ tournamentCompleted: true });
+    it('returns shouldMarkComplete when recordPlayoffBracketMatchResult reports tournament completed', async () => {
+      const { recordPlayoffBracketMatchResult } = require('../../src/services/playoffBracketService');
+      (recordPlayoffBracketMatchResult as jest.Mock).mockResolvedValue({
+        match: { id: 100 },
+        tournamentCompleted: true,
+      });
 
       const result = await plugin.updateMatch({
         matchId: 5,
@@ -572,81 +452,26 @@ describe('PlayoffPlugin', () => {
         prisma: mockPrisma,
       });
 
-      expect(result.tournamentStateChange).toBeDefined();
       expect(result.tournamentStateChange?.shouldMarkComplete).toBe(true);
     });
 
-    it('should not signal completion when advanceWinner returns false', async () => {
-      const bracketMatch = {
-        id: 5,
-        tournamentId: 1,
-        member1Id: 1,
-        member2Id: 2,
-        match: null,
-      };
-      const mockPrisma = makeMockPrisma({ bracketMatch });
-      mockPrisma.bracketMatch.findUnique
-        .mockResolvedValueOnce(bracketMatch)
-        .mockResolvedValueOnce(bracketMatch);
+    it('re-throws PlayoffBracketResultError from recordPlayoffBracketMatchResult', async () => {
+      const { recordPlayoffBracketMatchResult, PlayoffBracketResultError } = require('../../src/services/playoffBracketService');
+      (recordPlayoffBracketMatchResult as jest.Mock).mockRejectedValue(
+        new PlayoffBracketResultError('Bracket match not found', 404)
+      );
 
-      const { advanceWinner } = require('../../src/services/playoffBracketService');
-      (advanceWinner as jest.Mock).mockResolvedValue({ tournamentCompleted: false });
-
-      const result = await plugin.updateMatch({
-        matchId: 5,
-        tournamentId: 1,
-        player1Sets: 3,
-        player2Sets: 1,
-        player1Forfeit: false,
-        player2Forfeit: false,
-        prisma: mockPrisma,
-      });
-
-      expect(result.tournamentStateChange).toBeUndefined();
-    });
-
-    // ─── Winner Determination ──────────────────────────────────────────
-
-    describe('winner determination', () => {
-      async function getWinnerId(p1Sets: number, p2Sets: number, p1Forfeit = false, p2Forfeit = false) {
-        const bracketMatch = {
-          id: 5, tournamentId: 1, member1Id: 10, member2Id: 20, match: null,
-        };
-        const mockPrisma = makeMockPrisma({ bracketMatch });
-        mockPrisma.bracketMatch.findUnique
-          .mockResolvedValueOnce(bracketMatch)
-          .mockResolvedValueOnce(bracketMatch);
-
-        const { advanceWinner } = require('../../src/services/playoffBracketService');
-        (advanceWinner as jest.Mock).mockResolvedValue({ tournamentCompleted: false });
-
-        const result = await plugin.updateMatch({
-          matchId: 5, tournamentId: 1,
-          player1Sets: p1Sets, player2Sets: p2Sets,
-          player1Forfeit: p1Forfeit, player2Forfeit: p2Forfeit,
+      await expect(
+        plugin.updateMatch({
+          matchId: 999,
+          tournamentId: 1,
+          player1Sets: 3,
+          player2Sets: 0,
+          player1Forfeit: false,
+          player2Forfeit: false,
           prisma: mockPrisma,
-        });
-
-        // The winnerId is set in the match data passed to prisma.match.create
-        const createCall = mockPrisma.match.create.mock.calls[0][0];
-        return createCall.data.winnerId;
-      }
-
-      it('should declare player 1 winner when p1Sets > p2Sets', async () => {
-        expect(await getWinnerId(3, 1)).toBe(10);
-      });
-
-      it('should declare player 2 winner when p2Sets > p1Sets', async () => {
-        expect(await getWinnerId(1, 3)).toBe(20);
-      });
-
-      it('should declare player 2 winner when player 1 forfeits', async () => {
-        expect(await getWinnerId(0, 0, true, false)).toBe(20);
-      });
-
-      it('should declare player 1 winner when player 2 forfeits', async () => {
-        expect(await getWinnerId(0, 0, false, true)).toBe(10);
-      });
+        })
+      ).rejects.toThrow('Bracket match not found');
     });
   });
 

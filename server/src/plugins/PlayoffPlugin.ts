@@ -1,5 +1,9 @@
 import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
 import { BaseTournamentPlugin } from './BaseTournamentPlugin';
+import {
+  recordPlayoffBracketMatchResult,
+  PlayoffBracketResultError,
+} from '../services/playoffBracketService';
 
 async function attachRatingHistoryToBracketMatches(
   bracketMatches: any[], 
@@ -560,88 +564,23 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     };
   }> {
     const { matchId, tournamentId, player1Sets, player2Sets, player1Forfeit, player2Forfeit, prisma } = context;
-    
-    // Try to find Match directly
-    let match = await prisma.match.findUnique({
-      where: { id: matchId },
-      include: { tournament: true },
+
+    // 1) Existing Match row in this tournament → edit scores only (no re-advance; client uses real Match id).
+    const existingMatch = await prisma.match.findFirst({
+      where: { id: matchId, tournamentId },
     });
-    
-    let bracketMatchId: number | null = null;
-    
-    // If not found, matchId might be a bracketMatchId
-    if (!match) {
-      const bracketMatch = await prisma.bracketMatch.findUnique({
-        where: { id: matchId },
-        include: { tournament: true, match: true },
+    if (existingMatch) {
+      const bracketLink = await prisma.bracketMatch.findFirst({
+        where: { tournamentId, matchId: existingMatch.id },
       });
-      
-      if (!bracketMatch || bracketMatch.tournamentId !== tournamentId) {
-        throw new Error('Match not found');
+      if (!bracketLink) {
+        throw new PlayoffBracketResultError(
+          'Match is not linked to a bracket slot in this tournament',
+          400
+        );
       }
-      
-      // Check for BYE match
-      const isByeMatch = bracketMatch.member1Id === 0 || 
-                         bracketMatch.member2Id === 0 || 
-                         bracketMatch.member2Id === null;
-      
-      if (isByeMatch) {
-        throw new Error('Cannot update BYE match - BYE players are automatically promoted');
-      }
-      
-      bracketMatchId = matchId;
-      
-      // Use existing match or prepare for creation
-      if (bracketMatch.match) {
-        match = bracketMatch.match;
-      } else {
-        // Will create new match below
-        match = null;
-      }
-    } else {
-      // Match exists, validate it belongs to this tournament
-      if (match.tournamentId !== tournamentId) {
-        throw new Error('Match does not belong to this tournament');
-      }
-      
-      // Get bracketMatchId from existing match
-      const bracketMatch = await prisma.bracketMatch.findFirst({
-        where: { matchId: match.id },
-      });
-      bracketMatchId = bracketMatch?.id || null;
-    }
-    
-    // Get member IDs
-    let member1Id: number;
-    let member2Id: number;
-    
-    if (match) {
-      member1Id = match.member1Id;
-      member2Id = match.member2Id;
-    } else {
-      // Get from bracketMatch
-      const bracketMatch = await prisma.bracketMatch.findUnique({
-        where: { id: bracketMatchId! },
-      });
-      member1Id = bracketMatch!.member1Id;
-      member2Id = bracketMatch!.member2Id;
-    }
-    
-    // Determine winner
-    const winnerId = player1Forfeit 
-      ? member2Id 
-      : player2Forfeit 
-        ? member1Id 
-        : player1Sets > player2Sets 
-          ? member1Id 
-          : member2Id;
-    
-    // Create or update match
-    let updatedMatch;
-    if (match) {
-      // Update existing match
-      updatedMatch = await prisma.match.update({
-        where: { id: match.id },
+      const updatedMatch = await prisma.match.update({
+        where: { id: existingMatch.id },
         data: {
           player1Sets,
           player2Sets,
@@ -650,44 +589,29 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
         },
         include: { tournament: true },
       });
-    } else {
-      // Create new match linked to bracketMatch
-      updatedMatch = await prisma.match.create({
-        data: {
-          tournament: { connect: { id: tournamentId } },
-          member1Id,
-          member2Id,
-          player1Sets,
-          player2Sets,
-          player1Forfeit,
-          player2Forfeit,
+      return { match: updatedMatch };
+    }
+
+    // 2) No Match with this id — treat matchId as BracketMatch id (first-time result: create + link + advance).
+    const { match: updatedMatch, tournamentCompleted } = await recordPlayoffBracketMatchResult(prisma, {
+      tournamentId,
+      bracketMatchId: matchId,
+      player1Sets,
+      player2Sets,
+      player1Forfeit,
+      player2Forfeit,
+    });
+
+    if (tournamentCompleted) {
+      return {
+        match: updatedMatch,
+        tournamentStateChange: {
+          shouldMarkComplete: true,
+          message: 'Tournament completed',
         },
-        include: { tournament: true },
-      });
-      
-      // Link bracketMatch to new match
-      await prisma.bracketMatch.update({
-        where: { id: bracketMatchId! },
-        data: { matchId: updatedMatch.id },
-      });
+      };
     }
-    
-    // Advance winner to next round
-    if (bracketMatchId) {
-      const { advanceWinner } = await import('../services/playoffBracketService');
-      const { tournamentCompleted } = await advanceWinner(tournamentId, bracketMatchId, winnerId);
-      
-      if (tournamentCompleted) {
-        return {
-          match: updatedMatch,
-          tournamentStateChange: {
-            shouldMarkComplete: true,
-            message: 'Tournament completed',
-          },
-        };
-      }
-    }
-    
+
     return { match: updatedMatch };
   }
 

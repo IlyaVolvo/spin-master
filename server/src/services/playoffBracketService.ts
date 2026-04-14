@@ -813,6 +813,112 @@ export async function createPlayoffBracket(
   return createPlayoffBracketWithPositions(tournamentId, participantIds);
 }
 
+/** Client/validation error when recording a playoff bracket result (HTTP 4xx). */
+export class PlayoffBracketResultError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number = 400
+  ) {
+    super(message);
+    this.name = 'PlayoffBracketResultError';
+  }
+}
+
+/**
+ * Record the first result for a bracket slot: create Match, link BracketMatch, advance winner.
+ * `bracketMatchId` must identify a row in this tournament with both players set (non-BYE), no Match yet.
+ * Winner placement in the next round is handled by {@link advanceWinner} (position → member1 vs member2).
+ */
+export async function recordPlayoffBracketMatchResult(
+  prisma: {
+    bracketMatch: {
+      findUnique: (args: any) => Promise<any>;
+      update: (args: any) => Promise<any>;
+    };
+    match: { create: (args: any) => Promise<any> };
+  },
+  params: {
+    tournamentId: number;
+    bracketMatchId: number;
+    player1Sets: number;
+    player2Sets: number;
+    player1Forfeit: boolean;
+    player2Forfeit: boolean;
+  }
+): Promise<{ match: any; tournamentCompleted: boolean }> {
+  const {
+    tournamentId,
+    bracketMatchId,
+    player1Sets,
+    player2Sets,
+    player1Forfeit,
+    player2Forfeit,
+  } = params;
+
+  const bracketMatch = await prisma.bracketMatch.findUnique({
+    where: { id: bracketMatchId },
+    include: { tournament: true, match: true },
+  });
+
+  if (!bracketMatch || bracketMatch.tournamentId !== tournamentId) {
+    throw new PlayoffBracketResultError('Bracket match not found', 404);
+  }
+
+  if (bracketMatch.tournament.status !== 'ACTIVE') {
+    throw new PlayoffBracketResultError('Tournament is not active', 400);
+  }
+
+  const m1 = bracketMatch.member1Id;
+  const m2 = bracketMatch.member2Id;
+
+  if (m1 === 0 || m2 === 0) {
+    throw new PlayoffBracketResultError('Cannot update BYE match', 400);
+  }
+  if (m1 == null || m2 == null) {
+    throw new PlayoffBracketResultError(
+      'Both players must be determined before entering a result',
+      400
+    );
+  }
+
+  if (bracketMatch.match) {
+    throw new PlayoffBracketResultError(
+      'Match already has a result. Clear it first to re-enter.',
+      400
+    );
+  }
+
+  const winnerId = player1Forfeit
+    ? m2
+    : player2Forfeit
+      ? m1
+      : player1Sets > player2Sets
+        ? m1
+        : m2;
+
+  const newMatch = await prisma.match.create({
+    data: {
+      tournament: { connect: { id: tournamentId } },
+      member1Id: m1,
+      member2Id: m2,
+      player1Sets,
+      player2Sets,
+      player1Forfeit,
+      player2Forfeit,
+    },
+    include: { tournament: true },
+  });
+
+  await prisma.bracketMatch.update({
+    where: { id: bracketMatchId },
+    data: { matchId: newMatch.id },
+  });
+
+  const { tournamentCompleted } = await advanceWinner(tournamentId, bracketMatchId, winnerId);
+
+  return { match: newMatch, tournamentCompleted };
+}
+
 /**
  * Advance winner to next round and update next bracket match
  * Now works with bracketMatchId instead of matchId
