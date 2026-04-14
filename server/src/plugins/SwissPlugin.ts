@@ -146,7 +146,7 @@ export class SwissPlugin extends BaseTournamentPlugin {
   }
 
   async onMatchRatingCalculation(context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
-    const { match, prisma } = context;
+    const { match, prisma, winnerId } = context;
     const isForfeit = match.player1Forfeit || match.player2Forfeit;
     if (isForfeit || !match.member1Id || !match.member2Id) return;
 
@@ -155,7 +155,7 @@ export class SwissPlugin extends BaseTournamentPlugin {
       where: { matchId: match.id },
     });
 
-    const player1Won = match.winnerId === match.member1Id;
+    const player1Won = winnerId === match.member1Id;
     await adjustRatingsForSingleMatch(
       match.member1Id,
       match.member2Id,

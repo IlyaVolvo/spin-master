@@ -54,7 +54,9 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
       const postRatingFromMap = postRatingMap && postRatingMap.has(key)
         ? postRatingMap.get(key)
         : undefined;
-      const postRating = postRatingFromMap ?? participant.playerRatingAtTime ?? participant.member.rating;
+      // Prefer cache map; else current member rating; else snapshot at signup (map miss should not mask updated rating).
+      const postRating =
+        postRatingFromMap ?? participant.member?.rating ?? participant.playerRatingAtTime ?? null;
       return {
         ...participant,
         postRatingAtTime: postRating,
@@ -122,7 +124,7 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
   }
 
   async onMatchRatingCalculation(context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
-    const { match, prisma } = context;
+    const { match, prisma, winnerId } = context;
     const isForfeit = match.player1Forfeit || match.player2Forfeit;
     if (isForfeit || !match.member1Id || !match.member2Id) return;
 
@@ -131,7 +133,7 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
       where: { matchId: match.id },
     });
 
-    const player1Won = match.winnerId === match.member1Id;
+    const player1Won = winnerId === match.member1Id;
     await adjustRatingsForSingleMatch(
       match.member1Id,
       match.member2Id,

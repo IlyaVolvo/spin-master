@@ -114,8 +114,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     // Initialize all players with their pre-tournament rating (round 0 = initial)
     const initialRatings = new Map<number, number>();
     participants.forEach(p => {
-      if (p.playerRatingAtTime !== null) {
-        initialRatings.set(p.member.id, p.playerRatingAtTime);
+      const seed = p.playerRatingAtTime ?? p.member?.rating;
+      if (seed !== null && seed !== undefined) {
+        initialRatings.set(p.member.id, seed);
       }
     });
     ratingsByRound.set(0, initialRatings);
@@ -195,8 +196,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         if (!player1 || !player2) return;
         
         // Use ratings from PREVIOUS round (incremental calculation)
-        const ratingBeforeRound1 = prevRatings.get(player1Id) ?? (player1.playerRatingAtTime ?? 1200);
-        const ratingBeforeRound2 = prevRatings.get(player2Id) ?? (player2.playerRatingAtTime ?? 1200);
+        const ratingBeforeRound1 = prevRatings.get(player1Id) ?? (player1.playerRatingAtTime ?? player1.member?.rating ?? 1200);
+        const ratingBeforeRound2 = prevRatings.get(player2Id) ?? (player2.playerRatingAtTime ?? player2.member?.rating ?? 1200);
         
         // Determine winner
         const player1Sets = bracketMatch.player1Sets ?? 0;
@@ -1006,12 +1007,15 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               }
               
               // Round 1: Show original pre-tournament rating (if not a loser or no rating data)
-              if (player.playerRatingAtTime !== null) {
-                return (
-                  <div style={{ fontSize: '11px', color: '#666', fontWeight: 'normal' }}>
-                    ({player.playerRatingAtTime})
-                  </div>
-                );
+              {
+                const r = player.playerRatingAtTime ?? player.member?.rating;
+                if (r != null && r !== undefined) {
+                  return (
+                    <div style={{ fontSize: '11px', color: '#666', fontWeight: 'normal' }}>
+                      ({r})
+                    </div>
+                  );
+                }
               }
             } else {
               // Subsequent rounds: Show incremental rating change from previous round
@@ -1374,7 +1378,10 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           <div style={{ marginLeft: player1Seed !== null && player1Seed !== undefined ? '18px' : '0' }}>
             {/* Show pre-match rating for all rounds */}
             {player1 && player1Name !== 'BYE' && (() => {
-              const ratingBefore = hasResult && player1RatingBefore !== null ? player1RatingBefore : player1?.playerRatingAtTime ?? null;
+              const ratingBefore =
+                hasResult && player1RatingBefore !== null
+                  ? player1RatingBefore
+                  : (player1?.member?.rating ?? player1?.playerRatingAtTime ?? null);
               if (ratingBefore === null) return null;
               return (
                 <span style={{ fontSize: '9px', color: '#666', fontWeight: '400' }}>
@@ -1504,7 +1511,10 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           }}>
             {/* Show pre-match rating for all rounds */}
             {player2 && player2Name !== 'BYE' && (() => {
-              const ratingBefore = hasResult && player2RatingBefore !== null ? player2RatingBefore : player2?.playerRatingAtTime ?? null;
+              const ratingBefore =
+                hasResult && player2RatingBefore !== null
+                  ? player2RatingBefore
+                  : (player2?.member?.rating ?? player2?.playerRatingAtTime ?? null);
               if (ratingBefore === null) return null;
               return (
                 <span style={{ fontSize: '9px', color: '#666', fontWeight: '400' }}>

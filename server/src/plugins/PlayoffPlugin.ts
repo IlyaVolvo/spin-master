@@ -5,6 +5,15 @@ import {
   PlayoffBracketResultError,
 } from '../services/playoffBracketService';
 
+/** Shown on bracket API next to slot names: live `member.rating` during ACTIVE; `postRatingAtTime` when enriched for COMPLETED. */
+function participantBracketDisplayRating(participant: any | undefined): number | null {
+  if (!participant) return null;
+  if (participant.postRatingAtTime != null) return participant.postRatingAtTime;
+  const live = participant.member?.rating;
+  if (live != null && live !== undefined) return live;
+  return participant.playerRatingAtTime ?? null;
+}
+
 async function attachRatingHistoryToBracketMatches(
   bracketMatches: any[], 
   tournamentParticipants: any[], 
@@ -71,9 +80,9 @@ async function attachRatingHistoryToBracketMatches(
     if (!bracketMatch.match) {
       const participant1 = participantMap.get(member1Id);
       const participant2 = participantMap.get(member2Id);
-      
-      bracketMatch.player1RatingAtTime = participant1?.playerRatingAtTime ?? null;
-      bracketMatch.player2RatingAtTime = participant2?.playerRatingAtTime ?? null;
+
+      bracketMatch.player1RatingAtTime = participantBracketDisplayRating(participant1);
+      bracketMatch.player2RatingAtTime = participantBracketDisplayRating(participant2);
       continue;
     }
 
@@ -103,8 +112,12 @@ async function attachRatingHistoryToBracketMatches(
 
     const participant1 = participantMap.get(member1Id);
     const participant2 = participantMap.get(member2Id);
-    bracketMatch.player1RatingAtTime = participant1?.playerRatingAtTime ?? null;
-    bracketMatch.player2RatingAtTime = participant2?.playerRatingAtTime ?? null;
+    bracketMatch.player1RatingAtTime = member1History
+      ? member1History.rating - member1History.ratingChange
+      : participantBracketDisplayRating(participant1);
+    bracketMatch.player2RatingAtTime = member2History
+      ? member2History.rating - member2History.ratingChange
+      : participantBracketDisplayRating(participant2);
   }
 }
 
@@ -229,7 +242,7 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
   }
 
   async onMatchRatingCalculation(context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
-    const { match, prisma } = context;
+    const { match, prisma, winnerId } = context;
     const isForfeit = match.player1Forfeit || match.player2Forfeit;
     if (isForfeit || !match.member1Id || !match.member2Id) return;
 
@@ -239,13 +252,15 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     });
 
     const { adjustRatingsForSingleMatch } = await import('../services/usattRatingService');
-    const player1Won = match.winnerId === match.member1Id;
+    // Match rows do not persist winnerId; routes pass the computed winner explicitly.
+    const player1Won = winnerId === match.member1Id;
     await adjustRatingsForSingleMatch(
       match.member1Id,
       match.member2Id,
       player1Won,
       match.tournamentId,
       match.id,
+      { useCurrentMemberRatings: true },
     );
   }
 

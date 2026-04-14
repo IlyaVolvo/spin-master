@@ -87,6 +87,7 @@ function makeParticipant(memberId: number, playerRatingAtTime: number | null) {
 describe('usattRatingService recalculation flows', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPrisma.member.findUnique.mockReset();
     mockPrisma.pointExchangeRule.findMany.mockResolvedValue(FALLBACK_RULES);
     mockPrisma.member.update.mockImplementation(async ({ where, data }: any) => ({
       id: where.id,
@@ -605,6 +606,30 @@ describe('usattRatingService recalculation flows', () => {
           data: expect.objectContaining({ reason: 'PLAYOFF_MATCH_COMPLETED' }),
         })
       );
+    });
+
+    it('uses current member.rating when useCurrentMemberRatings is set (sequential playoff)', async () => {
+      const tournament = {
+        id: 42,
+        type: 'PLAYOFF',
+        participants: [
+          { memberId: 1, playerRatingAtTime: 1200, member: { id: 1, rating: 1200 } },
+          { memberId: 2, playerRatingAtTime: 1200, member: { id: 2, rating: 1200 } },
+        ],
+      };
+
+      mockPrisma.tournament.findUnique.mockResolvedValue(tournament);
+      mockPrisma.member.findUnique.mockImplementation(({ where }: any) => {
+        if (where.id === 1) return { rating: 1195 };
+        if (where.id === 2) return { rating: 1200 };
+        return null;
+      });
+
+      await adjustRatingsForSingleMatch(1, 2, true, 42, 402, { useCurrentMemberRatings: true });
+
+      // Diff 1200 - 1195 = 5 → 0–12 bucket, upset (lower-rated player 1 wins) → 8 points
+      expect(mockPrisma.member.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { rating: 1203 } });
+      expect(mockPrisma.member.update).toHaveBeenCalledWith({ where: { id: 2 }, data: { rating: 1192 } });
     });
   });
 });

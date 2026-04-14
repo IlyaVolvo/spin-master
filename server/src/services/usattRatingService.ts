@@ -957,6 +957,11 @@ export async function getPlayerRatings(memberIds: number[]): Promise<Map<number,
   return ratings;
 }
 
+export type AdjustRatingsForSingleMatchOptions = {
+  /** When true, use each player's current `member.rating` (for sequential playoff K-style updates). Default uses `playerRatingAtTime`. */
+  useCurrentMemberRatings?: boolean;
+};
+
 /**
  * Calculate rating adjustment for a single match
  * Uses simplified USATT point exchange system
@@ -966,7 +971,8 @@ export async function adjustRatingsForSingleMatch(
   player2Id: number,
   player1Won: boolean,
   tournamentId: number,
-  matchId?: number
+  matchId?: number,
+  options?: AdjustRatingsForSingleMatchOptions
 ): Promise<void> {
   // BYE matches (memberId === 0) should not affect ratings
   if (player1Id === 0 || player2Id === 0 || player2Id === null) {
@@ -994,10 +1000,27 @@ export async function adjustRatingsForSingleMatch(
     throw new Error('Players not found in tournament participants');
   }
 
-  // Use playerRatingAtTime (rating when tournament was created), not current rating
-  // This ensures we calculate based on ratings at the time of the match
-  const rating1Before = participant1.playerRatingAtTime ?? 1200; // Default to 1200 if unrated
-  const rating2Before = participant2.playerRatingAtTime ?? 1200;
+  const useCurrent = options?.useCurrentMemberRatings === true;
+
+  let rating1Before: number;
+  let rating2Before: number;
+
+  if (useCurrent) {
+    const [m1, m2] = await Promise.all([
+      prisma.member.findUnique({ where: { id: player1Id }, select: { rating: true } }),
+      prisma.member.findUnique({ where: { id: player2Id }, select: { rating: true } }),
+    ]);
+    if (!m1 || !m2) {
+      throw new Error('Player not found');
+    }
+    rating1Before = m1.rating ?? 1200;
+    rating2Before = m2.rating ?? 1200;
+  } else {
+    // Use playerRatingAtTime (rating when tournament was created), not current rating
+    // This ensures we calculate based on ratings at the time of the match
+    rating1Before = participant1.playerRatingAtTime ?? 1200; // Default to 1200 if unrated
+    rating2Before = participant2.playerRatingAtTime ?? 1200;
+  }
 
   // Calculate rating difference
   const ratingDiff = rating2Before - rating1Before;
