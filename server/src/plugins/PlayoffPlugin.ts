@@ -565,7 +565,50 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
   }> {
     const { matchId, tournamentId, player1Sets, player2Sets, player1Forfeit, player2Forfeit, prisma } = context;
 
-    // 1) Existing Match row in this tournament → edit scores only (no re-advance; client uses real Match id).
+    // 1) Resolve BracketMatch by id first so BracketMatch.id cannot collide with Match.id on PATCH .../matches.
+    const bracketMatchForId = await prisma.bracketMatch.findUnique({
+      where: { id: matchId },
+      include: { match: true },
+    });
+    const bracketInTournament =
+      bracketMatchForId && bracketMatchForId.tournamentId === tournamentId;
+
+    if (bracketInTournament) {
+      if (bracketMatchForId.match) {
+        const updatedMatch = await prisma.match.update({
+          where: { id: bracketMatchForId.match.id },
+          data: {
+            player1Sets,
+            player2Sets,
+            player1Forfeit,
+            player2Forfeit,
+          },
+          include: { tournament: true },
+        });
+        return { match: updatedMatch };
+      }
+
+      const { match: updatedMatch, tournamentCompleted } = await recordPlayoffBracketMatchResult(prisma, {
+        tournamentId,
+        bracketMatchId: bracketMatchForId.id,
+        player1Sets,
+        player2Sets,
+        player1Forfeit,
+        player2Forfeit,
+      });
+      if (tournamentCompleted) {
+        return {
+          match: updatedMatch,
+          tournamentStateChange: {
+            shouldMarkComplete: true,
+            message: 'Tournament completed',
+          },
+        };
+      }
+      return { match: updatedMatch };
+    }
+
+    // 2) No bracket row for this id in this tournament — treat matchId as Match id (must be linked to a slot).
     const existingMatch = await prisma.match.findFirst({
       where: { id: matchId, tournamentId },
     });
@@ -592,7 +635,7 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
       return { match: updatedMatch };
     }
 
-    // 2) No Match with this id — treat matchId as BracketMatch id (first-time result: create + link + advance).
+    // 3) Legacy: id is a bracket slot in another tournament or unknown — delegate to service (404).
     const { match: updatedMatch, tournamentCompleted } = await recordPlayoffBracketMatchResult(prisma, {
       tournamentId,
       bracketMatchId: matchId,
