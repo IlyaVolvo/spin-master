@@ -877,38 +877,49 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
   // Calculate final ratings using 4-pass algorithm (based on playerRatingAtTime)
   const finalRatings = await calculateRatingsForRoundRobinTournament(tournament);
 
-  // Update player ratings in database with calculated final ratings using batch updates
+  /**
+   * Apply tournament outcome to the latest DB rating (supports overlapping RRs):
+   * - Rated at enrollment: newRating = (member.rating ?? enrollment) + (computedFinal - enrollment)
+   * - Unrated at enrollment: use algorithm absolute once (same as computedFinal)
+   */
+  const appliedNewRatings = new Map<number, number>();
+  for (const participant of tournament.participants) {
+    const computedFinal = finalRatings.get(participant.memberId);
+    if (computedFinal === undefined) continue;
+
+    const enrollment = participant.playerRatingAtTime;
+    let newRating: number;
+
+    if (enrollment === null) {
+      newRating = Math.max(0, Math.round(computedFinal));
+    } else {
+      const delta = computedFinal - enrollment;
+      const anchor = participant.member.rating ?? enrollment;
+      newRating = Math.max(0, Math.round(anchor + delta));
+    }
+    appliedNewRatings.set(participant.memberId, newRating);
+  }
+
   await Promise.all(
-    Array.from(finalRatings.entries()).map(([memberId, finalRating]) =>
+    Array.from(appliedNewRatings.entries()).map(([memberId, newRating]) =>
       prisma.member.update({
-      where: { id: memberId },
-      data: { rating: finalRating },
+        where: { id: memberId },
+        data: { rating: newRating },
       })
     )
   );
-
-  // Get current ratings from database (after update) in a single query
-  // These are the actual current ratings that should be stored in history
-  const participantIds = tournament.participants.map(p => p.memberId);
-  const members = await prisma.member.findMany({
-    where: { id: { in: participantIds } },
-    select: { id: true, rating: true },
-  });
-  const currentRatingsMap = new Map<number, number | null>();
-  members.forEach(member => {
-    currentRatingsMap.set(member.id, member.rating);
-  });
 
   // Get tournament recordedAt time (or createdAt if recordedAt is null) for timestamp
   // For ROUND_ROBIN, ratings are calculated when tournament is completed, so use recordedAt
   const tournamentTimestamp = tournament.recordedAt || tournament.createdAt;
 
-  // Create rating history entries for each participant
-  // Use current rating from database, but calculate change from playerRatingAtTime
+  // Create rating history entries for each participant (change vs rating before this update)
   for (const participant of tournament.participants) {
-    const ratingBefore = participant.playerRatingAtTime ?? 1200;
-    const ratingAfter = currentRatingsMap.get(participant.memberId) ?? ratingBefore;
-    const ratingChange = ratingAfter - ratingBefore;
+    const ratingAfter = appliedNewRatings.get(participant.memberId);
+    if (ratingAfter === undefined) continue;
+
+    const priorRating = participant.member.rating ?? participant.playerRatingAtTime ?? 1200;
+    const ratingChange = ratingAfter - priorRating;
     
     // Only create history entry if rating changed
     if (ratingChange !== 0) {

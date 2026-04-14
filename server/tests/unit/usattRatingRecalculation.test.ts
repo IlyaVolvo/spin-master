@@ -308,6 +308,49 @@ describe('usattRatingService recalculation flows', () => {
       });
     });
 
+    it('applies RR delta vs enrollment onto current DB when they differ (e.g. overlapping RRs)', async () => {
+      const recordedAt = new Date('2026-02-10T12:00:00.000Z');
+      const tournament = {
+        id: 36,
+        type: 'ROUND_ROBIN',
+        createdAt: new Date('2026-02-09T12:00:00.000Z'),
+        recordedAt,
+        participants: [
+          { memberId: 1, playerRatingAtTime: 1500, member: { id: 1, rating: 1600 } },
+          makeParticipant(2, 1500),
+        ],
+        matches: [
+          {
+            member1Id: 1,
+            member2Id: 2,
+            player1Sets: 3,
+            player2Sets: 1,
+            player1Forfeit: false,
+            player2Forfeit: false,
+          },
+        ],
+      };
+
+      mockPrisma.tournament.findUnique.mockResolvedValue(tournament);
+      mockPrisma.ratingHistory.findFirst.mockResolvedValue(null);
+
+      await createRatingHistoryForRoundRobinTournament(36);
+
+      // Same match as prior test → algorithm absolute 1508 / 1492 from 1500 enrollment; +8 / -8 deltas.
+      expect(mockPrisma.member.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { rating: 1608 } });
+      expect(mockPrisma.member.update).toHaveBeenCalledWith({ where: { id: 2 }, data: { rating: 1492 } });
+
+      expect(mockPrisma.ratingHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          memberId: 1,
+          rating: 1608,
+          ratingChange: 8,
+          reason: 'TOURNAMENT_COMPLETED',
+          tournamentId: 36,
+        }),
+      });
+    });
+
     it('uses createdAt timestamp when recordedAt is null', async () => {
       const createdAt = new Date('2026-02-03T09:00:00.000Z');
       const tournament = {
