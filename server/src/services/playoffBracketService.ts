@@ -3,6 +3,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { ClientHttpError } from '../http/clientHttpError';
 import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
@@ -814,12 +815,9 @@ export async function createPlayoffBracket(
 }
 
 /** Client/validation error when recording a playoff bracket result (HTTP 4xx). */
-export class PlayoffBracketResultError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode: number = 400
-  ) {
-    super(message);
+export class PlayoffBracketResultError extends ClientHttpError {
+  constructor(message: string, statusCode: number = 400) {
+    super(message, statusCode);
     this.name = 'PlayoffBracketResultError';
   }
 }

@@ -12,6 +12,7 @@ import { requestLogger } from './middleware/requestLogger';
 import authRoutes from './routes/auth';
 import matchRoutes from './routes/matches';
 import playerRoutes from './routes/players';
+import tournamentBracketRoutes from './routes/tournamentBracketRoutes';
 import tournamentRoutes from './routes/tournaments';
 import { initializeCache } from './services/cacheService';
 import { setIO } from './services/socketService';
@@ -118,6 +119,7 @@ logger.debug('Session middleware configured', {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
+app.use('/api/tournaments', tournamentBracketRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/matches', matchRoutes);
 
