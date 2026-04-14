@@ -1,6 +1,6 @@
 import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
 import { BaseTournamentPlugin } from './BaseTournamentPlugin';
-import { createRatingHistoryForRoundRobinTournament, adjustRatingsForSingleMatch } from '../services/usattRatingService';
+import { createRatingHistoryForRoundRobinTournament } from '../services/usattRatingService';
 
 export class RoundRobinPlugin extends BaseTournamentPlugin {
   type = 'ROUND_ROBIN';
@@ -123,24 +123,9 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
     return this.isComplete(tournament) && tournament.status !== 'COMPLETED';
   }
 
-  async onMatchRatingCalculation(context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
-    const { match, prisma, winnerId } = context;
-    const isForfeit = match.player1Forfeit || match.player2Forfeit;
-    if (isForfeit || !match.member1Id || !match.member2Id) return;
-
-    // Delete any existing rating history for this match (handles re-scoring)
-    await prisma.ratingHistory.deleteMany({
-      where: { matchId: match.id },
-    });
-
-    const player1Won = winnerId === match.member1Id;
-    await adjustRatingsForSingleMatch(
-      match.member1Id,
-      match.member2Id,
-      player1Won,
-      match.tournamentId,
-      match.id,
-    );
+  async onMatchRatingCalculation(_context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
+    // Round robin: ratings are computed only at tournament completion (USATT 4-pass rules)
+    // via createRatingHistoryForRoundRobinTournament → TOURNAMENT_COMPLETED, not per match.
   }
 
   canCancel(tournament: any): boolean {

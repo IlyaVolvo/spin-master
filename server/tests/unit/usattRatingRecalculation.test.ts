@@ -580,7 +580,7 @@ describe('usattRatingService recalculation flows', () => {
       );
     });
 
-    it('uses PLAYOFF_MATCH_COMPLETED for playoff tournaments', async () => {
+    it('uses MATCH_COMPLETED for playoff tournaments (same as other per-match paths)', async () => {
       const tournament = {
         id: 41,
         type: 'PLAYOFF',
@@ -597,13 +597,13 @@ describe('usattRatingService recalculation flows', () => {
       expect(mockPrisma.ratingHistory.create).toHaveBeenNthCalledWith(
         1,
         expect.objectContaining({
-          data: expect.objectContaining({ reason: 'PLAYOFF_MATCH_COMPLETED' }),
+          data: expect.objectContaining({ reason: 'MATCH_COMPLETED' }),
         })
       );
       expect(mockPrisma.ratingHistory.create).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining({
-          data: expect.objectContaining({ reason: 'PLAYOFF_MATCH_COMPLETED' }),
+          data: expect.objectContaining({ reason: 'MATCH_COMPLETED' }),
         })
       );
     });

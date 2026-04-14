@@ -1064,17 +1064,13 @@ export async function adjustRatingsForSingleMatch(
     }),
   ]);
 
-  // Determine the reason based on tournament type
-  // For playoff tournaments, use PLAYOFF_MATCH_COMPLETED; otherwise use MATCH_COMPLETED
-  const ratingChangeReason = tournament.type === 'PLAYOFF' ? 'PLAYOFF_MATCH_COMPLETED' : 'MATCH_COMPLETED';
-
-  // Create rating history entries with appropriate reason
+  // Create rating history entries (playoff / swiss / standalone match path)
   await (prisma as any).ratingHistory.create({
     data: {
       memberId: player1Id,
       rating: newRating1,
       ratingChange: ratingChange1,
-      reason: ratingChangeReason,
+      reason: 'MATCH_COMPLETED',
       tournamentId: tournamentId,
       matchId: matchId,
     },
@@ -1085,7 +1081,7 @@ export async function adjustRatingsForSingleMatch(
       memberId: player2Id,
       rating: newRating2,
       ratingChange: ratingChange2,
-      reason: ratingChangeReason,
+      reason: 'MATCH_COMPLETED',
       tournamentId: tournamentId,
       matchId: matchId,
     },
