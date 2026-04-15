@@ -43,11 +43,72 @@ describe('Functional: members & lists', () => {
 
     expect(res.body.firstName).toBe('Newbie');
     expect(res.body.rating).toBe(1420);
+    expect(res.body.isActive).toBe(true);
 
     const row = await prisma.member.findUnique({ where: { email: 'newbie.functional@test.local' } });
     expect(row).not.toBeNull();
     expect(row!.rating).toBe(1420);
     expect(row!.roles).toContain('PLAYER');
+  });
+
+  it('POST /api/players rejects duplicate email ignoring case', async () => {
+    const { token } = await seedOrganizer(prisma);
+    await request(app)
+      .post('/api/players')
+      .set(authHeader(token))
+      .send({
+        firstName: 'First',
+        lastName: 'DupEmail',
+        email: 'dupcase.functional@test.local',
+        gender: 'MALE',
+        birthDate: '1998-04-10',
+        roles: ['PLAYER'],
+        skipSimilarityCheck: true,
+      })
+      .expect(201);
+
+    const dup = await request(app)
+      .post('/api/players')
+      .set(authHeader(token))
+      .send({
+        firstName: 'Second',
+        lastName: 'DupEmail',
+        email: 'DUPCASE.FUNCTIONAL@Test.Local',
+        gender: 'MALE',
+        birthDate: '1999-05-11',
+        roles: ['PLAYER'],
+        skipSimilarityCheck: true,
+      })
+      .expect(400);
+
+    expect(dup.body.error).toMatch(/email already exists/i);
+  });
+
+  it('POST /api/players/import returns structured validation on bad CSV', async () => {
+    const { token } = await seedOrganizer(prisma);
+    const csv = ['Polly,Wordlot,badcsv.functional@test.local,1999-13-24,Male,P,,,1300'].join('\n');
+    const res = await request(app)
+      .post('/api/players/import')
+      .set(authHeader(token))
+      .field('sendEmail', 'false')
+      .attach('file', Buffer.from(csv, 'utf-8'), 'bad.csv')
+      .expect(400);
+
+    expect(res.body.importValidation).toBeDefined();
+    expect(res.body.importValidation.parseReport).toBeDefined();
+    const pr = res.body.importValidation.parseReport as {
+      totalDataRows: number;
+      validRows: number;
+      rejectedRows: number;
+      failedRows: Array<{ rowNumber: number; rawLine: string; messages: string[] }>;
+    };
+    expect(pr.totalDataRows).toBe(1);
+    expect(pr.validRows).toBe(0);
+    expect(pr.rejectedRows).toBe(1);
+    expect(pr.failedRows).toHaveLength(1);
+    expect(pr.failedRows[0].rowNumber).toBe(1);
+    expect(pr.failedRows[0].rawLine).toContain('1999-13-24');
+    expect(pr.failedRows[0].messages.join(' ')).toMatch(/not a valid calendar date/i);
   });
 
   it('CSV import + GET /export align with DB', async () => {

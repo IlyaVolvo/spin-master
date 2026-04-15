@@ -50,6 +50,14 @@ interface SimilarName {
   similarity: number;
 }
 
+interface ImportParseReport {
+  fileErrors: string[];
+  totalDataRows: number;
+  validRows: number;
+  rejectedRows: number;
+  failedRows: Array<{ rowNumber: number; rawLine: string; messages: string[] }>;
+}
+
 interface PlayerImportResultsPayload {
   total: number;
   successful: number;
@@ -57,7 +65,13 @@ interface PlayerImportResultsPayload {
   emailFailed: number;
   emailSent: boolean;
   successfulPlayers: Array<{ firstName: string; lastName: string; email: string }>;
-  failedPlayers: Array<{ firstName: string; lastName: string; email?: string; error: string }>;
+  failedPlayers: Array<{
+    firstName: string;
+    lastName: string;
+    email?: string;
+    birthDate?: string | null;
+    error: string;
+  }>;
   emailFailedPlayers: Array<{ firstName: string; lastName: string; email: string; error: string }>;
 }
 
@@ -105,7 +119,9 @@ const Players: React.FC = () => {
   const [pendingActiveToggle, setPendingActiveToggle] = useState<{ playerId: number; isActive: boolean; emailConfirmedAt?: string | null; playerName: string } | null>(null);
   const [nameDisplayOrder, setNameDisplayOrderState] = useState<NameDisplayOrder>(getNameDisplayOrder());
   const [importModal, setImportModal] = useState<
-    { kind: 'results'; results: PlayerImportResultsPayload } | { kind: 'error'; message: string } | null
+    | { kind: 'results'; results: PlayerImportResultsPayload }
+    | { kind: 'error'; message: string; importValidation?: { errors: string[]; parseReport: ImportParseReport | null } }
+    | null
   >(null);
   const suspiciousRatingConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const [showSuspiciousRatingConfirm, setShowSuspiciousRatingConfirm] = useState(false);
@@ -294,8 +310,12 @@ const Players: React.FC = () => {
   // Password reset state (only visible to Admins)
   const [isPasswordResetLocked, setIsPasswordResetLocked] = useState(false);
   
-  // Delete member state
-  const [canDeleteMember, setCanDeleteMember] = useState(false);
+  /** When set, admin is editing another member and we loaded DELETE /can-delete (match counts). */
+  const [memberDeleteEligibility, setMemberDeleteEligibility] = useState<{
+    canDelete: boolean;
+    matchCount: number;
+    tournamentParticipantCount: number;
+  } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Field-level validation for add-player form
@@ -1184,8 +1204,13 @@ const Players: React.FC = () => {
       // Reset file input
       event.target.value = '';
     } catch (err: any) {
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to import players';
-      setImportModal({ kind: 'error', message: errorMessage });
+      const data = err.response?.data;
+      const errorMessage = data?.error || err.message || 'Failed to import players';
+      setImportModal({
+        kind: 'error',
+        message: errorMessage,
+        importValidation: data?.importValidation,
+      });
       event.target.value = '';
     }
   };
@@ -1506,6 +1531,7 @@ const Players: React.FC = () => {
     }
     
     try {
+      setMemberDeleteEligibility(null);
       // First, check if member is already in the members list (cached)
       let member = members.find(m => m.id === memberId);
       
@@ -1558,19 +1584,27 @@ const Players: React.FC = () => {
       setLastConfirmedEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
       setIsPasswordResetLocked(false);
       
-      // Check if member can be deleted (Admin only)
+      // Load delete eligibility when an admin opens another member's profile (not self)
       const currentMember = getMember();
       const isAdminUser = currentMember && currentMember.roles && currentMember.roles.includes('ADMIN');
-      if (isAdminUser) {
+      const editingSomeoneElse = currentMember && member.id !== currentMember.id;
+      if (isAdminUser && editingSomeoneElse) {
         try {
           const deleteCheckResponse = await api.get(`/players/${member.id}/can-delete`);
-          setCanDeleteMember(deleteCheckResponse.data.canDelete);
-        } catch (err) {
-          // If check fails, assume cannot delete
-          setCanDeleteMember(false);
+          setMemberDeleteEligibility({
+            canDelete: !!deleteCheckResponse.data.canDelete,
+            matchCount: Number(deleteCheckResponse.data.matchCount) || 0,
+            tournamentParticipantCount: Number(deleteCheckResponse.data.tournamentParticipantCount) || 0,
+          });
+        } catch {
+          setMemberDeleteEligibility({
+            canDelete: false,
+            matchCount: 0,
+            tournamentParticipantCount: 0,
+          });
         }
       } else {
-        setCanDeleteMember(false);
+        setMemberDeleteEligibility(null);
       }
     } catch (err: unknown) {
       // Provide detailed error information
@@ -1632,7 +1666,7 @@ const Players: React.FC = () => {
     setCurrentPassword('');
     setNewPassword('');
     setShowEnteredPasswords(false);
-    setCanDeleteMember(false);
+    setMemberDeleteEligibility(null);
     setShowDeleteConfirm(false);
     setConfirmPassword('');
     setIsPasswordResetLocked(false);
@@ -3592,7 +3626,13 @@ const Players: React.FC = () => {
           >
             <div
               className="card"
-              style={{ maxWidth: '700px', width: '90%', maxHeight: '80vh', overflow: 'auto', position: 'relative' }}
+              style={{
+                maxWidth: importModal.kind === 'error' ? 'min(920px, 96vw)' : '700px',
+                width: '90%',
+                maxHeight: '80vh',
+                overflow: 'auto',
+                position: 'relative',
+              }}
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-labelledby="import-modal-title"
@@ -3624,21 +3664,143 @@ const Players: React.FC = () => {
                       ×
                     </button>
                   </div>
-                  <div
-                    style={{
-                      marginBottom: '20px',
-                      padding: '12px',
-                      backgroundColor: '#fdecea',
-                      border: '1px solid #f5c6cb',
-                      borderRadius: '4px',
-                      color: '#721c24',
-                      whiteSpace: 'pre-wrap',
-                      fontSize: '14px',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {importModal.message}
-                  </div>
+
+                  {importModal.importValidation?.parseReport && (
+                    <div
+                      style={{
+                        marginBottom: '16px',
+                        padding: '12px 14px',
+                        backgroundColor: '#fff8e1',
+                        border: '1px solid #ffe082',
+                        borderRadius: '4px',
+                        fontSize: '14px',
+                        color: '#5d4037',
+                      }}
+                    >
+                      <strong>Parse summary</strong>
+                      <div style={{ marginTop: '6px' }}>
+                        Data rows read: <strong>{importModal.importValidation.parseReport.totalDataRows}</strong>
+                        {' · '}
+                        Valid for import: <strong>{importModal.importValidation.parseReport.validRows}</strong>
+                        {' · '}
+                        Rows rejected: <strong>{importModal.importValidation.parseReport.rejectedRows}</strong>
+                      </div>
+                      <div style={{ marginTop: '6px', fontSize: '12px', color: '#6d4c41' }}>
+                        Nothing was saved. Fix the CSV and try again.
+                      </div>
+                    </div>
+                  )}
+
+                  {importModal.importValidation?.parseReport?.fileErrors &&
+                    importModal.importValidation.parseReport.fileErrors.length > 0 && (
+                      <div
+                        style={{
+                          marginBottom: '16px',
+                          padding: '12px',
+                          backgroundColor: '#fdecea',
+                          border: '1px solid #f5c6cb',
+                          borderRadius: '4px',
+                          color: '#721c24',
+                          fontSize: '13px',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        <strong>File / column issues</strong>
+                        <ul style={{ margin: '8px 0 0', paddingLeft: '20px' }}>
+                          {importModal.importValidation.parseReport.fileErrors.map((fe, i) => (
+                            <li key={i}>{fe}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                  {importModal.importValidation?.parseReport?.failedRows &&
+                    importModal.importValidation.parseReport.failedRows.length > 0 && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#333' }}>Rejected rows (from your file)</h4>
+                        <div style={{ maxHeight: '40vh', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead>
+                              <tr style={{ backgroundColor: '#f5f5f5' }}>
+                                <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd', width: '72px' }}>
+                                  Row #
+                                </th>
+                                <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>CSV line</th>
+                                <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Issues</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {importModal.importValidation.parseReport.failedRows.map((fr) => (
+                                <tr key={fr.rowNumber}>
+                                  <td style={{ padding: '8px', borderBottom: '1px solid #eee', verticalAlign: 'top', fontWeight: 600 }}>
+                                    {fr.rowNumber}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: '8px',
+                                      borderBottom: '1px solid #eee',
+                                      verticalAlign: 'top',
+                                      fontFamily: 'monospace',
+                                      fontSize: '12px',
+                                      whiteSpace: 'pre-wrap',
+                                      wordBreak: 'break-all',
+                                      color: '#333',
+                                    }}
+                                  >
+                                    {fr.rawLine}
+                                  </td>
+                                  <td style={{ padding: '8px', borderBottom: '1px solid #eee', verticalAlign: 'top', color: '#721c24' }}>
+                                    <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                                      {fr.messages.map((m, j) => (
+                                        <li key={j}>{m}</li>
+                                      ))}
+                                    </ul>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                  {!importModal.importValidation?.parseReport && (
+                    <div
+                      style={{
+                        marginBottom: '20px',
+                        padding: '12px',
+                        backgroundColor: '#fdecea',
+                        border: '1px solid #f5c6cb',
+                        borderRadius: '4px',
+                        color: '#721c24',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '14px',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {importModal.message}
+                    </div>
+                  )}
+
+                  {importModal.importValidation?.parseReport && (
+                    <div
+                      style={{
+                        marginBottom: '20px',
+                        padding: '12px',
+                        backgroundColor: '#f9f9f9',
+                        border: '1px solid #e0e0e0',
+                        borderRadius: '4px',
+                        color: '#444',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '12px',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <strong style={{ display: 'block', marginBottom: '6px', fontSize: '13px' }}>All messages</strong>
+                      {importModal.message}
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                     <button
                       type="button"
@@ -3767,7 +3929,10 @@ const Players: React.FC = () => {
 
                   {importModal.results.failed > 0 && (
                     <div style={{ marginBottom: '20px' }}>
-                      <h4 style={{ marginBottom: '10px', color: '#e74c3c' }}>Failed Players:</h4>
+                      <h4 style={{ marginBottom: '10px', color: '#e74c3c' }}>Failed import rows</h4>
+                      <p style={{ margin: '0 0 10px', fontSize: '13px', color: '#666' }}>
+                        Values below are what was read from your CSV for each row that could not be imported.
+                      </p>
                       <div style={{ maxHeight: '300px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <thead>
@@ -3775,18 +3940,32 @@ const Players: React.FC = () => {
                               <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>First Name</th>
                               <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Last Name</th>
                               <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Date of birth</th>
                               <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Error</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {importModal.results.failedPlayers.map((player, index) => (
-                              <tr key={index}>
-                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
-                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
-                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email || '-'}</td>
-                                <td style={{ padding: '8px', borderBottom: '1px solid #eee', color: '#e74c3c' }}>{player.error}</td>
-                              </tr>
-                            ))}
+                            {importModal.results.failedPlayers.map((player, index) => {
+                              const birthIssue = /birth|date of birth/i.test(player.error);
+                              return (
+                                <tr key={index}>
+                                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
+                                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
+                                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email || '—'}</td>
+                                  <td
+                                    style={{
+                                      padding: '8px',
+                                      borderBottom: '1px solid #eee',
+                                      color: birthIssue ? '#c62828' : undefined,
+                                      fontWeight: birthIssue ? 600 : undefined,
+                                    }}
+                                  >
+                                    {player.birthDate ?? '—'}
+                                  </td>
+                                  <td style={{ padding: '8px', borderBottom: '1px solid #eee', color: '#e74c3c' }}>{player.error}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -6000,25 +6179,44 @@ const Players: React.FC = () => {
                                 </div>
                               )}
                 
-                {/* Delete Member Section - Only visible to Admins if member can be deleted and not self-deleting an admin */}
-                {isAdminUser && canDeleteMember && !(isEditingSelf && editRoles.includes('ADMIN')) && (
+                {/* Delete Member — admins editing another member; button only when API allows (no matches) */}
+                {isAdminUser && !isEditingSelf && memberDeleteEligibility && (
                   <div style={{ marginTop: '16px', padding: '12px', background: '#ffebee', borderRadius: '4px', border: '1px solid #f44336' }}>
                     <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold', color: '#d32f2f' }}>Delete Member</h5>
-                    <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#666' }}>
-                      This member is not referenced in any matches and can be permanently deleted.
-                    </p>
-                    <button
-                      onClick={() => setShowDeleteConfirm(true)}
-                      className="button-3d danger"
-                      style={{ 
-                        fontSize: '13px', 
-                        padding: '8px 16px', 
-                        borderRadius: '4px', 
-                        cursor: 'pointer' 
-                      }}
-                    >
-                      Delete Member
-                    </button>
+                    {memberDeleteEligibility.canDelete ? (
+                      <>
+                        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#666' }}>
+                          This member is not referenced in any matches and can be permanently deleted.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowDeleteConfirm(true)}
+                          className="button-3d danger"
+                          style={{
+                            fontSize: '13px',
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Delete Member
+                        </button>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#555', lineHeight: 1.5 }}>
+                        <p style={{ margin: '0 0 8px 0' }}>
+                          This member cannot be deleted while they appear in{' '}
+                          <strong>{memberDeleteEligibility.matchCount}</strong> recorded match(es) (excluding byes).
+                        </p>
+                        {memberDeleteEligibility.tournamentParticipantCount > 0 && (
+                          <p style={{ margin: '0 0 8px 0' }}>
+                            They have <strong>{memberDeleteEligibility.tournamentParticipantCount}</strong> tournament registration(s); those
+                            would be removed automatically if deletion were allowed.
+                          </p>
+                        )}
+                        <p style={{ margin: 0, color: '#666' }}>Deactivate the member or adjust match history if you need to remove them from the roster.</p>
+                      </div>
+                    )}
                   </div>
                 )}
                 

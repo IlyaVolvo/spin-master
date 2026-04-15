@@ -15,6 +15,8 @@ import {
   isValidMemberName,
   isValidPhoneNumber,
   isValidRatingInput,
+  normalizeMemberEmail,
+  parseBirthDateFromCsvValue,
 } from '../utils/memberValidation';
 import { looksLikePlayersCsvHeaderRow, playersCsvCanonicalHeadersForParse } from '../utils/playersCsvLayout';
 import { stripSensitiveMemberFields } from '../utils/memberSerialization';
@@ -172,7 +174,21 @@ function parseCsvLine(line: string): string[] {
   return result;
 }
 
-function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; errors: string[] } {
+type CsvImportParseReport = {
+  fileErrors: string[];
+  totalDataRows: number;
+  validRows: number;
+  rejectedRows: number;
+  failedRows: Array<{ rowNumber: number; rawLine: string; messages: string[] }>;
+};
+
+type ParsePlayersCsvResult = {
+  players: ImportedPlayerPayload[];
+  errors: string[];
+  parseReport?: CsvImportParseReport;
+};
+
+function parsePlayersCsv(text: string): ParsePlayersCsvResult {
   const { minDate, maxDate } = getBirthDateBounds();
   const minDateString = minDate.toISOString().split('T')[0];
   const maxDateString = maxDate.toISOString().split('T')[0];
@@ -181,8 +197,17 @@ function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; erro
     return trimmed && !trimmed.startsWith('#');
   });
 
+  const emptyReport = (fileErrors: string[]): CsvImportParseReport => ({
+    fileErrors,
+    totalDataRows: 0,
+    validRows: 0,
+    rejectedRows: 0,
+    failedRows: [],
+  });
+
   if (lines.length === 0) {
-    return { players: [], errors: ['CSV file must contain at least one data row'] };
+    const msg = 'CSV file must contain at least one data row';
+    return { players: [], errors: [msg], parseReport: emptyReport([msg]) };
   }
 
   const firstCells = parseCsvLine(lines[0]);
@@ -203,7 +228,8 @@ function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; erro
     }
 
     if (missingHeaders.length > 0) {
-      return { players: [], errors: [`Missing required columns: ${missingHeaders.join(', ')}`] };
+      const msg = `Missing required columns: ${missingHeaders.join(', ')}`;
+      return { players: [], errors: [msg], parseReport: emptyReport([msg]) };
     }
 
     dataLines = lines.slice(1);
@@ -215,24 +241,34 @@ function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; erro
   }
 
   if (dataLines.length === 0) {
-    return {
-      players: [],
-      errors: [
-        hasHeaderRow
-          ? 'CSV file must contain at least one data row below the header'
-          : 'CSV file must contain at least one data row',
-      ],
-    };
+    const msg = hasHeaderRow
+      ? 'CSV file must contain at least one data row below the header'
+      : 'CSV file must contain at least one data row';
+    return { players: [], errors: [msg], parseReport: emptyReport([msg]) };
   }
 
   const players: ImportedPlayerPayload[] = [];
   const errors: string[] = [];
+  const rowFailureByNumber = new Map<number, { rowNumber: number; rawLine: string; messages: string[] }>();
+
+  const pushRowIssue = (rowNumber: number, rawLine: string, message: string) => {
+    errors.push(message);
+    let entry = rowFailureByNumber.get(rowNumber);
+    if (!entry) {
+      entry = { rowNumber, rawLine, messages: [] };
+      rowFailureByNumber.set(rowNumber, entry);
+    }
+    if (!entry.messages.includes(message)) {
+      entry.messages.push(message);
+    }
+  };
 
   dataLines.forEach((line, index) => {
     const values = parseCsvLine(line);
     const player: ImportedPlayerPayload = {};
     const rowNumber = index + dataRowNumberOffset;
     let rowRatingError = '';
+    let birthDateCellHadProblem = false;
 
     headers.forEach((header, i) => {
       const value = values[i]?.trim() || '';
@@ -250,12 +286,26 @@ function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; erro
           break;
         case 'date of birth':
         case 'birthdate': {
-          const date = new Date(value);
-          if (isValidBirthDate(date)) {
-            player.birthDate = date.toISOString().split('T')[0];
-          } else {
-            errors.push(`Row ${rowNumber}: Birth date must be between ${minDateString} and ${maxDateString}`);
+          const parsed = parseBirthDateFromCsvValue(value);
+          if (parsed === null) {
+            birthDateCellHadProblem = true;
+            pushRowIssue(
+              rowNumber,
+              line,
+              `Row ${rowNumber}: Birth date is not a valid calendar date. Use YYYY-MM-DD (e.g. 1999-12-24).`
+            );
+            break;
           }
+          if (!isValidBirthDate(parsed)) {
+            birthDateCellHadProblem = true;
+            pushRowIssue(
+              rowNumber,
+              line,
+              `Row ${rowNumber}: Birth date must be between ${minDateString} and ${maxDateString}`
+            );
+            break;
+          }
+          player.birthDate = parsed.toISOString().split('T')[0];
           break;
         }
         case 'gender': {
@@ -295,6 +345,10 @@ function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; erro
       }
     });
 
+    if (birthDateCellHadProblem) {
+      return;
+    }
+
     const rowErrors: string[] = [];
 
     if (!player.firstName || !player.lastName) {
@@ -307,7 +361,7 @@ function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; erro
       rowErrors.push(`Row ${rowNumber}: Invalid email format`);
     }
 
-    if (!player.birthDate) {
+    if (!player.birthDate && !birthDateCellHadProblem) {
       rowErrors.push(`Row ${rowNumber}: Birth date is required`);
     }
 
@@ -320,7 +374,7 @@ function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; erro
     }
 
     if (rowErrors.length > 0) {
-      errors.push(...rowErrors);
+      rowErrors.forEach((msg) => pushRowIssue(rowNumber, line, msg));
       return;
     }
 
@@ -328,16 +382,37 @@ function parsePlayersCsv(text: string): { players: ImportedPlayerPayload[]; erro
     players.push(player);
   });
 
-  return { players, errors };
+  const failedRows = [...rowFailureByNumber.values()].sort((a, b) => a.rowNumber - b.rowNumber);
+  const fileOnlyErrors = errors.filter((e) => !/^Row\s+\d+:/i.test(e));
+  const parseReport: CsvImportParseReport = {
+    fileErrors: fileOnlyErrors.length > 0 ? fileOnlyErrors : [],
+    totalDataRows: dataLines.length,
+    validRows: players.length,
+    rejectedRows: failedRows.length,
+    failedRows,
+  };
+
+  return { players, errors, parseReport };
 }
 
-function getImportedPlayers(req: AuthRequest & { file?: UploadedImportFile }): { players: ImportedPlayerPayload[]; errors: string[] } {
+function getImportedPlayers(req: AuthRequest & { file?: UploadedImportFile }): ParsePlayersCsvResult {
   if (Array.isArray(req.body?.players)) {
     return { players: req.body.players as ImportedPlayerPayload[], errors: [] };
   }
 
   if (!req.file) {
-    return { players: [], errors: ['CSV file is required'] };
+    const msg = 'CSV file is required';
+    return {
+      players: [],
+      errors: [msg],
+      parseReport: {
+        fileErrors: [msg],
+        totalDataRows: 0,
+        validRows: 0,
+        rejectedRows: 0,
+        failedRows: [],
+      },
+    };
   }
 
   const csvText = req.file.buffer.toString('utf-8');
@@ -897,7 +972,7 @@ router.post('/', [
           proposedMemberData: {
             firstName: trimmedFirstName,
             lastName: trimmedLastName,
-            email: email.trim(),
+            email: normalizeMemberEmail(email),
             gender,
             birthDate: birthDate || null,
             rating: rating || null,
@@ -910,8 +985,8 @@ router.post('/', [
       }
     }
 
-    // Use provided email (required)
-    const finalEmail = email.trim();
+    // Use provided email (required), canonical form for uniqueness
+    const finalEmail = normalizeMemberEmail(email);
     
     // Check if email already exists
     const existing = await prisma.member.findUnique({
@@ -947,7 +1022,7 @@ router.post('/', [
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
         qrTokenHash: generateQrTokenHash(),
-        isActive: false,
+        isActive: true,
         emailConfirmedAt: null,
         mustResetPassword: true,
         passwordResetToken: passwordResetToken,
@@ -1276,21 +1351,21 @@ router.patch('/:id', [
     
     // Email can only be changed by the member themselves or Admins
     if (email !== undefined) {
-      // Check if email is being changed
-      if (email !== existingMember.email) {
+      const newEmail = normalizeMemberEmail(typeof email === 'string' ? email : '');
+      const currentEmail = normalizeMemberEmail(existingMember.email);
+      if (newEmail !== currentEmail) {
         // Verify authorization for email change
         if (!isCurrentMember && !hasAdminAccess) {
           return res.status(403).json({ error: 'Only the member themselves or Admins can change email' });
         }
         
-        // Check if email already exists
         const emailExists = await prisma.member.findUnique({
-          where: { email },
+          where: { email: newEmail },
         });
         if (emailExists) {
           return res.status(400).json({ error: 'Email already in use' });
         }
-        updateData.email = email;
+        updateData.email = newEmail;
       }
     }
     
@@ -2012,7 +2087,13 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
   try {
     const imported = getImportedPlayers(req);
     if (imported.errors.length > 0) {
-      return res.status(400).json({ error: `Import validation errors:\n${imported.errors.join('\n')}` });
+      return res.status(400).json({
+        error: `Import validation errors:\n${imported.errors.join('\n')}`,
+        importValidation: {
+          errors: imported.errors,
+          parseReport: imported.parseReport ?? null,
+        },
+      });
     }
 
     const { players } = imported;
@@ -2022,9 +2103,22 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
       return res.status(400).json({ error: 'No valid players to import. Please check your CSV file.' });
     }
 
+    type ImportFailedRow = {
+      firstName: string;
+      lastName: string;
+      email?: string;
+      birthDate: string | null;
+      error: string;
+    };
+
+    const annotateFailedImport = (
+      player: ImportedPlayerPayload,
+      row: { firstName: string; lastName: string; email?: string; error: string }
+    ): ImportFailedRow => ({ ...row, birthDate: player.birthDate ?? null });
+
     const results = {
       successful: [] as Array<{ firstName: string; lastName: string; email: string }>,
-      failed: [] as Array<{ firstName: string; lastName: string; email?: string; error: string }>,
+      failed: [] as ImportFailedRow[],
       emailFailed: [] as Array<{ firstName: string; lastName: string; email: string; error: string }>,
     };
 
@@ -2053,20 +2147,24 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
       try {
         // Validate and clean input fields - ensure proper separation
         if (!player.firstName || typeof player.firstName !== 'string') {
-          results.failed.push({
-            firstName: player.firstName || 'Unknown',
-            lastName: player.lastName || 'Unknown',
-            error: 'First name is required and must be a string',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName: player.firstName || 'Unknown',
+              lastName: player.lastName || 'Unknown',
+              error: 'First name is required and must be a string',
+            })
+          );
           continue;
         }
 
         if (!player.lastName || typeof player.lastName !== 'string') {
-          results.failed.push({
-            firstName: player.firstName || 'Unknown',
-            lastName: player.lastName || 'Unknown',
-            error: 'Last name is required and must be a string',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName: player.firstName || 'Unknown',
+              lastName: player.lastName || 'Unknown',
+              error: 'Last name is required and must be a string',
+            })
+          );
           continue;
         }
         
@@ -2074,60 +2172,72 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
         const lastName = player.lastName.trim();
 
         if (!isValidMemberName(firstName)) {
-          results.failed.push({
-            firstName,
-            lastName,
-            error: 'First name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              error: 'First name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens',
+            })
+          );
           continue;
         }
 
         if (!isValidMemberName(lastName)) {
-          results.failed.push({
-            firstName,
-            lastName,
-            error: 'Last name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              error: 'Last name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens',
+            })
+          );
           continue;
         }
         
         if (!firstName || !lastName) {
-          results.failed.push({
-            firstName,
-            lastName,
-            error: 'First name and last name cannot be empty after trimming',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              error: 'First name and last name cannot be empty after trimming',
+            })
+          );
           continue;
         }
         
         // Validate email (required)
         if (!player.email || typeof player.email !== 'string' || !player.email.trim()) {
-          results.failed.push({
-            firstName,
-            lastName,
-            error: 'Email is required',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              error: 'Email is required',
+            })
+          );
           continue;
         }
         
-        const email = player.email.trim();
+        const email = normalizeMemberEmail(player.email);
         if (!isValidEmailFormat(email)) {
-          results.failed.push({
-            firstName,
-            lastName,
-            email,
-            error: 'Invalid email format',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              email,
+              error: 'Invalid email format',
+            })
+          );
           continue;
         }
 
         if (!isValidRatingInput(player.rating)) {
-          results.failed.push({
-            firstName,
-            lastName,
-            email,
-            error: 'Rating must be an integer between 0 and 9999',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              email,
+              error: 'Rating must be an integer between 0 and 9999',
+            })
+          );
           continue;
         }
         
@@ -2135,12 +2245,14 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
         if (player.phone) {
           const phone = typeof player.phone === 'string' ? player.phone.trim() : String(player.phone).trim();
           if (phone && !isValidPhoneNumber(phone)) {
-            results.failed.push({
-              firstName,
-              lastName,
-              email,
-              error: 'Invalid phone number format. Please enter a valid US phone number',
-            });
+            results.failed.push(
+              annotateFailedImport(player, {
+                firstName,
+                lastName,
+                email,
+                error: 'Invalid phone number format. Please enter a valid US phone number',
+              })
+            );
             continue;
           }
         }
@@ -2148,24 +2260,28 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
         // Validate roles if provided
         if (player.roles !== undefined) {
           if (!isValidRoles(player.roles)) {
-            results.failed.push({
-              firstName,
-              lastName,
-              email,
-              error: 'Invalid roles. Roles must be an array containing only: PLAYER, COACH, ADMIN, ORGANIZER',
-            });
+            results.failed.push(
+              annotateFailedImport(player, {
+                firstName,
+                lastName,
+                email,
+                error: 'Invalid roles. Roles must be an array containing only: PLAYER, COACH, ADMIN, ORGANIZER',
+              })
+            );
             continue;
           }
         }
         
         // Validate birthDate (required)
         if (!player.birthDate) {
-          results.failed.push({
-            firstName,
-            lastName,
-            email,
-            error: 'Birth date is required',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              email,
+              error: 'Birth date is required',
+            })
+          );
           continue;
         }
         
@@ -2174,21 +2290,25 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
         try {
           birthDate = new Date(player.birthDate);
           if (isNaN(birthDate.getTime()) || !isValidBirthDate(birthDate)) {
-            results.failed.push({
-              firstName,
-              lastName,
-              email,
-              error: getBirthDateValidationMessage(),
-            });
+            results.failed.push(
+              annotateFailedImport(player, {
+                firstName,
+                lastName,
+                email,
+                error: getBirthDateValidationMessage(),
+              })
+            );
             continue;
           }
         } catch (error) {
-          results.failed.push({
-            firstName,
-            lastName,
-            email,
-            error: 'Invalid birth date format',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              email,
+              error: 'Invalid birth date format',
+            })
+          );
           continue;
         }
         
@@ -2197,23 +2317,27 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
 
         // Check for duplicate by email - reject if email already exists
         if (emailMap.has(emailKey)) {
-          results.failed.push({
-            firstName,
-            lastName,
-            email,
-            error: 'Email already exists',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              email,
+              error: 'Email already exists',
+            })
+          );
           continue;
         }
 
         // Check for duplicate by name
         if (nameMap.has(nameKey)) {
-          results.failed.push({
-            firstName,
-            lastName,
-            email,
-            error: 'Name already exists',
-          });
+          results.failed.push(
+            annotateFailedImport(player, {
+              firstName,
+              lastName,
+              email,
+              error: 'Name already exists',
+            })
+          );
           continue;
         }
 
@@ -2319,12 +2443,14 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
           timestamp: Date.now(),
         });
       } catch (error: any) {
-        results.failed.push({
-          firstName: player.firstName || 'Unknown',
-          lastName: player.lastName || 'Unknown',
-          email: player.email,
-          error: error.message || 'Unknown error',
-        });
+        results.failed.push(
+          annotateFailedImport(player, {
+            firstName: player.firstName || 'Unknown',
+            lastName: player.lastName || 'Unknown',
+            email: player.email,
+            error: error.message || 'Unknown error',
+          })
+        );
       }
     }
 

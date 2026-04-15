@@ -23,6 +23,11 @@ export function isValidPhoneNumber(phone: string): boolean {
   return false;
 }
 
+/** Canonical form for storage and duplicate checks (trim + lowercase). */
+export function normalizeMemberEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 export function isValidEmailFormat(email: string): boolean {
   if (!email || email.trim() === '') return false;
 
@@ -59,6 +64,31 @@ export function isValidBirthDate(input: string | Date): boolean {
   const { minDate, maxDate } = getBirthDateBounds();
 
   return birthDate >= minDate && birthDate <= maxDate;
+}
+
+/**
+ * Parse birth date from CSV (strict YYYY-MM-DD with real calendar validation, e.g. rejects 1999-13-24).
+ * Falls back to Date parsing for other formats. Returns null if unparseable or not a real calendar day.
+ */
+export function parseBirthDateFromCsvValue(raw: string): Date | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (iso) {
+    const y = Number(iso[1]);
+    const mo = Number(iso[2]);
+    const d = Number(iso[3]);
+    const dt = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) {
+      return null;
+    }
+    return dt;
+  }
+
+  const fallback = new Date(trimmed);
+  if (Number.isNaN(fallback.getTime())) return null;
+  return fallback;
 }
 
 export function isValidRatingInput(value: unknown): boolean {

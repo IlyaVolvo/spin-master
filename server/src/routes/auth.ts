@@ -6,6 +6,7 @@ import nodemailer from 'nodemailer';
 import { body, validationResult } from 'express-validator';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
+import { normalizeMemberEmail } from '../utils/memberValidation';
 
 const router = express.Router();
 
@@ -121,9 +122,10 @@ router.post('/member/login', [
     }
 
     const { email, password } = req.body;
+    const loginEmail = normalizeMemberEmail(typeof email === 'string' ? email : '');
 
     const member = await prisma.member.findUnique({
-      where: { email },
+      where: { email: loginEmail },
     });
 
     if (!member) {
@@ -380,7 +382,7 @@ router.post('/member/forgot-password', [
     }
 
     const { email } = req.body as { email: string };
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeMemberEmail(email);
 
     const member = await prisma.member.findUnique({
       where: { email: normalizedEmail },
@@ -453,7 +455,7 @@ router.post('/member/reset-password-with-token', [
       newPassword: string;
     };
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeMemberEmail(email);
 
     const member = await prisma.member.findFirst({
       where: { passwordResetToken: token },

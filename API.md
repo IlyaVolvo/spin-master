@@ -399,7 +399,7 @@ Multipart form data with CSV file
   "failed": 1,
   "emailFailed": 0,
   "successfulPlayers": [{ "firstName": "...", "lastName": "...", "email": "..." }],
-  "failedPlayers": [{ "firstName": "...", "lastName": "...", "email": "...", "error": "..." }],
+  "failedPlayers": [{ "firstName": "...", "lastName": "...", "email": "...", "birthDate": "2000-01-15 or null", "error": "..." }],
   "emailFailedPlayers": []
 }
 ```

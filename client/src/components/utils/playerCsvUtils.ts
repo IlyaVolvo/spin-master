@@ -7,6 +7,7 @@ import {
   isValidEmailFormat,
   isValidPhoneNumber,
   isValidRatingInput,
+  parseBirthDateFromCsvValue,
 } from '../../../../server/src/utils/memberValidation';
 import {
   looksLikePlayersCsvHeaderRow,
@@ -227,7 +228,8 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
     const player: any = {};
     const rowNumber = index + dataRowNumberOffset;
     let rowRatingError = '';
-    
+    let birthDateCellHadProblem = false;
+
     headers.forEach((header, i) => {
       const value = values[i]?.trim() || '';
       if (value === '') return;
@@ -243,15 +245,23 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
           player.email = value;
           break;
         case 'date of birth':
-        case 'birthdate':
-          // Try to parse date
-          const date = new Date(value);
-          if (isValidBirthDate(date)) {
-            player.birthDate = date.toISOString().split('T')[0];
-          } else {
-            errors.push(`Row ${rowNumber}: Birth date must be between ${minDateString} and ${maxDateString}`);
+        case 'birthdate': {
+          const parsed = parseBirthDateFromCsvValue(value);
+          if (parsed === null) {
+            birthDateCellHadProblem = true;
+            errors.push(
+              `Row ${rowNumber}: Birth date is not a valid calendar date. Use YYYY-MM-DD (e.g. 1999-12-24).`
+            );
+            break;
           }
+          if (!isValidBirthDate(parsed)) {
+            birthDateCellHadProblem = true;
+            errors.push(`Row ${rowNumber}: Birth date must be between ${minDateString} and ${maxDateString}`);
+            break;
+          }
+          player.birthDate = parsed.toISOString().split('T')[0];
           break;
+        }
         case 'gender':
           const genderUpper = value.toUpperCase();
           if (['MALE', 'FEMALE', 'OTHER'].includes(genderUpper)) {
@@ -289,7 +299,11 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
           break;
       }
     });
-    
+
+    if (birthDateCellHadProblem) {
+      return;
+    }
+
     // Validate required fields
     const rowErrors: string[] = [];
     
@@ -307,7 +321,7 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
     }
     
     // Validate birthdate (required)
-    if (!player.birthDate) {
+    if (!player.birthDate && !birthDateCellHadProblem) {
       rowErrors.push(`Row ${rowNumber}: Birth date is required`);
     }
 
