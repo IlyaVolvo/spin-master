@@ -29,8 +29,8 @@ export async function postRrMatch(
     .expect(201);
 }
 
-/** Play every RR pair then PATCH complete (USATT-style batch rating at completion). */
-export async function completeRoundRobin(
+/** All RR matches with scores; does not PATCH complete (for capturing pre-completion anchors). */
+export async function playAllRoundRobinMatches(
   tournamentId: number,
   token: string,
   participantIds: number[],
@@ -41,6 +41,17 @@ export async function completeRoundRobin(
     const w = pickWinner(a, b);
     await postRrMatch(tournamentId, token, w, w === a ? b : a, 3, 1, application);
   }
+}
+
+/** Play every RR pair then PATCH complete (USATT-style batch rating at completion). */
+export async function completeRoundRobin(
+  tournamentId: number,
+  token: string,
+  participantIds: number[],
+  pickWinner: (a: number, b: number) => number,
+  application: Application = app,
+): Promise<void> {
+  await playAllRoundRobinMatches(tournamentId, token, participantIds, pickWinner, application);
   await request(application)
     .patch(`/api/tournaments/${tournamentId}/complete`)
     .set(authHeader(token))

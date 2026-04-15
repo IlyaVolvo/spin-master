@@ -15,9 +15,14 @@ jest.mock('nodemailer', () => ({
 
 import request from 'supertest';
 import { app, prisma } from '../../src/index';
-import { authHeader, completeRoundRobin } from './httpHelpers';
+import { authHeader, completeRoundRobin, playAllRoundRobinMatches } from './httpHelpers';
 import { useFunctionalDbLifecycle } from './lifecycle';
 import { seedOrganizer, seedPlayers } from './helpers';
+import {
+  expectedRatingsAfterRoundRobinCompletion,
+  expectedRatingsPlayoffBracketChain,
+  expectedRatingsSwissEnrollmentLastWrite,
+} from '../helpers/ratingEtalon';
 
 jest.setTimeout(180000);
 
@@ -47,13 +52,36 @@ describe('Functional: basic tournaments', () => {
 
       const tid = created.body.id as number;
       const ratingById = Object.fromEntries(p.map((x) => [x.id, x.rating])) as Record<number, number>;
-      await completeRoundRobin(tid, token, ids, (a, b) => (ratingById[a] >= ratingById[b] ? a : b));
+      await playAllRoundRobinMatches(tid, token, ids, (a, b) => (ratingById[a] >= ratingById[b] ? a : b));
+
+      const anchorsRows = await prisma.member.findMany({ where: { id: { in: ids } } });
+      const anchorsBeforeCompletion = new Map<number, number | null>(
+        anchorsRows.map((m) => [m.id, m.rating]),
+      );
+
+      await request(app)
+        .patch(`/api/tournaments/${tid}/complete`)
+        .set(authHeader(token))
+        .expect(200);
 
       const t = await prisma.tournament.findUnique({ where: { id: tid } });
       expect(t?.status).toBe('COMPLETED');
 
+      const tournamentFull = await prisma.tournament.findUnique({
+        where: { id: tid },
+        include: { participants: { include: { member: true } }, matches: true },
+      });
+      expect(tournamentFull).not.toBeNull();
+      const expected = await expectedRatingsAfterRoundRobinCompletion(
+        tournamentFull!,
+        anchorsBeforeCompletion,
+      );
+
       const updated = await prisma.member.findMany({ where: { id: { in: ids } } });
-      const top = updated.reduce((best, m) => ((m.rating ?? 0) > (best.rating ?? 0) ? m : best));
+      for (const m of updated) {
+        expect(m.rating).toBe(expected.get(m.id));
+      }
+      const top = updated.reduce((best, x) => ((x.rating ?? 0) > (best.rating ?? 0) ? x : best));
       expect(top.id).toBe(ids[0]);
     });
 
@@ -80,14 +108,37 @@ describe('Functional: basic tournaments', () => {
 
       const tid = created.body.id as number;
 
-      await completeRoundRobin(tid, token, ids, (a, b) => {
+      await playAllRoundRobinMatches(tid, token, ids, (a, b) => {
         const ra = ratingById[a];
         const rb = ratingById[b];
         return ra < rb ? a : b;
       });
 
+      const anchorsRows = await prisma.member.findMany({ where: { id: { in: ids } } });
+      const anchorsBeforeCompletion = new Map<number, number | null>(
+        anchorsRows.map((m) => [m.id, m.rating]),
+      );
+
+      await request(app)
+        .patch(`/api/tournaments/${tid}/complete`)
+        .set(authHeader(token))
+        .expect(200);
+
       const t = await prisma.tournament.findUnique({ where: { id: tid } });
       expect(t?.status).toBe('COMPLETED');
+
+      const tournamentFull = await prisma.tournament.findUnique({
+        where: { id: tid },
+        include: { participants: { include: { member: true } }, matches: true },
+      });
+      const expected = await expectedRatingsAfterRoundRobinCompletion(
+        tournamentFull!,
+        anchorsBeforeCompletion,
+      );
+      const members = await prisma.member.findMany({ where: { id: { in: ids } } });
+      for (const m of members) {
+        expect(m.rating).toBe(expected.get(m.id));
+      }
 
       const hist = await prisma.ratingHistory.findMany({
         where: { tournamentId: tid, reason: 'TOURNAMENT_COMPLETED' },
@@ -153,6 +204,18 @@ describe('Functional: basic tournaments', () => {
 
       const t = await prisma.tournament.findUnique({ where: { id: tid } });
       expect(t?.status).toBe('COMPLETED');
+
+      const bracketRows = await prisma.bracketMatch.findMany({
+        where: { tournamentId: tid },
+        include: { match: true },
+        orderBy: [{ round: 'asc' }, { position: 'asc' }],
+      });
+      const initial = new Map(p.map((x) => [x.id, x.rating]));
+      const expectedPlayoff = await expectedRatingsPlayoffBracketChain(bracketRows, initial);
+      const membersAfter = await prisma.member.findMany({ where: { id: { in: [a, b, c, d] } } });
+      for (const m of membersAfter) {
+        expect(m.rating).toBe(expectedPlayoff.get(m.id));
+      }
     });
   });
 
@@ -213,6 +276,23 @@ describe('Functional: basic tournaments', () => {
       expect(t?.status).toBe('COMPLETED');
       const sd = await prisma.swissTournamentData.findUnique({ where: { tournamentId: tid } });
       expect(sd?.isCompleted).toBe(true);
+
+      const swissTournament = await prisma.tournament.findUnique({
+        where: { id: tid },
+        include: { participants: { include: { member: true } } },
+      });
+      const allMatches = await prisma.match.findMany({
+        where: { tournamentId: tid },
+        orderBy: [{ round: 'asc' }, { id: 'asc' }],
+      });
+      const expectedSwiss = await expectedRatingsSwissEnrollmentLastWrite(
+        allMatches,
+        swissTournament!.participants as any,
+      );
+      const membersSwiss = await prisma.member.findMany({ where: { id: { in: ids } } });
+      for (const m of membersSwiss) {
+        expect(m.rating).toBe(expectedSwiss.get(m.id));
+      }
     });
   });
 });

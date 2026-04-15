@@ -15,9 +15,13 @@ jest.mock('nodemailer', () => ({
 
 import request from 'supertest';
 import { app, prisma } from '../../src/index';
-import { authHeader, completeRoundRobin } from './httpHelpers';
+import { authHeader, playAllRoundRobinMatches } from './httpHelpers';
 import { useFunctionalDbLifecycle } from './lifecycle';
 import { seedOrganizer, seedPlayers } from './helpers';
+import {
+  expectedRatingsAfterRoundRobinCompletion,
+  expectedRatingsPlayoffBracketChain,
+} from '../helpers/ratingEtalon';
 
 jest.setTimeout(180000);
 
@@ -58,7 +62,30 @@ describe('Functional: compound tournaments', () => {
         where: { tournamentId: child.id },
       });
       const cids = part.map((x) => x.memberId);
-      await completeRoundRobin(child.id, token, cids, (x, y) => (ratings.get(x)! >= ratings.get(y)! ? x : y));
+      await playAllRoundRobinMatches(child.id, token, cids, (x, y) =>
+        ratings.get(x)! >= ratings.get(y)! ? x : y,
+      );
+      const anchorsRows = await prisma.member.findMany({ where: { id: { in: cids } } });
+      const anchorsBeforeCompletion = new Map<number, number | null>(
+        anchorsRows.map((m) => [m.id, m.rating]),
+      );
+      await request(app)
+        .patch(`/api/tournaments/${child.id}/complete`)
+        .set(authHeader(token))
+        .expect(200);
+
+      const tournamentFull = await prisma.tournament.findUnique({
+        where: { id: child.id },
+        include: { participants: { include: { member: true } }, matches: true },
+      });
+      const expected = await expectedRatingsAfterRoundRobinCompletion(
+        tournamentFull!,
+        anchorsBeforeCompletion,
+      );
+      const members = await prisma.member.findMany({ where: { id: { in: cids } } });
+      for (const m of members) {
+        expect(m.rating).toBe(expected.get(m.id));
+      }
     }
 
     const parent = await prisma.tournament.findUnique({ where: { id: parentId } });
@@ -101,8 +128,31 @@ describe('Functional: compound tournaments', () => {
     for (const child of prelims) {
       const part = await prisma.tournamentParticipant.findMany({ where: { tournamentId: child.id } });
       const cids = part.map((x) => x.memberId);
-      await completeRoundRobin(child.id, token, cids, (x, y) => (Math.max(x, y) === x ? x : y));
+      await playAllRoundRobinMatches(child.id, token, cids, (x, y) => (Math.max(x, y) === x ? x : y));
+      const anchorsRows = await prisma.member.findMany({ where: { id: { in: cids } } });
+      const anchorsBeforeCompletion = new Map<number, number | null>(
+        anchorsRows.map((m) => [m.id, m.rating]),
+      );
+      await request(app)
+        .patch(`/api/tournaments/${child.id}/complete`)
+        .set(authHeader(token))
+        .expect(200);
+      const tournamentFull = await prisma.tournament.findUnique({
+        where: { id: child.id },
+        include: { participants: { include: { member: true } }, matches: true },
+      });
+      const expectedPrelim = await expectedRatingsAfterRoundRobinCompletion(
+        tournamentFull!,
+        anchorsBeforeCompletion,
+      );
+      const membersPrelim = await prisma.member.findMany({ where: { id: { in: cids } } });
+      for (const m of membersPrelim) {
+        expect(m.rating).toBe(expectedPrelim.get(m.id));
+      }
     }
+
+    const ratingsAfterPrelims = await prisma.member.findMany({ where: { id: { in: [a, b, c, d] } } });
+    const initialPlayoff = new Map(ratingsAfterPrelims.map((m) => [m.id, m.rating ?? 1200]));
 
     const playoff = await prisma.tournament.findFirst({
       where: { parentTournamentId: parentId, type: 'PLAYOFF' },
@@ -148,6 +198,17 @@ describe('Functional: compound tournaments', () => {
 
     const root = await prisma.tournament.findUnique({ where: { id: parentId } });
     expect(root?.status).toBe('COMPLETED');
+
+    const bracketRows = await prisma.bracketMatch.findMany({
+      where: { tournamentId: playoff!.id },
+      include: { match: true },
+      orderBy: [{ round: 'asc' }, { position: 'asc' }],
+    });
+    const expectedPlayoff = await expectedRatingsPlayoffBracketChain(bracketRows, initialPlayoff);
+    const membersFinal = await prisma.member.findMany({ where: { id: { in: [a, b, c, d] } } });
+    for (const m of membersFinal) {
+      expect(m.rating).toBe(expectedPlayoff.get(m.id));
+    }
   });
 
   it('PRELIMINARY_WITH_FINAL_ROUND_ROBIN: final RR after prelims', async () => {
@@ -186,7 +247,27 @@ describe('Functional: compound tournaments', () => {
     for (const child of prelims) {
       const part = await prisma.tournamentParticipant.findMany({ where: { tournamentId: child.id } });
       const cids = part.map((x) => x.memberId);
-      await completeRoundRobin(child.id, token, cids, (x, y) => (x < y ? x : y));
+      await playAllRoundRobinMatches(child.id, token, cids, (x, y) => (x < y ? x : y));
+      const anchorsRows = await prisma.member.findMany({ where: { id: { in: cids } } });
+      const anchorsBeforeCompletion = new Map<number, number | null>(
+        anchorsRows.map((m) => [m.id, m.rating]),
+      );
+      await request(app)
+        .patch(`/api/tournaments/${child.id}/complete`)
+        .set(authHeader(token))
+        .expect(200);
+      const tournamentFull = await prisma.tournament.findUnique({
+        where: { id: child.id },
+        include: { participants: { include: { member: true } }, matches: true },
+      });
+      const expectedPrelim = await expectedRatingsAfterRoundRobinCompletion(
+        tournamentFull!,
+        anchorsBeforeCompletion,
+      );
+      const membersPrelim = await prisma.member.findMany({ where: { id: { in: cids } } });
+      for (const m of membersPrelim) {
+        expect(m.rating).toBe(expectedPrelim.get(m.id));
+      }
     }
 
     const finalChild = await prisma.tournament.findFirst({
@@ -200,7 +281,28 @@ describe('Functional: compound tournaments', () => {
     const fids = fPart.map((x) => x.memberId);
     expect(fids.length).toBe(2);
 
-    await completeRoundRobin(finalChild!.id, token, fids, (x, y) => (x < y ? x : y));
+    await playAllRoundRobinMatches(finalChild!.id, token, fids, (x, y) => (x < y ? x : y));
+    const anchorsFinal = await prisma.member.findMany({ where: { id: { in: fids } } });
+    const anchorsBeforeFinalComplete = new Map<number, number | null>(
+      anchorsFinal.map((m) => [m.id, m.rating]),
+    );
+    await request(app)
+      .patch(`/api/tournaments/${finalChild!.id}/complete`)
+      .set(authHeader(token))
+      .expect(200);
+
+    const finalTournamentFull = await prisma.tournament.findUnique({
+      where: { id: finalChild!.id },
+      include: { participants: { include: { member: true } }, matches: true },
+    });
+    const expectedFinalRr = await expectedRatingsAfterRoundRobinCompletion(
+      finalTournamentFull!,
+      anchorsBeforeFinalComplete,
+    );
+    const membersFinalRr = await prisma.member.findMany({ where: { id: { in: fids } } });
+    for (const m of membersFinalRr) {
+      expect(m.rating).toBe(expectedFinalRr.get(m.id));
+    }
 
     const root = await prisma.tournament.findUnique({ where: { id: parentId } });
     expect(root?.status).toBe('COMPLETED');

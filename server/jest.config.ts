@@ -5,7 +5,9 @@ const config: Config = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
-  testTimeout: 10000,
+  /** Functional suites override with jest.setTimeout; keep default high enough for slow DB I/O. */
+  testTimeout: 120000,
+  globalTeardown: '<rootDir>/tests/jestGlobalTeardown.ts',
   // Use test-specific tsconfig (no rootDir constraint, includes Jest types)
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],

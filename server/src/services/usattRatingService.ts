@@ -736,10 +736,48 @@ export async function getPlayerRating(memberId: number): Promise<number | null> 
 }
 
 /**
+ * Apply 4-pass ROUND_ROBIN outputs to member rows (same formula as tournament completion).
+ * `anchorsOverride` lets tests supply pre-completion `member.rating` when participants are reloaded after updates.
+ */
+export function applyRoundRobinComputedFinalsToMemberRatings(
+  tournament: {
+    participants: Array<{
+      memberId: number;
+      playerRatingAtTime: number | null;
+      member: { rating: number | null };
+    }>;
+  },
+  finalRatings: Map<number, number>,
+  anchorsOverride?: Map<number, number | null>,
+): Map<number, number> {
+  const appliedNewRatings = new Map<number, number>();
+  for (const participant of tournament.participants) {
+    const computedFinal = finalRatings.get(participant.memberId);
+    if (computedFinal === undefined) continue;
+
+    const enrollment = participant.playerRatingAtTime;
+    let newRating: number;
+
+    if (enrollment === null) {
+      newRating = Math.max(0, Math.round(computedFinal));
+    } else {
+      const delta = computedFinal - enrollment;
+      const anchor =
+        anchorsOverride?.has(participant.memberId)
+          ? anchorsOverride.get(participant.memberId) ?? enrollment
+          : participant.member.rating ?? enrollment;
+      newRating = Math.max(0, Math.round((anchor ?? enrollment) + delta));
+    }
+    appliedNewRatings.set(participant.memberId, newRating);
+  }
+  return appliedNewRatings;
+}
+
+/**
  * Calculate ratings for a single ROUND_ROBIN tournament using the 4-pass algorithm
  * This uses playerRatingAtTime (ratings at tournament start), not current DB ratings
  */
-async function calculateRatingsForRoundRobinTournament(tournament: any): Promise<Map<number, number>> {
+export async function calculateRatingsForRoundRobinTournament(tournament: any): Promise<Map<number, number>> {
   // Build player data using playerRatingAtTime (ratings at tournament start)
   const playersData = new Map<number, TournamentPlayerData>();
 
@@ -905,23 +943,7 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
    * - Rated at enrollment: newRating = (member.rating ?? enrollment) + (computedFinal - enrollment)
    * - Unrated at enrollment: use algorithm absolute once (same as computedFinal)
    */
-  const appliedNewRatings = new Map<number, number>();
-  for (const participant of tournament.participants) {
-    const computedFinal = finalRatings.get(participant.memberId);
-    if (computedFinal === undefined) continue;
-
-    const enrollment = participant.playerRatingAtTime;
-    let newRating: number;
-
-    if (enrollment === null) {
-      newRating = Math.max(0, Math.round(computedFinal));
-    } else {
-      const delta = computedFinal - enrollment;
-      const anchor = participant.member.rating ?? enrollment;
-      newRating = Math.max(0, Math.round(anchor + delta));
-    }
-    appliedNewRatings.set(participant.memberId, newRating);
-  }
+  const appliedNewRatings = applyRoundRobinComputedFinalsToMemberRatings(tournament, finalRatings);
 
   const existingCompletionRows =
     (await (prisma as any).ratingHistory.findMany({

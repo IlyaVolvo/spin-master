@@ -16,6 +16,8 @@
     "test-email": "tsx scripts/testEmail.ts",
     "hash-password": "tsx scripts/generatePasswordHash.ts",
     "test": "jest --runInBand",
+    "test:functional:basic": "jest --runInBand --testPathPatterns=functionalTournamentsBasic",
+    "test:functional:compound": "jest --runInBand --testPathPatterns=functionalTournamentsCompound",
     "test:watch": "jest --runInBand --watch",
     "test:verbose": "jest --runInBand --verbose"
   },
