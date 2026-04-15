@@ -1,6 +1,6 @@
 /**
  * Basic tournament types: ROUND_ROBIN, PLAYOFF, SWISS.
- * Requires DATABASE_URL. Nodemailer is mocked.
+ * Requires DATABASE_URL_TEST (see server/tests/jestSetupEnv.ts). Nodemailer is mocked.
  */
 
 jest.mock('nodemailer', () => ({

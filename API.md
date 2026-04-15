@@ -204,7 +204,7 @@ Get a specific player by ID.
 ---
 
 ### POST `/api/players`
-Create a new player.
+Create a new player. The member is created **`isActive: false`** (same as CSV import) until an organizer activates them or onboarding completes; inactive players are not eligible for tournaments that require active participants.
 
 **Request Body:**
 ```json
@@ -230,7 +230,7 @@ Create a new player.
   "lastName": "Doe",
   "email": "john@example.com",
   "rating": 1500,
-  "isActive": true
+  "isActive": false
 }
 ```
 

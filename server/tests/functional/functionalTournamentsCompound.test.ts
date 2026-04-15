@@ -1,6 +1,6 @@
 /**
  * Compound tournaments: MULTI_ROUND_ROBINS, PRELIMINARY_WITH_FINAL_PLAYOFF, PRELIMINARY_WITH_FINAL_ROUND_ROBIN.
- * Requires DATABASE_URL. Nodemailer is mocked.
+ * Requires DATABASE_URL_TEST (see server/tests/jestSetupEnv.ts). Nodemailer is mocked.
  */
 
 jest.mock('nodemailer', () => ({

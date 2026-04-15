@@ -1,6 +1,6 @@
 /**
  * Members: create, CSV import/export, list filters, rating/match history.
- * Requires DATABASE_URL. Nodemailer is mocked (no SMTP).
+ * Requires DATABASE_URL_TEST (see server/tests/jestSetupEnv.ts). Nodemailer is mocked (no SMTP).
  */
 
 jest.mock('nodemailer', () => ({
@@ -43,12 +43,13 @@ describe('Functional: members & lists', () => {
 
     expect(res.body.firstName).toBe('Newbie');
     expect(res.body.rating).toBe(1420);
-    expect(res.body.isActive).toBe(true);
+    expect(res.body.isActive).toBe(false);
 
     const row = await prisma.member.findUnique({ where: { email: 'newbie.functional@test.local' } });
     expect(row).not.toBeNull();
     expect(row!.rating).toBe(1420);
     expect(row!.roles).toContain('PLAYER');
+    expect(row!.isActive).toBe(false);
   });
 
   it('POST /api/players rejects duplicate email ignoring case', async () => {

@@ -3,7 +3,7 @@
  * Complements Supertest-only suites — verifies the same httpServer the production
  * process uses can push events clients subscribe to (e.g. match:updated).
  *
- * Requires DATABASE_URL. Nodemailer is mocked.
+ * Requires DATABASE_URL_TEST (see server/tests/jestSetupEnv.ts). Nodemailer is mocked.
  */
 
 jest.mock('nodemailer', () => ({

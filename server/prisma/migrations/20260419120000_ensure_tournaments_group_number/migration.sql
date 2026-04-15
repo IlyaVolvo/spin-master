@@ -1,0 +1,2 @@
+-- No-op: `Tournament.groupNumber` already exists on `20260302010000_baseline_schema`.
+-- This migration directory was created without a file; Prisma requires migration.sql.

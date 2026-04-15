@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:test": "tsx scripts/prismaMigrateTestDb.ts",
     "prisma:studio": "prisma studio",
     "validate-api-docs": "tsx scripts/validate-api-docs.ts",
     "create-sys-admin": "tsx scripts/createSysAdmin.ts",

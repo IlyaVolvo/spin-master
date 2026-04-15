@@ -96,7 +96,7 @@ npm run build --prefix server
 # Client production build
 npm run build --prefix client
 
-# Server tests
+# Server tests (requires DATABASE_URL_TEST in server/.env — separate DB from dev; see SETUP.md)
 npm test --prefix server
 ```
 

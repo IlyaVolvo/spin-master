@@ -10,7 +10,7 @@
  * - Record results + finalize → POST …/matches, PATCH …/complete (via completeRoundRobin)
  * - Verify durable outcome → Prisma + GET /api/tournaments (list reflects new event)
  *
- * Requires DATABASE_URL. Nodemailer is mocked.
+ * Requires DATABASE_URL_TEST (see server/tests/jestSetupEnv.ts). Nodemailer is mocked.
  */
 
 jest.mock('nodemailer', () => ({

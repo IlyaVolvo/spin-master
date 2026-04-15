@@ -1022,7 +1022,8 @@ router.post('/', [
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
         qrTokenHash: generateQrTokenHash(),
-        isActive: true,
+        // Inactive until organizer activates or invite flow completes (matches import + tournament eligibility)
+        isActive: false,
         emailConfirmedAt: null,
         mustResetPassword: true,
         passwordResetToken: passwordResetToken,

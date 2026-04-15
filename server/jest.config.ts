@@ -5,6 +5,8 @@ const config: Config = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
+  /** Apply DATABASE_URL_TEST before any test imports `src/index` / Prisma. */
+  setupFiles: ['<rootDir>/tests/jestSetupEnv.ts'],
   /** Functional suites override with jest.setTimeout; keep default high enough for slow DB I/O. */
   testTimeout: 120000,
   globalTeardown: '<rootDir>/tests/jestGlobalTeardown.ts',

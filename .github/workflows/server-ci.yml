@@ -30,7 +30,9 @@ jobs:
           --health-retries 10
 
     env:
+      # Prisma CLI + Jest both need a test DB; jestSetupEnv maps DATABASE_URL_TEST → DATABASE_URL for the app.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/spin_test
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/spin_test
       JWT_SECRET: ci-jwt-secret-for-functional-tests
       NODE_ENV: test
 

@@ -27,6 +27,22 @@ JWT_SECRET="replace-with-strong-secret"
 PORT=3001
 ```
 
+**Jest (server tests):** use a separate database so tests do not touch dev data. Add a dedicated DB (e.g. `spin_master_test`) and set:
+
+```env
+DATABASE_URL_TEST="postgresql://user:password@localhost:5432/spin_master_test?schema=public"
+```
+
+Apply the schema to that database once:
+
+```bash
+npm run prisma:migrate:test --prefix server
+```
+
+(Equivalent: `cd server && DATABASE_URL="$DATABASE_URL_TEST" npx prisma migrate deploy`.)
+
+Optional escape hatch (not recommended): `ALLOW_JEST_ON_DEV_DATABASE=true` runs Jest against `DATABASE_URL`.
+
 Optional (for bootstrap admin script):
 
 ```env
