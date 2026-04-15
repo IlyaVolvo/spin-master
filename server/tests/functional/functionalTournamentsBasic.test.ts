@@ -134,6 +134,12 @@ describe('Functional: basic tournaments', () => {
           .expect(201);
       }
 
+      // Per-match ratings (PLAYOFF) must run via onMatchRatingCalculation — 2 semis × 2 players each
+      const playoffMatchHistory = await prisma.ratingHistory.count({
+        where: { tournamentId: tid, reason: 'MATCH_COMPLETED', matchId: { not: null } },
+      });
+      expect(playoffMatchHistory).toBeGreaterThanOrEqual(4);
+
       const finalBm = await prisma.bracketMatch.findFirst({
         where: { tournamentId: tid, round: 2 },
       });
@@ -192,6 +198,14 @@ describe('Functional: basic tournaments', () => {
               player2Sets: w === m.member2Id ? 3 : 0,
             })
             .expect(200);
+        }
+
+        if (round === 1) {
+          // Swiss applies ratings per match via onMatchRatingCalculation — 4 players ⇒ 2 R1 matches × 2 history rows
+          const swissR1History = await prisma.ratingHistory.count({
+            where: { tournamentId: tid, reason: 'MATCH_COMPLETED', matchId: { not: null } },
+          });
+          expect(swissR1History).toBeGreaterThanOrEqual(4);
         }
       }
 
