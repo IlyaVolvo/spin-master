@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { PanelConfig } from '../../types/tournament';
-import { PanelManager } from '../panels/PanelManager';
-import { PlayerFilterPanel } from './PlayerFilterPanel';
-import { PlayerListPanel } from './PlayerListPanel';
-import { TournamentCreationPanel } from './TournamentCreationPanel';
-import { ActionPanel } from './ActionPanel';
-import { usePanelManager } from '../panels/PanelManager';
+import { PanelManager, usePanelManager } from '../panels/PanelManager';
+import { PlayerFilterPanel } from './PlayerFilterPanel.tsx';
+import { PlayerListPanel } from './PlayerListPanel.tsx';
+import { TournamentCreationPanel } from './TournamentCreationPanel.tsx';
+import { ActionPanel } from './ActionPanel.tsx';
 
 export const PlayersTab: React.FC = () => {
   const [isCreatingTournament, setIsCreatingTournament] = useState(false);
