@@ -923,8 +923,25 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
     appliedNewRatings.set(participant.memberId, newRating);
   }
 
+  const existingCompletionRows =
+    (await (prisma as any).ratingHistory.findMany({
+      where: {
+        tournamentId: tournament.id,
+        reason: 'TOURNAMENT_COMPLETED',
+        matchId: null,
+      },
+      select: { memberId: true },
+    })) ?? [];
+  const alreadyCompletedMemberIds = new Set(
+    existingCompletionRows.map((r: { memberId: number }) => r.memberId)
+  );
+
+  const memberIdsToUpdate = Array.from(appliedNewRatings.entries()).filter(
+    ([memberId]) => !alreadyCompletedMemberIds.has(memberId)
+  );
+
   await Promise.all(
-    Array.from(appliedNewRatings.entries()).map(([memberId, newRating]) =>
+    memberIdsToUpdate.map(([memberId, newRating]) =>
       prisma.member.update({
         where: { id: memberId },
         data: { rating: newRating },
@@ -932,7 +949,10 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
     )
   );
 
-  await broadcastMembersUpdated(prisma, Array.from(appliedNewRatings.keys()));
+  await broadcastMembersUpdated(
+    prisma,
+    memberIdsToUpdate.map(([id]) => id)
+  );
 
   // Get tournament recordedAt time (or createdAt if recordedAt is null) for timestamp
   // For ROUND_ROBIN, ratings are calculated when tournament is completed, so use recordedAt

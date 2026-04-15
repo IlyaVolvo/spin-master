@@ -338,17 +338,12 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
   async onChildTournamentCompleted(event: ChildTournamentCompletedEvent): Promise<TournamentStateChangeResult> {
     const { parentTournament, childTournament, prisma } = event;
 
-    // Ensure child completion-time rating logic runs for compound flows as well.
-    if (childTournament.status === 'COMPLETED') {
-      const childPlugin = tournamentPluginRegistry.get(childTournament.type);
-      if (childPlugin.onTournamentCompletionRatingCalculation) {
-        await childPlugin.onTournamentCompletionRatingCalculation({
-          tournament: childTournament,
-          prisma,
-        });
-      }
-    }
-    
+    // Do NOT call childPlugin.onTournamentCompletionRatingCalculation here. The child was
+    // already marked COMPLETED by the route that notifies the parent (match PATCH, /complete,
+    // bracket routes), and that path runs completion ratings once. Calling it again would
+    // re-apply member.rating updates (createRatingHistoryForRoundRobinTournament updates
+    // members before the duplicate-history guard) — e.g. double +14 for preliminary RR groups.
+
     // Fetch all child tournaments to check status
     const allChildren = await prisma.tournament.findMany({
       where: { parentTournamentId: parentTournament.id },

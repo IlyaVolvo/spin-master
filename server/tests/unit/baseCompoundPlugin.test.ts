@@ -230,7 +230,7 @@ describe('BaseCompoundTournamentPlugin.onChildTournamentCompleted (no final phas
     mockPlugins.clear();
   });
 
-  it('invokes child completion rating hook when child is completed', async () => {
+  it('does not invoke child completion rating hook (already ran when child was marked complete)', async () => {
     const completionHook = jest.fn().mockResolvedValue(undefined);
     mockPlugins.set('ROUND_ROBIN', {
       onTournamentCompletionRatingCalculation: completionHook,
@@ -258,11 +258,7 @@ describe('BaseCompoundTournamentPlugin.onChildTournamentCompleted (no final phas
       prisma: mockPrisma,
     });
 
-    expect(completionHook).toHaveBeenCalledTimes(1);
-    expect(completionHook).toHaveBeenCalledWith({
-      tournament: childTournament,
-      prisma: mockPrisma,
-    });
+    expect(completionHook).not.toHaveBeenCalled();
   });
 
   it('returns shouldMarkComplete when all children are complete', async () => {
