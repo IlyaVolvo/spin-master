@@ -31,7 +31,11 @@ export interface TournamentParticipant {
   memberId: number;
   member: Member;
   playerRatingAtTime: number | null; // Rating when tournament started
-  postRatingAtTime?: number | null; // Rating after tournament completion
+  postRatingAtTime?: number | null; // Rating after tournament completion (current profile rating when enriched)
+  /** ROUND_ROBIN completion row: rating after this tournament's adjustment (materialized in history) */
+  rrCompletionRating?: number | null;
+  /** ROUND_ROBIN completion row: delta applied at completion (vs anchor before that event) */
+  rrCompletionRatingChange?: number | null;
 }
 
 // Match Interface

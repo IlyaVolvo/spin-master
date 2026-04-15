@@ -83,6 +83,59 @@ const buildResultsMatrix = (tournament: any) => {
   return { participants, participantData, matrix, matchMap };
 };
 
+/** e.g. +20, -10 */
+function formatSignedDelta(n: number): string {
+  if (n >= 0) return `+${n}`;
+  return `${n}`;
+}
+
+/**
+ * (current) (signup/(completion Δ[, during Δ][, after Δ]))
+ * - completion Δ: TOURNAMENT_COMPLETED ratingChange (final RR adjustment).
+ * - during Δ: optional; rating change from signup to anchor immediately before that completion
+ *   (e.g. rated matches during the event). anchor = rrCompletionRating − completion Δ.
+ * - after Δ: optional; current − materialized rating after tournament if profile moved later.
+ */
+function formatRrCompletedRatingLine(participant: any): string | null {
+  const before = participant?.playerRatingAtTime;
+  const current = participant?.postRatingAtTime ?? participant?.member?.rating ?? null;
+  if (before == null || current == null || isLikelyRanking(before)) {
+    return null;
+  }
+  const cur = Math.round(current);
+  const bef = Math.round(before);
+
+  const tcChange = participant?.rrCompletionRatingChange;
+  const rAfterTournament = participant?.rrCompletionRating;
+
+  if (rAfterTournament != null) {
+    const rEvent = Math.round(rAfterTournament);
+    const completionDelta =
+      tcChange != null ? Math.round(tcChange) : rEvent - bef;
+
+    const parts: string[] = [formatSignedDelta(completionDelta)];
+
+    if (tcChange != null) {
+      const anchorBeforeCompletion = rEvent - Math.round(tcChange);
+      const duringDelta = anchorBeforeCompletion - bef;
+      if (duringDelta !== 0) {
+        parts.push(formatSignedDelta(duringDelta));
+      }
+    }
+
+    const afterDelta = cur - rEvent;
+    if (afterDelta !== 0) {
+      parts.push(formatSignedDelta(afterDelta));
+    }
+
+    const innerDeltas = parts.join(', ');
+    return `(${cur}) (${bef}/(${innerDeltas}))`;
+  }
+
+  const net = cur - bef;
+  return `(${cur}) (${bef}/(${formatSignedDelta(net)}))`;
+}
+
 export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
   tournament,
   isExpanded,
@@ -197,11 +250,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
             <tbody>
               {playerStats.map((stats) => {
                 const participant = tournament.participants.find(p => p.memberId === stats.memberId);
-                const preRating = participant?.playerRatingAtTime;
-                const postRating = (participant as any)?.postRatingAtTime ?? null;
-                const showRating = preRating !== null && preRating !== undefined && !isLikelyRanking(preRating)
-                  && postRating !== null && postRating !== undefined;
-                const ratingDiff = showRating ? (postRating as number) - (preRating as number) : null;
+                const ratingLine = participant ? formatRrCompletedRatingLine(participant) : null;
                 return (
                   <tr key={stats.memberId} className={stats.rank <= 3 ? `rank-${stats.rank}` : ''}>
                     <td className="rank-cell">
@@ -216,15 +265,14 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                         participant?.member.lastName || '',
                         getNameDisplayOrder()
                       )}
-                      <span style={{ fontSize: '11px', color: '#666', fontWeight: 'normal', marginLeft: '4px' }}>({preRating ?? '—'})</span>
-                      {showRating && (
+                      {ratingLine && (
                         <span style={{
                           marginLeft: '6px',
-                          fontSize: '12px',
-                          color: ratingDiff !== null && ratingDiff >= 0 ? '#27ae60' : '#e74c3c',
-                          fontWeight: 'bold',
+                          fontSize: '11px',
+                          color: '#444',
+                          fontWeight: 'normal',
                         }}>
-                          ({postRating}/{ratingDiff !== null && ratingDiff >= 0 ? `+${ratingDiff}` : ratingDiff})
+                          {ratingLine}
                         </span>
                       )}
                     </td>
@@ -237,6 +285,10 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
               })}
             </tbody>
           </table>
+          <p style={{ marginTop: '8px', fontSize: '11px', color: '#666', maxWidth: '720px' }}>
+            Rating: (current) (at signup / (adjustment when this RR completed; optional change from
+            rated play during the event before that step; optional change after if your profile moved)).
+          </p>
         </div>
 
         {/* Results Matrix */}

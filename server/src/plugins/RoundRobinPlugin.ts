@@ -48,7 +48,37 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
 
   async enrichCompletedTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
     const { tournament, postRatingMap, prisma } = context;
-    
+
+    const memberIds = (tournament.participants || []).map((p: { memberId: number }) => p.memberId);
+    const completionByMember = new Map<
+      number,
+      { rating: number; ratingChange: number | null }
+    >();
+
+    if (prisma && memberIds.length > 0) {
+      const completionRows = await prisma.ratingHistory.findMany({
+        where: {
+          tournamentId: tournament.id,
+          memberId: { in: memberIds },
+          reason: 'TOURNAMENT_COMPLETED',
+        },
+        orderBy: { id: 'desc' },
+        select: {
+          memberId: true,
+          rating: true,
+          ratingChange: true,
+        },
+      });
+      for (const row of completionRows) {
+        if (!completionByMember.has(row.memberId)) {
+          completionByMember.set(row.memberId, {
+            rating: row.rating,
+            ratingChange: row.ratingChange,
+          });
+        }
+      }
+    }
+
     const participantsWithPostRating = tournament.participants.map((participant: any) => {
       const key = `${tournament.id}-${participant.memberId}`;
       const postRatingFromMap = postRatingMap && postRatingMap.has(key)
@@ -57,9 +87,12 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
       // Prefer cache map; else current member rating; else snapshot at signup (map miss should not mask updated rating).
       const postRating =
         postRatingFromMap ?? participant.member?.rating ?? participant.playerRatingAtTime ?? null;
+      const tc = completionByMember.get(participant.memberId);
       return {
         ...participant,
         postRatingAtTime: postRating,
+        rrCompletionRating: tc?.rating ?? null,
+        rrCompletionRatingChange: tc?.ratingChange ?? null,
       };
     });
 
