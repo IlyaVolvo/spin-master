@@ -4,6 +4,12 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { RatingWithChangeCell } from '../utils/ratingHistoryDisplay';
+import { useShiftRangeAnchor } from './hooks/useShiftRangeAnchor';
+import {
+  getShiftRangeSlice,
+  shiftKeyFromCheckboxChange,
+  toggleRangeInSelectionSet,
+} from '../utils/shiftRangeSelection';
 
 interface RatingHistoryPoint {
   date: string;
@@ -32,6 +38,8 @@ const Statistics: React.FC = () => {
   const [error, setError] = useState('');
   // Track which players are enabled for display (all enabled by default)
   const [enabledPlayers, setEnabledPlayers] = useState<Set<number>>(new Set());
+  const { anchorRef: lastStatsChartMemberIdRef, resetAnchor: resetStatsChartShiftAnchor } =
+    useShiftRangeAnchor();
 
   useEffect(() => {
     // Get player IDs from location state (passed from Players component)
@@ -50,6 +58,7 @@ const Statistics: React.FC = () => {
       setRatingHistory(response.data);
       // Initialize all players as enabled
       setEnabledPlayers(new Set(playerIds));
+      resetStatsChartShiftAnchor();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to fetch rating history');
     } finally {
@@ -57,8 +66,23 @@ const Statistics: React.FC = () => {
     }
   };
 
-  const togglePlayerDisplay = (memberId: number) => {
-    setEnabledPlayers(prev => {
+  const togglePlayerDisplay = (
+    memberId: number,
+    shiftKey?: boolean,
+    visibleMemberIds?: number[]
+  ) => {
+    const rangeSlice = getShiftRangeSlice(
+      shiftKey,
+      lastStatsChartMemberIdRef.current,
+      memberId,
+      visibleMemberIds
+    );
+    if (rangeSlice) {
+      setEnabledPlayers((prev) => toggleRangeInSelectionSet(prev, memberId, rangeSlice));
+      lastStatsChartMemberIdRef.current = memberId;
+      return;
+    }
+    setEnabledPlayers((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(memberId)) {
         newSet.delete(memberId);
@@ -67,6 +91,7 @@ const Statistics: React.FC = () => {
       }
       return newSet;
     });
+    lastStatsChartMemberIdRef.current = memberId;
   };
 
   // Transform data for chart
@@ -186,9 +211,13 @@ const Statistics: React.FC = () => {
             </h3>
             
             <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-              <h4 style={{ marginTop: 0, marginBottom: '10px' }}>Selected Players (click checkbox to show/hide on chart):</h4>
+              <h4 style={{ marginTop: 0, marginBottom: '10px' }}>
+                Selected Players (click to show/hide on chart; Shift+click between two for a range):
+              </h4>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
-                {ratingHistory.map((player, index) => {
+                {(() => {
+                  const visibleStatsMemberIds = ratingHistory.map((p) => p.memberId);
+                  return ratingHistory.map((player, index) => {
                   const isEnabled = enabledPlayers.has(player.memberId);
                   return (
                     <label
@@ -210,7 +239,13 @@ const Statistics: React.FC = () => {
                       <input
                         type="checkbox"
                         checked={isEnabled}
-                        onChange={() => togglePlayerDisplay(player.memberId)}
+                        onChange={(e) =>
+                          togglePlayerDisplay(
+                            player.memberId,
+                            shiftKeyFromCheckboxChange(e),
+                            visibleStatsMemberIds
+                          )
+                        }
                         style={{
                           cursor: 'pointer',
                           width: '16px',
@@ -220,7 +255,8 @@ const Statistics: React.FC = () => {
                     {formatPlayerName(player.firstName, player.lastName, getNameDisplayOrder())}
                     </label>
                   );
-                })}
+                });
+                })()}
               </div>
             </div>
 

@@ -1,7 +1,12 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { tournamentPluginRegistry } from '../tournaments/TournamentPluginRegistry';
 import type { TournamentType } from '../../types/tournament';
+import {
+  getShiftRangeSlice,
+  toggleRangeInSelectionWithAddGate,
+} from '../../utils/shiftRangeSelection';
+import { useShiftRangeAnchor } from './useShiftRangeAnchor';
 
 type TournamentCreationStep = 'type_selection' | 'player_selection' | 'plugin_flow';
 
@@ -28,7 +33,7 @@ export function useTournamentCreation({
 }: UseTournamentCreationParams) {
   const navigate = useNavigate();
   const location = useLocation();
-  const lastClickedPlayerIdRef = useRef<number | null>(null);
+  const { anchorRef: lastClickedPlayerIdRef, resetAnchor: resetShiftRangeAnchor } = useShiftRangeAnchor();
 
   // State
   const [isCreatingTournament, setIsCreatingTournament] = useState(false);
@@ -130,7 +135,7 @@ export function useTournamentCreation({
     setTournamentType('');
     setCreationTournamentType(null);
     setExpandedMenuGroups(new Set());
-    lastClickedPlayerIdRef.current = null;
+    resetShiftRangeAnchor();
   };
 
   const resetState = () => {
@@ -142,6 +147,7 @@ export function useTournamentCreation({
     setTournamentName('');
     setTournamentType('');
     setShowCancelConfirmation(false);
+    resetShiftRangeAnchor();
   };
 
   const handleCancelTournamentCreation = () => {
@@ -184,36 +190,27 @@ export function useTournamentCreation({
       return;
     }
 
-    // Shift+click range selection: add or remove based on clicked player's current state
-    if (shiftKey && lastClickedPlayerIdRef.current !== null && visiblePlayerIds && visiblePlayerIds.length > 0) {
-      const lastIdx = visiblePlayerIds.indexOf(lastClickedPlayerIdRef.current);
-      const currIdx = visiblePlayerIds.indexOf(playerId);
-      if (lastIdx !== -1 && currIdx !== -1 && lastIdx !== currIdx) {
-        const start = Math.min(lastIdx, currIdx);
-        const end = Math.max(lastIdx, currIdx);
-        const rangeIds = visiblePlayerIds.slice(start, end + 1);
-        const isDeselecting = selectedPlayersForTournament.includes(playerId);
-        let newSelection: number[];
-        if (isDeselecting) {
-          // Remove all players in range
-          const rangeSet = new Set(rangeIds);
-          newSelection = selectedPlayersForTournament.filter(id => !rangeSet.has(id));
-        } else {
-          // Add all active players in range
-          newSelection = [...selectedPlayersForTournament];
-          for (const id of rangeIds) {
-            if (!newSelection.includes(id)) {
-              const p = members.find(m => m.id === id);
-              if (p && p.isActive) {
-                newSelection.push(id);
-              }
-            }
-          }
-        }
-        setSelectedPlayersForTournament(newSelection);
-        lastClickedPlayerIdRef.current = playerId;
-        return;
-      }
+    const rangeSlice = getShiftRangeSlice(
+      shiftKey,
+      lastClickedPlayerIdRef.current,
+      playerId,
+      visiblePlayerIds
+    );
+    if (rangeSlice) {
+      const canAddId = (id: number) => {
+        const p = members.find((m) => m.id === id);
+        return Boolean(p && p.isActive);
+      };
+      setSelectedPlayersForTournament(
+        toggleRangeInSelectionWithAddGate(
+          selectedPlayersForTournament,
+          playerId,
+          rangeSlice,
+          canAddId
+        )
+      );
+      lastClickedPlayerIdRef.current = playerId;
+      return;
     }
     
     if (selectedPlayersForTournament.includes(playerId)) {

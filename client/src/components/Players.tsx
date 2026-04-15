@@ -22,7 +22,14 @@ import { SuspiciousRatingConfirmModal } from './players/SuspiciousRatingConfirmM
 import { PlayersSettingsMenu } from './memberSettings/PlayersSettingsMenu.tsx';
 import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
 import { useTournamentCreation } from './hooks/useTournamentCreation';
+import { useShiftRangeAnchor } from './hooks/useShiftRangeAnchor';
 import { usePlayerData, membersCache } from './hooks/usePlayerData';
+import {
+  getShiftRangeSlice,
+  shiftKeyFromCheckboxChange,
+  toggleRangeInSelection,
+  toggleRangeInSelectionSet,
+} from '../utils/shiftRangeSelection';
 import { generatePlayersCsv, downloadCsv } from './utils/playerCsvUtils';
 import { matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
 import {
@@ -162,9 +169,15 @@ const Players: React.FC = () => {
   });
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
+  const { anchorRef: lastClickedStatsPlayerIdRef, resetAnchor: resetStatsShiftAnchor } =
+    useShiftRangeAnchor();
   const [isSelectingForHistory, setIsSelectingForHistory] = useState(false);
   const [selectedPlayerForHistory, setSelectedPlayerForHistory] = useState<number | null>(null);
   const [selectedOpponentsForHistory, setSelectedOpponentsForHistory] = useState<number[]>([]);
+  const { anchorRef: lastClickedOpponentForHistoryRef, resetAnchor: resetOpponentShiftAnchor } =
+    useShiftRangeAnchor();
+  const { anchorRef: lastClickedExportPlayerIdRef, resetAnchor: resetExportShiftAnchor } =
+    useShiftRangeAnchor();
   const [lastHistorySelectionMode, setLastHistorySelectionMode] = useState<'againstPlayers' | 'ratingHistory' | null>(null);
   const supportsFullSaveDialog = typeof (window as any).showSaveFilePicker === 'function';
   const [showSelectedFirst, setShowSelectedFirst] = useState(true);
@@ -1044,26 +1057,49 @@ const Players: React.FC = () => {
     const allPlayerIds = new Set(candidates.map(p => p.id));
     setExportCandidates(candidates);
     setSelectedPlayersForExport(allPlayerIds);
+    resetExportShiftAnchor();
     setShowExportSelection(true);
   };
 
   const handleSelectAllForExport = () => {
     const allPlayerIds = new Set(exportCandidates.map(p => p.id));
     setSelectedPlayersForExport(allPlayerIds);
+    resetExportShiftAnchor();
   };
 
   const handleDeselectAllForExport = () => {
     setSelectedPlayersForExport(new Set());
+    resetExportShiftAnchor();
   };
 
-  const handleTogglePlayerForExport = (playerId: number) => {
-    const newSelection = new Set(selectedPlayersForExport);
-    if (newSelection.has(playerId)) {
-      newSelection.delete(playerId);
-    } else {
-      newSelection.add(playerId);
+  const handleTogglePlayerForExport = (
+    playerId: number,
+    shiftKey?: boolean,
+    visiblePlayerIds?: number[]
+  ) => {
+    const rangeSlice = getShiftRangeSlice(
+      shiftKey,
+      lastClickedExportPlayerIdRef.current,
+      playerId,
+      visiblePlayerIds
+    );
+    if (rangeSlice) {
+      setSelectedPlayersForExport((prev) =>
+        toggleRangeInSelectionSet(prev, playerId, rangeSlice)
+      );
+      lastClickedExportPlayerIdRef.current = playerId;
+      return;
     }
-    setSelectedPlayersForExport(newSelection);
+    setSelectedPlayersForExport((prev) => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(playerId)) {
+        newSelection.delete(playerId);
+      } else {
+        newSelection.add(playerId);
+      }
+      return newSelection;
+    });
+    lastClickedExportPlayerIdRef.current = playerId;
   };
 
   const handlePerformExport = async () => {
@@ -1095,6 +1131,7 @@ const Players: React.FC = () => {
       setShowExportSelection(false);
       setSelectedPlayersForExport(new Set());
       setExportCandidates([]);
+      resetExportShiftAnchor();
       setSuccess(`Successfully exported ${selectedPlayers.length} player(s)`);
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to export players';
@@ -2061,19 +2098,40 @@ const Players: React.FC = () => {
   const handleStartStatsSelection = () => {
     setIsSelectingForStats(true);
     setSelectedPlayersForStats([]);
+    resetStatsShiftAnchor();
   };
 
   const handleCancelStatsSelection = () => {
     setIsSelectingForStats(false);
     setSelectedPlayersForStats([]);
+    resetStatsShiftAnchor();
   };
 
-  const handleTogglePlayerForStats = (playerId: number) => {
+  const handleTogglePlayerForStats = (
+    playerId: number,
+    shiftKey?: boolean,
+    visiblePlayerIds?: number[]
+  ) => {
+    const rangeSlice = getShiftRangeSlice(
+      shiftKey,
+      lastClickedStatsPlayerIdRef.current,
+      playerId,
+      visiblePlayerIds
+    );
+    if (rangeSlice) {
+      setSelectedPlayersForStats(
+        toggleRangeInSelection(selectedPlayersForStats, playerId, rangeSlice)
+      );
+      lastClickedStatsPlayerIdRef.current = playerId;
+      return;
+    }
+
     if (selectedPlayersForStats.includes(playerId)) {
       setSelectedPlayersForStats(selectedPlayersForStats.filter(id => id !== playerId));
     } else {
       setSelectedPlayersForStats([...selectedPlayersForStats, playerId]);
     }
+    lastClickedStatsPlayerIdRef.current = playerId;
   };
 
   const handleViewStatistics = () => {
@@ -2092,9 +2150,11 @@ const Players: React.FC = () => {
     setIsSelectingForHistory(false);
     setSelectedPlayerForHistory(null);
     setSelectedOpponentsForHistory([]);
+    resetOpponentShiftAnchor();
   };
 
   const handleSelectPlayerForHistory = (playerId: number) => {
+    resetOpponentShiftAnchor();
     setSelectedPlayerForHistory(playerId);
     // Remove from opponents if it was there
     setSelectedOpponentsForHistory(prev => prev.filter(id => id !== playerId));
@@ -2124,15 +2184,39 @@ const Players: React.FC = () => {
     setLastHistorySelectionMode(visiblePlayerIds.length > 0 ? 'againstPlayers' : 'ratingHistory');
   };
 
-  const handleToggleOpponentForHistory = (playerId: number) => {
+  const handleToggleOpponentForHistory = (
+    playerId: number,
+    shiftKey?: boolean,
+    visiblePlayerIds?: number[]
+  ) => {
     if (playerId === selectedPlayerForHistory) {
-      return; // Can't select the main player as opponent
+      return;
     }
+    const rangeSlice = getShiftRangeSlice(
+      shiftKey,
+      lastClickedOpponentForHistoryRef.current,
+      playerId,
+      visiblePlayerIds
+    );
+    if (rangeSlice) {
+      const rangeIds = rangeSlice.filter((id) => id !== selectedPlayerForHistory);
+      const newSelection = toggleRangeInSelection(
+        selectedOpponentsForHistory,
+        playerId,
+        rangeIds
+      );
+      setSelectedOpponentsForHistory(newSelection);
+      setLastHistorySelectionMode(newSelection.length > 0 ? 'againstPlayers' : 'ratingHistory');
+      lastClickedOpponentForHistoryRef.current = playerId;
+      return;
+    }
+
     if (selectedOpponentsForHistory.includes(playerId)) {
-      setSelectedOpponentsForHistory(selectedOpponentsForHistory.filter(id => id !== playerId));
+      setSelectedOpponentsForHistory(selectedOpponentsForHistory.filter((id) => id !== playerId));
     } else {
       setSelectedOpponentsForHistory([...selectedOpponentsForHistory, playerId]);
     }
+    lastClickedOpponentForHistoryRef.current = playerId;
   };
 
   const handleViewHistory = () => {
@@ -3686,6 +3770,7 @@ const Players: React.FC = () => {
                     setShowExportSelection(false);
                     setSelectedPlayersForExport(new Set());
                     setExportCandidates([]);
+                    resetExportShiftAnchor();
                   }}
                   style={{
                     background: 'none',
@@ -3762,13 +3847,21 @@ const Players: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {exportCandidates.map((player) => (
+                    {(() => {
+                      const visibleExportPlayerIds = exportCandidates.map((p) => p.id);
+                      return exportCandidates.map((player) => (
                       <tr key={player.id} style={{ backgroundColor: selectedPlayersForExport.has(player.id) ? '#e8f5e9' : 'white' }}>
                         <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
                           <input
                             type="checkbox"
                             checked={selectedPlayersForExport.has(player.id)}
-                            onChange={() => handleTogglePlayerForExport(player.id)}
+                            onChange={(e) =>
+                              handleTogglePlayerForExport(
+                                player.id,
+                                shiftKeyFromCheckboxChange(e),
+                                visibleExportPlayerIds
+                              )
+                            }
                             style={{ cursor: 'pointer' }}
                           />
                         </td>
@@ -3780,7 +3873,8 @@ const Players: React.FC = () => {
                           {player.rating !== null ? player.rating : '-'}
                         </td>
                       </tr>
-                    ))}
+                    ));
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -3792,6 +3886,7 @@ const Players: React.FC = () => {
                     setShowExportSelection(false);
                     setSelectedPlayersForExport(new Set());
                     setExportCandidates([]);
+                    resetExportShiftAnchor();
                   }}
                   className="button-filter"
                   style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
@@ -4942,7 +5037,13 @@ const Players: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={selectedOpponentsForHistory.includes(player.id)}
-                          onChange={() => handleToggleOpponentForHistory(player.id)}
+                          onChange={(e) => {
+                            handleToggleOpponentForHistory(
+                              player.id,
+                              shiftKeyFromCheckboxChange(e),
+                              visiblePlayerIds
+                            );
+                          }}
                           onClick={(e) => e.stopPropagation()} // Prevent row click from triggering
                           style={{ cursor: 'pointer' }}
                         />
@@ -4965,10 +5066,17 @@ const Players: React.FC = () => {
                         if (isRecordingMatch) {
                           handleTogglePlayerForMatch(player.id);
                         } else if (isCreatingTournament) {
-                          const shiftKey = (e.nativeEvent as MouseEvent).shiftKey;
-                          handleTogglePlayerForTournament(player.id, shiftKey, visiblePlayerIds);
+                          handleTogglePlayerForTournament(
+                            player.id,
+                            shiftKeyFromCheckboxChange(e),
+                            visiblePlayerIds
+                          );
                         } else {
-                          handleTogglePlayerForStats(player.id);
+                          handleTogglePlayerForStats(
+                            player.id,
+                            shiftKeyFromCheckboxChange(e),
+                            visiblePlayerIds
+                          );
                         }
                       }}
                       disabled={
