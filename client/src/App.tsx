@@ -49,6 +49,24 @@ function App() {
   const [isAuth, setIsAuth] = useState(false);
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [clubName, setClubName] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ clubName: string | null }>('/config')
+      .then((res) => {
+        if (cancelled) return;
+        const name = res.data?.clubName;
+        setClubName(typeof name === 'string' && name.trim() !== '' ? name.trim() : null);
+      })
+      .catch(() => {
+        if (!cancelled) setClubName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const resetParams = new URLSearchParams(window.location.search);
@@ -202,13 +220,13 @@ function App() {
       <ScrollToTop />
       {!isAuth ? (
         <ErrorBoundary>
-        <Login onLogin={handleLogin} />
+        <Login onLogin={handleLogin} clubName={clubName} />
         </ErrorBoundary>
       ) : (
         <>
           <AuthRedirect />
           <div className="container">
-            <Header onLogout={handleLogout} />
+            <Header onLogout={handleLogout} clubName={clubName} />
             <ErrorBoundary>
             <Suspense fallback={
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh', fontSize: '18px' }}>
@@ -361,7 +379,7 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
   );
 }
 
-function Header({ onLogout }: { onLogout: () => void }) {
+function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string | null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [userName, setUserName] = useState<string>('');
@@ -518,65 +536,84 @@ function Header({ onLogout }: { onLogout: () => void }) {
         <h1 style={{ 
           margin: 0,
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '10px',
+          gap: '14px',
           flex: 1
         }}>
-          <span>🏓</span>
-          <span style={{ 
-            background: 'linear-gradient(to bottom, #4682B4 0%, #5F9EA0 50%, #4682B4 100%)',
-            color: 'white',
-            padding: '17px 8px',
-            borderRadius: '10px',
-            border: '1px solid white',
-            position: 'relative',
-            boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-            overflow: 'hidden',
-            display: 'flex',
-            alignItems: 'center',
-            width: '170px'
-          }}>
-            <div style={{ 
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              position: 'relative',
-              zIndex: 2
-            }}>
-              <span style={{ 
-                fontSize: '22px',
-                fontWeight: '600',
-                marginLeft: '15px'
-              }}>Spin</span>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <span>🏓</span>
             <span style={{ 
-              position: 'absolute', 
-              left: '50%', 
-              top: '0',
-              bottom: '0',
-              transform: 'translateX(-50%)',
-              width: '3px',
-              background: 'white',
-              zIndex: 1
-            }}></span>
-            <div style={{ 
-              flex: 1,
+              background: 'linear-gradient(to bottom, #4682B4 0%, #5F9EA0 50%, #4682B4 100%)',
+              color: 'white',
+              padding: '17px 8px',
+              borderRadius: '10px',
+              border: '1px solid white',
+              position: 'relative',
+              boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
+              overflow: 'hidden',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              position: 'relative',
-              zIndex: 2
+              width: '170px'
             }}>
+              <div style={{ 
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                zIndex: 2
+              }}>
+                <span style={{ 
+                  fontSize: '22px',
+                  fontWeight: '600',
+                  marginLeft: '15px'
+                }}>Spin</span>
+              </div>
               <span style={{ 
-                fontSize: '22px',
-                fontWeight: '600',
-                marginLeft: '5px'
-              }}>Master</span>
-            </div>
-          </span>
-          <span>🏓</span>
+                position: 'absolute', 
+                left: '50%', 
+                top: '0',
+                bottom: '0',
+                transform: 'translateX(-50%)',
+                width: '3px',
+                background: 'white',
+                zIndex: 1
+              }}></span>
+              <div style={{ 
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                zIndex: 2
+              }}>
+                <span style={{ 
+                  fontSize: '22px',
+                  fontWeight: '600',
+                  marginLeft: '5px'
+                }}>Master</span>
+              </div>
+            </span>
+            <span>🏓</span>
+          </div>
+          {clubName ? (
+            <span
+              style={{
+                fontSize: '17px',
+                fontWeight: 600,
+                color: '#B8D9F0',
+                textAlign: 'center',
+                letterSpacing: '0.02em',
+                lineHeight: 1.25,
+                maxWidth: '320px',
+                textShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
+              }}
+            >
+              {clubName}
+            </span>
+          ) : null}
         </h1>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
           <span style={{

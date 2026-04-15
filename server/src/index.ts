@@ -128,6 +128,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Public client config (e.g. club display name from deployment env — omit when unset)
+app.get('/api/config', (_req, res) => {
+  const raw = process.env.CLUB_NAME;
+  const clubName =
+    typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
+  res.json({ clubName });
+});
+
 const clientBuildCandidates = [
   path.resolve(process.cwd(), '..', 'client', 'dist'),
   path.resolve(process.cwd(), 'client', 'dist'),

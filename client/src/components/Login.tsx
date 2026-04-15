@@ -5,9 +5,11 @@ import { getErrorMessage } from '../utils/errorHandler';
 
 interface LoginProps {
   onLogin: () => void;
+  /** From server CLUB_NAME via GET /api/config; omitted when unset */
+  clubName?: string | null;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, clubName }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -163,6 +165,20 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   return (
     <div className="login-container">
       <div className="card">
+        {clubName ? (
+          <p
+            style={{
+              textAlign: 'center',
+              marginTop: 0,
+              marginBottom: '14px',
+              color: '#2B6CB0',
+              fontSize: '19px',
+              fontWeight: 600,
+            }}
+          >
+            {clubName}
+          </p>
+        ) : null}
         <h2>Login</h2>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
