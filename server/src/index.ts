@@ -197,6 +197,6 @@ if (require.main === module) {
   });
 }
 
-export { prisma, httpServer };
+export { app, prisma, httpServer };
 
 

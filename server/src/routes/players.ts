@@ -650,6 +650,38 @@ router.get('/active', async (req, res) => {
   }
 });
 
+// Export players (must be registered before /:id so "export" is not parsed as an id)
+router.get('/export', async (req: AuthRequest, res: Response) => {
+  try {
+    const members = await prisma.member.findMany({
+      where: {
+        roles: {
+          has: 'PLAYER',
+        },
+      },
+      select: {
+        firstName: true,
+        lastName: true,
+        email: true,
+        gender: true,
+        birthDate: true,
+        rating: true,
+        phone: true,
+        address: true,
+      },
+      orderBy: [
+        { lastName: 'asc' },
+        { firstName: 'asc' },
+      ],
+    });
+
+    res.json(members);
+  } catch (error) {
+    logger.error('Error exporting members', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get single member
 router.get('/:id', async (req, res) => {
   try {
@@ -1943,38 +1975,6 @@ router.post('/match-history', [
     res.json(result);
   } catch (error) {
     logger.error('Error fetching match history', { error: error instanceof Error ? error.message : String(error) });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Export players (demographics and rating only)
-router.get('/export', async (req: AuthRequest, res: Response) => {
-  try {
-    const members = await prisma.member.findMany({
-      where: {
-        roles: {
-          has: 'PLAYER',
-        },
-      },
-      select: {
-        firstName: true,
-        lastName: true,
-        email: true,
-        gender: true,
-        birthDate: true,
-        rating: true,
-        phone: true,
-        address: true,
-      },
-      orderBy: [
-        { lastName: 'asc' },
-        { firstName: 'asc' }
-      ],
-    });
-
-    res.json(members);
-  } catch (error) {
-    logger.error('Error exporting members', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

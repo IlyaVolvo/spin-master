@@ -498,7 +498,37 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
     // If both have players, no change needed
     // If both are null, that's an error but should be handled by validation above
   }
-  
+
+  // Repair: earlier BYE/swap steps can rarely leave one player unplaced while an extra null remains.
+  // Invariant: exactly numPlayers IDs from seededPlayers, each once; null count = bracketSize - numPlayers.
+  {
+    const placed = new Set<number>();
+    for (const p of positions) {
+      if (p !== null) placed.add(p);
+    }
+    const missing = seededPlayers.filter((id) => !placed.has(id));
+    if (missing.length > 0) {
+      let mi = 0;
+      for (let idx = 0; idx < bracketSize && mi < missing.length; idx++) {
+        if (positions[idx] === null) {
+          positions[idx] = missing[mi++];
+        }
+      }
+    }
+  }
+
+  // Re-normalize BYE slots after repair (player must be at even index, null at odd within each match)
+  for (let i = 0; i < bracketSize; i += 2) {
+    const pos1 = i;
+    const pos2 = i + 1;
+    const player1 = positions[pos1];
+    const player2 = positions[pos2];
+    if (player1 === null && player2 !== null) {
+      positions[pos1] = player2;
+      positions[pos2] = null;
+    }
+  }
+
   return positions;
 }
 
