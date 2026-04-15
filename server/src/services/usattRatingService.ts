@@ -1,4 +1,5 @@
 import { prisma } from '../index';
+import { broadcastMembersUpdated } from './playerSocketBroadcast';
 
 /**
  * USATT Rating System Implementation
@@ -600,6 +601,8 @@ export async function recalculateAllRatings(): Promise<void> {
       })
     )
   );
+
+  await broadcastMembersUpdated(prisma, Array.from(currentRatings.keys()));
 }
 
 /**
@@ -909,6 +912,8 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
     )
   );
 
+  await broadcastMembersUpdated(prisma, Array.from(appliedNewRatings.keys()));
+
   // Get tournament recordedAt time (or createdAt if recordedAt is null) for timestamp
   // For ROUND_ROBIN, ratings are calculated when tournament is completed, so use recordedAt
   const tournamentTimestamp = tournament.recordedAt || tournament.createdAt;
@@ -1097,5 +1102,7 @@ export async function adjustRatingsForSingleMatch(
       matchId: matchId,
     },
   });
+
+  await broadcastMembersUpdated(prisma, [player1Id, player2Id]);
 }
 

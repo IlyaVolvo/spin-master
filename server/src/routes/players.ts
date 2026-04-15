@@ -16,6 +16,7 @@ import {
   isValidPhoneNumber,
   isValidRatingInput,
 } from '../utils/memberValidation';
+import { stripSensitiveMemberFields } from '../utils/memberSerialization';
 
 const router = express.Router();
 const importUpload = multer({ storage: multer.memoryStorage() });
@@ -507,11 +508,6 @@ function generateQrTokenHash(): string {
   return createHash('sha256')
     .update(`${randomBytes(32).toString('hex')}:${Date.now()}:${Math.random()}`)
     .digest('hex');
-}
-
-function stripSensitiveMemberFields<T extends { password?: string; qrTokenHash?: string | null }>(member: T) {
-  const { password, qrTokenHash, ...memberWithoutSensitiveFields } = member;
-  return memberWithoutSensitiveFields;
 }
 
 // All routes require authentication

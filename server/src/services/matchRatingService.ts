@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { broadcastMembersUpdated } from './playerSocketBroadcast';
 import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
@@ -205,6 +206,8 @@ export async function processMatchRating(
     tournamentId,
     matchId,
   });
+
+  await broadcastMembersUpdated(prisma, [member1Id, member2Id]);
 
   return {
     player1RatingBefore,
