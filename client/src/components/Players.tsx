@@ -9,6 +9,17 @@ import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../u
 import { getMember, isOrganizer, isAdmin } from '../utils/auth';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import type { TournamentType } from '../types/tournament';
+import type { Member, SimilarName, ImportParseReport, PlayerImportResultsPayload, PendingPlayerData } from '../types/member';
+import {
+  toDateOnlyString,
+  parseBirthDateToLocalDate,
+  getBirthDateYearRangeMessage,
+  calculateMemberAge,
+} from './players/memberFormUtils.ts';
+import { AddPlayerModal } from './players/AddPlayerModal.tsx';
+import { SimilarNamesConfirmationModal } from './players/SimilarNamesConfirmationModal.tsx';
+import { SuspiciousRatingConfirmModal } from './players/SuspiciousRatingConfirmModal.tsx';
+import { PlayersSettingsMenu } from './memberSettings/PlayersSettingsMenu.tsx';
 import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
 import { useTournamentCreation } from './hooks/useTournamentCreation';
 import { usePlayerData, membersCache } from './hooks/usePlayerData';
@@ -28,52 +39,6 @@ import './tournaments/plugins';
 // membersCache is imported from ./hooks/usePlayerData
 // matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache
 // are imported from ./utils/matchCacheUtils
-
-interface Member {
-  id: number;
-  firstName: string;
-  lastName: string;
-  birthDate: string | null;
-  isActive: boolean;
-  emailConfirmedAt?: string | null;
-  rating: number | null;
-  email: string;
-  gender: 'MALE' | 'FEMALE' | 'OTHER';
-  roles: string[];
-  picture?: string | null;
-  phone?: string | null;
-  address?: string | null;
-}
-
-interface SimilarName {
-  name: string;
-  similarity: number;
-}
-
-interface ImportParseReport {
-  fileErrors: string[];
-  totalDataRows: number;
-  validRows: number;
-  rejectedRows: number;
-  failedRows: Array<{ rowNumber: number; rawLine: string; messages: string[] }>;
-}
-
-interface PlayerImportResultsPayload {
-  total: number;
-  successful: number;
-  failed: number;
-  emailFailed: number;
-  emailSent: boolean;
-  successfulPlayers: Array<{ firstName: string; lastName: string; email: string }>;
-  failedPlayers: Array<{
-    firstName: string;
-    lastName: string;
-    email?: string;
-    birthDate?: string | null;
-    error: string;
-  }>;
-  emailFailedPlayers: Array<{ firstName: string; lastName: string; email: string; error: string }>;
-}
 
 const Players: React.FC = () => {
   const navigate = useNavigate();
@@ -102,19 +67,7 @@ const Players: React.FC = () => {
   const [newPlayerRoles, setNewPlayerRoles] = useState<string[]>(['PLAYER']);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [similarNames, setSimilarNames] = useState<SimilarName[]>([]);
-  const [pendingPlayerData, setPendingPlayerData] = useState<{
-    firstName: string;
-    lastName: string;
-    email: string;
-    gender: 'MALE' | 'FEMALE' | 'OTHER';
-    birthDate: string | null;
-    rating: number | null;
-    phone: string | null;
-    address: string | null;
-    picture: string | null;
-    roles: string[];
-    emailConfirmedAt?: string | null;
-  } | null>(null);
+  const [pendingPlayerData, setPendingPlayerData] = useState<PendingPlayerData | null>(null);
   const [showActiveConfirmation, setShowActiveConfirmation] = useState(false);
   const [pendingActiveToggle, setPendingActiveToggle] = useState<{ playerId: number; isActive: boolean; emailConfirmedAt?: string | null; playerName: string } | null>(null);
   const [nameDisplayOrder, setNameDisplayOrderState] = useState<NameDisplayOrder>(getNameDisplayOrder());
@@ -226,40 +179,8 @@ const Players: React.FC = () => {
 
   const { minDate: minAllowedBirthDate, maxDate: maxAllowedBirthDate } = getBirthDateBounds();
 
-  const toDateOnlyString = (date: Date): string => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  const parseBirthDateToLocalDate = (value: string): Date => {
-    const datePart = value.split('T')[0];
-    const [yearRaw, monthRaw, dayRaw] = datePart.split('-');
-    const year = Number(yearRaw);
-    const month = Number(monthRaw);
-    const day = Number(dayRaw);
-
-    if (
-      Number.isInteger(year) &&
-      Number.isInteger(month) &&
-      Number.isInteger(day) &&
-      month >= 1 &&
-      month <= 12 &&
-      day >= 1 &&
-      day <= 31
-    ) {
-      return new Date(year, month - 1, day);
-    }
-
-    return new Date(value);
-  };
-
-  const getBirthDateValidationMessage = () => {
-    const minYear = minAllowedBirthDate.getUTCFullYear();
-    const maxYear = maxAllowedBirthDate.getUTCFullYear();
-    return `Birth date must be between years ${minYear} and ${maxYear}`;
-  };
+  const getBirthDateValidationMessage = () =>
+    getBirthDateYearRangeMessage(minAllowedBirthDate, maxAllowedBirthDate);
   const suspiciousRatingConfirmMessage =
     'The entered rating is outside the usual range (800-2100). Do you want to continue?';
 
@@ -2254,18 +2175,7 @@ const Players: React.FC = () => {
     setIsSelectingForHistory(true);
   };
 
-  // Calculate age from birth date
-  const calculateAge = (birthDate: string | null): number | null => {
-    if (!birthDate) return null;
-    const birth = parseBirthDateToLocalDate(birthDate);
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
-  };
+  const calculateAge = calculateMemberAge;
 
   // Compute filtered members based on all active filters
   const filteredPlayers = useMemo(() => {
@@ -3273,338 +3183,72 @@ const Players: React.FC = () => {
         </div>
 
         {showAddForm && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 10001,
-          }}>
-            <div className="card" style={{ maxWidth: '500px', width: '90%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
-                <h3 style={{ margin: 0 }}>Add Player</h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setNewPlayerFirstName('');
-                    setNewPlayerLastName('');
-                    setNewPlayerBirthDate(null);
-                    setNewPlayerRating('');
-                    setLastConfirmedAddRating('');
-                    setNewPlayerEmail('');
-                    setNewPlayerGender('');
-                    setNewPlayerRoles(['PLAYER']);
-                    setNewPlayerPhone('');
-                    setNewPlayerAddress('');
-                    setNewPlayerPicture('');
-                    setAddFieldErrors({});
-                    setAddFieldTouched({});
-                    setError('');
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    fontSize: '24px',
-                    cursor: 'pointer',
-                    color: '#666',
-                    padding: '0',
-                    width: '30px',
-                    height: '30px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  title="Close"
-                >
-                  ×
-                </button>
-              </div>
-              <form onSubmit={handleAddPlayer} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                <div style={{ overflowY: 'auto', flex: 1, paddingRight: '10px' }}>
-                <div className={`form-group ${addFieldErrors.firstName && addFieldTouched.firstName ? 'has-error' : addFieldTouched.firstName && !addFieldErrors.firstName ? 'is-valid' : ''}`}>
-                  <label>First Name *</label>
-                  <input
-                    type="text"
-                    value={newPlayerFirstName}
-                    onChange={(e) => { setNewPlayerFirstName(e.target.value); handleAddFieldChange('firstName', e.target.value); }}
-                    onBlur={() => handleAddFieldBlur('firstName')}
-                    placeholder="First name"
-                    autoFocus
-                  />
-                  {addFieldTouched.firstName && addFieldErrors.firstName && <span className="field-error">{addFieldErrors.firstName}</span>}
-                </div>
-                <div className={`form-group ${addFieldErrors.lastName && addFieldTouched.lastName ? 'has-error' : addFieldTouched.lastName && !addFieldErrors.lastName ? 'is-valid' : ''}`}>
-                  <label>Last Name *</label>
-                  <input
-                    type="text"
-                    value={newPlayerLastName}
-                    onChange={(e) => { setNewPlayerLastName(e.target.value); handleAddFieldChange('lastName', e.target.value); }}
-                    onBlur={() => handleAddFieldBlur('lastName')}
-                    placeholder="Last name"
-                  />
-                  {addFieldTouched.lastName && addFieldErrors.lastName && <span className="field-error">{addFieldErrors.lastName}</span>}
-                </div>
-                <div className={`form-group ${addFieldErrors.birthDate && addFieldTouched.birthDate ? 'has-error' : addFieldTouched.birthDate && !addFieldErrors.birthDate ? 'is-valid' : ''}`}>
-                  <label>Birth Date *</label>
-                  <DatePicker
-                    selected={newPlayerBirthDate}
-                    onChange={(date: Date | null) => { setNewPlayerBirthDate(date); handleAddFieldChange('birthDate', date); if (!addFieldTouched.birthDate) { setAddFieldTouched(prev => ({ ...prev, birthDate: true })); } const err = validateAddField('birthDate', date); setAddFieldErrors(prev => ({ ...prev, birthDate: err })); }}
-                    onBlur={() => handleAddFieldBlur('birthDate')}
-                    dateFormat="yyyy-MM-dd"
-                    showYearDropdown
-                    showMonthDropdown
-                    dropdownMode="select"
-                    scrollableYearDropdown
-                    yearDropdownItemNumber={100}
-                    placeholderText="Select birth date"
-                    className="date-picker-input"
-                    wrapperClassName="date-picker-wrapper"
-                  />
-                  {addFieldTouched.birthDate && addFieldErrors.birthDate && <span className="field-error">{addFieldErrors.birthDate}</span>}
-                </div>
-                <div className={`form-group ${addFieldErrors.email && addFieldTouched.email ? 'has-error' : addFieldTouched.email && !addFieldErrors.email ? 'is-valid' : ''}`}>
-                  <label>Email *</label>
-                  <input
-                    type="email"
-                    value={newPlayerEmail}
-                    onChange={(e) => { setNewPlayerEmail(e.target.value); handleAddFieldChange('email', e.target.value); }}
-                    onBlur={() => handleAddFieldBlur('email')}
-                    placeholder="email@example.com"
-                  />
-                  {addFieldTouched.email && addFieldErrors.email && <span className="field-error">{addFieldErrors.email}</span>}
-                </div>
-                <div className={`form-group ${addFieldErrors.gender && addFieldTouched.gender ? 'has-error' : addFieldTouched.gender && !addFieldErrors.gender ? 'is-valid' : ''}`}>
-                  <label>Gender *</label>
-                  <select
-                    value={newPlayerGender}
-                    onChange={(e) => { setNewPlayerGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER' | ''); handleAddFieldChange('gender', e.target.value); if (!addFieldTouched.gender) { setAddFieldTouched(prev => ({ ...prev, gender: true })); } const err = validateAddField('gender', e.target.value); setAddFieldErrors(prev => ({ ...prev, gender: err })); }}
-                    onBlur={() => handleAddFieldBlur('gender')}
-                  >
-                    <option value="">Select gender...</option>
-                    <option value="MALE">Male</option>
-                    <option value="FEMALE">Female</option>
-                    <option value="OTHER">Other</option>
-                  </select>
-                  {addFieldTouched.gender && addFieldErrors.gender && <span className="field-error">{addFieldErrors.gender}</span>}
-                </div>
-                <div className={`form-group ${addFieldErrors.roles && addFieldTouched.roles ? 'has-error' : addFieldTouched.roles && !addFieldErrors.roles ? 'is-valid' : ''}`}>
-                  <label>Roles *</label>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))',
-                      columnGap: '16px',
-                      rowGap: '8px',
-                      paddingTop: '4px',
-                    }}
-                  >
-                    {['PLAYER', 'COACH', 'ORGANIZER', 'ADMIN'].map((role) => (
-                      <label
-                        key={role}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          margin: 0,
-                          lineHeight: 1.2,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={newPlayerRoles.includes(role)}
-                          onChange={(e) => {
-                            const nextRoles = e.target.checked
-                              ? [...newPlayerRoles, role]
-                              : newPlayerRoles.filter((r) => r !== role);
-                            setNewPlayerRoles(nextRoles);
-                            handleAddFieldChange('roles', nextRoles);
-                            if (!addFieldTouched.roles) {
-                              setAddFieldTouched((prev) => ({ ...prev, roles: true }));
-                            }
-                            const err = validateAddField('roles', nextRoles);
-                            setAddFieldErrors((prev) => ({ ...prev, roles: err }));
-                          }}
-                          style={{ cursor: 'pointer', margin: 0 }}
-                        />
-                        <span>{role}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {addFieldTouched.roles && addFieldErrors.roles && <span className="field-error">{addFieldErrors.roles}</span>}
-                </div>
-                <div className={`form-group ${addFieldErrors.rating && addFieldTouched.rating ? 'has-error' : ''}`}>
-                  <label>Initial Rating (optional)</label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="9999"
-                    value={newPlayerRating}
-                    onChange={(e) => { setNewPlayerRating(e.target.value); handleAddFieldChange('rating', e.target.value); }}
-                    onBlur={handleAddRatingBlur}
-                    placeholder="Leave empty for unrated (0-9999)"
-                  />
-                  {addFieldTouched.rating && addFieldErrors.rating && <span className="field-error">{addFieldErrors.rating}</span>}
-                </div>
-                <div className={`form-group ${addFieldErrors.phone && addFieldTouched.phone ? 'has-error' : ''}`}>
-                  <label>Phone (optional)</label>
-                  <input
-                    type="tel"
-                    value={newPlayerPhone}
-                    onChange={(e) => { setNewPlayerPhone(e.target.value); handleAddFieldChange('phone', e.target.value); }}
-                    onBlur={() => handleAddFieldBlur('phone')}
-                    placeholder="Phone number"
-                  />
-                  {addFieldTouched.phone && addFieldErrors.phone && <span className="field-error">{addFieldErrors.phone}</span>}
-                </div>
-                <div className="form-group">
-                  <label>Address (optional)</label>
-                  <input
-                    type="text"
-                    value={newPlayerAddress}
-                    onChange={(e) => setNewPlayerAddress(e.target.value)}
-                    placeholder="Address"
-                  />
-                </div>
-                <div className={`form-group ${addFieldErrors.picture && addFieldTouched.picture ? 'has-error' : ''}`}>
-                  <label>Picture URL (optional)</label>
-                  <input
-                    type="url"
-                    value={newPlayerPicture}
-                    onChange={(e) => { setNewPlayerPicture(e.target.value); handleAddFieldChange('picture', e.target.value); }}
-                    onBlur={() => handleAddFieldBlur('picture')}
-                    placeholder="Image URL"
-                  />
-                  {addFieldTouched.picture && addFieldErrors.picture && <span className="field-error">{addFieldErrors.picture}</span>}
-                </div>
-                </div>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #eee', flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddForm(false);
-                      setNewPlayerFirstName('');
-                      setNewPlayerLastName('');
-                      setNewPlayerBirthDate(null);
-                      setNewPlayerRating('');
-                      setLastConfirmedAddRating('');
-                      setNewPlayerEmail('');
-                      setNewPlayerGender('');
-                      setNewPlayerRoles(['PLAYER']);
-                      setNewPlayerPhone('');
-                      setNewPlayerAddress('');
-                      setNewPlayerPicture('');
-                      setAddFieldErrors({});
-                      setAddFieldTouched({});
-                      setError('');
-                    }}
-                    className="button-filter"
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" className="button-3d">Save Member & Send Invitation</button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <AddPlayerModal
+            onClose={() => {
+              setShowAddForm(false);
+              setNewPlayerFirstName('');
+              setNewPlayerLastName('');
+              setNewPlayerBirthDate(null);
+              setNewPlayerRating('');
+              setLastConfirmedAddRating('');
+              setNewPlayerEmail('');
+              setNewPlayerGender('');
+              setNewPlayerRoles(['PLAYER']);
+              setNewPlayerPhone('');
+              setNewPlayerAddress('');
+              setNewPlayerPicture('');
+              setAddFieldErrors({});
+              setAddFieldTouched({});
+              setError('');
+            }}
+            onSubmit={handleAddPlayer}
+            newPlayerFirstName={newPlayerFirstName}
+            setNewPlayerFirstName={setNewPlayerFirstName}
+            newPlayerLastName={newPlayerLastName}
+            setNewPlayerLastName={setNewPlayerLastName}
+            newPlayerBirthDate={newPlayerBirthDate}
+            setNewPlayerBirthDate={setNewPlayerBirthDate}
+            newPlayerEmail={newPlayerEmail}
+            setNewPlayerEmail={setNewPlayerEmail}
+            newPlayerGender={newPlayerGender}
+            setNewPlayerGender={setNewPlayerGender}
+            newPlayerRoles={newPlayerRoles}
+            setNewPlayerRoles={setNewPlayerRoles}
+            newPlayerRating={newPlayerRating}
+            setNewPlayerRating={setNewPlayerRating}
+            newPlayerPhone={newPlayerPhone}
+            setNewPlayerPhone={setNewPlayerPhone}
+            newPlayerAddress={newPlayerAddress}
+            setNewPlayerAddress={setNewPlayerAddress}
+            newPlayerPicture={newPlayerPicture}
+            setNewPlayerPicture={setNewPlayerPicture}
+            addFieldErrors={addFieldErrors}
+            addFieldTouched={addFieldTouched}
+            setAddFieldTouched={setAddFieldTouched}
+            setAddFieldErrors={setAddFieldErrors}
+            validateAddField={validateAddField}
+            handleAddFieldChange={handleAddFieldChange}
+            handleAddFieldBlur={handleAddFieldBlur}
+            handleAddRatingBlur={handleAddRatingBlur}
+          />
         )}
 
         {showConfirmation && pendingPlayerData && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 10001,
-          }}>
-            <div className="card" style={{ maxWidth: '500px', width: '90%', position: 'relative' }}>
-              <h3 style={{ marginBottom: '15px', color: '#e67e22' }}>⚠️ Similar Player Names Found</h3>
-              <p style={{ marginBottom: '15px' }}>
-                You're trying to add: <strong>{pendingPlayerData.firstName} {pendingPlayerData.lastName}</strong>
-                {pendingPlayerData.rating && ` (Rating: ${pendingPlayerData.rating})`}
-              </p>
-              <p style={{ marginBottom: '15px', fontWeight: 'bold' }}>Similar existing players:</p>
-              <ul style={{ marginBottom: '20px', paddingLeft: '20px' }}>
-                {similarNames.map((similar, index) => (
-                  <li key={index} style={{ marginBottom: '8px' }}>
-                    <strong>{similar.name}</strong> ({similar.similarity}% similar)
-                  </li>
-                ))}
-              </ul>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={handleCancelAdd}
-                  style={{ backgroundColor: '#95a5a6', color: 'white' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleModifyName}
-                  style={{ backgroundColor: '#3498db', color: 'white' }}
-                >
-                  Modify Name
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmAdd}
-                  style={{ backgroundColor: '#27ae60', color: 'white' }}
-                >
-                  Confirm & Add
-                </button>
-              </div>
-            </div>
-          </div>
+          <SimilarNamesConfirmationModal
+            pendingPlayerData={pendingPlayerData}
+            similarNames={similarNames}
+            onCancel={handleCancelAdd}
+            onModifyName={handleModifyName}
+            onConfirmAdd={handleConfirmAdd}
+          />
         )}
 
         {showSuspiciousRatingConfirm && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 10002,
-          }}>
-            <div className="card" style={{ maxWidth: '460px', width: '90%', position: 'relative' }}>
-              <h3 style={{ marginBottom: '12px', color: '#e67e22' }}>Confirm Unusual Rating</h3>
-              <p style={{ marginBottom: '20px' }}>{suspiciousRatingConfirmMessage}</p>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  className="button-filter"
-                  onClick={() => resolveSuspiciousRatingConfirmation(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="button-3d"
-                  onClick={() => resolveSuspiciousRatingConfirmation(true)}
-                >
-                  Confirm
-                </button>
-              </div>
-            </div>
-          </div>
+          <SuspiciousRatingConfirmModal
+            message={suspiciousRatingConfirmMessage}
+            onCancel={() => resolveSuspiciousRatingConfirmation(false)}
+            onConfirm={() => resolveSuspiciousRatingConfirmation(true)}
+          />
         )}
 
         {importModal && (
@@ -5069,224 +4713,35 @@ const Players: React.FC = () => {
                 </th>
               )}
               <th style={{ textAlign: 'right', paddingRight: '10px', backgroundColor: '#f8f9fa' }}>
-                  <div style={{ position: 'relative', display: 'inline-block' }} data-settings-menu>
-                    <button
-                      onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-                      className="button-filter"
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                      }}
-                    >
-                      ⚙️ Settings
-                    </button>
-                    {showSettingsMenu && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '100%',
-                          right: 0,
-                          marginTop: '5px',
-                          backgroundColor: '#f5f5f5',
-                          border: '1px solid #ddd',
-                          borderRadius: '4px',
-                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-                          padding: '10px',
-                          minWidth: '200px',
-                          zIndex: 10001,
-                        }}
-                      >
-                        <div style={{ marginBottom: '6px', fontWeight: 'bold', borderBottom: '1px solid #ddd', paddingBottom: '4px', fontSize: '13px' }}>
-                          Display Options
-                        </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
-                          <input
-                            type="checkbox"
-                            checked={showIdColumn}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setShowIdColumn(checked);
-                              localStorage.setItem('players_showIdColumn', checked.toString());
-                            }}
-                            style={{ cursor: 'pointer', margin: 0 }}
-                          />
-                          <span>Show ID Column</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
-                          <input
-                            type="checkbox"
-                            checked={showAgeColumn}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setShowAgeColumn(checked);
-                              localStorage.setItem('players_showAgeColumn', checked.toString());
-                            }}
-                            style={{ cursor: 'pointer', margin: 0 }}
-                          />
-                          <span>Show Age Column</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
-                          <input
-                            type="checkbox"
-                            checked={showStatusColumn}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setShowStatusColumn(checked);
-                              localStorage.setItem('players_showStatusColumn', checked.toString());
-                            }}
-                            style={{ cursor: 'pointer', margin: 0 }}
-                          />
-                          <span>Show Status Column</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
-                          <input
-                            type="checkbox"
-                            checked={showGamesColumn}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setShowGamesColumn(checked);
-                              localStorage.setItem('players_showGamesColumn', checked.toString());
-                              if (checked) {
-                                fetchMatches();
-                              }
-                            }}
-                            style={{ cursor: 'pointer', margin: 0 }}
-                          />
-                          <span>Show Games Column</span>
-                        </label>
-                        <div style={{ borderTop: '1px solid #ddd', marginTop: '6px', marginBottom: '6px' }}></div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
-                          <input
-                            type="checkbox"
-                            checked={showAllPlayers}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setShowAllPlayers(checked);
-                              localStorage.setItem('players_showAllPlayers', checked.toString());
-                            }}
-                            style={{ cursor: 'pointer', margin: 0 }}
-                          />
-                          <span>Show All Players (including inactive)</span>
-                        </label>
-                        {isAdmin() && (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
-                            <input
-                              type="checkbox"
-                              checked={showAllRoles}
-                              onChange={(e) => {
-                                const checked = e.target.checked;
-                                setShowAllRoles(checked);
-                                localStorage.setItem('players_showAllRoles', checked.toString());
-                                if (checked) {
-                                  fetchMembers();
-                                }
-                              }}
-                              style={{ cursor: 'pointer', margin: 0 }}
-                            />
-                            <span>Show All Members</span>
-                          </label>
-                        )}
-                        <div style={{ borderTop: '1px solid #ddd', paddingTop: '6px', marginTop: '6px' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>
-                            <span>Name:</span>
-                            <select
-                              value={nameDisplayOrder}
-                              onChange={(e) => {
-                                const order = e.target.value as NameDisplayOrder;
-                                setNameDisplayOrderState(order);
-                                setNameDisplayOrder(order);
-                              }}
-                              style={{
-                                padding: '3px 6px',
-                                cursor: 'pointer',
-                                border: '1px solid #ddd',
-                                borderRadius: '4px',
-                                fontSize: '12px',
-                              }}
-                            >
-                              <option value="firstLast">First Last</option>
-                              <option value="lastFirst">Last, First</option>
-                            </select>
-                          </label>
-                        </div>
-                        <div style={{ borderTop: '1px solid #ddd', marginTop: '6px', marginBottom: '6px' }}></div>
-                        {isAdmin() && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
-                            {(() => {
-                              const isDisabled = isSelectingForStats || isSelectingForHistory;
-                              const isExportDisabled = isDisabled || !supportsFullSaveDialog;
-                              const buttonBaseStyle: React.CSSProperties = {
-                                padding: '6px 12px',
-                                fontSize: '12px',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                width: '100%',
-                                textAlign: 'center',
-                              };
-                              const exportButtonStyle: React.CSSProperties = {
-                                ...buttonBaseStyle,
-                                backgroundColor: isExportDisabled ? '#95a5a6' : '#3498db',
-                                cursor: isExportDisabled ? 'not-allowed' : 'pointer',
-                                opacity: isExportDisabled ? 0.7 : 1,
-                              };
-                              const importButtonStyle: React.CSSProperties = {
-                                ...buttonBaseStyle,
-                                backgroundColor: isDisabled ? '#95a5a6' : '#3498db',
-                                cursor: isDisabled ? 'not-allowed' : 'pointer',
-                                opacity: isDisabled ? 0.7 : 1,
-                              };
-                              
-                              return (
-                                <>
-                                  <button 
-                                    onClick={handleExportPlayers}
-                                    disabled={isExportDisabled}
-                                    className="button-3d"
-                                    style={exportButtonStyle}
-                                    title={supportsFullSaveDialog ? 'Export players to CSV' : 'Full Save As (name + location) is not supported in Safari. Use Chrome/Edge.'}
-                                  >
-                                    Export
-                                  </button>
-                                  {!supportsFullSaveDialog && (
-                                    <div style={{ fontSize: '11px', color: '#a65b00', lineHeight: 1.3 }}>
-                                      Full Save As is unavailable in Safari. Use Chrome/Edge for location + name selection.
-                                    </div>
-                                  )}
-                                  <label
-                                    className="button-3d"
-                                    style={importButtonStyle}
-                                    title="Import players from CSV"
-                                  >
-                                    📤 Import
-                                    <input
-                                      type="file"
-                                      accept=".csv"
-                                      onChange={handleImportPlayers}
-                                      disabled={isDisabled}
-                                      style={{ display: 'none' }}
-                                    />
-                                  </label>
-                                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#555', cursor: 'pointer', marginTop: '2px' }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={importSendEmail}
-                                      onChange={(e) => setImportSendEmail(e.target.checked)}
-                                      style={{ margin: 0, cursor: 'pointer' }}
-                                    />
-                                    Send invitation email
-                                  </label>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </th>
+                <PlayersSettingsMenu
+                  showSettingsMenu={showSettingsMenu}
+                  setShowSettingsMenu={setShowSettingsMenu}
+                  showIdColumn={showIdColumn}
+                  setShowIdColumn={setShowIdColumn}
+                  showAgeColumn={showAgeColumn}
+                  setShowAgeColumn={setShowAgeColumn}
+                  showStatusColumn={showStatusColumn}
+                  setShowStatusColumn={setShowStatusColumn}
+                  showGamesColumn={showGamesColumn}
+                  setShowGamesColumn={setShowGamesColumn}
+                  showAllPlayers={showAllPlayers}
+                  setShowAllPlayers={setShowAllPlayers}
+                  showAllRoles={showAllRoles}
+                  setShowAllRoles={setShowAllRoles}
+                  nameDisplayOrder={nameDisplayOrder}
+                  setNameDisplayOrderState={setNameDisplayOrderState}
+                  fetchMatches={fetchMatches}
+                  fetchMembers={fetchMembers}
+                  isAdminUser={isAdmin()}
+                  isSelectingForStats={isSelectingForStats}
+                  isSelectingForHistory={isSelectingForHistory}
+                  supportsFullSaveDialog={supportsFullSaveDialog}
+                  onExportPlayers={handleExportPlayers}
+                  onImportPlayers={handleImportPlayers}
+                  importSendEmail={importSendEmail}
+                  setImportSendEmail={setImportSendEmail}
+                />
+              </th>
             </tr>
           </thead>
           {/* Sticky selected player row for history selection - appears right under header */}
