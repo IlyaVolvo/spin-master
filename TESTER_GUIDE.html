@@ -91,7 +91,9 @@
 
 <h3>CSV Format</h3>
 
-<p><b>Required columns:</b></p>
+<p><b>Header row (optional):</b> The first non-empty line can be either a column header row or the first data row. The app treats it as a <b>header</b> when that line includes the labels <code>firstname</code>, <code>lastname</code>, <code>email</code>, and <code>birthdate</code> or <code>date of birth</code>, and when no cell on that line looks like an email address (so a normal player row is not mistaken for a header). If it is <b>not</b> treated as a header, <b>every line is data</b> and columns must follow the <b>export order</b> from this app: <code>firstname</code>, <code>lastname</code>, <code>email</code>, <code>date of birth</code>, <code>gender</code>, <code>roles</code>, <code>phone</code>, <code>address</code>, <code>rating</code>.</p>
+
+<p>When you use a header row, <b>required columns</b> are:</p>
 
 <table>
   <tr><th>Column</th><th>Notes</th></tr>
@@ -101,7 +103,7 @@
   <tr><td><code>birthdate</code> or <code>date of birth</code></td><td>YYYY-MM-DD recommended; any parseable date format works</td></tr>
 </table>
 
-<p><b>Optional columns:</b></p>
+<p><b>Optional columns</b> (by header name, or by position in export order when there is no header):</p>
 
 <table>
   <tr><th>Column</th><th>Notes</th></tr>
@@ -112,12 +114,16 @@
   <tr><td><code>rating</code></td><td>Integer 0–9999</td></tr>
 </table>
 
-<p><b>Example CSV:</b></p>
+<p><b>Example CSV (with header row):</b></p>
 
-<pre>firstname,lastname,email,birthdate,gender,roles,phone,rating
-John,Smith,john.smith@example.com,1985-03-15,MALE,"P, C",(555) 123-4567,1450
-Jane,Doe,jane.doe@example.com,1990-07-22,FEMALE,P,,1200
-Bob,Johnson,bob.j@example.com,1978-11-03,MALE,P,555-987-6543,1800</pre>
+<pre>firstname,lastname,email,birthdate,gender,roles,phone,address,rating
+John,Smith,john.smith@example.com,1985-03-15,MALE,"P, C",(555) 123-4567,,1450
+Jane,Doe,jane.doe@example.com,1990-07-22,FEMALE,P,,,1200
+Bob,Johnson,bob.j@example.com,1978-11-03,MALE,P,555-987-6543,,1800</pre>
+
+<p><b>Example (no header — same column order as export; empty trailing fields may be omitted only if commas still align nine columns):</b></p>
+
+<pre>John,Smith,john.smith@example.com,1985-03-15,MALE,"P, C",(555) 123-4567,,1450</pre>
 
 <p>Lines starting with <code>#</code> are treated as comments and ignored.</p>
 
@@ -144,7 +150,7 @@ Bob,Johnson,bob.j@example.com,1978-11-03,MALE,P,555-987-6543,1800</pre>
 <ol>
   <li><b>Export from the source system</b> — most systems support CSV or Excel export.</li>
   <li><b>Open in a spreadsheet application</b> — Google Sheets, Excel, LibreOffice Calc, or Numbers all work.</li>
-  <li><b>Rename/map columns</b> to match the expected header names: <code>firstname</code>, <code>lastname</code>, <code>email</code>, <code>birthdate</code>, and optionally <code>gender</code>, <code>roles</code>, <code>phone</code>, <code>address</code>, <code>rating</code>.</li>
+  <li><b>Rename/map columns</b> to match the expected header names, <b>or</b> remove the header row and order columns exactly like an export from this app (see export order above).</li>
   <li><b>Clean the data:</b>
     <ul>
       <li>Ensure every row has a unique, valid email address.</li>

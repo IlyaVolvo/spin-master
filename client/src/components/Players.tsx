@@ -50,6 +50,17 @@ interface SimilarName {
   similarity: number;
 }
 
+interface PlayerImportResultsPayload {
+  total: number;
+  successful: number;
+  failed: number;
+  emailFailed: number;
+  emailSent: boolean;
+  successfulPlayers: Array<{ firstName: string; lastName: string; email: string }>;
+  failedPlayers: Array<{ firstName: string; lastName: string; email?: string; error: string }>;
+  emailFailedPlayers: Array<{ firstName: string; lastName: string; email: string; error: string }>;
+}
+
 const Players: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -93,19 +104,11 @@ const Players: React.FC = () => {
   const [showActiveConfirmation, setShowActiveConfirmation] = useState(false);
   const [pendingActiveToggle, setPendingActiveToggle] = useState<{ playerId: number; isActive: boolean; emailConfirmedAt?: string | null; playerName: string } | null>(null);
   const [nameDisplayOrder, setNameDisplayOrderState] = useState<NameDisplayOrder>(getNameDisplayOrder());
-  const [showImportResults, setShowImportResults] = useState(false);
+  const [importModal, setImportModal] = useState<
+    { kind: 'results'; results: PlayerImportResultsPayload } | { kind: 'error'; message: string } | null
+  >(null);
   const suspiciousRatingConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const [showSuspiciousRatingConfirm, setShowSuspiciousRatingConfirm] = useState(false);
-  const [importResults, setImportResults] = useState<{
-    total: number;
-    successful: number;
-    failed: number;
-    emailFailed: number;
-    emailSent: boolean;
-    successfulPlayers: Array<{ firstName: string; lastName: string; email: string }>;
-    failedPlayers: Array<{ firstName: string; lastName: string; email?: string; error: string }>;
-    emailFailedPlayers: Array<{ firstName: string; lastName: string; email: string; error: string }>;
-  } | null>(null);
   const [importSendEmail, setImportSendEmail] = useState(true);
   const [showExportSelection, setShowExportSelection] = useState(false);
   const [selectedPlayersForExport, setSelectedPlayersForExport] = useState<Set<number>>(new Set());
@@ -1172,17 +1175,17 @@ const Players: React.FC = () => {
       const response = await api.post('/players/import', formData, {
         timeout: 10000,
       });
-      setImportResults({ ...response.data, emailSent: importSendEmail });
-      setShowImportResults(true);
+      setImportModal({
+        kind: 'results',
+        results: { ...response.data, emailSent: importSendEmail },
+      });
       await fetchMembers(); // Refresh player list
-      const emailNote = !importSendEmail ? ' (emails not sent)' : (response.data.emailFailed > 0 ? `, ${response.data.emailFailed} email issue(s)` : '');
-      setSuccess(`Import completed: ${response.data.successful} imported${emailNote}${response.data.failed > 0 ? `, ${response.data.failed} failed` : ''}`);
-      
+
       // Reset file input
       event.target.value = '';
     } catch (err: any) {
       const errorMessage = err.response?.data?.error || err.message || 'Failed to import players';
-      setError(errorMessage);
+      setImportModal({ kind: 'error', message: errorMessage });
       event.target.value = '';
     }
   };
@@ -3570,173 +3573,270 @@ const Players: React.FC = () => {
           </div>
         )}
 
-        {showImportResults && importResults && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 10001,
-          }}>
-            <div className="card" style={{ maxWidth: '700px', width: '90%', maxHeight: '80vh', overflow: 'auto', position: 'relative' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0 }}>Import Results</h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowImportResults(false);
-                    setImportResults(null);
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    fontSize: '24px',
-                    cursor: 'pointer',
-                    color: '#666',
-                    padding: '0',
-                    width: '30px',
-                    height: '30px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  title="Close"
-                >
-                  ×
-                </button>
-              </div>
-              
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
-                  <div style={{ flex: 1, padding: '10px', backgroundColor: '#e8f5e9', borderRadius: '4px' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#27ae60' }}>{importResults.successful}</div>
-                    <div style={{ fontSize: '14px', color: '#666' }}>Successfully Imported</div>
+        {importModal && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 10001,
+            }}
+            role="presentation"
+            aria-modal="true"
+          >
+            <div
+              className="card"
+              style={{ maxWidth: '700px', width: '90%', maxHeight: '80vh', overflow: 'auto', position: 'relative' }}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-labelledby="import-modal-title"
+            >
+              {importModal.kind === 'error' ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h3 id="import-modal-title" style={{ margin: 0 }}>
+                      Import could not complete
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setImportModal(null)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        fontSize: '24px',
+                        cursor: 'pointer',
+                        color: '#666',
+                        padding: '0',
+                        width: '30px',
+                        height: '30px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title="Close"
+                    >
+                      ×
+                    </button>
                   </div>
-                  <div style={{ flex: 1, padding: '10px', backgroundColor: importResults.emailSent ? '#fff8e1' : '#e3f2fd', borderRadius: '4px' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: importResults.emailSent ? '#f39c12' : '#1976d2' }}>{importResults.emailSent ? importResults.emailFailed : '—'}</div>
-                    <div style={{ fontSize: '14px', color: '#666' }}>{importResults.emailSent ? 'Imported, Email Failed' : 'Emails Not Sent'}</div>
+                  <div
+                    style={{
+                      marginBottom: '20px',
+                      padding: '12px',
+                      backgroundColor: '#fdecea',
+                      border: '1px solid #f5c6cb',
+                      borderRadius: '4px',
+                      color: '#721c24',
+                      whiteSpace: 'pre-wrap',
+                      fontSize: '14px',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {importModal.message}
                   </div>
-                  <div style={{ flex: 1, padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#e74c3c' }}>{importResults.failed}</div>
-                    <div style={{ fontSize: '14px', color: '#666' }}>Failed</div>
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => setImportModal(null)}
+                      style={{
+                        backgroundColor: '#3498db',
+                        color: 'white',
+                        padding: '8px 16px',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Dismiss
+                    </button>
                   </div>
-                  <div style={{ flex: 1, padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#333' }}>{importResults.total}</div>
-                    <div style={{ fontSize: '14px', color: '#666' }}>Total</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h3 id="import-modal-title" style={{ margin: 0 }}>
+                      Import Results
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setImportModal(null)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        fontSize: '24px',
+                        cursor: 'pointer',
+                        color: '#666',
+                        padding: '0',
+                        width: '30px',
+                        height: '30px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title="Close"
+                    >
+                      ×
+                    </button>
                   </div>
-                </div>
-              </div>
 
-              {!importResults.emailSent && (
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={{ padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '4px', color: '#1565c0' }}>
-                    Invitation emails were not sent. You can send them later using the Reset Password feature for each player.
+                  <p style={{ margin: '0 0 16px', fontSize: '14px', color: '#555' }}>
+                    Review the summary below. This dialog stays open until you close it.
+                  </p>
+
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
+                      <div style={{ flex: 1, padding: '10px', backgroundColor: '#e8f5e9', borderRadius: '4px' }}>
+                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#27ae60' }}>{importModal.results.successful}</div>
+                        <div style={{ fontSize: '14px', color: '#666' }}>Successfully Imported</div>
+                      </div>
+                      <div
+                        style={{
+                          flex: 1,
+                          padding: '10px',
+                          backgroundColor: importModal.results.emailSent ? '#fff8e1' : '#e3f2fd',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: '24px',
+                            fontWeight: 'bold',
+                            color: importModal.results.emailSent ? '#f39c12' : '#1976d2',
+                          }}
+                        >
+                          {importModal.results.emailSent ? importModal.results.emailFailed : '—'}
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#666' }}>
+                          {importModal.results.emailSent ? 'Imported, Email Failed' : 'Emails Not Sent'}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px' }}>
+                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#e74c3c' }}>{importModal.results.failed}</div>
+                        <div style={{ fontSize: '14px', color: '#666' }}>Failed</div>
+                      </div>
+                      <div style={{ flex: 1, padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#333' }}>{importModal.results.total}</div>
+                        <div style={{ fontSize: '14px', color: '#666' }}>Total</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+
+                  {!importModal.results.emailSent && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <div style={{ padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '4px', color: '#1565c0' }}>
+                        Invitation emails were not sent. You can send them later using the Reset Password feature for each player.
+                      </div>
+                    </div>
+                  )}
+
+                  {importModal.results.emailSent && importModal.results.emailFailed > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h4 style={{ marginBottom: '10px', color: '#f39c12' }}>Imported Players With Email Delivery Issues:</h4>
+                      <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#fff8e1', borderRadius: '4px', color: '#8a6d3b' }}>
+                        These players were imported successfully, but their invitation/password setup email could not be sent.
+                      </div>
+                      <div style={{ maxHeight: '200px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: '#f5f5f5' }}>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>First Name</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Last Name</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email Error</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importModal.results.emailFailedPlayers.map((player, index) => (
+                              <tr key={index}>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee', color: '#f39c12' }}>{player.error}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {importModal.results.failed > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h4 style={{ marginBottom: '10px', color: '#e74c3c' }}>Failed Players:</h4>
+                      <div style={{ maxHeight: '300px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: '#f5f5f5' }}>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>First Name</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Last Name</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Error</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importModal.results.failedPlayers.map((player, index) => (
+                              <tr key={index}>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email || '-'}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee', color: '#e74c3c' }}>{player.error}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {importModal.results.successful > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h4 style={{ marginBottom: '10px', color: '#27ae60' }}>Successfully Imported Players:</h4>
+                      <div style={{ maxHeight: '200px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: '#f5f5f5' }}>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>First Name</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Last Name</th>
+                              <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importModal.results.successfulPlayers.map((player, index) => (
+                              <tr key={index}>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => setImportModal(null)}
+                      style={{
+                        backgroundColor: '#3498db',
+                        color: 'white',
+                        padding: '8px 16px',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
               )}
-
-              {importResults.emailSent && importResults.emailFailed > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <h4 style={{ marginBottom: '10px', color: '#f39c12' }}>Imported Players With Email Delivery Issues:</h4>
-                  <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#fff8e1', borderRadius: '4px', color: '#8a6d3b' }}>
-                    These players were imported successfully, but their invitation/password setup email could not be sent.
-                  </div>
-                  <div style={{ maxHeight: '200px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#f5f5f5' }}>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>First Name</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Last Name</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email Error</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {importResults.emailFailedPlayers.map((player, index) => (
-                          <tr key={index}>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email}</td>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee', color: '#f39c12' }}>{player.error}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {importResults.failed > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <h4 style={{ marginBottom: '10px', color: '#e74c3c' }}>Failed Players:</h4>
-                  <div style={{ maxHeight: '300px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#f5f5f5' }}>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>First Name</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Last Name</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Error</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {importResults.failedPlayers.map((player, index) => (
-                          <tr key={index}>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email || '-'}</td>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee', color: '#e74c3c' }}>{player.error}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {importResults.successful > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <h4 style={{ marginBottom: '10px', color: '#27ae60' }}>Successfully Imported Players:</h4>
-                  <div style={{ maxHeight: '200px', overflow: 'auto', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#f5f5f5' }}>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>First Name</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Last Name</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>Email</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {importResults.successfulPlayers.map((player, index) => (
-                          <tr key={index}>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
-                            <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowImportResults(false);
-                    setImportResults(null);
-                  }}
-                  style={{ backgroundColor: '#3498db', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                >
-                  Close
-                </button>
-              </div>
             </div>
           </div>
         )}

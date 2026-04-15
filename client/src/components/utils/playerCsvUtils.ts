@@ -8,6 +8,11 @@ import {
   isValidPhoneNumber,
   isValidRatingInput,
 } from '../../../../server/src/utils/memberValidation';
+import {
+  looksLikePlayersCsvHeaderRow,
+  PLAYERS_CSV_COLUMN_HEADERS,
+  playersCsvCanonicalHeadersForParse,
+} from '../../../../server/src/utils/playersCsvLayout';
 
 interface ExportablePlayer {
   firstName: string;
@@ -24,7 +29,7 @@ interface ExportablePlayer {
 // ─── CSV Export ──────────────────────────────────────────────────────────────
 
 export function generatePlayersCsv(players: ExportablePlayer[]): string {
-  const headers = ['firstname', 'lastname', 'email', 'date of birth', 'gender', 'roles', 'phone', 'address', 'rating'];
+  const headers = [...PLAYERS_CSV_COLUMN_HEADERS];
   const csvRows = [
     headers.join(','),
     ...players.map((player) => {
@@ -168,33 +173,59 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
     const trimmed = line.trim();
     return trimmed && !trimmed.startsWith('#');
   });
-  
-  if (lines.length < 2) {
-    return { players: [], errors: ['CSV file must have at least a header row and one data row'] };
+
+  if (lines.length === 0) {
+    return { players: [], errors: ['CSV file must contain at least one data row'] };
   }
 
-  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
-  const requiredHeaders = ['firstname', 'lastname', 'email'];
-  const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
-  
-  // Check for birthdate (can be 'birthdate' or 'date of birth')
-  const hasBirthdate = headers.includes('birthdate') || headers.includes('date of birth');
-  if (!hasBirthdate) {
-    missingHeaders.push('birthdate (or "date of birth")');
+  const firstCells = parseCSVLine(lines[0]);
+  const hasHeaderRow = looksLikePlayersCsvHeaderRow(firstCells);
+
+  let headers: string[];
+  let dataLines: string[];
+  let dataRowNumberOffset: number;
+
+  if (hasHeaderRow) {
+    headers = firstCells.map(h => h.toLowerCase().trim());
+    const requiredHeaders = ['firstname', 'lastname', 'email'];
+    const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+
+    const hasBirthdate = headers.includes('birthdate') || headers.includes('date of birth');
+    if (!hasBirthdate) {
+      missingHeaders.push('birthdate (or "date of birth")');
+    }
+
+    if (missingHeaders.length > 0) {
+      return { players: [], errors: [`Missing required columns: ${missingHeaders.join(', ')}`] };
+    }
+
+    dataLines = lines.slice(1);
+    dataRowNumberOffset = 2;
+  } else {
+    headers = playersCsvCanonicalHeadersForParse();
+    dataLines = lines;
+    dataRowNumberOffset = 1;
   }
-  
-  if (missingHeaders.length > 0) {
-    return { players: [], errors: [`Missing required columns: ${missingHeaders.join(', ')}`] };
+
+  if (dataLines.length === 0) {
+    return {
+      players: [],
+      errors: [
+        hasHeaderRow
+          ? 'CSV file must contain at least one data row below the header'
+          : 'CSV file must contain at least one data row',
+      ],
+    };
   }
 
   // Map headers to player fields
   const players: any[] = [];
   const errors: string[] = [];
-  
-  lines.slice(1).forEach((line, index) => {
+
+  dataLines.forEach((line, index) => {
     const values = parseCSVLine(line);
     const player: any = {};
-    const rowNumber = index + 2; // Row number (accounting for header row)
+    const rowNumber = index + dataRowNumberOffset;
     let rowRatingError = '';
     
     headers.forEach((header, i) => {

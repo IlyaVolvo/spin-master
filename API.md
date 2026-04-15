@@ -389,11 +389,18 @@ Import players from CSV (Admin only).
 **Request:**
 Multipart form data with CSV file
 
+**CSV format:** The first line may be either a header row (column names) or the first data row. If the first line contains the labels `firstname`, `lastname`, `email`, and `birthdate` or `date of birth`, and no cell looks like an email address, it is treated as a header; otherwise all lines are data in export column order (`firstname`, `lastname`, `email`, `date of birth`, `gender`, `roles`, `phone`, `address`, `rating`). See `server/src/utils/playersCsvLayout.ts` for the canonical list.
+
 **Response (200):**
 ```json
 {
-  "imported": 10,
-  "errors": []
+  "total": 10,
+  "successful": 9,
+  "failed": 1,
+  "emailFailed": 0,
+  "successfulPlayers": [{ "firstName": "...", "lastName": "...", "email": "..." }],
+  "failedPlayers": [{ "firstName": "...", "lastName": "...", "email": "...", "error": "..." }],
+  "emailFailedPlayers": []
 }
 ```
 

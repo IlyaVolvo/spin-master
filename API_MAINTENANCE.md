@@ -6,6 +6,7 @@ This file describes how to keep API docs aligned with server behavior.
 - Route handlers: `server/src/routes/*.ts`
 - Plugin behavior for tournaments: `server/src/plugins/*`
 - Shared validation: `server/src/utils/memberValidation.ts`
+- Player CSV column order and header detection: `server/src/utils/playersCsvLayout.ts` (keep client `playerCsvUtils` import parsing aligned)
 
 Main human-facing API document:
 - `API.md` (and any companion endpoint docs used in your workflow)
@@ -57,7 +58,12 @@ Include notes for:
 If you update shared validators (email/birth date/phone/rating):
 1. Update API docs for affected endpoints
 2. Update client docs if UX behavior changes
-3. Update CSV import docs if parser behavior changes
+3. Update CSV import docs if parser behavior changes (`USER_GUIDE.md` § CSV import; `POST /api/players/import` notes in `API.md` if present)
+
+If you change player CSV import/export behavior (column order, optional header heuristic, or accepted column names):
+1. Update `server/src/utils/playersCsvLayout.ts` and mirror logic in `server/src/routes/players.ts` and `client/src/components/utils/playerCsvUtils.ts`
+2. Update `USER_GUIDE.md` § CSV import and export column lists
+3. Add or adjust tests under `server/tests/utils/playersCsvLayout.test.ts` and `server/tests/functional/functionalMembers.test.ts` as needed
 
 ## Suggested PR checklist
 - [ ] Route changes documented

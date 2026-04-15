@@ -82,6 +82,32 @@ describe('Functional: members & lists', () => {
     expect(exportedEmails.has('import2.functional@test.local')).toBe(true);
   });
 
+  it('CSV import without header row uses export column order', async () => {
+    const { token } = await seedOrganizer(prisma);
+    const csv = [
+      'NoHdr,One,nohdr1.functional@test.local,2002-02-02,MALE,,,,',
+      'NoHdr,Two,nohdr2.functional@test.local,2003-03-03,FEMALE,P,,,1600',
+    ].join('\n');
+
+    const importRes = await request(app)
+      .post('/api/players/import')
+      .set(authHeader(token))
+      .field('sendEmail', 'false')
+      .attach('file', Buffer.from(csv, 'utf-8'), 'import.csv')
+      .expect(200);
+
+    expect(importRes.body.successful as number).toBeGreaterThanOrEqual(2);
+
+    const dbRows = await prisma.member.findMany({
+      where: { email: { in: ['nohdr1.functional@test.local', 'nohdr2.functional@test.local'] } },
+      orderBy: { email: 'asc' },
+    });
+    expect(dbRows).toHaveLength(2);
+    expect(dbRows[0].firstName).toBe('NoHdr');
+    expect(dbRows[1].lastName).toBe('Two');
+    expect(dbRows[1].rating).toBe(1600);
+  });
+
   it('GET /players vs /active; rating-history & match-history', async () => {
     const { token } = await seedOrganizer(prisma);
     const players = await seedPlayers(prisma, [

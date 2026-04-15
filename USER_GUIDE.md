@@ -412,13 +412,29 @@ Typical exported fields include:
 ### Import
 Import accepts a CSV upload and validates rows before creating members.
 
-Expected columns:
+**Header row (optional):** If the first non-empty line looks like a column header, it is used to map columns by name. The parser treats that line as a header when it contains the labels `firstname`, `lastname`, `email`, and either `birthdate` or `date of birth`, and when no cell on that line looks like an email address (so a normal data row is not mistaken for a header).
+
+**No header row:** If the first line is not recognized as a header, every line is treated as a data row. Columns are then read in the **same order as export**:
+
+1. `firstname`  
+2. `lastname`  
+3. `email`  
+4. `date of birth`  
+5. `gender`  
+6. `roles`  
+7. `phone`  
+8. `address`  
+9. `rating`  
+
+When you use a header row, required columns are still:
+
 - `firstname`
 - `lastname`
 - `email`
 - `date of birth` or `birthdate`
 
-Optional columns include:
+Optional columns (by header name or, without a header, by position above) include:
+
 - `gender`
 - `roles`
 - `phone`
@@ -466,7 +482,8 @@ Optional columns include:
 - Only active players can be selected.
 
 ### Import fails
-- Check the CSV header names.
+- If you use a header row, check that the first line includes the expected column names (`firstname`, `lastname`, `email`, and `birthdate` or `date of birth`).
+- If you omit the header, confirm columns follow the export order (see **No header row** above).
 - Review row-level validation errors.
 - Confirm birth dates, email format, phone format, and ratings.
 
