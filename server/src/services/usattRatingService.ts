@@ -581,11 +581,10 @@ export async function recalculateAllRatings(): Promise<void> {
       finalRatings.set(memberId, finalRating);
       // Update current rating for next tournament
       currentRatings.set(memberId, finalRating);
-      
-      // Store post-tournament rating for display (in both caches)
-      const { setCachedPostTournamentRating } = await import('./cacheService');
-      setCachedPostTournamentRating(tournament.id, memberId, finalRating);
-      postTournamentRatings.set(`${tournament.id}-${memberId}`, finalRating);
+      // Do not write post-tournament display cache here: for ROUND_ROBIN, materialized
+      // ratings live in rating_history (TOURNAMENT_COMPLETED) and may differ from this
+      // raw 4-pass output (applied rating uses anchor + delta). Caching finalRating
+      // caused standings to show wrong post-tournament numbers vs Players / history.
     }
   }
 
@@ -616,20 +615,7 @@ export async function recalculateAllRatings(): Promise<void> {
  *   calculation is effectively a no-op and this function reads the last in-tournament history entry.
  */
 export async function getPostTournamentRating(tournamentId: number, memberId: number): Promise<number | null | undefined> {
-  // Check cache service first (persistent cache)
   const { getCachedPostTournamentRating, setCachedPostTournamentRating } = await import('./cacheService');
-  const cached = getCachedPostTournamentRating(tournamentId, memberId);
-  if (cached !== undefined) {
-    // Also update in-memory map for backward compatibility
-    postTournamentRatings.set(`${tournamentId}-${memberId}`, cached);
-    return cached;
-  }
-  
-  // Fallback to in-memory cache (backward compatibility)
-  const memoryCached = postTournamentRatings.get(`${tournamentId}-${memberId}`);
-  if (memoryCached !== undefined) {
-    return memoryCached;
-  }
 
   const tournamentInfo = await prisma.tournament.findUnique({
     where: { id: tournamentId },
@@ -656,12 +642,15 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
     return null;
   }
 
-  let lastEntry: { rating: number | null } | null = null;
-
-  // For Round Robin, completion-time rating is authoritative.
-  // Prefer TOURNAMENT_COMPLETED to avoid legacy duplicate match-level entries
-  // created after completion from old route flow.
+  /**
+   * ROUND_ROBIN: always resolve from DB (rating_history), not from post-tournament cache.
+   * Cache entries may have been written by recalculateAllRatings() with raw 4-pass outputs,
+   * while completion applies a different formula (anchor + delta vs enrollment) into
+   * TOURNAMENT_COMPLETED — so cache-first produced wrong standings (e.g. showing another
+   * player's scale / algorithm-only numbers).
+   */
   if (tournamentInfo.type === 'ROUND_ROBIN') {
+    let lastEntry: { rating: number | null } | null = null;
     lastEntry = await (prisma as any).ratingHistory.findFirst({
       where: {
         memberId,
@@ -676,28 +665,59 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
         rating: true,
       },
     });
+
+    if (!lastEntry) {
+      lastEntry = await (prisma as any).ratingHistory.findFirst({
+        where: {
+          memberId,
+          tournamentId,
+        },
+        orderBy: [
+          { timestamp: 'desc' },
+          { id: 'desc' },
+        ],
+        select: {
+          rating: true,
+        },
+      });
+    }
+
+    const resolved = lastEntry?.rating ?? playerRatingAtTime;
+    setCachedPostTournamentRating(tournamentId, memberId, resolved);
+    postTournamentRatings.set(`${tournamentId}-${memberId}`, resolved);
+    return resolved;
   }
 
-  if (!lastEntry) {
-    // Fallback for non-RR tournaments and RR tournaments without completion history
-    lastEntry = await (prisma as any).ratingHistory.findFirst({
-      where: {
-        memberId,
-        tournamentId,
-      },
-      orderBy: [
-        { timestamp: 'desc' },
-        { id: 'desc' },
-      ],
-      select: {
-        rating: true,
-      },
-    });
+  // Non–round-robin: cache-first for performance
+  const cached = getCachedPostTournamentRating(tournamentId, memberId);
+  if (cached !== undefined) {
+    postTournamentRatings.set(`${tournamentId}-${memberId}`, cached);
+    return cached;
   }
+
+  const memoryCached = postTournamentRatings.get(`${tournamentId}-${memberId}`);
+  if (memoryCached !== undefined) {
+    return memoryCached;
+  }
+
+  let lastEntry: { rating: number | null } | null = null;
+
+  lastEntry = await (prisma as any).ratingHistory.findFirst({
+    where: {
+      memberId,
+      tournamentId,
+    },
+    orderBy: [
+      { timestamp: 'desc' },
+      { id: 'desc' },
+    ],
+    select: {
+      rating: true,
+    },
+  });
 
   const resolved = lastEntry?.rating ?? playerRatingAtTime;
 
-  // Backfill caches so future reads are O(1)
   setCachedPostTournamentRating(tournamentId, memberId, resolved);
   postTournamentRatings.set(`${tournamentId}-${memberId}`, resolved);
 

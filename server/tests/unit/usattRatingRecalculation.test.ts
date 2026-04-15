@@ -110,7 +110,7 @@ describe('usattRatingService recalculation flows', () => {
       expect(mockInvalidateTournamentCache).not.toHaveBeenCalled();
     });
 
-    it('recalculates ratings for a simple completed tournament and writes post-tournament cache', async () => {
+    it('recalculates ratings for a simple completed tournament (does not write post-tournament display cache)', async () => {
       const tournaments = [
         {
           id: 10,
@@ -142,8 +142,9 @@ describe('usattRatingService recalculation flows', () => {
       expect(mockPrisma.member.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { rating: 1508 } });
       expect(mockPrisma.member.update).toHaveBeenCalledWith({ where: { id: 2 }, data: { rating: 1492 } });
 
-      expect(mockSetCachedPostTournamentRating).toHaveBeenCalledWith(10, 1, 1508);
-      expect(mockSetCachedPostTournamentRating).toHaveBeenCalledWith(10, 2, 1492);
+      // Post-tournament display cache is filled by getPostTournamentRating from rating_history,
+      // not from raw 4-pass outputs (which can differ from RR completion materialization).
+      expect(mockSetCachedPostTournamentRating).not.toHaveBeenCalled();
     });
 
     it('skips BYE, forfeit, and unplayed 0-0 matches during recalculation', async () => {
