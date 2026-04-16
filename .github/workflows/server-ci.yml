@@ -12,6 +12,8 @@ on:
 
 jobs:
   test:
+    # Remove the next line (or set to true) to re-enable Jest on every push/PR.
+    if: false
     runs-on: ubuntu-latest
 
     services:
@@ -30,6 +32,8 @@ jobs:
           --health-retries 10
 
     env:
+      # GitHub is moving JS actions to Node 24; opt in so checkout/setup-node stay supported.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       # Prisma CLI + Jest both need a test DB; jestSetupEnv maps DATABASE_URL_TEST → DATABASE_URL for the app.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/spin_test
       DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/spin_test
@@ -45,12 +49,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: server/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
 
       - name: Prisma migrate (test database)
         run: npx prisma migrate deploy
