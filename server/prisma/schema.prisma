@@ -64,8 +64,99 @@ model Member {
   // Tournament participations
   tournamentParticipants TournamentParticipant[]
 
+  clubVisits        ClubVisit[]
+  clubEntitlements  ClubEntitlement[]
+  clubPayments      ClubPayment[]
+
   @@index([email])
   @@map("members")
+}
+
+// --- Club attendance & payments (member check-in / QR kiosk) ---
+
+enum ClubVisitClosedBy {
+  SCAN
+  MANUAL
+  AUTO
+}
+
+model ClubVisit {
+  id                  Int                 @id @default(autoincrement())
+  memberId            Int
+  /// Calendar date in club timezone (YYYY-MM-DD) for idempotency and reporting
+  clubDate            String
+  checkedInAt         DateTime
+  checkedOutAt        DateTime?
+  closedBy            ClubVisitClosedBy?
+  /// True when this visit row triggered the daily entitlement / payment debit
+  dailyPaymentApplied Boolean             @default(false)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, clubDate])
+  @@index([clubDate])
+  @@map("club_visits")
+}
+
+enum ClubEntitlementType {
+  YEARLY
+  MONTHLY
+  VISIT_PACK
+  /// Per visit: club records payment outside Spin-Master; check-in blocked until staff marks paid
+  PAY_PER_VISIT_EXTERNAL
+}
+
+model ClubEntitlement {
+  id              Int                 @id @default(autoincrement())
+  memberId        Int
+  type            ClubEntitlementType
+  label           String?
+  validFrom       DateTime
+  validTo         DateTime?
+  visitsRemaining Int?
+  active          Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@map("club_entitlements")
+}
+
+enum ClubPaymentProvider {
+  MANUAL
+  EXTERNAL_CHECKOUT
+  STRIPE
+}
+
+enum ClubPaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+model ClubPayment {
+  id          Int                 @id @default(autoincrement())
+  memberId    Int
+  amountCents Int                 @default(0)
+  currency    String              @default("USD")
+  provider    ClubPaymentProvider @default(MANUAL)
+  /// PSP reference only (e.g. Stripe session id). No card or bank credentials.
+  externalRef String?
+  status      ClubPaymentStatus
+  purpose     String
+  metadata    Json?
+  recordedAt  DateTime            @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([memberId])
+  @@index([externalRef])
+  @@map("club_payments")
 }
 
 model RatingHistory {

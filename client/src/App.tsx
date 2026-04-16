@@ -12,6 +12,7 @@ const Players = lazy(() => import('./components/Players'));
 const Tournaments = lazy(() => import('./components/Tournaments'));
 const Statistics = lazy(() => import('./components/Statistics'));
 const History = lazy(() => import('./components/History'));
+const ClubCheckinPage = lazy(() => import('./components/ClubCheckinPage'));
 
 // Component to prevent default scroll restoration for routes that handle their own scroll
 function ScrollToTop() {
@@ -35,7 +36,7 @@ function AuthRedirect() {
   
   useEffect(() => {
     // If we're at root or any non-matching path, navigate to /players
-    const validPaths = ['/players', '/tournaments', '/statistics', '/history'];
+    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/club/checkin'];
     if (!validPaths.includes(location.pathname)) {
       navigate('/players', { replace: true });
     }
@@ -220,7 +221,16 @@ function App() {
       <ScrollToTop />
       {!isAuth ? (
         <ErrorBoundary>
-        <Login onLogin={handleLogin} clubName={clubName} />
+        <Suspense fallback={
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh', fontSize: '18px' }}>
+            Loading...
+          </div>
+        }>
+          <Routes>
+            <Route path="/club/checkin" element={<ClubCheckinPage clubName={clubName} />} />
+            <Route path="*" element={<Login onLogin={handleLogin} clubName={clubName} />} />
+          </Routes>
+        </Suspense>
         </ErrorBoundary>
       ) : (
         <>
@@ -234,6 +244,7 @@ function App() {
               </div>
             }>
               <Routes>
+                <Route path="/club/checkin" element={<ClubCheckinPage clubName={clubName} />} />
                 <Route path="/" element={<Navigate to="/players" replace />} />
                 <Route path="/players" element={<Players />} />
                 <Route path="/tournaments" element={<Tournaments />} />
@@ -388,6 +399,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   
   const isPlayersActive = location.pathname === '/players';
   const isTournamentsActive = location.pathname === '/tournaments';
+  const isClubActive = location.pathname === '/club/checkin';
   
   // Format roles as comma-separated first letters
   const formatRoles = (roles: string[]): string => {
@@ -443,6 +455,14 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     clearAllUIStates();
     window.scrollTo(0, 0);
     navigate('/tournaments', { replace: true });
+  };
+
+  const handleClubClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/club/checkin', { replace: true });
   };
   
   return (
@@ -531,6 +551,42 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             }}
           >
             Tournaments
+          </a>
+          <a
+            href="/club/checkin"
+            onClick={handleClubClick}
+            style={{
+              color: isClubActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
+              textDecoration: 'none',
+              padding: '10px 24px 12px 24px',
+              background: isClubActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+              borderTopLeftRadius: '8px',
+              borderTopRightRadius: '8px',
+              border: isClubActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+              borderBottom: isClubActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
+              transition: 'all 0.2s',
+              fontSize: '16px',
+              fontWeight: isClubActive ? '600' : '500',
+              cursor: 'pointer',
+              position: 'relative',
+              zIndex: isClubActive ? 10 : 1,
+              boxShadow: isClubActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+              marginBottom: isClubActive ? '0' : '1px',
+            }}
+            onMouseEnter={(e) => {
+              if (!isClubActive) {
+                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isClubActive) {
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+              }
+            }}
+          >
+            Club
           </a>
         </div>
         <h1 style={{ 
