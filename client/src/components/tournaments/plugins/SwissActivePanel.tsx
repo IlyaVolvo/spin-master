@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
+import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
 import { saveScrollPosition } from '../../../utils/scrollPosition';
 import './SwissActivePanel.css';
 
@@ -14,6 +15,7 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
+  opponentPassword?: string;
 }
 
 interface RoundResult {
@@ -262,6 +264,10 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
   };
 
   const handleMatchClick = (member1Id: number, member2Id: number, matchId: number) => {
+    if (!canOpenTournamentMatchEditor(member1Id, member2Id)) {
+      onError?.('You can only enter scores for your own matches, or you must be an organizer.');
+      return;
+    }
     const match = tournament.matches.find(m => m.id === matchId);
     if (match) {
       setEditingMatch({
@@ -272,6 +278,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: match.player2Sets.toString(),
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
+        opponentPassword: '',
       });
     }
   };
@@ -281,12 +288,14 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 
     try {
       const api = (await import('../../../utils/api')).default;
-      const response = await api.patch(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`, {
+      const payload: Record<string, unknown> = {
         player1Sets: parseInt(editingMatch.player1Sets) || 0,
         player2Sets: parseInt(editingMatch.player2Sets) || 0,
         player1Forfeit: editingMatch.player1Forfeit,
         player2Forfeit: editingMatch.player2Forfeit,
-      });
+      };
+      attachOpponentPasswordIfNeeded(payload, editingMatch.opponentPassword);
+      const response = await api.patch(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`, payload);
 
       onTournamentUpdate(response.data);
       setEditingMatch(null);
@@ -638,6 +647,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
           player1={getPlayer(editingMatch.member1Id)!}
           player2={getPlayer(editingMatch.member2Id)!}
           showForfeitOptions={true}
+          requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
           onSetEditingMatch={setEditingMatch}
           onSave={handleMatchSave}
           onCancel={handleMatchCancel}

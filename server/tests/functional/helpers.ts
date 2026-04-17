@@ -37,6 +37,9 @@ export interface SeedPlayerSpec {
   rating: number;
 }
 
+/** Plaintext password for every member created by {@link seedPlayers} (bcrypt-hashed in DB). */
+export const FUNCTIONAL_TEST_PLAYER_PASSWORD = 'PlayerPass#1';
+
 /** Create an active organizer (and player) for Bearer auth against protected routes. */
 export async function seedOrganizer(
   prisma: PrismaClient,
@@ -69,7 +72,7 @@ export async function seedPlayers(
   prisma: PrismaClient,
   specs: SeedPlayerSpec[],
 ): Promise<{ id: number; email: string; rating: number }[]> {
-  const passwordHash = await bcrypt.hash('PlayerPass#1', 10);
+  const passwordHash = await bcrypt.hash(FUNCTIONAL_TEST_PLAYER_PASSWORD, 10);
   const out: { id: number; email: string; rating: number }[] = [];
   for (const s of specs) {
     const m = await prisma.member.create({

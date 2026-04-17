@@ -3,6 +3,7 @@ import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
 import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
+import { canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
 import { sortParticipantsByRating } from '../utils/participantSort';
 import './RoundRobinActivePanel.css';
 
@@ -23,6 +24,7 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
+  opponentPassword?: string;
 }
 
 export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
@@ -107,6 +109,11 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   const handleCellClick = (member1Id: number, member2Id: number) => {
     // Skip if trying to edit a BYE match or diagonal
     if (member1Id === member2Id) return;
+
+    if (!canOpenTournamentMatchEditor(member1Id, member2Id)) {
+      onError?.('You can only enter scores for your own matches, or you must be an organizer.');
+      return;
+    }
     
     const matchKey = `${member1Id}-${member2Id}`;
     const match = matchMap[matchKey];
@@ -121,6 +128,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: match.player2Sets.toString(),
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
+        opponentPassword: '',
       });
     } else {
       // Add new match
@@ -132,6 +140,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: '0',
         player1Forfeit: false,
         player2Forfeit: false,
+        opponentPassword: '',
       });
     }
   };
@@ -154,28 +163,35 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
 
       if (editingMatch.matchId === 0) {
         // Create new match
-        await roundRobinUpdater.createMatch(matchData, {
-          onSuccess,
-          onError,
-          onTournamentUpdate,
-          onMatchUpdate,
-          onTournamentComplete: () => {
-            // Tournament was completed - could show a notification
-            onSuccess?.('Tournament completed successfully!');
+        await roundRobinUpdater.createMatch(
+          matchData,
+          {
+            onSuccess,
+            onError,
+            onTournamentUpdate,
+            onMatchUpdate,
+            onTournamentComplete: () => {
+              onSuccess?.('Tournament completed successfully!');
+            },
           },
-        });
+          editingMatch.opponentPassword
+        );
       } else {
         // Update existing match
-        await roundRobinUpdater.updateMatch(editingMatch.matchId, matchData, {
-          onSuccess,
-          onError,
-          onTournamentUpdate,
-          onMatchUpdate,
-          onTournamentComplete: () => {
-            // Tournament was completed - could show a notification
-            onSuccess?.('Tournament completed successfully!');
+        await roundRobinUpdater.updateMatch(
+          editingMatch.matchId,
+          matchData,
+          {
+            onSuccess,
+            onError,
+            onTournamentUpdate,
+            onMatchUpdate,
+            onTournamentComplete: () => {
+              onSuccess?.('Tournament completed successfully!');
+            },
           },
-        });
+          editingMatch.opponentPassword
+        );
       }
       
       setEditingMatch(null);
@@ -421,6 +437,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
           player1={getPlayer(editingMatch.member1Id)!}
           player2={getPlayer(editingMatch.member2Id)!}
           showForfeitOptions={true}
+          requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
           onSetEditingMatch={setEditingMatch}
           onSave={handleMatchSave}
           onCancel={handleMatchCancel}

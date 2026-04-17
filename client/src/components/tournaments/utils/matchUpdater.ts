@@ -1,4 +1,5 @@
 import api from '../../../utils/api';
+import { attachOpponentPasswordIfNeeded } from '../../../utils/matchScorePayload';
 
 export interface MatchData {
   member1Id: number;
@@ -47,7 +48,11 @@ export class MatchUpdater {
   /**
    * Create a new match
    */
-  async createMatch(matchData: MatchData, callbacks: MatchUpdateCallbacks = {}): Promise<any> {
+  async createMatch(
+    matchData: MatchData,
+    callbacks: MatchUpdateCallbacks = {},
+    opponentPassword?: string
+  ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
       callbacks.onError?.(validationError);
@@ -70,6 +75,8 @@ export class MatchUpdater {
         apiData.player1Forfeit = false;
         apiData.player2Forfeit = false;
       }
+
+      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
 
       const response = await api.post(`/tournaments/${this.tournamentId}/matches`, apiData);
       const savedMatch = response.data;
@@ -92,7 +99,12 @@ export class MatchUpdater {
   /**
    * Update an existing match
    */
-  async updateMatch(matchId: number, matchData: MatchData, callbacks: MatchUpdateCallbacks = {}): Promise<any> {
+  async updateMatch(
+    matchId: number,
+    matchData: MatchData,
+    callbacks: MatchUpdateCallbacks = {},
+    opponentPassword?: string
+  ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
       callbacks.onError?.(validationError);
@@ -115,6 +127,8 @@ export class MatchUpdater {
         apiData.player1Forfeit = false;
         apiData.player2Forfeit = false;
       }
+
+      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
 
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;

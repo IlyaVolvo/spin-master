@@ -1,4 +1,4 @@
-
+import React from 'react';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 
 interface Player {
@@ -7,7 +7,7 @@ interface Player {
   lastName: string;
 }
 
-interface EditingMatch {
+export interface MatchEntryEditingState {
   matchId: number;
   member1Id: number;
   member2Id: number;
@@ -15,14 +15,18 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
+  /** When required for non-organizer players, filled before save */
+  opponentPassword?: string;
 }
 
 interface MatchEntryPopupProps {
-  editingMatch: EditingMatch;
+  editingMatch: MatchEntryEditingState;
   player1: Player;
   player2: Player;
   showForfeitOptions?: boolean;
-  onSetEditingMatch: (match: EditingMatch) => void;
+  /** When true, opponent password is required to enable Save (non-organizer recording for two players). */
+  requireOpponentPassword?: boolean;
+  onSetEditingMatch: (match: MatchEntryEditingState) => void;
   onSave: () => void;
   onCancel: () => void;
   onClear?: () => void;
@@ -34,6 +38,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   player1,
   player2,
   showForfeitOptions = true,
+  requireOpponentPassword = false,
   onSetEditingMatch,
   onSave,
   onCancel,
@@ -45,7 +50,8 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   const player1Sets = parseInt(editingMatch.player1Sets) || 0;
   const player2Sets = parseInt(editingMatch.player2Sets) || 0;
   const scoresEqual = !isForfeit && player1Sets === player2Sets;
-  const isDisabled = scoresEqual;
+  const missingOpponentPassword = requireOpponentPassword && !editingMatch.opponentPassword?.trim();
+  const isDisabled = scoresEqual || missingOpponentPassword;
 
   return (
     <div style={{
@@ -62,6 +68,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
       zIndex: 10001,
       boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
     }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%' }}>
       <div style={{ display: 'flex', gap: '20px', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flex: 1 }}>
           {/* Player 1 */}
@@ -243,7 +250,15 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
           </button>
           <button
             onClick={onSave}
-            title={isDisabled ? 'Scores cannot be equal' : (editingMatch.matchId === 0 ? 'Enter Score & Complete Match' : 'Save Changes')}
+            title={
+              missingOpponentPassword
+                ? 'Enter opponent password'
+                : isDisabled
+                  ? 'Scores cannot be equal'
+                  : editingMatch.matchId === 0
+                    ? 'Enter Score & Complete Match'
+                    : 'Save Changes'
+            }
             disabled={isDisabled}
             style={{
               padding: '8px 12px',
@@ -311,6 +326,35 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             </svg>
           </button>
         </div>
+      </div>
+
+      {requireOpponentPassword && (
+        <div style={{ width: '100%', paddingTop: '4px', borderTop: '1px solid #eee' }}>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
+            Opponent password (required to confirm this result)
+          </label>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={editingMatch.opponentPassword ?? ''}
+            onChange={(e) =>
+              onSetEditingMatch({
+                ...editingMatch,
+                opponentPassword: e.target.value,
+              })
+            }
+            placeholder="Other player signs off"
+            style={{
+              width: '100%',
+              maxWidth: '360px',
+              padding: '8px',
+              fontSize: '14px',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+            }}
+          />
+        </div>
+      )}
       </div>
     </div>
   );

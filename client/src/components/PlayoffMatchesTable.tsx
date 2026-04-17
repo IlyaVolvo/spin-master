@@ -4,6 +4,11 @@ import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { formatActiveTournamentRating } from '../utils/ratingFormatter';
 import { MatchEntryPopup } from './MatchEntryPopup';
+import {
+  attachOpponentPasswordIfNeeded,
+  canOpenTournamentMatchEditor,
+  shouldShowOpponentPasswordForMatchEdit,
+} from '../utils/matchScorePayload';
 
 interface Member {
   id: number;
@@ -47,6 +52,7 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
+  opponentPassword?: string;
 }
 
 export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
@@ -117,6 +123,10 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
   const bracketSize = calculateBracketSize(participants.length);
 
   const handleEditMatch = (match: Match) => {
+    if (!canOpenTournamentMatchEditor(match.member1Id, match.member2Id)) {
+      alert('You can only enter scores for your own matches, or you must be an organizer.');
+      return;
+    }
     setEditingMatch({
       matchId: match.id,
       member1Id: match.member1Id,
@@ -125,6 +135,7 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
       player2Sets: match.player2Sets.toString() || '0',
       player1Forfeit: match.player1Forfeit || false,
       player2Forfeit: match.player2Forfeit || false,
+      opponentPassword: '',
     });
   };
 
@@ -162,6 +173,8 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
       matchData.player1Forfeit = false;
       matchData.player2Forfeit = false;
     }
+
+    attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
 
     try {
       await api.patch(`/tournaments/${tournamentId}/matches/${editingMatch.matchId}`, matchData);
@@ -351,6 +364,10 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
             player1={player1.member}
             player2={player2.member}
             showForfeitOptions={true}
+            requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+              member1Id: editingMatch.member1Id,
+              member2Id: editingMatch.member2Id,
+            })}
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}

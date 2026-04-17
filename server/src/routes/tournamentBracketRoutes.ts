@@ -16,6 +16,7 @@ import {
   PlayoffBracketResultError,
 } from '../services/playoffBracketService';
 import { isOrganizer } from '../utils/organizerAccess';
+import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
 
 const router = express.Router();
 router.use(authenticate);
@@ -25,13 +26,9 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
+  body('opponentPassword').optional().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
-    const hasOrganizerAccess = await isOrganizer(req);
-    if (!hasOrganizerAccess) {
-      return res.status(403).json({ error: 'Only Organizers can update matches' });
-    }
-
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -67,6 +64,15 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
 
     if (!finalPlayer1Forfeit && !finalPlayer2Forfeit && finalPlayer1Sets === finalPlayer2Sets) {
       return res.status(400).json({ error: 'Scores cannot be equal. One player must win.' });
+    }
+
+    const scoreAuth = await authorizeTournamentScoreEntryRequest(prisma, req, {
+      tournamentId,
+      matchId: bracketMatchId,
+      opponentPassword: req.body?.opponentPassword,
+    });
+    if (!scoreAuth.ok) {
+      return res.status(scoreAuth.status).json({ error: scoreAuth.error });
     }
 
     let newMatch: { id: number; member1Id: number; member2Id: number | null; tournament?: { type: string } };

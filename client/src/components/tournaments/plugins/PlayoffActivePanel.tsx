@@ -3,6 +3,7 @@ import { TournamentActiveProps } from '../../../types/tournament';
 import { TraditionalBracket } from '../../TraditionalBracket';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
 import { createPlayoffMatchUpdater } from '../utils/playoffMatchUpdater';
+import { shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
 import './PlayoffActivePanel.css';
 
 export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
@@ -24,7 +25,10 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
   };
 
   const handleSetEditingMatch = (match: any, bracketMatchId?: number) => {
-    setEditingMatch(match);
+    setEditingMatch({
+      ...match,
+      opponentPassword: match.opponentPassword ?? '',
+    });
     setEditingBracketMatchId(bracketMatchId || findBracketMatchId(match.matchId) || null);
   };
 
@@ -86,7 +90,8 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
                 member2Id: bm.member2Id,
                 linkedMatch: bm.match ?? null,
               }
-            : null
+            : null,
+          editingMatch.opponentPassword
         );
       } else {
         // Update existing match
@@ -95,7 +100,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           onError,
           onTournamentUpdate,
           onMatchUpdate,
-        });
+        }, editingMatch.opponentPassword);
       }
       
       setEditingMatch(null);
@@ -193,6 +198,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           player1={tournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member!}
           player2={tournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member!}
           showForfeitOptions={true}
+          requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
           onSetEditingMatch={handleSetEditingMatch}
           onSave={handleSaveMatchEdit}
           onCancel={handleCancel}

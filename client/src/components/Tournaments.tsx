@@ -15,6 +15,7 @@ import { TournamentNameEditor } from './TournamentNameEditor';
 import { getMember, setMember } from '../utils/auth';
 import { updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
 import { isOrganizer } from '../utils/auth';
+import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import { Tournament, TournamentType } from '../types/tournament';
 import './tournaments/plugins'; // This will auto-register all plugins
@@ -126,6 +127,7 @@ const Tournaments: React.FC = () => {
     player2Sets: string;
     player1Forfeit: boolean;
     player2Forfeit: boolean;
+    opponentPassword?: string;
   } | null>(null);
   // Load sticky filters from localStorage on mount
   const [dateFilterType, setDateFilterType] = useState<string>(() => {
@@ -473,10 +475,10 @@ const Tournaments: React.FC = () => {
   // Check organizer status on mount and when member data might change
   useEffect(() => {
     const checkOrganizerStatus = async () => {
-      // First check localStorage
+      // First check localStorage (isOrganizer / hasMemberRole are case-insensitive like the server)
       const member = getMember();
       if (member && Array.isArray(member.roles) && member.roles.length > 0) {
-        const hasOrganizerRole = member.roles.includes('ORGANIZER');
+        const hasOrganizerRole = isOrganizer();
         setIsUserOrganizer(hasOrganizerRole);
         console.log('Organizer status from localStorage:', { hasOrganizerRole, roles: member.roles });
       } else {
@@ -485,9 +487,8 @@ const Tournaments: React.FC = () => {
           const response = await api.get('/auth/member/me');
           if (response.data.member && Array.isArray(response.data.member.roles)) {
             setMember(response.data.member);
-            const hasOrganizerRole = response.data.member.roles.includes('ORGANIZER');
-            setIsUserOrganizer(hasOrganizerRole);
-            console.log('Organizer status from API:', { hasOrganizerRole, roles: response.data.member.roles });
+            setIsUserOrganizer(isOrganizer());
+            console.log('Organizer status from API:', { hasOrganizerRole: isOrganizer(), roles: response.data.member.roles });
           } else {
             setIsUserOrganizer(false);
             console.log('No member data from API, setting organizer to false');
@@ -861,8 +862,8 @@ const Tournaments: React.FC = () => {
 
   // Handle double-click on match cell to add/edit
   const handleCellDoubleClick = (member1Id: number, member2Id: number, tournament: Tournament) => {
-    // Only organizers can enter/edit matches
-    if (!isUserOrganizer) {
+    if (!canOpenTournamentMatchEditor(member1Id, member2Id)) {
+      setError('You can only enter scores for your own matches, or you must be an organizer.');
       return;
     }
     
@@ -888,6 +889,7 @@ const Tournaments: React.FC = () => {
         player2Sets: match.player2Sets.toString(),
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
+        opponentPassword: '',
       });
     } else {
       // Add new match - use the order from the cell (row player vs column player)
@@ -899,6 +901,7 @@ const Tournaments: React.FC = () => {
         player2Sets: '0',
         player1Forfeit: false,
         player2Forfeit: false,
+        opponentPassword: '',
       });
     }
   };
@@ -943,6 +946,8 @@ const Tournaments: React.FC = () => {
         matchData.player1Forfeit = false;
         matchData.player2Forfeit = false;
       }
+
+      attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
 
       let savedMatch: any;
       if (editingMatch.matchId === 0) {
@@ -2425,6 +2430,10 @@ const Tournaments: React.FC = () => {
                                         player1={player1}
                                         player2={player2}
                                         showForfeitOptions={true}
+                                        requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+                                          member1Id: editingMatch.member1Id,
+                                          member2Id: editingMatch.member2Id ?? 0,
+                                        })}
                                         onSetEditingMatch={setEditingMatch}
                                         onSave={handleSaveMatchEdit}
                                         onCancel={() => setEditingMatch(null)}
@@ -2874,6 +2883,10 @@ const Tournaments: React.FC = () => {
                         player1={player1}
                         player2={player2}
                         showForfeitOptions={true}
+                        requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+                          member1Id: editingMatch.member1Id,
+                          member2Id: editingMatch.member2Id ?? 0,
+                        })}
                         onSetEditingMatch={setEditingMatch}
                         onSave={handleSaveMatchEdit}
                         onCancel={() => setEditingMatch(null)}

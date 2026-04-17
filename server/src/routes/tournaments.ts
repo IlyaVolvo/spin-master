@@ -11,6 +11,7 @@ import bcrypt from 'bcryptjs';
 import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 import { isClientHttpError } from '../http/clientHttpError';
 import { isOrganizer } from '../utils/organizerAccess';
+import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
 
 const router = express.Router();
 
@@ -747,20 +748,16 @@ router.post('/:id/matches', [
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
+  body('opponentPassword').optional().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
-    // Check if user has ORGANIZER role
-    const hasOrganizerAccess = await isOrganizer(req);
-    if (!hasOrganizerAccess) {
-      return res.status(403).json({ error: 'Only Organizers can add matches' });
-    }
-
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit } = req.body;
+    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit, opponentPassword } =
+      req.body;
     const tournamentId = parseInt(req.params.id);
     if (isNaN(tournamentId)) {
       return res.status(400).json({ error: 'Invalid tournament ID' });
@@ -784,6 +781,17 @@ router.post('/:id/matches', [
     const participantIds = tournament.participants.map((p: any) => p.memberId);
     if (!participantIds.includes(member1Id) || !participantIds.includes(member2Id)) {
       return res.status(400).json({ error: 'Both players must be tournament participants' });
+    }
+
+    const scoreAuth = await authorizeTournamentScoreEntryRequest(prisma, req, {
+      tournamentId,
+      matchId: 0,
+      bodyMember1Id: member1Id,
+      bodyMember2Id: member2Id,
+      opponentPassword,
+    });
+    if (!scoreAuth.ok) {
+      return res.status(scoreAuth.status).json({ error: scoreAuth.error });
     }
 
     if (member1Id === member2Id) {
@@ -872,7 +880,7 @@ router.post('/:id/matches', [
 
 // Generic match update — delegates to tournament plugin (registry key = tournament.type).
 // Bracket-specific URLs live in tournamentBracketRoutes.ts.
-// Only Organizers can update matches
+// Authorization: see authorizeTournamentScoreEntryRequest (organizers, or participants with opponent password).
 router.patch('/:tournamentId/matches/:matchId', [
   body('member1Id').optional().isInt({ min: 1 }),
   body('member2Id').optional().isInt({ min: 1 }),
@@ -880,20 +888,16 @@ router.patch('/:tournamentId/matches/:matchId', [
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
+  body('opponentPassword').optional().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
-    // Check if user has ORGANIZER role
-    const hasOrganizerAccess = await isOrganizer(req);
-    if (!hasOrganizerAccess) {
-      return res.status(403).json({ error: 'Only Organizers can update matches' });
-    }
-
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit } = req.body;
+    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit, opponentPassword } =
+      req.body;
     const tournamentId = parseInt(req.params.tournamentId);
     const matchId = parseInt(req.params.matchId);
     
@@ -927,6 +931,17 @@ router.patch('/:tournamentId/matches/:matchId', [
 
     if (tournament.status !== 'ACTIVE') {
       return res.status(400).json({ error: 'Tournament is not active' });
+    }
+
+    const scoreAuth = await authorizeTournamentScoreEntryRequest(prisma, req, {
+      tournamentId,
+      matchId,
+      bodyMember1Id: member1Id,
+      bodyMember2Id: member2Id,
+      opponentPassword,
+    });
+    if (!scoreAuth.ok) {
+      return res.status(scoreAuth.status).json({ error: scoreAuth.error });
     }
 
     const plugin = tournamentPluginRegistry.get(tournament.type);

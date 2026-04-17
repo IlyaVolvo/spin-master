@@ -50,16 +50,22 @@ export const getAuthHeaders = () => {
   };
 };
 
-// Role checking utilities
-export const isAdmin = (): boolean => {
-  const member = getMember();
-  return member?.roles?.includes('ADMIN') || false;
+// Role checking utilities — case-insensitive, aligned with server organizerAccess / Prisma enum quirks
+
+function memberRolesUpper(member: Member | null): string[] {
+  if (!member?.roles || !Array.isArray(member.roles)) return [];
+  return member.roles.map((r) => String(r).toUpperCase());
+}
+
+/** True if the logged-in member has this role (case-insensitive). */
+export const hasMemberRole = (role: string): boolean => {
+  const want = role.toUpperCase();
+  return memberRolesUpper(getMember()).includes(want);
 };
 
-export const isOrganizer = (): boolean => {
-  const member = getMember();
-  return member?.roles?.includes('ORGANIZER') || false;
-};
+export const isAdmin = (): boolean => hasMemberRole('ADMIN');
+
+export const isOrganizer = (): boolean => hasMemberRole('ORGANIZER');
 
 export const canEditMember = (memberId: number): boolean => {
   const member = getMember();

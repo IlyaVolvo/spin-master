@@ -2,7 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { MatchEntryPopup } from './MatchEntryPopup';
-import { isOrganizer } from '../utils/auth';
+import { getMember, isOrganizer } from '../utils/auth';
+import { attachOpponentPasswordIfNeeded, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
 import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
 
 interface Member {
@@ -46,6 +47,7 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
+  opponentPassword?: string;
 }
 
 interface TournamentParticipant {
@@ -590,12 +592,19 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             linkedMatch: prevMatch.linkedMatch ?? null,
           })
         : null;
+    const me = getMember()?.id;
+    const prevP1 = prevMatch?.player1?.member.id;
+    const prevP2 = prevMatch?.player2?.member.id;
+    const canEditPrevMatch =
+      isOrganizer() ||
+      !!(me && prevP1 && prevP2 && (me === prevP1 || me === prevP2));
     const isClickableForScoreEntry =
       !isReadOnly &&
       round > 1 &&
       hasPrevMatch &&
       !prevMatchIsBye &&
-      !prevFirstResultBlocked;
+      !prevFirstResultBlocked &&
+      canEditPrevMatch;
     
     // For round 1, show BYE only if it's actually a BYE (memberId === 0)
     // For later rounds or unknown players (memberId === null), show empty slot
@@ -665,6 +674,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: (prevMatch.player2Sets || 0).toString(),
               player1Forfeit: prevMatch.player1Forfeit || false,
               player2Forfeit: prevMatch.player2Forfeit || false,
+              opponentPassword: '',
             });
             
           }}
@@ -877,6 +887,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: (prevMatch.player2Sets || 0).toString(),
               player1Forfeit: prevMatch.player1Forfeit || false,
               player2Forfeit: prevMatch.player2Forfeit || false,
+              opponentPassword: '',
             });
           }
         }}
@@ -1223,6 +1234,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: (prevMatch.player2Sets || 0).toString() || '0',
                   player1Forfeit: prevMatch.player1Forfeit || false,
                   player2Forfeit: prevMatch.player2Forfeit || false,
+                  opponentPassword: '',
                 });
               }
             }}
@@ -1245,6 +1257,15 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     
     // Determine if match can be edited - only organizers can edit, and match must be valid
     const isUserOrganizer = isOrganizer();
+    const me = getMember()?.id;
+    const isPlayerInMatch = !!(
+      me &&
+      player1 &&
+      player2 &&
+      !player1IsBye &&
+      !player2IsBye &&
+      (me === player1.member.id || me === player2.member.id)
+    );
     const firstResultBlocked =
       tournamentId && !match.matchId
         ? getPlayoffFirstResultBlockedReason({
@@ -1254,7 +1275,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           })
         : null;
     const canEditMatch =
-      isUserOrganizer &&
+      (isUserOrganizer || isPlayerInMatch) &&
       !isReadOnly &&
       tournamentId &&
       player1 &&
@@ -1332,6 +1353,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: player2Sets.toString(),
               player1Forfeit: match.player1Forfeit || false,
               player2Forfeit: match.player2Forfeit || false,
+              opponentPassword: '',
             });
           }
         }}
@@ -1434,6 +1456,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: '0',
                   player1Forfeit: false,
                   player2Forfeit: false,
+                  opponentPassword: '',
                 });
               }}
               title="Enter score"
@@ -1695,6 +1718,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           return;
         }
       }
+
+      attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
       
       await api.patch(`/tournaments/${tournamentId}/matches/${matchIdToUse}`, matchData);
       
@@ -2068,6 +2093,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             player1={player1.member}
             player2={player2.member}
             showForfeitOptions={true}
+            requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}

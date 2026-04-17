@@ -1,5 +1,6 @@
 import { MatchData, MatchUpdateCallbacks } from './matchUpdater';
 import api from '../../../utils/api';
+import { attachOpponentPasswordIfNeeded } from '../../../utils/matchScorePayload';
 
 export interface RoundRobinMatchUpdateCallbacks extends MatchUpdateCallbacks {
   onTournamentComplete?: () => void;
@@ -38,8 +39,9 @@ export class RoundRobinMatchUpdater {
    * Create a new match for round robin tournament
    */
   async createMatch(
-    matchData: MatchData, 
-    callbacks: RoundRobinMatchUpdateCallbacks = {}
+    matchData: MatchData,
+    callbacks: RoundRobinMatchUpdateCallbacks = {},
+    opponentPassword?: string
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -63,6 +65,8 @@ export class RoundRobinMatchUpdater {
         apiData.player1Forfeit = false;
         apiData.player2Forfeit = false;
       }
+
+      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
 
       // Use the generic match update endpoint with matchId=0 for new match creation
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/0`, apiData);
@@ -92,9 +96,10 @@ export class RoundRobinMatchUpdater {
    * Update an existing match
    */
   async updateMatch(
-    matchId: number, 
-    matchData: MatchData, 
-    callbacks: RoundRobinMatchUpdateCallbacks = {}
+    matchId: number,
+    matchData: MatchData,
+    callbacks: RoundRobinMatchUpdateCallbacks = {},
+    opponentPassword?: string
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -118,6 +123,8 @@ export class RoundRobinMatchUpdater {
         apiData.player1Forfeit = false;
         apiData.player2Forfeit = false;
       }
+
+      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
 
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;

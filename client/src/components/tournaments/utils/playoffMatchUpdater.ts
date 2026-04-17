@@ -1,5 +1,6 @@
 import { MatchData, MatchUpdateCallbacks } from './matchUpdater';
 import api from '../../../utils/api';
+import { attachOpponentPasswordIfNeeded } from '../../../utils/matchScorePayload';
 import {
   getPlayoffFirstResultBlockedReason,
   type PlayoffBracketSlotForGuard,
@@ -49,7 +50,8 @@ export class PlayoffMatchUpdater {
     matchData: MatchData,
     bracketMatchId: number,
     callbacks: PlayoffMatchUpdateCallbacks = {},
-    bracketSlot?: PlayoffBracketSlotForGuard | null
+    bracketSlot?: PlayoffBracketSlotForGuard | null,
+    opponentPassword?: string
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -82,6 +84,8 @@ export class PlayoffMatchUpdater {
         apiData.player2Forfeit = false;
       }
 
+      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
+
       // Use the generic match update endpoint with bracketMatchId
       // The server plugin will resolve the bracketMatchId and handle bracket-specific logic
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${bracketMatchId}`, apiData);
@@ -109,9 +113,10 @@ export class PlayoffMatchUpdater {
    * Update an existing match
    */
   async updateMatch(
-    matchId: number, 
-    matchData: MatchData, 
-    callbacks: PlayoffMatchUpdateCallbacks = {}
+    matchId: number,
+    matchData: MatchData,
+    callbacks: PlayoffMatchUpdateCallbacks = {},
+    opponentPassword?: string
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -135,6 +140,8 @@ export class PlayoffMatchUpdater {
         apiData.player1Forfeit = false;
         apiData.player2Forfeit = false;
       }
+
+      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
 
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;

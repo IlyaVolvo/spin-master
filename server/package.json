@@ -19,6 +19,7 @@
     "test": "jest --runInBand",
     "test:functional:basic": "jest --runInBand --testPathPatterns=functionalTournamentsBasic",
     "test:functional:compound": "jest --runInBand --testPathPatterns=functionalTournamentsCompound",
+    "test:functional:nonOrganizerScores": "jest --runInBand --testPathPatterns=functionalNonOrganizerScoreEntry",
     "test:watch": "jest --runInBand --watch",
     "test:verbose": "jest --runInBand --verbose"
   },

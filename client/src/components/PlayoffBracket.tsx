@@ -5,6 +5,10 @@ import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { MatchEntryPopup } from './MatchEntryPopup';
 import { updateMatchCountsCache } from './utils/matchCacheUtils';
 import api from '../utils/api';
+import {
+  attachOpponentPasswordIfNeeded,
+  shouldShowOpponentPasswordForMatchEdit,
+} from '../utils/matchScorePayload';
 
 interface Member {
   id: number;
@@ -62,6 +66,7 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
+  opponentPassword?: string;
 }
 
 export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
@@ -133,6 +138,8 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
       matchData.player1Forfeit = false;
       matchData.player2Forfeit = false;
     }
+
+    attachOpponentPasswordIfNeeded(matchData, editingFinalMatch.opponentPassword);
 
     try {
       const response = await api.patch(`/tournaments/${tournamentId}/matches/${editingFinalMatch.matchId}`, matchData);
@@ -376,6 +383,10 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
             player1={player1.member}
             player2={player2.member}
             showForfeitOptions={true}
+            requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+              member1Id: editingFinalMatch.member1Id,
+              member2Id: editingFinalMatch.member2Id,
+            })}
             onSetEditingMatch={setEditingFinalMatch}
             onSave={handleSaveFinalMatch}
             onCancel={() => setEditingFinalMatch(null)}
