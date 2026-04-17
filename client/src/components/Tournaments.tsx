@@ -119,6 +119,10 @@ const Tournaments: React.FC = () => {
   const [editingTournamentName, setEditingTournamentName] = useState<number | null>(null);
   const [tournamentNameEdit, setTournamentNameEdit] = useState('');
   const tournamentRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
+  /** In-app confirmation instead of window.confirm for complete tournament */
+  const [confirmCompleteTournamentId, setConfirmCompleteTournamentId] = useState<number | null>(null);
+  /** In-app confirmation instead of window.confirm for deleting a match result */
+  const [confirmDeleteMatchOpen, setConfirmDeleteMatchOpen] = useState(false);
   const [editingMatch, setEditingMatch] = useState<{
     matchId: number; // 0 means new match, >0 means existing match
     member1Id: number;
@@ -766,7 +770,7 @@ const Tournaments: React.FC = () => {
 
 
 
-  const handleCompleteTournament = async (tournamentId: number) => {
+  const handleCompleteTournament = (tournamentId: number) => {
     const tournament = activeTournaments.find(t => t.id === tournamentId);
     if (!tournament) return;
 
@@ -776,10 +780,13 @@ const Tournaments: React.FC = () => {
       return;
     }
 
-    if (!window.confirm('Complete this tournament? Rankings will be recalculated.')) {
-      return;
-    }
+    setConfirmCompleteTournamentId(tournamentId);
+  };
 
+  const executeCompleteTournament = async () => {
+    const tournamentId = confirmCompleteTournamentId;
+    if (tournamentId == null) return;
+    setConfirmCompleteTournamentId(null);
     setError('');
     setSuccess('');
 
@@ -985,13 +992,15 @@ const Tournaments: React.FC = () => {
     }
   };
 
-  // Handle clearing/deleting match
-  const handleClearMatch = async () => {
+  // Handle clearing/deleting match (opens confirmation modal)
+  const handleClearMatch = () => {
     if (!editingMatch || !selectedTournament || editingMatch.matchId === 0) return;
+    setConfirmDeleteMatchOpen(true);
+  };
 
-    if (!window.confirm('Are you sure you want to delete this match result? This action cannot be undone.')) {
-      return;
-    }
+  const executeClearMatch = async () => {
+    if (!editingMatch || !selectedTournament || editingMatch.matchId === 0) return;
+    setConfirmDeleteMatchOpen(false);
 
     // Store match info before deletion for cache update
     const matchToDelete = {
@@ -3775,6 +3784,95 @@ const Tournaments: React.FC = () => {
                 }}
               >
                 Cancel Tournament
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Complete tournament confirmation */}
+      {confirmCompleteTournamentId !== null && (() => {
+        const t = activeTournaments.find((x) => x.id === confirmCompleteTournamentId);
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10001,
+            }}
+          >
+            <div className="card" style={{ maxWidth: '440px', width: '90%', position: 'relative' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#2c3e50' }}>Complete tournament?</h3>
+              <p style={{ marginBottom: '16px', color: '#555', lineHeight: 1.5 }}>
+                Complete <strong>{t?.name ?? 'this tournament'}</strong>? Final rankings will be calculated and the tournament will be marked completed.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="button-filter"
+                  style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                  onClick={() => setConfirmCompleteTournamentId(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="button-3d success"
+                  style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                  onClick={() => void executeCompleteTournament()}
+                >
+                  Complete tournament
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Delete match result confirmation */}
+      {confirmDeleteMatchOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10001,
+          }}
+        >
+          <div className="card" style={{ maxWidth: '440px', width: '90%', position: 'relative' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#c0392b' }}>Delete match result?</h3>
+            <p style={{ marginBottom: '16px', color: '#555', lineHeight: 1.5 }}>
+              This removes the recorded score for this pairing. Ratings and standings may change. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="button-filter"
+                style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                onClick={() => setConfirmDeleteMatchOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button-3d danger"
+                style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                onClick={() => void executeClearMatch()}
+              >
+                Delete result
               </button>
             </div>
           </div>

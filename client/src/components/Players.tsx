@@ -47,6 +47,37 @@ import './tournaments/plugins';
 // matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache
 // are imported from ./utils/matchCacheUtils
 
+type PlayerEditBaseline = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  gender: string;
+  birthDateMs: number | null;
+  phone: string;
+  address: string;
+  picture: string;
+  isActive: boolean;
+  rolesKey: string;
+  rating: string;
+};
+
+function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
+  const bd = member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null;
+  return {
+    firstName: member.firstName || '',
+    lastName: member.lastName || '',
+    email: member.email || '',
+    gender: member.gender || '',
+    birthDateMs: bd ? bd.getTime() : null,
+    phone: member.phone || '',
+    address: member.address || '',
+    picture: member.picture || '',
+    isActive: member.isActive !== undefined ? member.isActive : true,
+    rolesKey: [...(member.roles || [])].sort().join(','),
+    rating: member.rating !== null && member.rating !== undefined ? String(member.rating) : '',
+  };
+}
+
 const Players: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -251,6 +282,11 @@ const Players: React.FC = () => {
     tournamentParticipantCount: number;
   } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  /** In-app confirm before sending admin password-reset email (replaces window.confirm). */
+  const [showPasswordResetConfirmModal, setShowPasswordResetConfirmModal] = useState(false);
+
+  /** Snapshot when edit dialog opens — Save enabled only when form differs from this (reset-password does not change it). */
+  const playerEditBaselineRef = useRef<PlayerEditBaseline | null>(null);
 
   // Field-level validation for add-player form
   const [addFieldErrors, setAddFieldErrors] = useState<Record<string, string>>({});
@@ -1541,6 +1577,7 @@ const Players: React.FC = () => {
       setEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
       setLastConfirmedEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
       setIsPasswordResetLocked(false);
+      playerEditBaselineRef.current = buildPlayerEditBaseline(member);
       
       // Load delete eligibility when an admin opens another member's profile (not self)
       const currentMember = getMember();
@@ -1631,6 +1668,7 @@ const Players: React.FC = () => {
     setIsValidatingCurrentPassword(false);
     setIsCurrentPasswordVerified(false);
     setCurrentPasswordValidationMessage('');
+    playerEditBaselineRef.current = null;
     // Clear editOwnProfile state if it exists to prevent re-triggering
     if (location.state?.editOwnProfile) {
       navigate('/players', { 
@@ -1640,8 +1678,47 @@ const Players: React.FC = () => {
     }
   };
 
+  /** True when profile fields differ from snapshot taken when the edit panel opened (password reset / lock state ignored). */
+  const hasPlayerEditChanges = (): boolean => {
+    if (!editingPlayerId || !playerEditBaselineRef.current) return false;
+    const b = playerEditBaselineRef.current;
+    const cm = getMember();
+    const isAdminUser = cm?.roles?.includes('ADMIN');
+    const isEditingSelf = cm?.id === editingPlayerId;
+    const canEditRestricted = !!isAdminUser && !isEditingSelf;
+
+    const birthMs = editBirthDate ? editBirthDate.getTime() : null;
+    const rolesKey = [...editRoles].sort().join(',');
+
+    if (canEditRestricted) {
+      return (
+        editFirstName !== b.firstName ||
+        editLastName !== b.lastName ||
+        editEmail !== b.email ||
+        (editGender || '') !== (b.gender || '') ||
+        birthMs !== b.birthDateMs ||
+        editPhone !== b.phone ||
+        editAddress !== b.address ||
+        editPicture !== b.picture ||
+        editIsActive !== b.isActive ||
+        rolesKey !== b.rolesKey ||
+        editRating.trim() !== b.rating.trim()
+      );
+    }
+    return (
+      editEmail !== b.email ||
+      editPhone !== b.phone ||
+      editAddress !== b.address ||
+      editPicture !== b.picture
+    );
+  };
+
   const handleSaveEdit = async () => {
     if (!editingPlayerId) return;
+
+    if (!hasPlayerEditChanges()) {
+      return;
+    }
 
     setError('');
     setSuccess('');
@@ -1805,7 +1882,7 @@ const Players: React.FC = () => {
     }
   };
 
-  const handleResetPassword = async () => {
+  const handleResetPasswordClick = () => {
     if (!editingPlayerId) return;
 
     setError('');
@@ -1822,10 +1899,15 @@ const Players: React.FC = () => {
       return;
     }
 
-    const confirmed = window.confirm(`Confirm Password Reset\n\nSend password reset link to ${targetEmail}?`);
-    if (!confirmed) {
-      return;
-    }
+    setShowPasswordResetConfirmModal(true);
+  };
+
+  const executePasswordReset = async () => {
+    if (!editingPlayerId) return;
+    const targetEmail = editEmail.trim();
+    setShowPasswordResetConfirmModal(false);
+    setError('');
+    setSuccess('');
 
     try {
       await api.post(`/auth/member/${editingPlayerId}/reset-password`, {
@@ -5723,7 +5805,7 @@ const Players: React.FC = () => {
                                     Sends a one-time reset link to the current Email value in this form.
                                   </p>
                                   <button
-                                    onClick={handleResetPassword}
+                                    onClick={handleResetPasswordClick}
                                     disabled={isPasswordResetLocked}
                                     className="button-3d"
                                     style={{
@@ -5800,8 +5882,14 @@ const Players: React.FC = () => {
                     e.stopPropagation();
                     handleSaveEdit();
                   }}
+                  disabled={!hasPlayerEditChanges()}
                   className="button-3d success"
-                  style={{ fontSize: '13px', padding: '8px 16px' }}
+                  style={{
+                    fontSize: '13px',
+                    padding: '8px 16px',
+                    opacity: hasPlayerEditChanges() ? 1 : 0.55,
+                    cursor: hasPlayerEditChanges() ? 'pointer' : 'not-allowed',
+                  }}
                 >
                   Save
                 </button>
@@ -5868,6 +5956,56 @@ const Players: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Admin: send password reset link — confirm before API call */}
+      {showPasswordResetConfirmModal && editingPlayerId && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10001,
+          }}
+        >
+          <div className="card" style={{ maxWidth: '440px', width: '90%', position: 'relative' }}>
+            <h3 style={{ marginBottom: '12px', color: '#856404' }}>Send password reset link?</h3>
+            <p style={{ marginBottom: '16px', color: '#555', lineHeight: 1.5 }}>
+              Send a one-time password reset link to <strong>{editEmail.trim()}</strong>? The member will use it to set a new password.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowPasswordResetConfirmModal(false)}
+                className="button-filter"
+                style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void executePasswordReset()}
+                className="button-3d"
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  backgroundColor: '#ffc107',
+                  color: '#000',
+                  border: 'none',
+                }}
+              >
+                Send reset link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Activate/Deactivate Confirmation Modal */}
       {showActiveConfirmation && pendingActiveToggle && (
