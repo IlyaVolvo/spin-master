@@ -13,11 +13,19 @@ jest.mock('nodemailer', () => ({
   },
 }));
 
+import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { app, prisma } from '../../src/index';
 import { authHeader, postRrMatch } from './httpHelpers';
 import { useFunctionalDbLifecycle } from './lifecycle';
-import { seedOrganizer, seedPlayers } from './helpers';
+import {
+  FUNCTIONAL_TEST_PLAYER_PASSWORD,
+  makeMemberJwt,
+  qrTokenHash,
+  seedAdmin,
+  seedOrganizer,
+  seedPlayers,
+} from './helpers';
 
 jest.setTimeout(180000);
 
@@ -220,5 +228,185 @@ describe('Functional: members & lists', () => {
       .expect(200);
 
     expect(mh.body.matches?.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('PATCH /api/players/:id allows contact-only update when member has no birth date (admin)', async () => {
+    const { token: adminToken } = await seedAdmin(prisma);
+    const passwordHash = await bcrypt.hash(FUNCTIONAL_TEST_PLAYER_PASSWORD, 10);
+    const member = await prisma.member.create({
+      data: {
+        firstName: 'No',
+        lastName: 'BirthDate',
+        email: 'nobd.adminpatch.functional@test.local',
+        gender: 'MALE',
+        birthDate: null,
+        password: passwordHash,
+        roles: ['PLAYER'],
+        rating: 1400,
+        isActive: true,
+        qrTokenHash: qrTokenHash(),
+        mustResetPassword: false,
+      },
+    });
+
+    await request(app)
+      .patch(`/api/players/${member.id}`)
+      .set(authHeader(adminToken))
+      .send({ phone: '5551112222' })
+      .expect(200);
+
+    const row = await prisma.member.findUnique({ where: { id: member.id } });
+    expect(row!.phone).toBe('5551112222');
+  });
+
+  it('PATCH /api/players/:id allows restricted profile change without birthDate when member has none (admin)', async () => {
+    const { token: adminToken } = await seedAdmin(prisma);
+    const passwordHash = await bcrypt.hash(FUNCTIONAL_TEST_PLAYER_PASSWORD, 10);
+    const member = await prisma.member.create({
+      data: {
+        firstName: 'No',
+        lastName: 'BirthDate2',
+        email: 'nobd.restrict.functional@test.local',
+        gender: 'MALE',
+        birthDate: null,
+        password: passwordHash,
+        roles: ['PLAYER'],
+        rating: 1400,
+        isActive: true,
+        qrTokenHash: qrTokenHash(),
+        mustResetPassword: false,
+      },
+    });
+
+    await request(app)
+      .patch(`/api/players/${member.id}`)
+      .set(authHeader(adminToken))
+      .send({ firstName: 'Changed' })
+      .expect(200);
+
+    const row = await prisma.member.findUnique({ where: { id: member.id } });
+    expect(row!.firstName).toBe('Changed');
+    expect(row!.birthDate).toBeNull();
+  });
+
+  it('PATCH /api/players/:id persists birthDate when member had none (admin)', async () => {
+    const { token: adminToken } = await seedAdmin(prisma);
+    const passwordHash = await bcrypt.hash(FUNCTIONAL_TEST_PLAYER_PASSWORD, 10);
+    const member = await prisma.member.create({
+      data: {
+        firstName: 'Add',
+        lastName: 'BirthDate',
+        email: 'addbd.adminpatch.functional@test.local',
+        gender: 'MALE',
+        birthDate: null,
+        password: passwordHash,
+        roles: ['PLAYER'],
+        rating: 1410,
+        isActive: true,
+        qrTokenHash: qrTokenHash(),
+        mustResetPassword: false,
+      },
+    });
+
+    await request(app)
+      .patch(`/api/players/${member.id}`)
+      .set(authHeader(adminToken))
+      .send({ phone: '5553334444', birthDate: '1999-11-22' })
+      .expect(200);
+
+    const row = await prisma.member.findUnique({ where: { id: member.id } });
+    expect(row!.birthDate).not.toBeNull();
+    expect(row!.phone).toBe('5553334444');
+  });
+
+  it('PATCH /api/players/:id clears birthDate when body sends null (admin)', async () => {
+    const { token: adminToken } = await seedAdmin(prisma);
+    const passwordHash = await bcrypt.hash(FUNCTIONAL_TEST_PLAYER_PASSWORD, 10);
+    const member = await prisma.member.create({
+      data: {
+        firstName: 'Had',
+        lastName: 'Dob',
+        email: 'cleardob.functional@test.local',
+        gender: 'MALE',
+        birthDate: new Date('1995-06-06'),
+        password: passwordHash,
+        roles: ['PLAYER'],
+        rating: 1600,
+        isActive: true,
+        qrTokenHash: qrTokenHash(),
+        mustResetPassword: false,
+      },
+    });
+
+    await request(app)
+      .patch(`/api/players/${member.id}`)
+      .set(authHeader(adminToken))
+      .send({ birthDate: null })
+      .expect(200);
+
+    const row = await prisma.member.findUnique({ where: { id: member.id } });
+    expect(row!.birthDate).toBeNull();
+  });
+
+  it('PATCH /api/players/:id allows self-edit contact-only when member has no birth date', async () => {
+    const passwordHash = await bcrypt.hash(FUNCTIONAL_TEST_PLAYER_PASSWORD, 10);
+    const member = await prisma.member.create({
+      data: {
+        firstName: 'Self',
+        lastName: 'NoDob',
+        email: 'selfnobd.functional@test.local',
+        gender: 'MALE',
+        birthDate: null,
+        password: passwordHash,
+        roles: ['PLAYER'],
+        rating: 1390,
+        isActive: true,
+        qrTokenHash: qrTokenHash(),
+        mustResetPassword: false,
+      },
+    });
+    const selfToken = makeMemberJwt(member.id);
+
+    await request(app)
+      .patch(`/api/players/${member.id}`)
+      .set(authHeader(selfToken))
+      .send({ picture: 'https://example.com/a.png' })
+      .expect(200);
+
+    const row = await prisma.member.findUnique({ where: { id: member.id } });
+    expect(row!.picture).toBe('https://example.com/a.png');
+  });
+
+  it('PATCH /api/players/:id allows self-edit when birthDate supplied for member who had none', async () => {
+    const passwordHash = await bcrypt.hash(FUNCTIONAL_TEST_PLAYER_PASSWORD, 10);
+    const member = await prisma.member.create({
+      data: {
+        firstName: 'Self',
+        lastName: 'AddDob',
+        email: 'selfaddbd.functional@test.local',
+        gender: 'MALE',
+        birthDate: null,
+        password: passwordHash,
+        roles: ['PLAYER'],
+        rating: 1395,
+        isActive: true,
+        qrTokenHash: qrTokenHash(),
+        mustResetPassword: false,
+      },
+    });
+    const selfToken = makeMemberJwt(member.id);
+
+    await request(app)
+      .patch(`/api/players/${member.id}`)
+      .set(authHeader(selfToken))
+      .send({
+        picture: 'https://example.com/b.png',
+        birthDate: '2002-08-01',
+      })
+      .expect(200);
+
+    const row = await prisma.member.findUnique({ where: { id: member.id } });
+    expect(row!.birthDate).not.toBeNull();
+    expect(row!.picture).toBe('https://example.com/b.png');
   });
 });

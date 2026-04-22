@@ -4,6 +4,7 @@ import {
   isValidEmailFormat,
   isValidMemberName,
   isValidPhoneNumber,
+  normalizeOptionalCsvEmailCell,
   isSuspiciousRating,
   isValidRatingInput,
 } from '../../src/utils/memberValidation';
@@ -47,6 +48,24 @@ describe('memberValidation utils', () => {
       expect(isValidEmailFormat('user@domain')).toBe(false);
       expect(isValidEmailFormat('user@domain.c')).toBe(false);
       expect(isValidEmailFormat('user@@domain.com')).toBe(false);
+    });
+  });
+
+  describe('normalizeOptionalCsvEmailCell', () => {
+    it('returns undefined for empty or plain text without @', () => {
+      expect(normalizeOptionalCsvEmailCell('')).toBeUndefined();
+      expect(normalizeOptionalCsvEmailCell('   ')).toBeUndefined();
+      expect(normalizeOptionalCsvEmailCell('active.')).toBeUndefined();
+      expect(normalizeOptionalCsvEmailCell('note')).toBeUndefined();
+    });
+
+    it('returns valid emails unchanged', () => {
+      expect(normalizeOptionalCsvEmailCell(' u@example.com ')).toBe('u@example.com');
+    });
+
+    it('returns invalid-but-has-@ cells for downstream validation', () => {
+      expect(normalizeOptionalCsvEmailCell('bad@')).toBe('bad@');
+      expect(normalizeOptionalCsvEmailCell('x@y')).toBe('x@y');
     });
   });
 

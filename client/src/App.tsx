@@ -275,40 +275,68 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
   const [currentPassword, setCurrentPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  /** False when DB password is unset (admin reset / invite) — matches server change-password behavior. */
+  const [needsCurrentPassword, setNeedsCurrentPassword] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const res = await api.get('/auth/member/me');
+        const hp = res.data?.member?.hasPassword as boolean | undefined;
+        if (!cancelled && typeof hp === 'boolean') {
+          setNeedsCurrentPassword(hp);
+        }
+      } catch {
+        const m = getMember();
+        if (!cancelled && typeof m?.hasPassword === 'boolean') {
+          setNeedsCurrentPassword(m.hasPassword);
+        }
+      }
+    };
+    sync();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setError('All fields are required');
+
+    if (needsCurrentPassword && !currentPassword.trim()) {
+      setError('Current password is required');
       return;
     }
-    
+
+    if (!newPassword || !confirmPassword) {
+      setError('New password and confirmation are required');
+      return;
+    }
+
     if (newPassword.length < 6) {
       setError('New password must be at least 6 characters long');
       return;
     }
-    
+
     if (newPassword !== confirmPassword) {
       setError('New password and confirmation do not match');
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
       await api.post('/auth/member/change-password', {
-        currentPassword,
+        ...(needsCurrentPassword ? { currentPassword } : {}),
         newPassword,
       });
-      
-      // Refresh member data
+
       const memberResponse = await api.get('/auth/member/me');
       if (memberResponse.data.member) {
         setMember(memberResponse.data.member);
       }
-      
+
       setNewPassword('');
       setConfirmPassword('');
       setCurrentPassword('');
@@ -336,19 +364,22 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
       <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
         <h2>Password Reset Required</h2>
         <p style={{ marginBottom: '20px', color: '#666' }}>
-          Your password has been reset by an administrator. Please set a new password to continue.
+          {needsCurrentPassword
+            ? 'Your password must be updated before you can continue.'
+            : 'Set a password for your account to continue.'}
         </p>
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Current Password</label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              autoFocus
-            />
-          </div>
+          {needsCurrentPassword && (
+            <div className="form-group">
+              <label>Current Password</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
           <div className="form-group">
             <label>New Password</label>
             <input
@@ -357,6 +388,7 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
               onChange={(e) => setNewPassword(e.target.value)}
               required
               minLength={6}
+              autoFocus={!needsCurrentPassword}
             />
           </div>
           <div className="form-group">

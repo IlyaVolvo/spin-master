@@ -18,6 +18,7 @@ import {
 } from './players/memberFormUtils.ts';
 import { AddPlayerModal } from './players/AddPlayerModal.tsx';
 import { SimilarNamesConfirmationModal } from './players/SimilarNamesConfirmationModal.tsx';
+import { calcAllowBirthDateInput, getEditBirthDateFieldError } from './players/playerEditBirthDateRules.ts';
 import { SuspiciousRatingConfirmModal } from './players/SuspiciousRatingConfirmModal.tsx';
 import { PlayersSettingsMenu } from './memberSettings/PlayersSettingsMenu.tsx';
 import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
@@ -61,13 +62,18 @@ type PlayerEditBaseline = {
   rating: string;
 };
 
+function normalizeMemberGender(g: string | null | undefined): 'MALE' | 'FEMALE' | 'NOT_SPECIFIED' {
+  if (g === 'MALE' || g === 'FEMALE' || g === 'NOT_SPECIFIED') return g;
+  return 'NOT_SPECIFIED';
+}
+
 function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
   const bd = member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null;
   return {
     firstName: member.firstName || '',
     lastName: member.lastName || '',
     email: member.email || '',
-    gender: member.gender || '',
+    gender: normalizeMemberGender(member.gender),
     birthDateMs: bd ? bd.getTime() : null,
     phone: member.phone || '',
     address: member.address || '',
@@ -98,7 +104,7 @@ const Players: React.FC = () => {
   const [newPlayerRating, setNewPlayerRating] = useState('');
   const [lastConfirmedAddRating, setLastConfirmedAddRating] = useState('');
   const [newPlayerEmail, setNewPlayerEmail] = useState('');
-  const [newPlayerGender, setNewPlayerGender] = useState<'MALE' | 'FEMALE' | 'OTHER' | ''>('');
+  const [newPlayerGender, setNewPlayerGender] = useState<'MALE' | 'FEMALE' | 'NOT_SPECIFIED'>('NOT_SPECIFIED');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
   const [newPlayerAddress, setNewPlayerAddress] = useState('');
   const [newPlayerPicture, setNewPlayerPicture] = useState('');
@@ -252,7 +258,7 @@ const Players: React.FC = () => {
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
   const [editEmail, setEditEmail] = useState('');
-  const [editGender, setEditGender] = useState<'MALE' | 'FEMALE' | 'OTHER' | ''>('');
+  const [editGender, setEditGender] = useState<'MALE' | 'FEMALE' | 'NOT_SPECIFIED'>('NOT_SPECIFIED');
   const [editBirthDate, setEditBirthDate] = useState<Date | null>(null);
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
@@ -769,21 +775,18 @@ const Players: React.FC = () => {
       }
       case 'email': {
         const v = (value !== undefined ? value : newPlayerEmail).trim();
-        if (!v) return 'Email is required';
+        if (!v) return '';
         if (!isValidEmailFormat(v)) return 'Please enter a valid email address';
         return '';
       }
       case 'birthDate': {
         const v = value !== undefined ? value : newPlayerBirthDate;
-        if (!v) return 'Birth date is required';
+        if (!v) return '';
         if (!isValidBirthDate(v)) return getBirthDateValidationMessage();
         return '';
       }
-      case 'gender': {
-        const v = value !== undefined ? value : newPlayerGender;
-        if (!v) return 'Gender is required';
+      case 'gender':
         return '';
-      }
       case 'rating': {
         const v = value !== undefined ? value : newPlayerRating;
         if (!isValidRatingInput(v)) return 'Rating must be an integer between 0 and 9999';
@@ -807,7 +810,11 @@ const Players: React.FC = () => {
       }
       case 'roles': {
         const v = value !== undefined ? value : newPlayerRoles;
+        const emailEmpty = !(newPlayerEmail || '').trim();
         if (!Array.isArray(v) || v.length === 0) return 'At least one role must be selected';
+        if (emailEmpty && (v.length !== 1 || v[0] !== 'PLAYER')) {
+          return 'Without an email, only the Player role is allowed';
+        }
         return '';
       }
       default:
@@ -890,21 +897,26 @@ const Players: React.FC = () => {
       }
       case 'email': {
         const v = (value !== undefined ? value : editEmail).trim();
-        if (!v) return 'Email is required';
+        const cm = getMember();
+        const allowEmptyEmail =
+          isAdmin() &&
+          editingPlayerId != null &&
+          cm?.id !== editingPlayerId;
+        if (!v) {
+          if (allowEmptyEmail) return '';
+          return 'Email is required';
+        }
         if (!isValidEmailFormat(v)) return 'Please enter a valid email address';
         return '';
       }
-      case 'birthDate': {
-        const v = value !== undefined ? value : editBirthDate;
-        if (!v) return 'Birth date is required';
-        if (!isValidBirthDate(v)) return getBirthDateValidationMessage();
+      case 'birthDate':
+        return getEditBirthDateFieldError(
+          playerEditBaselineRef.current?.birthDateMs ?? null,
+          value !== undefined ? value : editBirthDate,
+          getBirthDateValidationMessage,
+        );
+      case 'gender':
         return '';
-      }
-      case 'gender': {
-        const v = value !== undefined ? value : editGender;
-        if (!v) return 'Gender is required';
-        return '';
-      }
       case 'rating': {
         const v = value !== undefined ? value : editRating;
         if (!isValidRatingInput(v)) return 'Rating must be an integer between 0 and 9999';
@@ -973,10 +985,10 @@ const Players: React.FC = () => {
     }
   };
 
-  const validateAllEditFields = (isAdmin: boolean): boolean => {
-    const fields = isAdmin
+  const validateAllEditFields = (canEditRestricted: boolean): boolean => {
+    const fields = canEditRestricted
       ? ['firstName', 'lastName', 'email', 'gender', 'birthDate', 'rating', 'phone', 'picture']
-      : ['email', 'phone', 'picture'];
+      : ['email', 'phone', 'picture', 'birthDate'];
     const errors: Record<string, string> = {};
     const touched: Record<string, boolean> = {};
     let hasError = false;
@@ -990,6 +1002,25 @@ const Players: React.FC = () => {
     setEditFieldTouched(touched);
     return !hasError;
   };
+
+  /** Re-sync birth-date range validation when dependent fields update. */
+  useEffect(() => {
+    if (!editingPlayerId) return;
+    const bdErr = validateEditField('birthDate');
+    setEditFieldErrors(prev => {
+      if (prev.birthDate === bdErr) return prev;
+      return { ...prev, birthDate: bdErr };
+    });
+  }, [
+    editingPlayerId,
+    editFirstName,
+    editLastName,
+    editGender,
+    editRating,
+    editBirthDate,
+    editRoles,
+    editIsActive,
+  ]);
 
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1021,11 +1052,17 @@ const Players: React.FC = () => {
       const playerData: any = {
         firstName: newPlayerFirstName.trim(),
         lastName: newPlayerLastName.trim(),
-        email: newPlayerEmail.trim(),
         gender: newPlayerGender,
         roles: newPlayerRoles,
-        birthDate: toDateOnlyString(newPlayerBirthDate!),
       };
+
+      const trimmedAddEmail = newPlayerEmail.trim();
+      if (trimmedAddEmail) {
+        playerData.email = trimmedAddEmail;
+      }
+      if (newPlayerBirthDate) {
+        playerData.birthDate = toDateOnlyString(newPlayerBirthDate);
+      }
       
       if (newPlayerRating) {
         playerData.rating = parseInt(newPlayerRating);
@@ -1050,9 +1087,9 @@ const Players: React.FC = () => {
         setPendingPlayerData(response.data.proposedMemberData || {
           firstName: playerData.firstName,
           lastName: playerData.lastName,
-          email: playerData.email,
+          email: playerData.email ?? null,
           gender: playerData.gender,
-          birthDate: playerData.birthDate,
+          birthDate: playerData.birthDate ?? null,
           rating: playerData.rating ?? null,
           phone: playerData.phone ?? null,
           address: playerData.address ?? null,
@@ -1064,14 +1101,18 @@ const Players: React.FC = () => {
       }
 
       // No similar names, proceed normally
-      setSuccess('Member created and invitation email sent');
+      setSuccess(
+        response.data.passwordResetEmailSent
+          ? 'Member created and invitation email sent'
+          : 'Member saved as an active player (no email — no invitation sent)'
+      );
       setNewPlayerFirstName('');
       setNewPlayerLastName('');
       setNewPlayerBirthDate(null);
       setNewPlayerRating('');
       setLastConfirmedAddRating('');
       setNewPlayerEmail('');
-      setNewPlayerGender('');
+      setNewPlayerGender('NOT_SPECIFIED');
       setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
       setNewPlayerAddress('');
@@ -1191,7 +1232,11 @@ const Players: React.FC = () => {
       });
       setImportModal({
         kind: 'results',
-        results: { ...response.data, emailSent: importSendEmail },
+        results: {
+          ...response.data,
+          emailSent: importSendEmail,
+          addedWithoutEmail: response.data.addedWithoutEmail ?? 0,
+        },
       });
       await fetchMembers(); // Refresh player list
 
@@ -1216,10 +1261,13 @@ const Players: React.FC = () => {
       const playerData: any = {
         firstName: pendingPlayerData.firstName,
         lastName: pendingPlayerData.lastName,
-        email: pendingPlayerData.email,
         gender: pendingPlayerData.gender,
         roles: pendingPlayerData.roles,
       };
+
+      if (pendingPlayerData.email && pendingPlayerData.email.trim()) {
+        playerData.email = pendingPlayerData.email.trim();
+      }
       
       if (pendingPlayerData.birthDate) {
         playerData.birthDate = pendingPlayerData.birthDate;
@@ -1239,14 +1287,18 @@ const Players: React.FC = () => {
       }
 
       // Make a second request with a flag to skip similarity check
-      await api.post('/players', { ...playerData, skipSimilarityCheck: true });
-      setSuccess('Member created and invitation email sent');
+      const confirmRes = await api.post('/players', { ...playerData, skipSimilarityCheck: true });
+      setSuccess(
+        confirmRes.data.passwordResetEmailSent
+          ? 'Member created and invitation email sent'
+          : 'Member saved as an active player (no email — no invitation sent)'
+      );
       setNewPlayerFirstName('');
       setNewPlayerLastName('');
       setNewPlayerBirthDate(null);
       setNewPlayerRating('');
       setNewPlayerEmail('');
-      setNewPlayerGender('');
+      setNewPlayerGender('NOT_SPECIFIED');
       setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
       setNewPlayerAddress('');
@@ -1395,19 +1447,18 @@ const Players: React.FC = () => {
       });
     }
     
-    // Helper function to get comparison value for sorting
-    const getComparison = (a: Member, b: Member): number => {
+    const hasBirthDateKey = (m: Member): boolean =>
+      m.birthDate != null && String(m.birthDate).trim() !== '';
+
+    const compareBySelectedColumn = (a: Member, b: Member): number => {
       let comparison = 0;
 
       if (sortColumn === 'rating') {
-        // Sort by rating (null values go to end)
         const ratingA = a.rating ?? -Infinity;
         const ratingB = b.rating ?? -Infinity;
         comparison = ratingA - ratingB;
       } else if (sortColumn === 'name') {
-        // When explicitly sorting by name, use display order preference
         if (nameDisplayOrder === 'firstLast') {
-          // Sort by first name first, then last name
           const firstNameCompare = a.firstName.localeCompare(b.firstName);
           if (firstNameCompare !== 0) {
             comparison = firstNameCompare;
@@ -1415,7 +1466,6 @@ const Players: React.FC = () => {
             comparison = a.lastName.localeCompare(b.lastName);
           }
         } else {
-          // Sort by last name first, then first name (lastFirst)
           const lastNameCompare = a.lastName.localeCompare(b.lastName);
           if (lastNameCompare !== 0) {
             comparison = lastNameCompare;
@@ -1424,20 +1474,16 @@ const Players: React.FC = () => {
           }
         }
       } else if (sortColumn === 'age') {
-        // Sort by age (null values go to end)
         const ageA = calculateAge(a.birthDate) ?? Infinity;
         const ageB = calculateAge(b.birthDate) ?? Infinity;
         comparison = ageA - ageB;
       } else if (sortColumn === 'id') {
-        // Sort by ID (numeric)
         comparison = a.id - b.id;
       } else if (sortColumn === 'games') {
-        // Sort by match count (null/zero values go to end)
         const gamesA = playerMatchCounts.get(a.id) ?? 0;
         const gamesB = playerMatchCounts.get(b.id) ?? 0;
         comparison = gamesA - gamesB;
       } else {
-        // Default sorting when page first loads: always by last name, then first name
         const lastNameCompare = a.lastName.localeCompare(b.lastName);
         if (lastNameCompare !== 0) {
           comparison = lastNameCompare;
@@ -1446,6 +1492,17 @@ const Players: React.FC = () => {
         }
       }
 
+      return comparison;
+    };
+
+    /** Rows without birth date always sort last (every column / direction). */
+    const getComparison = (a: Member, b: Member): number => {
+      const aMiss = !hasBirthDateKey(a);
+      const bMiss = !hasBirthDateKey(b);
+      if (aMiss !== bMiss) {
+        return aMiss ? 1 : -1;
+      }
+      const comparison = compareBySelectedColumn(a, b);
       return sortDirection === 'asc' ? comparison : -comparison;
     };
 
@@ -1567,7 +1624,7 @@ const Players: React.FC = () => {
       setEditFirstName(member.firstName || '');
       setEditLastName(member.lastName || '');
       setEditEmail(member.email || '');
-      setEditGender(member.gender || '');
+      setEditGender(normalizeMemberGender(member.gender));
       setEditBirthDate(member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null);
       setEditPhone(member.phone || '');
       setEditAddress(member.address || '');
@@ -1581,7 +1638,7 @@ const Players: React.FC = () => {
       
       // Load delete eligibility when an admin opens another member's profile (not self)
       const currentMember = getMember();
-      const isAdminUser = currentMember && currentMember.roles && currentMember.roles.includes('ADMIN');
+      const isAdminUser = isAdmin();
       const editingSomeoneElse = currentMember && member.id !== currentMember.id;
       if (isAdminUser && editingSomeoneElse) {
         try {
@@ -1646,7 +1703,7 @@ const Players: React.FC = () => {
     setEditFirstName('');
     setEditLastName('');
     setEditEmail('');
-    setEditGender('');
+    setEditGender('NOT_SPECIFIED');
     setEditBirthDate(null);
     setEditPhone('');
     setEditAddress('');
@@ -1683,9 +1740,9 @@ const Players: React.FC = () => {
     if (!editingPlayerId || !playerEditBaselineRef.current) return false;
     const b = playerEditBaselineRef.current;
     const cm = getMember();
-    const isAdminUser = cm?.roles?.includes('ADMIN');
+    const isAdminUser = isAdmin();
     const isEditingSelf = cm?.id === editingPlayerId;
-    const canEditRestricted = !!isAdminUser && !isEditingSelf;
+    const canEditRestricted = isAdminUser && !isEditingSelf;
 
     const birthMs = editBirthDate ? editBirthDate.getTime() : null;
     const rolesKey = [...editRoles].sort().join(',');
@@ -1709,7 +1766,8 @@ const Players: React.FC = () => {
       editEmail !== b.email ||
       editPhone !== b.phone ||
       editAddress !== b.address ||
-      editPicture !== b.picture
+      editPicture !== b.picture ||
+      (playerEditBaselineRef.current?.birthDateMs == null && birthMs !== b.birthDateMs)
     );
   };
 
@@ -1724,9 +1782,9 @@ const Players: React.FC = () => {
     setSuccess('');
 
     const currentMember = getMember();
-    const isAdminUser = currentMember && currentMember.roles && currentMember.roles.includes('ADMIN');
-    const isEditingSelf = currentMember && currentMember.id === editingPlayerId;
-    const canEditRestrictedProfileFields = !!isAdminUser && !isEditingSelf;
+    const isAdminUser = isAdmin();
+    const isEditingSelf = Boolean(currentMember && currentMember.id === editingPlayerId);
+    const canEditRestrictedProfileFields = isAdminUser && !isEditingSelf;
 
     // Validate permissions
     if (!isAdminUser && !isEditingSelf) {
@@ -1764,8 +1822,12 @@ const Players: React.FC = () => {
         updateData.firstName = editFirstName.trim();
         updateData.lastName = editLastName.trim();
         updateData.gender = editGender;
-        updateData.birthDate = editBirthDate ? toDateOnlyString(editBirthDate) : null;
-        
+        if (editBirthDate) {
+          updateData.birthDate = toDateOnlyString(editBirthDate);
+        } else if (playerEditBaselineRef.current?.birthDateMs != null) {
+          updateData.birthDate = null;
+        }
+
         if (editRating.trim() === '') {
           updateData.rating = null;
         } else {
@@ -1774,11 +1836,15 @@ const Players: React.FC = () => {
         updateData.isActive = editIsActive;
         updateData.roles = editRoles;
       } else {
-        // Self-edit and non-admin edit path: restricted profile fields are read-only
+        if (editBirthDate) {
+          updateData.birthDate = toDateOnlyString(editBirthDate);
+        } else if (playerEditBaselineRef.current?.birthDateMs != null) {
+          updateData.birthDate = null;
+        }
       }
       
       // Both admin and regular members can edit these fields
-      updateData.email = editEmail.trim();
+      updateData.email = editEmail.trim() === '' ? null : editEmail.trim();
       updateData.phone = editPhone.trim() || null;
       updateData.address = editAddress.trim() || null;
       updateData.picture = editPicture.trim() || null;
@@ -3358,7 +3424,7 @@ const Players: React.FC = () => {
               setNewPlayerRating('');
               setLastConfirmedAddRating('');
               setNewPlayerEmail('');
-              setNewPlayerGender('');
+              setNewPlayerGender('NOT_SPECIFIED');
               setNewPlayerRoles(['PLAYER']);
               setNewPlayerPhone('');
               setNewPlayerAddress('');
@@ -3396,6 +3462,11 @@ const Players: React.FC = () => {
             handleAddFieldChange={handleAddFieldChange}
             handleAddFieldBlur={handleAddFieldBlur}
             handleAddRatingBlur={handleAddRatingBlur}
+            submitButtonLabel={
+              newPlayerEmail.trim()
+                ? 'Save Member & Send Invitation'
+                : 'Save Member (active roster, no email)'
+            }
           />
         )}
 
@@ -3698,10 +3769,18 @@ const Players: React.FC = () => {
                     </div>
                   </div>
 
+                  {(importModal.results.addedWithoutEmail ?? 0) > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <div style={{ padding: '10px', backgroundColor: '#f3e5f5', borderRadius: '4px', color: '#4a148c' }}>
+                        <strong>{importModal.results.addedWithoutEmail}</strong> member(s) were added without an email (active, PLAYER only). No invitation was sent for those rows. Add an email on their profile to enable login and invitations.
+                      </div>
+                    </div>
+                  )}
+
                   {!importModal.results.emailSent && (
                     <div style={{ marginBottom: '20px' }}>
                       <div style={{ padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '4px', color: '#1565c0' }}>
-                        Invitation emails were not sent. You can send them later using the Reset Password feature for each player.
+                        Invitation emails were not sent for this import. For rows that included an email, you can send setup mail later from the player profile (after an email is on file). Members without an email cannot log in until you add one.
                       </div>
                     </div>
                   )}
@@ -3727,7 +3806,7 @@ const Players: React.FC = () => {
                               <tr key={index}>
                                 <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
                                 <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
-                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email || '—'}</td>
                                 <td style={{ padding: '8px', borderBottom: '1px solid #eee', color: '#f39c12' }}>{player.error}</td>
                               </tr>
                             ))}
@@ -3799,7 +3878,7 @@ const Players: React.FC = () => {
                               <tr key={index}>
                                 <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.firstName}</td>
                                 <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.lastName}</td>
-                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email}</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email || '—'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -3950,7 +4029,7 @@ const Players: React.FC = () => {
                         <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
                           {formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}
                         </td>
-                        <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email}</td>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{player.email || '—'}</td>
                         <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
                           {player.rating !== null ? player.rating : '-'}
                         </td>
@@ -5340,7 +5419,7 @@ const Players: React.FC = () => {
               firstName: editFirstName || '',
               lastName: editLastName || '',
               email: editEmail || '',
-              gender: (editGender || 'MALE') as 'MALE' | 'FEMALE' | 'OTHER',
+              gender: (editGender || 'NOT_SPECIFIED') as 'MALE' | 'FEMALE' | 'NOT_SPECIFIED',
               birthDate: editBirthDate ? toDateOnlyString(editBirthDate) : null,
               isActive: editIsActive,
               emailConfirmedAt: null,
@@ -5353,8 +5432,13 @@ const Players: React.FC = () => {
           }
         const currentMember = getMember();
         const isEditingSelf = currentMember && currentMember.id === editingPlayerId;
-        const isAdminUser = currentMember && currentMember.roles && currentMember.roles.includes('ADMIN');
-        const canEditRestrictedProfileFields = !!isAdminUser && !isEditingSelf;
+        const isAdminUser = isAdmin();
+        const canEditRestrictedProfileFields = isAdminUser && !isEditingSelf;
+        const allowBirthDateInput = calcAllowBirthDateInput(
+          !!isAdminUser,
+          !!isEditingSelf,
+          playerEditBaselineRef.current?.birthDateMs ?? null,
+        );
         
         return (
           <div 
@@ -5475,10 +5559,10 @@ const Players: React.FC = () => {
                               fontSize: '13px', 
                               fontWeight: 'bold',
                               color: !isAdminUser ? '#999' : 'inherit'
-                            }}>Gender *</label>
+                            }}>Gender</label>
                             <select
                               value={editGender}
-                              onChange={(e) => { setEditGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER' | ''); handleEditFieldChange('gender', e.target.value); if (!editFieldTouched.gender) { setEditFieldTouched(prev => ({ ...prev, gender: true })); } const err = validateEditField('gender', e.target.value); setEditFieldErrors(prev => ({ ...prev, gender: err })); }}
+                              onChange={(e) => { setEditGender(e.target.value as 'MALE' | 'FEMALE' | 'NOT_SPECIFIED'); handleEditFieldChange('gender', e.target.value); if (!editFieldTouched.gender) { setEditFieldTouched(prev => ({ ...prev, gender: true })); } const err = validateEditField('gender', e.target.value); setEditFieldErrors(prev => ({ ...prev, gender: err })); }}
                               onBlur={() => handleEditFieldBlur('gender')}
                               disabled={!isAdminUser}
                               style={{ 
@@ -5492,10 +5576,9 @@ const Players: React.FC = () => {
                                 opacity: !isAdminUser ? 0.7 : 1
                               }}
                             >
-                              <option value="">Select gender...</option>
+                              <option value="NOT_SPECIFIED">Not specified</option>
                               <option value="MALE">Male</option>
                               <option value="FEMALE">Female</option>
-                              <option value="OTHER">Other</option>
                             </select>
                             {editFieldTouched.gender && editFieldErrors.gender && <span className="field-error">{editFieldErrors.gender}</span>}
                           </div>
@@ -5506,12 +5589,12 @@ const Players: React.FC = () => {
                               marginBottom: '4px', 
                               fontSize: '13px', 
                               fontWeight: 'bold',
-                              color: !isAdminUser ? '#999' : 'inherit'
+                              color: !allowBirthDateInput ? '#999' : 'inherit'
                             }}>Birth Date</label>
                             <div style={{ 
                               width: '100%',
-                              opacity: !isAdminUser ? 0.7 : 1,
-                              pointerEvents: !isAdminUser ? 'none' : 'auto'
+                              opacity: !allowBirthDateInput ? 0.7 : 1,
+                              pointerEvents: !allowBirthDateInput ? 'none' : 'auto'
                             }}>
                               <DatePicker
                                 selected={editBirthDate}
@@ -5525,13 +5608,13 @@ const Players: React.FC = () => {
                                   setEditFieldErrors(prev => ({ ...prev, birthDate: err }));
                                 }}
                                 onBlur={() => handleEditFieldBlur('birthDate')}
-                                disabled={!isAdminUser}
+                                disabled={!allowBirthDateInput}
                                 dateFormat="MM/dd/yyyy"
                                 showYearDropdown
                                 showMonthDropdown
                                 dropdownMode="select"
                                 wrapperClassName="date-picker-wrapper"
-                                className={!isAdminUser ? "form-control disabled" : "form-control"}
+                                className={!allowBirthDateInput ? "form-control disabled" : "form-control"}
                               />
                             </div>
                             {editFieldTouched.birthDate && editFieldErrors.birthDate && <span className="field-error">{editFieldErrors.birthDate}</span>}

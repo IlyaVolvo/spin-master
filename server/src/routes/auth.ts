@@ -136,6 +136,12 @@ router.post('/member/login', [
       return res.status(403).json({ error: 'Member account is inactive' });
     }
 
+    if (!member.email) {
+      return res
+        .status(403)
+        .json({ error: 'This account has no email on file and cannot log in. Contact an administrator.' });
+    }
+
     // Check if password is empty (admin reset) - allow login but force password setup
     if (member.password === '') {
       // Password is empty, user must set a new password
@@ -320,6 +326,7 @@ router.post('/member/login', [
       address: memberRecord.address ? String(memberRecord.address) : null,
       picture: memberRecord.picture ? String(memberRecord.picture) : null,
       mustResetPassword: Boolean(memberRecord.mustResetPassword || false),
+      hasPassword: member.password !== '',
       createdAt: memberRecord.createdAt ? new Date(memberRecord.createdAt).toISOString() : null,
       updatedAt: memberRecord.updatedAt ? new Date(memberRecord.updatedAt).toISOString() : null,
     };
@@ -394,9 +401,11 @@ router.post('/member/forgot-password', [
       return res.json({ message: 'If this email exists, a reset link has been sent.' });
     }
 
+    const addressForEmail = member.email ?? normalizedEmail;
+
     const token = generatePasswordResetToken();
     const expiresAt = getPasswordResetExpiryDate();
-    const resetLink = buildResetLink(member.email, token);
+    const resetLink = buildResetLink(addressForEmail, token);
 
     await prisma.member.update({
       where: { id: member.id },
@@ -408,7 +417,7 @@ router.post('/member/forgot-password', [
     });
 
     await sendPasswordResetEmail({
-      toEmail: member.email,
+      toEmail: addressForEmail,
       firstName: member.firstName,
       resetLink,
       expiresAt,
@@ -416,7 +425,7 @@ router.post('/member/forgot-password', [
 
     logger.info('Forgot password email sent', {
       memberId: member.id,
-      email: member.email,
+      email: addressForEmail,
       expiresAt: expiresAt.toISOString(),
     });
 
@@ -739,6 +748,11 @@ router.post('/member/:id/reset-password', [
       const token = generatePasswordResetToken();
       const expiresAt = getPasswordResetExpiryDate();
       const recipientEmail = requestedEmail || member.email;
+      if (!recipientEmail) {
+        return res.status(400).json({
+          error: 'This member has no email address. Add an email before sending a password setup link.',
+        });
+      }
       const resetLink = buildResetLink(recipientEmail, token);
 
       await prisma.member.update({
@@ -854,6 +868,9 @@ router.get('/member/me', async (req: Request, res: Response) => {
           phone: true,
           address: true,
           picture: true,
+          mustResetPassword: true,
+          emailConfirmedAt: true,
+          password: true,
         },
       });
 
@@ -865,7 +882,19 @@ router.get('/member/me', async (req: Request, res: Response) => {
         return res.status(404).json({ error: 'Member not found' });
       }
 
-      return res.json({ member: fullMember });
+      const { password, ...memberWithoutPassword } = fullMember;
+      return res.json({
+        member: {
+          ...memberWithoutPassword,
+          birthDate: memberWithoutPassword.birthDate
+            ? new Date(memberWithoutPassword.birthDate).toISOString()
+            : null,
+          emailConfirmedAt: memberWithoutPassword.emailConfirmedAt
+            ? new Date(memberWithoutPassword.emailConfirmedAt).toISOString()
+            : null,
+          hasPassword: password !== '',
+        },
+      });
     }
 
     return res.status(401).json({ error: 'Not authenticated' });

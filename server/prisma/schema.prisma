@@ -14,7 +14,7 @@ datasource db {
 enum Gender {
   MALE
   FEMALE
-  OTHER
+  NOT_SPECIFIED
 }
 
 enum MemberRole {
@@ -38,8 +38,8 @@ model Member {
   rating Int?
 
   // New required fields
-  email    String       @unique
-  gender   Gender
+  email    String?      @unique
+  gender   Gender @default(NOT_SPECIFIED)
   password String
   roles    MemberRole[]
 

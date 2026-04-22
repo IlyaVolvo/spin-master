@@ -136,7 +136,7 @@ const chineseLastNames = [
 /**
  * Determine gender from first name
  */
-function determineGender(firstName: string): 'MALE' | 'FEMALE' | 'OTHER' {
+function determineGender(firstName: string): 'MALE' | 'FEMALE' | 'NOT_SPECIFIED' {
   const name = firstName.toLowerCase();
   
   // Build exact male names from the name pools
@@ -181,8 +181,7 @@ function determineGender(firstName: string): 'MALE' | 'FEMALE' | 'OTHER' {
     return 'FEMALE';
   }
   
-  // Default to OTHER if uncertain
-  return 'OTHER';
+  return 'NOT_SPECIFIED';
 }
 
 /**
@@ -402,7 +401,7 @@ async function createPlayers(): Promise<any[]> {
     firstName: string;
     lastName: string;
     email: string;
-    gender: 'MALE' | 'FEMALE' | 'OTHER';
+    gender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
     password: string;
     roles: MemberRoleType[];
     birthDate: Date;
@@ -1824,7 +1823,7 @@ async function main() {
             firstName: SYS_ADMIN_FIRST_NAME,
             lastName: SYS_ADMIN_LAST_NAME,
             email: SYS_ADMIN_EMAIL,
-            gender: 'OTHER',
+            gender: 'NOT_SPECIFIED',
             password: adminPassword,
             roles: [MemberRole.ADMIN],
             isActive: true,
@@ -1836,7 +1835,7 @@ async function main() {
       });
       
       console.log(`  ✓ Created System Admin member (${SYS_ADMIN_EMAIL}) as first entry (ID: ${admin.id})\n`);
-      console.log('    - Gender: OTHER\n');
+      console.log('    - Gender: NOT_SPECIFIED\n');
       console.log('    - Rating: NULL\n');
       console.log('    - Will be excluded from matches and tournaments\n');
     } else {

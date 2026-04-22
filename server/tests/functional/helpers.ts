@@ -67,6 +67,33 @@ export async function seedOrganizer(
   return { id: member.id, token: makeMemberJwt(member.id) };
 }
 
+/** Create an administrator for Bearer auth (editing other members, restricted fields). */
+export async function seedAdmin(
+  prisma: PrismaClient,
+  params: { email: string; password: string } = {
+    email: 'admin.functional@test.local',
+    password: 'FunctionalTest#1',
+  },
+): Promise<{ id: number; token: string }> {
+  const passwordHash = await bcrypt.hash(params.password, 10);
+  const member = await prisma.member.create({
+    data: {
+      firstName: 'Functional',
+      lastName: 'Admin',
+      email: params.email,
+      gender: 'MALE',
+      birthDate: new Date('1990-06-15'),
+      password: passwordHash,
+      roles: ['PLAYER', 'ADMIN'],
+      rating: 2000,
+      isActive: true,
+      qrTokenHash: qrTokenHash(),
+      mustResetPassword: false,
+    },
+  });
+  return { id: member.id, token: makeMemberJwt(member.id) };
+}
+
 /** Create deterministic players with distinct ratings (higher id order = spread ratings). */
 export async function seedPlayers(
   prisma: PrismaClient,
@@ -90,7 +117,7 @@ export async function seedPlayers(
         mustResetPassword: false,
       },
     });
-    out.push({ id: m.id, email: m.email, rating: s.rating });
+    out.push({ id: m.id, email: m.email ?? s.email, rating: s.rating });
   }
   return out;
 }

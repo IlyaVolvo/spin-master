@@ -1,4 +1,6 @@
-import { defineConfig, loadEnv } from 'vite';
+/// <reference types="vitest/config" />
+import { defineConfig } from 'vitest/config';
+import { loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
@@ -57,6 +59,12 @@ export default defineConfig(({ mode }) => {
     // Enable source maps for development debugging
     css: {
       devSourcemap: true,
+    },
+    test: {
+      globals: false,
+      environment: 'jsdom',
+      setupFiles: './src/test/setup.ts',
+      include: ['src/**/*.test.{ts,tsx}'],
     },
   };
 });

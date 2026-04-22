@@ -32,6 +32,12 @@ describe('playersCsvLayout', () => {
     ).toBe(true);
   });
 
+  it('looksLikePlayersCsvHeaderRow is true when email and birthdate columns are omitted', () => {
+    expect(
+      looksLikePlayersCsvHeaderRow(['FirstName', 'LastName', 'Gender', 'Rating'])
+    ).toBe(true);
+  });
+
   it('looksLikePlayersCsvHeaderRow is false when a cell contains an email', () => {
     expect(
       looksLikePlayersCsvHeaderRow([

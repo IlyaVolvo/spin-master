@@ -9,7 +9,7 @@ export interface AuthRequest extends Request {
   userId?: number;
   member?: {
     id: number;
-    email: string;
+    email: string | null;
     firstName: string;
     lastName: string;
     roles: string[];

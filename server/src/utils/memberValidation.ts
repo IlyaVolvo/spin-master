@@ -47,6 +47,19 @@ export function isValidEmailFormat(email: string): boolean {
   return domainParts[domainParts.length - 1].length >= 2;
 }
 
+/**
+ * CSV import: email is optional. Plain text without "@" (e.g. status "active.") is treated as no email,
+ * since it usually means the wrong column was filled. If "@" is present but the address is invalid,
+ * returns the trimmed cell so row validation can surface "Invalid email format".
+ */
+export function normalizeOptionalCsvEmailCell(raw: string): string | undefined {
+  const emailCell = raw.trim();
+  if (!emailCell) return undefined;
+  if (isValidEmailFormat(emailCell)) return emailCell;
+  if (!emailCell.includes('@')) return undefined;
+  return emailCell;
+}
+
 export function getBirthDateBounds(): { minDate: Date; maxDate: Date } {
   const currentYear = new Date().getUTCFullYear();
 

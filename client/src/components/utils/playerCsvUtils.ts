@@ -18,9 +18,9 @@ import {
 interface ExportablePlayer {
   firstName: string;
   lastName: string;
-  email: string;
+  email: string | null;
   birthDate: string | null;
-  gender: 'MALE' | 'FEMALE' | 'OTHER';
+  gender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
   roles: string[];
   phone?: string | null;
   address?: string | null;
@@ -188,13 +188,8 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
 
   if (hasHeaderRow) {
     headers = firstCells.map(h => h.toLowerCase().trim());
-    const requiredHeaders = ['firstname', 'lastname', 'email'];
+    const requiredHeaders = ['firstname', 'lastname'];
     const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
-
-    const hasBirthdate = headers.includes('birthdate') || headers.includes('date of birth');
-    if (!hasBirthdate) {
-      missingHeaders.push('birthdate (or "date of birth")');
-    }
 
     if (missingHeaders.length > 0) {
       return { players: [], errors: [`Missing required columns: ${missingHeaders.join(', ')}`] };
@@ -229,6 +224,7 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
     const rowNumber = index + dataRowNumberOffset;
     let rowRatingError = '';
     let birthDateCellHadProblem = false;
+    let genderCellHadProblem = false;
 
     headers.forEach((header, i) => {
       const value = values[i]?.trim() || '';
@@ -262,12 +258,20 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
           player.birthDate = parsed.toISOString().split('T')[0];
           break;
         }
-        case 'gender':
+        case 'gender': {
           const genderUpper = value.toUpperCase();
-          if (['MALE', 'FEMALE', 'OTHER'].includes(genderUpper)) {
+          if (genderUpper === 'OTHER') {
+            genderCellHadProblem = true;
+            errors.push(
+              `Row ${rowNumber}: Gender "OTHER" is not valid. Use NOT_SPECIFIED, MALE, or FEMALE.`
+            );
+            break;
+          }
+          if (['MALE', 'FEMALE', 'NOT_SPECIFIED'].includes(genderUpper)) {
             player.gender = genderUpper;
           }
           break;
+        }
         case 'roles':
           // Parse comma-separated first letters back to full role names
           const roleLetters = value.split(',').map(r => r.trim().toUpperCase());
@@ -304,6 +308,10 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
       return;
     }
 
+    if (genderCellHadProblem) {
+      return;
+    }
+
     // Validate required fields
     const rowErrors: string[] = [];
     
@@ -311,18 +319,15 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
       rowErrors.push(`Row ${rowNumber}: Missing required fields (firstName, lastName)`);
     }
     
-    // Validate email (required)
-    if (!player.email || !player.email.trim()) {
-      rowErrors.push(`Row ${rowNumber}: Email is required`);
-    } else {
-      if (!isValidEmailFormat(player.email.trim())) {
+    if (player.email != null && String(player.email).trim()) {
+      if (!isValidEmailFormat(String(player.email).trim())) {
         rowErrors.push(`Row ${rowNumber}: Invalid email format`);
       }
     }
-    
-    // Validate birthdate (required)
-    if (!player.birthDate && !birthDateCellHadProblem) {
-      rowErrors.push(`Row ${rowNumber}: Birth date is required`);
+
+    const emailPresent = !!(player.email && String(player.email).trim());
+    if (!emailPresent && player.roles && player.roles.length > 0 && player.roles.some((r: string) => r !== 'PLAYER')) {
+      rowErrors.push(`Row ${rowNumber}: Without an email, only the PLAYER role is allowed`);
     }
 
     // Validate phone (optional)
@@ -338,9 +343,6 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
       errors.push(...rowErrors);
       return; // Skip this player
     }
-    
-    // Set mustResetPassword to true for all imported players
-    player.mustResetPassword = true;
     
     players.push(player);
   });

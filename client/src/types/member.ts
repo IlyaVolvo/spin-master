@@ -8,12 +8,14 @@ export interface Member {
   isActive: boolean;
   emailConfirmedAt?: string | null;
   rating: number | null;
-  email: string;
-  gender: 'MALE' | 'FEMALE' | 'OTHER';
+  email: string | null;
+  gender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
   roles: string[];
   picture?: string | null;
   phone?: string | null;
   address?: string | null;
+  /** Present on session/me payloads when returned by API. */
+  hasPassword?: boolean;
 }
 
 export interface SimilarName {
@@ -34,8 +36,9 @@ export interface PlayerImportResultsPayload {
   successful: number;
   failed: number;
   emailFailed: number;
+  addedWithoutEmail?: number;
   emailSent: boolean;
-  successfulPlayers: Array<{ firstName: string; lastName: string; email: string }>;
+  successfulPlayers: Array<{ firstName: string; lastName: string; email: string | null }>;
   failedPlayers: Array<{
     firstName: string;
     lastName: string;
@@ -49,8 +52,8 @@ export interface PlayerImportResultsPayload {
 export interface PendingPlayerData {
   firstName: string;
   lastName: string;
-  email: string;
-  gender: 'MALE' | 'FEMALE' | 'OTHER';
+  email: string | null;
+  gender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
   birthDate: string | null;
   rating: number | null;
   phone: string | null;

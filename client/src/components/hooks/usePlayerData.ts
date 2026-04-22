@@ -11,8 +11,8 @@ interface Member {
   isActive: boolean;
   emailConfirmedAt?: string | null;
   rating: number | null;
-  email: string;
-  gender: 'MALE' | 'FEMALE' | 'OTHER';
+  email: string | null;
+  gender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
   roles: string[];
   picture?: string | null;
   phone?: string | null;

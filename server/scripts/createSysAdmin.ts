@@ -81,7 +81,7 @@ async function createSysAdmin() {
         lastName,
         roles: ['ADMIN'],
         isActive: true,
-        gender: 'OTHER', // Default gender
+        gender: 'NOT_SPECIFIED', // Default until set
         qrTokenHash: generateQrTokenHash(),
       },
     });

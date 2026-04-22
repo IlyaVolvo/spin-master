@@ -16,6 +16,7 @@ import {
   isValidPhoneNumber,
   isValidRatingInput,
   normalizeMemberEmail,
+  normalizeOptionalCsvEmailCell,
   parseBirthDateFromCsvValue,
 } from '../utils/memberValidation';
 import { looksLikePlayersCsvHeaderRow, playersCsvCanonicalHeadersForParse } from '../utils/playersCsvLayout';
@@ -136,7 +137,7 @@ interface ImportedPlayerPayload {
   lastName?: string;
   email?: string;
   birthDate?: string;
-  gender?: 'MALE' | 'FEMALE' | 'OTHER';
+  gender?: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
   roles?: MemberRole[];
   phone?: string;
   address?: string;
@@ -219,13 +220,8 @@ function parsePlayersCsv(text: string): ParsePlayersCsvResult {
 
   if (hasHeaderRow) {
     headers = firstCells.map(h => h.toLowerCase().trim());
-    const requiredHeaders = ['firstname', 'lastname', 'email'];
+    const requiredHeaders = ['firstname', 'lastname'];
     const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
-    const hasBirthdate = headers.includes('birthdate') || headers.includes('date of birth');
-
-    if (!hasBirthdate) {
-      missingHeaders.push('birthdate (or "date of birth")');
-    }
 
     if (missingHeaders.length > 0) {
       const msg = `Missing required columns: ${missingHeaders.join(', ')}`;
@@ -269,6 +265,7 @@ function parsePlayersCsv(text: string): ParsePlayersCsvResult {
     const rowNumber = index + dataRowNumberOffset;
     let rowRatingError = '';
     let birthDateCellHadProblem = false;
+    let genderCellHadProblem = false;
 
     headers.forEach((header, i) => {
       const value = values[i]?.trim() || '';
@@ -281,9 +278,13 @@ function parsePlayersCsv(text: string): ParsePlayersCsvResult {
         case 'lastname':
           player.lastName = value;
           break;
-        case 'email':
-          player.email = value;
+        case 'email': {
+          const normalized = normalizeOptionalCsvEmailCell(value);
+          if (normalized !== undefined) {
+            player.email = normalized;
+          }
           break;
+        }
         case 'date of birth':
         case 'birthdate': {
           const parsed = parseBirthDateFromCsvValue(value);
@@ -310,8 +311,17 @@ function parsePlayersCsv(text: string): ParsePlayersCsvResult {
         }
         case 'gender': {
           const genderUpper = value.toUpperCase();
-          if (['MALE', 'FEMALE', 'OTHER'].includes(genderUpper)) {
-            player.gender = genderUpper as 'MALE' | 'FEMALE' | 'OTHER';
+          if (genderUpper === 'OTHER') {
+            genderCellHadProblem = true;
+            pushRowIssue(
+              rowNumber,
+              line,
+              `Row ${rowNumber}: Gender "OTHER" is not valid. Use NOT_SPECIFIED, MALE, or FEMALE.`
+            );
+            break;
+          }
+          if (['MALE', 'FEMALE', 'NOT_SPECIFIED'].includes(genderUpper)) {
+            player.gender = genderUpper as 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
           }
           break;
         }
@@ -349,20 +359,24 @@ function parsePlayersCsv(text: string): ParsePlayersCsvResult {
       return;
     }
 
+    if (genderCellHadProblem) {
+      return;
+    }
+
     const rowErrors: string[] = [];
 
     if (!player.firstName || !player.lastName) {
       rowErrors.push(`Row ${rowNumber}: Missing required fields (firstName, lastName)`);
     }
 
-    if (!player.email || !player.email.trim()) {
-      rowErrors.push(`Row ${rowNumber}: Email is required`);
-    } else if (!isValidEmailFormat(player.email.trim())) {
-      rowErrors.push(`Row ${rowNumber}: Invalid email format`);
+    if (player.email != null && String(player.email).trim()) {
+      if (!isValidEmailFormat(String(player.email).trim())) {
+        rowErrors.push(`Row ${rowNumber}: Invalid email format`);
+      }
     }
 
-    if (!player.birthDate && !birthDateCellHadProblem) {
-      rowErrors.push(`Row ${rowNumber}: Birth date is required`);
+    if (player.roles !== undefined && player.roles !== null && !Array.isArray(player.roles)) {
+      rowErrors.push(`Row ${rowNumber}: Roles must be an array when provided`);
     }
 
     if (player.phone && !isValidPhoneNumber(player.phone.trim())) {
@@ -373,12 +387,16 @@ function parsePlayersCsv(text: string): ParsePlayersCsvResult {
       rowErrors.push(rowRatingError);
     }
 
+    const emailPresent = !!(player.email && String(player.email).trim());
+    if (!emailPresent && player.roles && player.roles.length > 0 && player.roles.some((r) => r !== 'PLAYER')) {
+      rowErrors.push(`Row ${rowNumber}: Without an email, only the PLAYER role is allowed`);
+    }
+
     if (rowErrors.length > 0) {
       rowErrors.forEach((msg) => pushRowIssue(rowNumber, line, msg));
       return;
     }
 
-    player.mustResetPassword = true;
     players.push(player);
   });
 
@@ -816,27 +834,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Helper function to determine gender from name
-function determineGender(firstName: string): 'MALE' | 'FEMALE' | 'OTHER' {
-  const name = firstName.toLowerCase();
-  const femalePatterns = ['a', 'ia', 'ella', 'ette', 'ine', 'ina', 'elle', 'anna', 'ella'];
-  const malePatterns = ['o', 'er', 'on', 'en', 'an', 'el', 'us', 'is'];
-  
-  for (const pattern of femalePatterns) {
-    if (name.endsWith(pattern) && name.length > 3) {
-      return 'FEMALE';
-    }
-  }
-  
-  for (const pattern of malePatterns) {
-    if (name.endsWith(pattern) && name.length > 3) {
-      return 'MALE';
-    }
-  }
-  
-  return 'OTHER';
-}
-
 // Generate email from first name and last name
 function generateEmail(firstName: string, lastName: string): string {
   const firstLetter = firstName.charAt(0).toLowerCase();
@@ -853,18 +850,31 @@ function isValidRoles(roles: any): boolean {
   return roles.every(role => typeof role === 'string' && validRoles.includes(role));
 }
 
+/** MALE / FEMALE / NOT_SPECIFIED only. OTHER is invalid (DB stores NOT_SPECIFIED after migration). */
+function isValidGenderBodyValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return true;
+  const s = String(value).trim().toUpperCase();
+  return ['MALE', 'FEMALE', 'NOT_SPECIFIED'].includes(s);
+}
+
+function normalizeGenderFromBody(value: unknown): 'MALE' | 'FEMALE' | 'NOT_SPECIFIED' {
+  if (value === undefined || value === null || value === '') return 'NOT_SPECIFIED';
+  const s = String(value).trim().toUpperCase();
+  if (s === 'MALE') return 'MALE';
+  if (s === 'FEMALE') return 'FEMALE';
+  if (s === 'NOT_SPECIFIED') return 'NOT_SPECIFIED';
+  return 'NOT_SPECIFIED';
+}
+
 // Add new member
 router.post('/', [
   body('firstName').notEmpty().trim(),
   body('lastName').notEmpty().trim(),
-  body('email').notEmpty().trim().isEmail(),
-  body('gender').notEmpty().isIn(['MALE', 'FEMALE', 'OTHER']),
-  body('birthDate').notEmpty().isISO8601().toDate(),
+  body('gender').optional().custom(isValidGenderBodyValue).withMessage('Gender must be MALE, FEMALE, or NOT_SPECIFIED (OTHER is not allowed)'),
   body('rating').optional().custom((value) => isValidRatingInput(value)),
   body('phone').optional().trim(),
   body('address').optional().trim(),
   body('picture').optional().trim(),
-  body('roles').isArray({ min: 1 }),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -875,62 +885,65 @@ router.post('/', [
     const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck } = req.body;
     const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
     const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
-    
-    // Additional validation for email, phone, and roles
+    const trimmedEmailInput = typeof email === 'string' ? email.trim() : '';
+    const hasEmail = trimmedEmailInput.length > 0;
+
     const validationErrors: string[] = [];
 
-    // Validate names (required)
     if (!isValidMemberName(trimmedFirstName)) {
       validationErrors.push('First name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens');
     }
     if (!isValidMemberName(trimmedLastName)) {
       validationErrors.push('Last name must be 2-50 characters and contain only letters, spaces, apostrophes, or hyphens');
     }
-    
-    // Validate email (required)
-    if (!email || !email.trim()) {
-      validationErrors.push('Email is required');
-    } else if (!isValidEmailFormat(email.trim())) {
+
+    if (hasEmail && !isValidEmailFormat(trimmedEmailInput)) {
       validationErrors.push('Invalid email format');
     }
-    
-    // Validate phone if provided
+
     if (phone) {
       if (!isValidPhoneNumber(phone.trim())) {
         validationErrors.push('Invalid phone number format. Please enter a valid US phone number');
       }
     }
 
-    // Validate birthDate (required and realistic)
-    if (!birthDate || !isValidBirthDate(birthDate)) {
-      validationErrors.push(getBirthDateValidationMessage());
+    let parsedBirthDate: Date | null = null;
+    if (birthDate !== undefined && birthDate !== null && birthDate !== '') {
+      if (!isValidBirthDate(birthDate)) {
+        validationErrors.push(getBirthDateValidationMessage());
+      } else {
+        parsedBirthDate = new Date(birthDate);
+      }
     }
 
-    // Validate rating if provided
     if (!isValidRatingInput(rating)) {
       validationErrors.push('Rating must be an integer between 0 and 9999');
     }
-    
-    // Validate roles (required)
-    if (!roles || !Array.isArray(roles) || roles.length === 0) {
+
+    if (!roles || !Array.isArray(roles)) {
       validationErrors.push('At least one role must be selected');
     } else if (!isValidRoles(roles)) {
       validationErrors.push('Invalid roles. Roles must be an array containing only: PLAYER, COACH, ADMIN, ORGANIZER');
+    } else if (!hasEmail) {
+      if (roles.length !== 1 || roles[0] !== 'PLAYER') {
+        validationErrors.push('Without an email, only the PLAYER role is allowed');
+      }
+    } else if (roles.length === 0) {
+      validationErrors.push('At least one role must be selected');
     }
-    
+
     if (validationErrors.length > 0) {
       return res.status(400).json({ errors: validationErrors.map(msg => ({ msg, param: 'validation' })) });
     }
+
     const fullName = `${trimmedFirstName} ${trimmedLastName}`;
 
-    // Get all existing members
     const allMembers = await prisma.member.findMany({
       select: { firstName: true, lastName: true },
     });
 
-    // Check for exact duplicate (case-insensitive) - always block exact duplicates
     const exactMatch = allMembers.find(
-      (p) => 
+      (p) =>
         p.firstName.toLowerCase() === trimmedFirstName.toLowerCase() &&
         p.lastName.toLowerCase() === trimmedLastName.toLowerCase()
     );
@@ -939,9 +952,9 @@ router.post('/', [
       return res.status(400).json({ error: 'A member with this name already exists' });
     }
 
-    // Skip similarity check if user confirmed they want to proceed
+    const proposedBirthIso = parsedBirthDate ? parsedBirthDate.toISOString() : null;
+
     if (!skipSimilarityCheck) {
-      // Check for similar names (similarity >= 80% or edit distance <= 2)
       const similarMembers = allMembers
         .map((p: { firstName: string; lastName: string }) => {
           const existingFullName = `${p.firstName} ${p.lastName}`;
@@ -956,7 +969,6 @@ router.post('/', [
         .filter((p: { similarity: number; distance: number }) => p.similarity >= 80 || p.distance <= 2)
         .sort((a: { similarity: number }, b: { similarity: number }) => b.similarity - a.similarity);
 
-      // If similar names found, return them for confirmation (don't block, just warn)
       const similarNames = similarMembers.map((p: { fullName: string; similarity: number }) => ({
         name: p.fullName,
         similarity: Math.round(p.similarity),
@@ -972,9 +984,9 @@ router.post('/', [
           proposedMemberData: {
             firstName: trimmedFirstName,
             lastName: trimmedLastName,
-            email: normalizeMemberEmail(email),
-            gender,
-            birthDate: birthDate || null,
+            email: hasEmail ? normalizeMemberEmail(trimmedEmailInput) : null,
+            gender: normalizeGenderFromBody(gender),
+            birthDate: proposedBirthIso,
             rating: rating || null,
             phone: phone || null,
             address: address || null,
@@ -985,10 +997,49 @@ router.post('/', [
       }
     }
 
-    // Use provided email (required), canonical form for uniqueness
-    const finalEmail = normalizeMemberEmail(email);
-    
-    // Check if email already exists
+    const finalGender = normalizeGenderFromBody(gender);
+    const ratingNum =
+      rating !== null && rating !== undefined && rating !== '' ? parseInt(String(rating), 10) : null;
+
+    if (!hasEmail) {
+      const member = await prisma.member.create({
+        data: {
+          firstName: trimmedFirstName,
+          lastName: trimmedLastName,
+          email: null,
+          gender: finalGender,
+          password: '',
+          roles: ['PLAYER'],
+          birthDate: parsedBirthDate,
+          rating: ratingNum,
+          phone: phone ? phone.trim() : null,
+          address: address ? address.trim() : null,
+          picture: picture ? picture.trim() : null,
+          qrTokenHash: generateQrTokenHash(),
+          isActive: true,
+          emailConfirmedAt: null,
+          mustResetPassword: false,
+          passwordResetToken: null,
+          passwordResetTokenExpiry: null,
+        } as any,
+      });
+
+      await createInitialRatingHistoryEntry(member.id, member.rating);
+
+      const memberWithoutPassword = stripSensitiveMemberFields(member);
+
+      emitToAll('player:created', {
+        player: memberWithoutPassword,
+        timestamp: Date.now(),
+      });
+
+      return res.status(201).json({
+        ...memberWithoutPassword,
+        passwordResetEmailSent: false,
+      });
+    }
+
+    const finalEmail = normalizeMemberEmail(trimmedEmailInput);
     const existing = await prisma.member.findUnique({
       where: { email: finalEmail },
     });
@@ -996,18 +1047,11 @@ router.post('/', [
       return res.status(400).json({ error: 'A member with this email already exists' });
     }
 
-    const finalGender = gender;
-    const finalRoles = roles;
+    const finalRoles = roles as MemberRole[];
     const passwordResetToken = generatePasswordResetToken();
     const passwordResetExpiry = getPasswordResetExpiryDate();
     const resetLink = buildResetLink(finalEmail, passwordResetToken);
 
-    // Validate birthDate is provided
-    if (!birthDate) {
-      return res.status(400).json({ error: 'Birth date is required' });
-    }
-
-    // Create member with all fields
     const member = await prisma.member.create({
       data: {
         firstName: trimmedFirstName,
@@ -1016,13 +1060,12 @@ router.post('/', [
         gender: finalGender,
         password: '',
         roles: finalRoles,
-        birthDate: new Date(birthDate),
-        rating: rating !== null && rating !== undefined && rating !== '' ? parseInt(String(rating), 10) : null,
+        birthDate: parsedBirthDate,
+        rating: ratingNum,
         phone: phone ? phone.trim() : null,
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
         qrTokenHash: generateQrTokenHash(),
-        // Inactive until organizer activates or invite flow completes (matches import + tournament eligibility)
         isActive: false,
         emailConfirmedAt: null,
         mustResetPassword: true,
@@ -1058,15 +1101,13 @@ router.post('/', [
 
     await createInitialRatingHistoryEntry(member.id, member.rating);
 
-    // Exclude sensitive fields from response
     const memberWithoutPassword = stripSensitiveMemberFields(member);
-    
-    // Emit socket notification for player creation
+
     emitToAll('player:created', {
       player: memberWithoutPassword,
       timestamp: Date.now(),
     });
-    
+
     res.status(201).json({
       ...memberWithoutPassword,
       passwordResetEmailSent: true,
@@ -1173,7 +1214,7 @@ router.delete('/:id', async (req: AuthRequest, res) => {
       where: { id: memberId },
     });
 
-    logger.info('Member deleted', { memberId, email: member.email });
+    logger.info('Member deleted', { memberId, email: member.email ?? null });
 
     // Emit socket notification for player deletion
     emitToAll('player:deleted', {
@@ -1283,12 +1324,13 @@ router.patch('/:id/activate', async (req: AuthRequest, res) => {
 router.patch('/:id', [
   body('firstName').optional().trim().notEmpty(),
   body('lastName').optional().trim().notEmpty(),
-  body('email').optional().isEmail(),
-  body('birthDate').optional().isISO8601().toDate(),
+  body('email').optional({ nullable: true }),
+  // Allow explicit null to clear DOB; omit field when unchanged (optional skips null/undefined per values option).
+  body('birthDate').optional({ values: 'null' }).isISO8601().toDate(),
   body('rating').optional().custom((value) => isValidRatingInput(value))
     .withMessage('Rating must be an integer between 0 and 9999, or null'),
   body('isActive').optional().isBoolean(),
-  body('gender').optional().isIn(['MALE', 'FEMALE', 'OTHER']),
+  body('gender').optional().custom(isValidGenderBodyValue).withMessage('Gender must be MALE, FEMALE, or NOT_SPECIFIED (OTHER is not allowed)'),
   body('phone').optional().trim(),
   body('address').optional().trim(),
   body('picture').optional().trim(),
@@ -1308,7 +1350,17 @@ router.patch('/:id', [
     // Get the member being updated (including current rating for history tracking)
     const existingMember = await prisma.member.findUnique({
       where: { id: memberId },
-      select: { id: true, email: true, firstName: true, lastName: true, roles: true, rating: true },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        roles: true,
+        rating: true,
+        birthDate: true,
+        gender: true,
+        isActive: true,
+      },
     });
 
     if (!existingMember) {
@@ -1328,6 +1380,8 @@ router.patch('/:id', [
     }
 
     const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, ...rest } = req.body;
+
+    // Birth date is optional on PATCH (may be omitted, set, or cleared to null); invalid values rejected below.
 
     // Explicitly prevent password updates through this endpoint
     // Password can only be changed through /auth/member/change-password or reset through /auth/member/:id/reset-password
@@ -1352,21 +1406,36 @@ router.patch('/:id', [
     
     // Email can only be changed by the member themselves or Admins
     if (email !== undefined) {
-      const newEmail = normalizeMemberEmail(typeof email === 'string' ? email : '');
-      const currentEmail = normalizeMemberEmail(existingMember.email);
-      if (newEmail !== currentEmail) {
-        // Verify authorization for email change
+      const rawEmail = email as string | null;
+      const requestedEmpty = rawEmail === null || rawEmail === '' || (typeof rawEmail === 'string' && rawEmail.trim() === '');
+      const newEmailNormalized = requestedEmpty ? null : normalizeMemberEmail(String(rawEmail));
+      const currentNormalized = existingMember.email ? normalizeMemberEmail(existingMember.email) : '';
+
+      if ((newEmailNormalized ?? '') !== currentNormalized) {
         if (!isCurrentMember && !hasAdminAccess) {
           return res.status(403).json({ error: 'Only the member themselves or Admins can change email' });
         }
-        
-        const emailExists = await prisma.member.findUnique({
-          where: { email: newEmail },
-        });
-        if (emailExists) {
-          return res.status(400).json({ error: 'Email already in use' });
+
+        if (requestedEmpty) {
+          if (!hasAdminAccess) {
+            return res.status(403).json({ error: 'Only an administrator can remove a member email' });
+          }
+          updateData.email = null;
+        } else {
+          if (!newEmailNormalized) {
+            return res.status(400).json({ error: 'Invalid email format' });
+          }
+          if (!isValidEmailFormat(newEmailNormalized)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+          }
+          const emailExists = await prisma.member.findFirst({
+            where: { email: newEmailNormalized, NOT: { id: memberId } },
+          });
+          if (emailExists) {
+            return res.status(400).json({ error: 'Email already in use' });
+          }
+          updateData.email = newEmailNormalized;
         }
-        updateData.email = newEmail;
       }
     }
     
@@ -1400,7 +1469,7 @@ router.patch('/:id', [
       }
       updateData.isActive = isActive;
     }
-    if (gender !== undefined) updateData.gender = gender;
+    if (gender !== undefined) updateData.gender = normalizeGenderFromBody(gender);
     if (phone !== undefined) updateData.phone = phone || null;
     if (address !== undefined) updateData.address = address || null;
     if (picture !== undefined) updateData.picture = picture || null;
@@ -2118,10 +2187,12 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
     ): ImportFailedRow => ({ ...row, birthDate: player.birthDate ?? null });
 
     const results = {
-      successful: [] as Array<{ firstName: string; lastName: string; email: string }>,
+      successful: [] as Array<{ firstName: string; lastName: string; email: string | null }>,
       failed: [] as ImportFailedRow[],
       emailFailed: [] as Array<{ firstName: string; lastName: string; email: string; error: string }>,
     };
+
+    let addedWithoutEmail = 0;
 
     // Get all existing members for duplicate checking
     const existingMembers = await prisma.member.findMany({
@@ -2137,7 +2208,9 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
     const emailMap = new Map<string, boolean>();
     const nameMap = new Map<string, boolean>();
     existingMembers.forEach(m => {
-      emailMap.set(m.email.toLowerCase(), true);
+      if (m.email) {
+        emailMap.set(m.email.toLowerCase(), true);
+      }
       nameMap.set(`${m.firstName.toLowerCase()}|${m.lastName.toLowerCase()}`, true);
     });
 
@@ -2205,29 +2278,23 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
           continue;
         }
         
-        // Validate email (required)
-        if (!player.email || typeof player.email !== 'string' || !player.email.trim()) {
-          results.failed.push(
-            annotateFailedImport(player, {
-              firstName,
-              lastName,
-              error: 'Email is required',
-            })
-          );
-          continue;
-        }
-        
-        const email = normalizeMemberEmail(player.email);
-        if (!isValidEmailFormat(email)) {
-          results.failed.push(
-            annotateFailedImport(player, {
-              firstName,
-              lastName,
-              email,
-              error: 'Invalid email format',
-            })
-          );
-          continue;
+        const hasRowEmail =
+          player.email != null && typeof player.email === 'string' && player.email.trim().length > 0;
+
+        let emailNorm: string | null = null;
+        if (hasRowEmail) {
+          emailNorm = normalizeMemberEmail(player.email as string);
+          if (!isValidEmailFormat(emailNorm)) {
+            results.failed.push(
+              annotateFailedImport(player, {
+                firstName,
+                lastName,
+                email: emailNorm,
+                error: 'Invalid email format',
+              })
+            );
+            continue;
+          }
         }
 
         if (!isValidRatingInput(player.rating)) {
@@ -2235,13 +2302,39 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
             annotateFailedImport(player, {
               firstName,
               lastName,
-              email,
+              ...(emailNorm ? { email: emailNorm } : {}),
               error: 'Rating must be an integer between 0 and 9999',
             })
           );
           continue;
         }
-        
+
+        if (player.gender !== undefined && player.gender !== null && String(player.gender).trim() !== '') {
+          const g = String(player.gender).trim().toUpperCase();
+          if (g === 'OTHER') {
+            results.failed.push(
+              annotateFailedImport(player, {
+                firstName,
+                lastName,
+                ...(emailNorm ? { email: emailNorm } : {}),
+                error: 'Gender "OTHER" is not valid. Use NOT_SPECIFIED, MALE, or FEMALE.',
+              })
+            );
+            continue;
+          }
+          if (!['MALE', 'FEMALE', 'NOT_SPECIFIED'].includes(g)) {
+            results.failed.push(
+              annotateFailedImport(player, {
+                firstName,
+                lastName,
+                ...(emailNorm ? { email: emailNorm } : {}),
+                error: 'Gender must be MALE, FEMALE, or NOT_SPECIFIED.',
+              })
+            );
+            continue;
+          }
+        }
+
         // Validate phone if provided
         if (player.phone) {
           const phone = typeof player.phone === 'string' ? player.phone.trim() : String(player.phone).trim();
@@ -2250,118 +2343,151 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
               annotateFailedImport(player, {
                 firstName,
                 lastName,
-                email,
+                ...(emailNorm ? { email: emailNorm } : {}),
                 error: 'Invalid phone number format. Please enter a valid US phone number',
               })
             );
             continue;
           }
         }
-        
-        // Validate roles if provided
-        if (player.roles !== undefined) {
+
+        if (!hasRowEmail) {
+          const rolesForNoEmail: MemberRole[] =
+            player.roles && Array.isArray(player.roles) && player.roles.length > 0 ? player.roles : ['PLAYER'];
+          if (rolesForNoEmail.some((r) => r !== 'PLAYER')) {
+            results.failed.push(
+              annotateFailedImport(player, {
+                firstName,
+                lastName,
+                error: 'Without an email, only the PLAYER role is allowed',
+              })
+            );
+            continue;
+          }
+        } else if (player.roles !== undefined) {
           if (!isValidRoles(player.roles)) {
             results.failed.push(
               annotateFailedImport(player, {
                 firstName,
                 lastName,
-                email,
+                email: emailNorm!,
                 error: 'Invalid roles. Roles must be an array containing only: PLAYER, COACH, ADMIN, ORGANIZER',
               })
             );
             continue;
           }
         }
-        
-        // Validate birthDate (required)
-        if (!player.birthDate) {
-          results.failed.push(
-            annotateFailedImport(player, {
-              firstName,
-              lastName,
-              email,
-              error: 'Birth date is required',
-            })
-          );
-          continue;
-        }
-        
-        // Validate birthDate is a valid date
-        let birthDate: Date;
-        try {
+
+        let birthDate: Date | null = null;
+        if (player.birthDate) {
           birthDate = new Date(player.birthDate);
           if (isNaN(birthDate.getTime()) || !isValidBirthDate(birthDate)) {
             results.failed.push(
               annotateFailedImport(player, {
                 firstName,
                 lastName,
-                email,
+                ...(emailNorm ? { email: emailNorm } : {}),
                 error: getBirthDateValidationMessage(),
               })
             );
             continue;
           }
-        } catch (error) {
-          results.failed.push(
-            annotateFailedImport(player, {
-              firstName,
-              lastName,
-              email,
-              error: 'Invalid birth date format',
-            })
-          );
-          continue;
         }
-        
+
         const nameKey = `${firstName.toLowerCase()}|${lastName.toLowerCase()}`;
-        const emailKey = email.toLowerCase();
 
-        // Check for duplicate by email - reject if email already exists
-        if (emailMap.has(emailKey)) {
-          results.failed.push(
-            annotateFailedImport(player, {
-              firstName,
-              lastName,
-              email,
-              error: 'Email already exists',
-            })
-          );
-          continue;
+        if (hasRowEmail && emailNorm) {
+          const emailKey = emailNorm.toLowerCase();
+          if (emailMap.has(emailKey)) {
+            results.failed.push(
+              annotateFailedImport(player, {
+                firstName,
+                lastName,
+                email: emailNorm,
+                error: 'Email already exists',
+              })
+            );
+            continue;
+          }
         }
 
-        // Check for duplicate by name
         if (nameMap.has(nameKey)) {
           results.failed.push(
             annotateFailedImport(player, {
               firstName,
               lastName,
-              email,
+              ...(emailNorm ? { email: emailNorm } : {}),
               error: 'Name already exists',
             })
           );
           continue;
         }
 
-        // Use the email as-is (no generation of unique emails - reject duplicates instead)
-        const finalEmail = email;
+        const finalGender = player.gender ?? 'NOT_SPECIFIED';
 
-        // Determine gender if not provided
-        const finalGender = player.gender || determineGender(firstName);
+        if (!hasRowEmail) {
+          const member = await prisma.member.create({
+            data: {
+              firstName,
+              lastName,
+              email: null,
+              gender: finalGender,
+              password: '',
+              roles: ['PLAYER'],
+              birthDate,
+              rating:
+                player.rating !== null && player.rating !== undefined
+                  ? parseInt(String(player.rating), 10)
+                  : null,
+              phone: player.phone
+                ? typeof player.phone === 'string'
+                  ? player.phone.trim()
+                  : String(player.phone).trim()
+                : null,
+              address: player.address
+                ? typeof player.address === 'string'
+                  ? player.address.trim()
+                  : String(player.address).trim()
+                : null,
+              qrTokenHash: generateQrTokenHash(),
+              isActive: true,
+              emailConfirmedAt: null,
+              mustResetPassword: false,
+              passwordResetToken: null,
+              passwordResetTokenExpiry: null,
+            } as any,
+          });
 
-        // Use provided roles or default to PLAYER (already validated above)
-        const roles: MemberRole[] = (player.roles && Array.isArray(player.roles) && player.roles.length > 0) 
-          ? player.roles 
-          : ['PLAYER'];
+          await createInitialRatingHistoryEntry(member.id, member.rating);
 
-        // Set mustResetPassword to true for imported players (or use provided value)
-        const mustResetPassword = player.mustResetPassword !== undefined 
-          ? player.mustResetPassword 
-          : true;
+          addedWithoutEmail += 1;
+          nameMap.set(nameKey, true);
+
+          results.successful.push({
+            firstName: member.firstName,
+            lastName: member.lastName,
+            email: null,
+          });
+
+          const memberWithoutPasswordNoEmail = stripSensitiveMemberFields(member);
+          emitToAll('player:created', {
+            player: memberWithoutPasswordNoEmail,
+            timestamp: Date.now(),
+          });
+          continue;
+        }
+
+        const finalEmail = emailNorm as string;
+
+        const roles: MemberRole[] =
+          player.roles && Array.isArray(player.roles) && player.roles.length > 0 ? player.roles : ['PLAYER'];
+
+        const mustResetPassword =
+          player.mustResetPassword !== undefined ? player.mustResetPassword : true;
         const passwordResetToken = generatePasswordResetToken();
         const passwordResetExpiry = getPasswordResetExpiryDate();
         const resetLink = buildResetLink(finalEmail, passwordResetToken);
 
-        // Create member
         const member = await prisma.member.create({
           data: {
             firstName,
@@ -2369,18 +2495,27 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
             email: finalEmail,
             gender: finalGender,
             password: '',
-            roles: roles,
-            birthDate: birthDate,
-            rating: player.rating !== null && player.rating !== undefined
-              ? parseInt(String(player.rating), 10)
+            roles,
+            birthDate,
+            rating:
+              player.rating !== null && player.rating !== undefined
+                ? parseInt(String(player.rating), 10)
+                : null,
+            phone: player.phone
+              ? typeof player.phone === 'string'
+                ? player.phone.trim()
+                : String(player.phone).trim()
               : null,
-            phone: player.phone ? (typeof player.phone === 'string' ? player.phone.trim() : String(player.phone).trim()) : null,
-            address: player.address ? (typeof player.address === 'string' ? player.address.trim() : String(player.address).trim()) : null,
+            address: player.address
+              ? typeof player.address === 'string'
+                ? player.address.trim()
+                : String(player.address).trim()
+              : null,
             qrTokenHash: generateQrTokenHash(),
             isActive: false,
             emailConfirmedAt: null,
-            mustResetPassword: mustResetPassword,
-            passwordResetToken: passwordResetToken,
+            mustResetPassword,
+            passwordResetToken,
             passwordResetTokenExpiry: passwordResetExpiry,
           } as any,
         });
@@ -2427,7 +2562,6 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
           });
         }
 
-        // Add to maps to prevent duplicates within the same import
         emailMap.set(finalEmail.toLowerCase(), true);
         nameMap.set(nameKey, true);
 
@@ -2461,6 +2595,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
       successful: results.successful.length,
       failed: results.failed.length,
       emailFailed: results.emailFailed.length,
+      addedWithoutEmail,
       timestamp: Date.now(),
     });
 
@@ -2469,6 +2604,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
       successful: results.successful.length,
       failed: results.failed.length,
       emailFailed: results.emailFailed.length,
+      addedWithoutEmail,
       successfulPlayers: results.successful,
       failedPlayers: results.failed,
       emailFailedPlayers: results.emailFailed,

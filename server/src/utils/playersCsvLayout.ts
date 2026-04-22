@@ -25,18 +25,11 @@ export function playersCsvLineHasEmailLikeValue(cells: string[]): boolean {
 }
 
 /**
- * Heuristic: first line is a header when it contains the required column labels
- * (firstname, lastname, email, and birthdate or date of birth) and no cell looks
- * like an email address.
+ * Heuristic: first line is a header when it contains firstname + lastname labels
+ * and no cell looks like an email address (so a data row with an email is not mistaken for headers).
  */
 export function looksLikePlayersCsvHeaderRow(cells: string[]): boolean {
   if (playersCsvLineHasEmailLikeValue(cells)) return false;
   const norm = cells.map((c) => c.toLowerCase().trim());
-  if (!norm.includes('firstname') || !norm.includes('lastname') || !norm.includes('email')) {
-    return false;
-  }
-  if (!norm.includes('birthdate') && !norm.includes('date of birth')) {
-    return false;
-  }
-  return true;
+  return norm.includes('firstname') && norm.includes('lastname');
 }

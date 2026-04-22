@@ -13,8 +13,8 @@ export interface AddPlayerModalProps {
   setNewPlayerBirthDate: (d: Date | null) => void;
   newPlayerEmail: string;
   setNewPlayerEmail: (v: string) => void;
-  newPlayerGender: 'MALE' | 'FEMALE' | 'OTHER' | '';
-  setNewPlayerGender: (v: 'MALE' | 'FEMALE' | 'OTHER' | '') => void;
+  newPlayerGender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
+  setNewPlayerGender: (v: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED') => void;
   newPlayerRoles: string[];
   setNewPlayerRoles: (r: string[]) => void;
   newPlayerRating: string;
@@ -33,6 +33,7 @@ export interface AddPlayerModalProps {
   handleAddFieldChange: (field: string, value: any) => void;
   handleAddFieldBlur: (field: string) => void;
   handleAddRatingBlur: () => void | Promise<void>;
+  submitButtonLabel?: string;
 }
 
 export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
@@ -66,7 +67,11 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
   handleAddFieldChange,
   handleAddFieldBlur,
   handleAddRatingBlur,
-}) => (
+  submitButtonLabel = 'Save Member & Send Invitation',
+}) => {
+  const hasEmail = newPlayerEmail.trim().length > 0;
+
+  return (
   <div
     style={{
       position: 'fixed',
@@ -140,7 +145,7 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
             {addFieldTouched.lastName && addFieldErrors.lastName && <span className="field-error">{addFieldErrors.lastName}</span>}
           </div>
           <div className={`form-group ${addFieldErrors.birthDate && addFieldTouched.birthDate ? 'has-error' : addFieldTouched.birthDate && !addFieldErrors.birthDate ? 'is-valid' : ''}`}>
-            <label>Birth Date *</label>
+            <label>Birth Date (optional)</label>
             <DatePicker
               selected={newPlayerBirthDate}
               onChange={(date: Date | null) => {
@@ -166,13 +171,18 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
             {addFieldTouched.birthDate && addFieldErrors.birthDate && <span className="field-error">{addFieldErrors.birthDate}</span>}
           </div>
           <div className={`form-group ${addFieldErrors.email && addFieldTouched.email ? 'has-error' : addFieldTouched.email && !addFieldErrors.email ? 'is-valid' : ''}`}>
-            <label>Email *</label>
+            <label>Email (optional)</label>
             <input
               type="email"
               value={newPlayerEmail}
               onChange={(e) => {
-                setNewPlayerEmail(e.target.value);
-                handleAddFieldChange('email', e.target.value);
+                const v = e.target.value;
+                setNewPlayerEmail(v);
+                if (!v.trim()) {
+                  setNewPlayerRoles(['PLAYER']);
+                  handleAddFieldChange('roles', ['PLAYER']);
+                }
+                handleAddFieldChange('email', v);
               }}
               onBlur={() => handleAddFieldBlur('email')}
               placeholder="email@example.com"
@@ -180,11 +190,11 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
             {addFieldTouched.email && addFieldErrors.email && <span className="field-error">{addFieldErrors.email}</span>}
           </div>
           <div className={`form-group ${addFieldErrors.gender && addFieldTouched.gender ? 'has-error' : addFieldTouched.gender && !addFieldErrors.gender ? 'is-valid' : ''}`}>
-            <label>Gender *</label>
+            <label>Gender</label>
             <select
               value={newPlayerGender}
               onChange={(e) => {
-                setNewPlayerGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER' | '');
+                setNewPlayerGender(e.target.value as 'MALE' | 'FEMALE' | 'NOT_SPECIFIED');
                 handleAddFieldChange('gender', e.target.value);
                 if (!addFieldTouched.gender) {
                   setAddFieldTouched((prev) => ({ ...prev, gender: true }));
@@ -194,10 +204,9 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
               }}
               onBlur={() => handleAddFieldBlur('gender')}
             >
-              <option value="">Select gender...</option>
+              <option value="NOT_SPECIFIED">Not specified</option>
               <option value="MALE">Male</option>
               <option value="FEMALE">Female</option>
-              <option value="OTHER">Other</option>
             </select>
             {addFieldTouched.gender && addFieldErrors.gender && <span className="field-error">{addFieldErrors.gender}</span>}
           </div>
@@ -228,6 +237,7 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
                   <input
                     type="checkbox"
                     checked={newPlayerRoles.includes(role)}
+                    disabled={!hasEmail && role !== 'PLAYER'}
                     onChange={(e) => {
                       const nextRoles = e.target.checked ? [...newPlayerRoles, role] : newPlayerRoles.filter((r) => r !== role);
                       setNewPlayerRoles(nextRoles);
@@ -311,10 +321,11 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
             Cancel
           </button>
           <button type="submit" className="button-3d">
-            Save Member & Send Invitation
+            {submitButtonLabel}
           </button>
         </div>
       </form>
     </div>
   </div>
-);
+  );
+};

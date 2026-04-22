@@ -10,6 +10,8 @@ export interface Member {
   isActive?: boolean;
   emailConfirmedAt?: string | null;
   mustResetPassword?: boolean;
+  /** From API: false when password is unset (admin reset / invite). */
+  hasPassword?: boolean;
 }
 
 // Token-based auth (for backward compatibility with User login)

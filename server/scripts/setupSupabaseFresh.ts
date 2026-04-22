@@ -124,7 +124,7 @@ async function createSysAdmin() {
       password: hashedPassword,
       roles: [MemberRole.ORGANIZER],
       isActive: true,
-      gender: 'OTHER',
+      gender: 'NOT_SPECIFIED',
       qrTokenHash: generateQrTokenHash(),
       mustResetPassword: false,
     },

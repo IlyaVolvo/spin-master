@@ -181,7 +181,7 @@ async function createInitialMember(sysAdmin: SysAdminArgs) {
       password: hashedPassword,
       roles: [MemberRole.ORGANIZER],
       isActive: true,
-      gender: 'OTHER',
+      gender: 'NOT_SPECIFIED',
       qrTokenHash: generateQrTokenHash(),
       mustResetPassword: false,
     },
