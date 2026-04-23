@@ -1399,17 +1399,17 @@ const Players: React.FC = () => {
     // Filter by age range (only if age filters are provided)
     if (minAge !== '' || maxAge !== '') {
       filtered = filtered.filter(p => {
-        // Always include the selected player for history
-        if (isSelectingForHistory && p.id === selectedPlayerForHistory) return true;
         const age = calculateAge(p.birthDate);
-        // When showing all members, allow non-players (those without birth dates) to pass through
+        // Age filter requires a known birth date; unknown age cannot match the range
         if (age === null) {
-          return showAllRoles && isAdmin();
+          return false;
         }
-        
+        // Include the selected player for history even if outside range (when they have DOB)
+        if (isSelectingForHistory && p.id === selectedPlayerForHistory) return true;
+
         const minAgeNum = minAge === '' ? 0 : parseInt(minAge) || 0;
         const maxAgeNum = maxAge === '' ? 150 : parseInt(maxAge) || 150; // Reasonable max age
-        
+
         return age >= minAgeNum && age <= maxAgeNum;
       });
     }
@@ -2444,9 +2444,9 @@ const Players: React.FC = () => {
     if (minAge !== '' || maxAge !== '') {
       filtered = filtered.filter(p => {
         const age = calculateAge(p.birthDate);
-        // When showing all members, allow non-players (those without birth dates) to pass through
+        // Age filter requires a known birth date; unknown age cannot match the range
         if (age === null) {
-          return showAllRoles && isAdmin();
+          return false;
         }
         const minAgeNum = minAge === '' ? 0 : parseInt(minAge) || 0;
         const maxAgeNum = maxAge === '' ? 150 : parseInt(maxAge) || 150;
