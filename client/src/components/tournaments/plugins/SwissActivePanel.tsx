@@ -4,7 +4,7 @@ import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
 import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
-import { saveScrollPosition } from '../../../utils/scrollPosition';
+import { saveScrollPosition, withWindowScrollPreserved } from '../../../utils/scrollPosition';
 import './SwissActivePanel.css';
 
 interface EditingMatch {
@@ -295,11 +295,12 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         player2Forfeit: editingMatch.player2Forfeit,
       };
       attachOpponentPasswordIfNeeded(payload, editingMatch.opponentPassword);
-      const response = await api.patch(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`, payload);
-
-      onTournamentUpdate(response.data);
-      setEditingMatch(null);
-      onSuccess?.('Match updated successfully');
+      await withWindowScrollPreserved(async () => {
+        const response = await api.patch(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`, payload);
+        onTournamentUpdate(response.data);
+        setEditingMatch(null);
+        onSuccess?.('Match updated successfully');
+      });
     } catch (error) {
       onError?.('Failed to update match');
     }

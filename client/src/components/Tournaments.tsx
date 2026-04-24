@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../utils/api';
-import { saveScrollPosition, getScrollPosition, clearScrollPosition, saveUIState, getUIState, clearUIState } from '../utils/scrollPosition';
+import {
+  saveScrollPosition,
+  getScrollPosition,
+  clearScrollPosition,
+  saveUIState,
+  getUIState,
+  clearUIState,
+  withWindowScrollPreserved,
+} from '../utils/scrollPosition';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { isDateInRange } from '../utils/dateFormatter';
 import { formatActiveTournamentRating, formatCompletedTournamentRating } from '../utils/ratingFormatter';
@@ -509,6 +517,44 @@ const Tournaments: React.FC = () => {
     checkOrganizerStatus();
   }, []);
 
+  const fetchData = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    try {
+      if (!silent) {
+        setLoading(true);
+      }
+      const [tournamentsRes, activeRes, matchesRes] = await Promise.all([
+        api.get('/tournaments'),
+        api.get('/tournaments/active'),
+        api.get('/matches'),
+      ]);
+
+      setTournaments(tournamentsRes.data);
+      setActiveTournaments(activeRes.data);
+      setStandaloneMatches(matchesRes.data);
+
+      tournamentsCache.data = tournamentsRes.data;
+      tournamentsCache.activeData = activeRes.data;
+      tournamentsCache.standaloneMatches = matchesRes.data;
+      tournamentsCache.lastFetch = Date.now();
+      setError('');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
+      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      const finalError = apiError || errorMessage;
+      setError(finalError);
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  const fetchDataPreservingScroll = useCallback(
+    () => withWindowScrollPreserved(() => fetchData({ silent: true })),
+    [fetchData]
+  );
+
   useEffect(() => {
     // Always use cache immediately if available for fast UI response
     const now = Date.now();
@@ -527,8 +573,8 @@ const Tournaments: React.FC = () => {
       
       // Fetch fresh data in background if cache is stale (older than 30 seconds)
       if (!isCacheFresh) {
-        // Fetch in background without blocking UI
-        fetchData().catch(() => {
+        // Fetch in background without blocking UI or resetting scroll
+        fetchData({ silent: true }).catch(() => {
           // Silently fail - we already have cached data to show
         });
       }
@@ -541,30 +587,25 @@ const Tournaments: React.FC = () => {
     const socket = connectSocket();
 
     // Listen for cache invalidation events
+    const refreshSilentlyPreservingScroll = (logLabel: string) => {
+      void withWindowScrollPreserved(() => fetchData({ silent: true })).catch((err) => {
+        console.error(`Error refreshing data after ${logLabel}`, err);
+      });
+    };
+
     socket?.on('cache:invalidate', (data: { tournamentId?: number; timestamp: number }) => {
       console.log('Cache invalidated', data);
-      // Refresh data when cache is invalidated
-      fetchData().catch((err) => {
-        console.error('Error refreshing data after cache invalidation', err);
-      });
+      refreshSilentlyPreservingScroll('cache invalidation');
     });
 
-    // Listen for tournament update events
     socket?.on('tournament:updated', (data: { id: number; name: string; status: string; type: string; timestamp: number }) => {
       console.log('Tournament updated', data);
-      // Refresh data to get updated tournament
-      fetchData().catch((err) => {
-        console.error('Error refreshing data after tournament update', err);
-      });
+      refreshSilentlyPreservingScroll('tournament update');
     });
 
-    // Listen for match update events
     socket?.on('match:updated', (data: { id: number; tournamentId: number; member1Id: number; member2Id: number; timestamp: number }) => {
       console.log('Match updated', data);
-      // Refresh data to get updated match
-      fetchData().catch((err) => {
-        console.error('Error refreshing data after match update', err);
-      });
+      refreshSilentlyPreservingScroll('match update');
     });
 
     // Cleanup on unmount
@@ -574,38 +615,7 @@ const Tournaments: React.FC = () => {
       socket?.off('match:updated');
       // Don't disconnect socket - it's shared across components
     };
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [tournamentsRes, activeRes, matchesRes] = await Promise.all([
-        api.get('/tournaments'),
-        api.get('/tournaments/active'),
-        api.get('/matches'),
-      ]);
-      
-      // Set tournaments, active tournaments, and standalone matches
-      setTournaments(tournamentsRes.data);
-      setActiveTournaments(activeRes.data);
-      setStandaloneMatches(matchesRes.data);
-      
-      // Update cache
-      tournamentsCache.data = tournamentsRes.data;
-      tournamentsCache.activeData = activeRes.data;
-      tournamentsCache.standaloneMatches = matchesRes.data;
-      tournamentsCache.lastFetch = Date.now();
-      setError(''); // Clear any previous errors on success
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const finalError = apiError || errorMessage;
-      
-      setError(finalError);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [fetchData]);
 
   // ============================================================================
   // PLUGIN-BASED HELPER FUNCTIONS
@@ -980,12 +990,18 @@ const Tournaments: React.FC = () => {
         }, editingMatch.matchId === 0);
       }
       
-      setEditingMatch(null);
-      fetchData();
-      if (selectedTournament) {
-        const updated = await api.get(`/tournaments/${selectedTournament.id}`);
-        setSelectedTournament(updated.data);
-      }
+      await withWindowScrollPreserved(async () => {
+        setEditingMatch(null);
+        await fetchData({ silent: true });
+        if (selectedTournament) {
+          try {
+            const updated = await api.get(`/tournaments/${selectedTournament.id}`);
+            setSelectedTournament(updated.data);
+          } catch {
+            /* keep prior selection if refetch fails */
+          }
+        }
+      });
     } catch (err: unknown) {
       const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setError(apiError || 'Failed to save match result');
@@ -1019,12 +1035,18 @@ const Tournaments: React.FC = () => {
       removeMatchFromCache(matchToDelete.id, matchToDelete.member1Id, matchToDelete.member2Id ?? null);
       
       setSuccess('Match result deleted successfully');
-      setEditingMatch(null);
-      fetchData();
-      if (selectedTournament) {
-        const updated = await api.get(`/tournaments/${selectedTournament.id}`);
-        setSelectedTournament(updated.data);
-      }
+      await withWindowScrollPreserved(async () => {
+        setEditingMatch(null);
+        await fetchData({ silent: true });
+        if (selectedTournament) {
+          try {
+            const updated = await api.get(`/tournaments/${selectedTournament.id}`);
+            setSelectedTournament(updated.data);
+          } catch {
+            /* keep prior selection if refetch fails */
+          }
+        }
+      });
     } catch (err: unknown) {
       const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setError(apiError || 'Failed to delete match result');
@@ -2406,7 +2428,9 @@ const Tournaments: React.FC = () => {
                                         : childPlugin.createActivePanel({
                                             tournament: child as any,
                                             onTournamentUpdate: (updated) => { fetchData(); },
-                                            onMatchUpdate: (match) => { fetchData(); },
+                                            onMatchUpdate: () => {
+                                              void fetchDataPreservingScroll();
+                                            },
                                             onError: (err) => setError(err),
                                             onSuccess: (msg) => { console.log(msg); },
                                           })
@@ -2749,8 +2773,7 @@ const Tournaments: React.FC = () => {
                                 member2Id: match.member2Id,
                                 score: `${match.player1Sets} - ${match.player2Sets}`
                               });
-                              // Handle match updates
-                              fetchData();
+                              void fetchDataPreservingScroll();
                             }
                           });
                           

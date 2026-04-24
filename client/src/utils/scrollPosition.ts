@@ -103,3 +103,42 @@ export const clearAllUIStates = (): void => {
   }
 };
 
+/** Snapshot of window scroll for restoring after React re-renders (e.g. tournament list refresh). */
+export type WindowScrollSnapshot = { x: number; y: number };
+
+export function captureWindowScroll(): WindowScrollSnapshot {
+  if (typeof window === 'undefined') return { x: 0, y: 0 };
+  return { x: window.scrollX, y: window.scrollY };
+}
+
+/**
+ * Restore window scroll after layout (double rAF so DOM from setState has committed).
+ */
+export function restoreWindowScroll(snapshot: WindowScrollSnapshot): void {
+  if (typeof window === 'undefined') return;
+  const { x, y } = snapshot;
+  const apply = () => window.scrollTo(x, y);
+  // Extra animation frames: match save often triggers multiple setState passes (list + tournament).
+  queueMicrotask(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          apply();
+        });
+      });
+    });
+  });
+}
+
+/**
+ * Runs async work after capturing window scroll, then restores scroll (even if work throws).
+ */
+export async function withWindowScrollPreserved<T>(work: () => Promise<T>): Promise<T> {
+  const snap = captureWindowScroll();
+  try {
+    return await work();
+  } finally {
+    restoreWindowScroll(snap);
+  }
+}
+
