@@ -1,6 +1,7 @@
 /* Import reusable component styles - must be at the top */
 @import './styles/buttons.css';
 @import './styles/components.css';
+@import './styles/responsive.css';
 
 * {
   margin: 0;

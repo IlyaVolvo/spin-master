@@ -484,15 +484,18 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
       zIndex: 10000,
       boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
     }}>
-      <div style={{ 
+      <div
+        className="app-header-row"
+        style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
         gap: '15px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginBottom: '-1px' }}>
+        <div className="app-header-tabs" style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginBottom: '-1px' }}>
           <a 
+            className="app-header-tab"
             href="/players" 
             onClick={handlePlayersClick} 
             style={{ 
@@ -529,6 +532,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             Players
           </a>
           <a 
+            className="app-header-tab"
             href="/tournaments" 
             onClick={handleTournamentsClick} 
             style={{ 
@@ -565,7 +569,9 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             Tournaments
           </a>
         </div>
-        <h1 style={{ 
+        <h1
+          className="app-header-title"
+          style={{
           margin: 0,
           display: 'flex',
           flexDirection: 'column',
@@ -574,9 +580,11 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           gap: '14px',
           flex: 1
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-            <span>🏓</span>
-            <span style={{ 
+          <div className="app-header-logo-wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <span className="app-header-paddle">🏓</span>
+            <span
+              className="app-header-logo-box"
+              style={{
               background: 'linear-gradient(to bottom, #4682B4 0%, #5F9EA0 50%, #4682B4 100%)',
               color: 'white',
               padding: '17px 8px',
@@ -597,7 +605,9 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                 position: 'relative',
                 zIndex: 2
               }}>
-                <span style={{ 
+                <span
+                  className="app-header-logo-text"
+                  style={{
                   fontSize: '22px',
                   fontWeight: '600',
                   marginLeft: '15px'
@@ -621,17 +631,20 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                 position: 'relative',
                 zIndex: 2
               }}>
-                <span style={{ 
+                <span
+                  className="app-header-logo-text"
+                  style={{
                   fontSize: '22px',
                   fontWeight: '600',
                   marginLeft: '5px'
                 }}>Master</span>
               </div>
             </span>
-            <span>🏓</span>
+            <span className="app-header-paddle">🏓</span>
           </div>
           {clubName ? (
             <span
+              className="app-header-club"
               style={{
                 fontSize: '17px',
                 fontWeight: 600,
@@ -647,7 +660,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             </span>
           ) : null}
         </h1>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+        <div className="app-header-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
           <span style={{
             color: 'rgba(255, 255, 255, 0.75)',
             fontSize: '11px',
@@ -658,7 +671,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           }}>
             {changesetId}
           </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {userName && (
             <>
               <button

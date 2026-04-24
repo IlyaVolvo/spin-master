@@ -4648,7 +4648,8 @@ const Players: React.FC = () => {
           );
         })()}
         {/* Table section with sticky header */}
-        <div 
+        <div
+          className="players-table-scroll"
           ref={(node) => {
             // TypeScript workaround: assign to ref through a type assertion
             (tableScrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
@@ -4669,9 +4670,10 @@ const Players: React.FC = () => {
               }
             }
           }}
-          style={{ 
-            maxHeight: filtersCollapsed ? 'calc(100vh - 200px)' : 'calc(100vh - 300px)', 
-            overflowY: showSettingsMenu ? 'visible' : 'auto'
+          style={{
+            maxHeight: filtersCollapsed ? 'calc(100vh - 200px)' : 'calc(100vh - 300px)',
+            overflowY: showSettingsMenu ? 'visible' : 'auto',
+            overflowX: 'auto',
           }}
         >
         <table style={{ marginTop: 0, width: '100%', borderCollapse: 'collapse' }}>
