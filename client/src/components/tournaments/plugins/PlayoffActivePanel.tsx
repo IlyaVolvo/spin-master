@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { TraditionalBracket } from '../../TraditionalBracket';
-import { MatchEntryPopup } from '../../MatchEntryPopup';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
 import { createPlayoffMatchUpdater } from '../utils/playoffMatchUpdater';
 import { shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
 import './PlayoffActivePanel.css';
@@ -95,7 +95,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
         );
       } else {
         // Update existing match
-        await playoffUpdater.updateMatch(editingMatch.matchId, matchData, {
+        await playoffUpdater.updateMatch(editingBracketMatchId || editingMatch.matchId, matchData, {
           onSuccess,
           onError,
           onTournamentUpdate,
@@ -119,7 +119,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
     if (!editingMatch || editingMatch.matchId === 0) return;
 
     try {
-      await playoffUpdater.deleteMatch(editingMatch.matchId, {
+      await playoffUpdater.deleteMatch(editingBracketMatchId || editingMatch.matchId, {
         onSuccess,
         onError,
         onTournamentUpdate,
@@ -204,6 +204,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           onCancel={handleCancel}
           onClear={handleClearMatch}
           showClearButton={editingMatch.matchId !== 0}
+          modifyConfirmationMessage={RATING_IMPACT_MODIFY_MESSAGE}
         />
       )}
     </div>

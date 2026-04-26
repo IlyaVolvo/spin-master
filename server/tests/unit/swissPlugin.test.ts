@@ -107,6 +107,79 @@ describe('SwissPlugin', () => {
     jest.clearAllMocks();
   });
 
+  describe('match result modification restrictions', () => {
+    it('rejects modifying a prior-round result', async () => {
+      const prisma = {
+        match: {
+          findUnique: jest.fn().mockResolvedValue(makeMatch({
+            id: 10,
+            member1Id: 1,
+            member2Id: 2,
+            player1Sets: 3,
+            player2Sets: 1,
+            round: 1,
+          })),
+        },
+        tournament: {
+          findUnique: jest.fn().mockResolvedValue(makeSwissTournament({
+            participantCount: 4,
+            currentRound: 2,
+          })),
+        },
+      };
+
+      await expect(plugin.updateMatch({
+        matchId: 10,
+        tournamentId: 1,
+        player1Sets: 3,
+        player2Sets: 0,
+        player1Forfeit: false,
+        player2Forfeit: false,
+        prisma,
+      })).rejects.toThrow('current round');
+    });
+
+    it('resets a current-round result on cancel', async () => {
+      const match = makeMatch({
+        id: 11,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: 3,
+        player2Sets: 1,
+        round: 2,
+      });
+      const prisma = {
+        match: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...match,
+            tournament: makeSwissTournament({ participantCount: 4, currentRound: 2 }),
+          }),
+          findMany: jest.fn().mockResolvedValue([
+            { ...match },
+            makeMatch({ id: 12, member1Id: 3, member2Id: 4, round: 2 }),
+          ]),
+          update: jest.fn().mockResolvedValue({ ...match, player1Sets: 0, player2Sets: 0 }),
+        },
+        ratingHistory: {
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn(),
+        },
+      };
+
+      await plugin.cancelMatch!({ matchId: 11, tournamentId: 1, prisma });
+
+      expect(prisma.match.update).toHaveBeenCalledWith({
+        where: { id: 11 },
+        data: {
+          player1Sets: 0,
+          player2Sets: 0,
+          player1Forfeit: false,
+          player2Forfeit: false,
+        },
+      });
+    });
+  });
+
   // ─── Basic Properties ──────────────────────────────────────────────────
 
   describe('type and isBasic', () => {
@@ -277,15 +350,18 @@ describe('SwissPlugin', () => {
         ],
       });
 
+      const defaultExistingMatch = tournament.matches?.find((m: any) => m.id === 10) ?? {
+        id: 10,
+        member1Id: 1,
+        member2Id: 2,
+        tournamentId: 1,
+        round: tournament.swissData?.currentRound ?? 1,
+      };
+
       return {
         match: {
-          findUnique: jest.fn().mockResolvedValue('existingMatch' in opts ? opts.existingMatch : {
-            id: 10,
-            member1Id: 1,
-            member2Id: 2,
-            tournamentId: 1,
-            round: 1,
-          }),
+          findUnique: jest.fn().mockResolvedValue('existingMatch' in opts ? opts.existingMatch : defaultExistingMatch),
+          findMany: jest.fn().mockResolvedValue(tournament.matches ?? []),
           update: jest.fn().mockImplementation(async (args: any) => ({
             id: args.where.id,
             ...args.data,
@@ -412,17 +488,26 @@ describe('SwissPlugin', () => {
     });
 
     it('should signal tournament completion when last round last match is played', async () => {
-      // Tournament on round 3 of 3, both matches in round 3 now complete
+      // Tournament on round 3 of 3, the update completes the final open match.
       const tournament = makeSwissTournament({
         participantCount: 4,
         numberOfRounds: 3,
         currentRound: 3,
         matches: [
-          makeMatch({ id: 10, member1Id: 1, member2Id: 2, round: 3, player1Sets: 3, player2Sets: 1 }),
+          makeMatch({ id: 10, member1Id: 1, member2Id: 2, round: 3 }),
           makeMatch({ id: 11, member1Id: 3, member2Id: 4, round: 3, player1Sets: 3, player2Sets: 0 }),
         ],
       });
       const mockPrisma = makeMockPrisma({ tournament });
+      mockPrisma.tournament.findUnique
+        .mockResolvedValueOnce(tournament)
+        .mockResolvedValueOnce({
+          ...tournament,
+          matches: [
+            makeMatch({ id: 10, member1Id: 1, member2Id: 2, round: 3, player1Sets: 3, player2Sets: 1 }),
+            makeMatch({ id: 11, member1Id: 3, member2Id: 4, round: 3, player1Sets: 3, player2Sets: 0 }),
+          ],
+        });
 
       const result = await plugin.updateMatch({
         matchId: 10,

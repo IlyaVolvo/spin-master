@@ -986,7 +986,7 @@ router.patch('/:tournamentId/matches/:matchId', [
     const updatedMatch = result.match;
 
     // Calculate match ratings if plugin supports per-match rating calculation
-    if (plugin.onMatchRatingCalculation && updatedMatch && !finalPlayer1Forfeit && !finalPlayer2Forfeit) {
+    if (!result.skipRatingCalculation && plugin.onMatchRatingCalculation && updatedMatch && !finalPlayer1Forfeit && !finalPlayer2Forfeit) {
       const winnerId = finalPlayer1Sets > finalPlayer2Sets ? updatedMatch.member1Id :
                        finalPlayer2Sets > finalPlayer1Sets ? updatedMatch.member2Id : null;
       if (winnerId) {
@@ -1157,29 +1157,46 @@ router.delete('/:tournamentId/matches/:matchId', async (req: AuthRequest, res: R
       return res.status(400).json({ error: 'Invalid tournament or match ID' });
     }
 
-    const match = await prisma.match.findUnique({
-      where: { id: matchId },
-      include: { tournament: true },
-    });
-
-    if (!match) {
-      return res.status(404).json({ error: 'Match not found' });
+    const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+    if (tournament.status !== 'ACTIVE') {
+      return res.status(400).json({ error: 'Tournament is not active' });
     }
 
-    if (match.tournamentId !== tournamentId) {
-      return res.status(400).json({ error: 'Match does not belong to this tournament' });
-    }
+    const plugin = tournamentPluginRegistry.get(tournament.type);
+    if (plugin.cancelMatch) {
+      try {
+        await plugin.cancelMatch({
+          matchId,
+          tournamentId,
+          prisma,
+          userId: req.userId ?? req.memberId,
+        });
+      } catch (err) {
+        if (isClientHttpError(err)) {
+          return res.status(err.statusCode).json({ error: err.message });
+        }
+        throw err;
+      }
+    } else {
+      const match = await prisma.match.findUnique({
+        where: { id: matchId },
+        include: { tournament: true },
+      });
 
-    const tournamentStatus = match.tournament?.status;
+      if (!match) {
+        return res.status(404).json({ error: 'Match not found' });
+      }
 
-    // Delete the match
-    await prisma.match.delete({
-      where: { id: matchId },
-    });
+      if (match.tournamentId !== tournamentId) {
+        return res.status(400).json({ error: 'Match does not belong to this tournament' });
+      }
 
-    // If tournament is completed, recalculate rankings
-    if (tournamentStatus === 'COMPLETED') {
-      await recalculateRankings(tournamentId);
+      await prisma.match.delete({
+        where: { id: matchId },
+      });
     }
 
     // Invalidate cache and emit notifications

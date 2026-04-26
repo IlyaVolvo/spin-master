@@ -1038,6 +1038,9 @@ export async function getPlayerRatings(memberIds: number[]): Promise<Map<number,
 export type AdjustRatingsForSingleMatchOptions = {
   /** When true, use each player's current `member.rating` (for sequential playoff K-style updates). Default uses `playerRatingAtTime`. */
   useCurrentMemberRatings?: boolean;
+  rating1BeforeOverride?: number;
+  rating2BeforeOverride?: number;
+  timestamp?: Date;
 };
 
 /**
@@ -1083,7 +1086,13 @@ export async function adjustRatingsForSingleMatch(
   let rating1Before: number;
   let rating2Before: number;
 
-  if (useCurrent) {
+  if (
+    options?.rating1BeforeOverride !== undefined &&
+    options?.rating2BeforeOverride !== undefined
+  ) {
+    rating1Before = options.rating1BeforeOverride;
+    rating2Before = options.rating2BeforeOverride;
+  } else if (useCurrent) {
     const [m1, m2] = await Promise.all([
       prisma.member.findUnique({ where: { id: player1Id }, select: { rating: true } }),
       prisma.member.findUnique({ where: { id: player2Id }, select: { rating: true } }),
@@ -1151,6 +1160,7 @@ export async function adjustRatingsForSingleMatch(
       reason: 'MATCH_COMPLETED',
       tournamentId: tournamentId,
       matchId: matchId,
+      ...(options?.timestamp ? { timestamp: options.timestamp } : {}),
     },
   });
 
@@ -1162,6 +1172,7 @@ export async function adjustRatingsForSingleMatch(
       reason: 'MATCH_COMPLETED',
       tournamentId: tournamentId,
       matchId: matchId,
+      ...(options?.timestamp ? { timestamp: options.timestamp } : {}),
     },
   });
 

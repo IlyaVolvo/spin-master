@@ -132,6 +132,49 @@ function sortRatingHistoryRecordsChronologically(
   });
 }
 
+function replayRatingHistoryForDisplay(
+  records: any[]
+): { startingRating: number | null; points: Array<{ record: any; rating: number | null; ratingBefore: number | null; ratingChange: number | null }> } {
+  let runningRating: number | null = null;
+  const points: Array<{ record: any; rating: number | null; ratingBefore: number | null; ratingChange: number | null }> = [];
+
+  const first = records[0];
+  let startingRating: number | null = null;
+  if (
+    first &&
+    first.reason !== 'INITIAL_RATING' &&
+    first.rating != null &&
+    first.ratingChange != null
+  ) {
+    startingRating = first.rating - first.ratingChange;
+    runningRating = startingRating;
+  }
+
+  for (const record of records) {
+    if (record.reason === 'INITIAL_RATING' && runningRating !== null) {
+      continue;
+    }
+
+    const ratingChange = record.ratingChange ?? null;
+    let ratingBefore: number | null = null;
+    let ratingAfter = record.rating ?? null;
+
+    if (record.reason === 'INITIAL_RATING') {
+      runningRating = ratingAfter;
+    } else if (ratingChange != null) {
+      ratingBefore = runningRating ?? (ratingAfter != null ? ratingAfter - ratingChange : null);
+      ratingAfter = ratingBefore != null ? Math.max(0, Math.round(ratingBefore + ratingChange)) : ratingAfter;
+      runningRating = ratingAfter;
+    } else if (ratingAfter != null) {
+      runningRating = ratingAfter;
+    }
+
+    points.push({ record, rating: ratingAfter, ratingBefore, ratingChange });
+  }
+
+  return { startingRating, points };
+}
+
 interface ImportedPlayerPayload {
   firstName?: string;
   lastName?: string;
@@ -1673,37 +1716,6 @@ router.post('/rating-history', [
       sortRatingHistoryRecordsChronologically(list as any, tournamentParentById, matchTournamentIdByMatchId);
     }
 
-    // TOURNAMENT_COMPLETED rows with missing ratingChange: delta vs enrollment (same as rating calculation)
-    const tournamentRatingBaselineByMemberTournament = new Map<string, number>();
-    const tcBaselinePairs: { memberId: number; tournamentId: number }[] = [];
-    const seenTcPair = new Set<string>();
-    for (const r of ratingHistoryRecords) {
-      if (
-        r.reason === 'TOURNAMENT_COMPLETED' &&
-        r.tournamentId != null &&
-        (r.ratingChange === null || r.ratingChange === undefined) &&
-        r.rating != null
-      ) {
-        const k = `${r.memberId}:${r.tournamentId}`;
-        if (!seenTcPair.has(k)) {
-          seenTcPair.add(k);
-          tcBaselinePairs.push({ memberId: r.memberId, tournamentId: r.tournamentId });
-        }
-      }
-    }
-    if (tcBaselinePairs.length > 0) {
-      const participants = await prisma.tournamentParticipant.findMany({
-        where: {
-          OR: tcBaselinePairs.map(p => ({ memberId: p.memberId, tournamentId: p.tournamentId })),
-        },
-        select: { memberId: true, tournamentId: true, playerRatingAtTime: true },
-      });
-      for (const p of participants) {
-        const baseline = p.playerRatingAtTime ?? 1200;
-        tournamentRatingBaselineByMemberTournament.set(`${p.memberId}:${p.tournamentId}`, baseline);
-      }
-    }
-
     const tournamentNameForRecord = (record: (typeof ratingHistoryRecords)[0]): string | null => {
       const tid = effectiveTournamentIdForHistoryRow(record, matchTournamentIdByMatchId);
       if (tid != null) {
@@ -1734,17 +1746,11 @@ router.post('/rating-history', [
       const records = recordsByMember.get(member.id) ?? [];
       const points: HistoryPointDto[] = [];
 
-      const first = records[0];
-      if (
-        first &&
-        first.reason !== 'INITIAL_RATING' &&
-        first.rating != null &&
-        first.ratingChange != null
-      ) {
-        const startingRating = first.rating - first.ratingChange;
+      const replayedHistory = replayRatingHistoryForDisplay(records);
+      if (replayedHistory.startingRating != null) {
         points.push({
           date: member.createdAt.toISOString(),
-          rating: startingRating,
+          rating: replayedHistory.startingRating,
           ratingBefore: null,
           ratingChange: null,
           tournamentId: null,
@@ -1754,48 +1760,10 @@ router.post('/rating-history', [
         });
       }
 
-      /** Rating after the previous history row (for inferring delta when DB has rating but null ratingChange). */
-      let lastRatingAfter: number | null =
-        points.length > 0 && points[points.length - 1].rating != null
-          ? points[points.length - 1].rating
-          : null;
-
-      for (const record of records) {
-        const ratingAfter = record.rating;
-        let ratingChange: number | null | undefined = record.ratingChange;
-
-        if (
-          (ratingChange === null || ratingChange === undefined) &&
-          record.reason === 'TOURNAMENT_COMPLETED' &&
-          record.tournamentId != null &&
-          ratingAfter != null
-        ) {
-          const baseline = tournamentRatingBaselineByMemberTournament.get(
-            `${member.id}:${record.tournamentId}`
-          );
-          if (baseline !== undefined) {
-            ratingChange = ratingAfter - baseline;
-          }
-        }
-
-        // Sequential diff only when DB did not store an event-specific delta (never for tournament/match rows:
-        // those deltas are vs enrollment / match baseline, not vs the previous history row).
-        if (
-          (ratingChange === null || ratingChange === undefined) &&
-          record.reason !== 'INITIAL_RATING' &&
-          record.reason !== 'TOURNAMENT_COMPLETED' &&
-          record.reason !== 'MATCH_COMPLETED' &&
-          ratingAfter != null &&
-          lastRatingAfter != null
-        ) {
-          ratingChange = ratingAfter - lastRatingAfter;
-        }
-        const ratingBefore =
-          ratingAfter != null && ratingChange != null ? ratingAfter - ratingChange : null;
-
+      for (const { record, rating, ratingBefore, ratingChange } of replayedHistory.points) {
         points.push({
           date: record.timestamp.toISOString(),
-          rating: ratingAfter,
+          rating,
           ratingBefore,
           ratingChange: ratingChange ?? null,
           tournamentId: effectiveTournamentIdForHistoryRow(record, matchTournamentIdByMatchId),
@@ -1803,10 +1771,6 @@ router.post('/rating-history', [
           matchId: record.matchId,
           reason: record.reason,
         });
-
-        if (ratingAfter != null) {
-          lastRatingAfter = ratingAfter;
-        }
       }
 
       if (points.length === 0 && member.rating != null) {

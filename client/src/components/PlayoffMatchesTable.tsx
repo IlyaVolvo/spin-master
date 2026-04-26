@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { formatActiveTournamentRating } from '../utils/ratingFormatter';
-import { MatchEntryPopup } from './MatchEntryPopup';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
 import {
   attachOpponentPasswordIfNeeded,
   canOpenTournamentMatchEditor,
@@ -371,6 +371,7 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}
+            modifyConfirmationMessage={RATING_IMPACT_MODIFY_MESSAGE}
           />
         );
       })()}

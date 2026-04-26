@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
-import { MatchEntryPopup } from './MatchEntryPopup';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
 import { getMember, isOrganizer } from '../utils/auth';
 import { attachOpponentPasswordIfNeeded, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
 import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
@@ -77,6 +77,7 @@ interface MatchNode {
   winnerId: number | null;
   matchId?: number; // Match.id if match has been played
   bracketMatchId?: number; // BracketMatch.id for unplayed matches
+  nextMatchId?: number | null;
   player1Sets?: number;
   player2Sets?: number;
   player1Forfeit?: boolean;
@@ -105,6 +106,22 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
 }) => {
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPress = (open: () => void) => {
+    clearLongPressTimer();
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      open();
+    }, 550);
+  };
   
   // Calculate current rating for each player per round (incremental changes)
   // This tracks rating changes incrementally: each round shows change from previous round
@@ -497,6 +514,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         winnerId,
         matchId: bracketMatch.matchId,
         bracketMatchId: bracketMatch.id,
+        nextMatchId: bracketMatch.nextMatchId ?? null,
         player1Sets: bracketMatch.player1Sets || 0,
         player2Sets: bracketMatch.player2Sets || 0,
         player1Forfeit: bracketMatch.player1Forfeit || false,
@@ -539,6 +557,17 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
   }, [totalRounds, showOnlyRound1]);
   
   const maxRound = showOnlyRound1 ? 1 : totalRounds;
+
+  const getPlayoffResultChangeBlockedReason = (match: MatchNode | null | undefined): string | null => {
+    if (!match?.matchId || !match.nextMatchId) return null;
+
+    const nextBracketMatch = matches.find(m => m.id === match.nextMatchId);
+    if (nextBracketMatch?.matchId || nextBracketMatch?.match) {
+      return 'Cannot modify this playoff result because the next-round match has already been played';
+    }
+
+    return null;
+  };
 
   // Get round label
   const getRoundLabel = (round: number, maxRound: number, bracketSize: number, matchesByRound?: Record<number, MatchNode[]>): string => {
@@ -592,6 +621,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             linkedMatch: prevMatch.linkedMatch ?? null,
           })
         : null;
+    const prevResultChangeBlocked = getPlayoffResultChangeBlockedReason(prevMatch);
     const me = getMember()?.id;
     const prevP1 = prevMatch?.player1?.member.id;
     const prevP2 = prevMatch?.player2?.member.id;
@@ -604,6 +634,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       hasPrevMatch &&
       !prevMatchIsBye &&
       !prevFirstResultBlocked &&
+      !prevResultChangeBlocked &&
       canEditPrevMatch;
     
     // For round 1, show BYE only if it's actually a BYE (memberId === 0)
@@ -662,8 +693,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             e.stopPropagation();
             e.preventDefault();
             
-            // Use bracketMatchId from prevMatch, or matchId, or 0 as fallback
-            const matchIdToUse = prevMatch.matchId || prevMatch.bracketMatchId || 0;
+            // Existing playoff results are updated by bracket slot id to avoid Match.id/BracketMatch.id collisions.
+            const matchIdToUse = prevMatch.matchId ? (prevMatch.bracketMatchId || prevMatch.matchId) : 0;
             
             
             setEditingMatch({
@@ -875,8 +906,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             e.stopPropagation();
             e.preventDefault();
             
-            // Use bracketMatchId from prevMatch, or matchId, or 0 as fallback
-            const matchIdToUse = prevMatch.matchId || prevMatch.bracketMatchId || 0;
+            // Existing playoff results are updated by bracket slot id to avoid Match.id/BracketMatch.id collisions.
+            const matchIdToUse = prevMatch.matchId ? (prevMatch.bracketMatchId || prevMatch.matchId) : 0;
             
             
             setEditingMatch({
@@ -936,7 +967,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               ? 'Round 1 - Players are manually placed'
               : prevMatchIsBye
                 ? 'BYE - No score entry needed'
-                : prevFirstResultBlocked || ''
+                : prevResultChangeBlocked || prevFirstResultBlocked || ''
         }
       >
         <div style={{ 
@@ -1178,7 +1209,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           })()}
         </div>
         {/* Show score box indicator - smaller box with score or "Score" text */}
-        {showScoreBox && !prevFirstResultBlocked && (
+        {showScoreBox && !prevFirstResultBlocked && !prevResultChangeBlocked && (
           <div 
             style={{
               marginTop: '4px',
@@ -1207,12 +1238,12 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               // Score boxes only appear for players who came from a previous match
               // BYE matches don't have scores and cannot be edited
               // Use bracketMatchId if matchId doesn't exist (for unplayed matches)
-              if (hasPrevMatch && !prevMatchIsBye && prevMatch && prevMatch.player1 && prevMatch.player2) {
+              if (isClickableForScoreEntry && prevMatch && prevMatch.player1 && prevMatch.player2) {
                 e.stopPropagation();
                 e.preventDefault();
                 
-                // Use bracketMatchId from prevMatch, or matchId, or 0 as fallback
-                const matchIdToUse = prevMatch.matchId || prevMatch.bracketMatchId || 0;
+                // Existing playoff results are updated by bracket slot id to avoid Match.id/BracketMatch.id collisions.
+                const matchIdToUse = prevMatch.matchId ? (prevMatch.bracketMatchId || prevMatch.matchId) : 0;
 
                 if (!prevMatch.matchId) {
                   const block = getPlayoffFirstResultBlockedReason({
@@ -1220,10 +1251,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                     member2Id: prevMatch.bracketMember2Id ?? null,
                     linkedMatch: prevMatch.linkedMatch ?? null,
                   });
-                  if (block) {
-                    alert(block);
-                    return;
-                  }
+                  if (block) return;
                 }
                 
                 setEditingMatch({
@@ -1274,6 +1302,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             linkedMatch: match.linkedMatch ?? null,
           })
         : null;
+    const resultChangeBlocked = getPlayoffResultChangeBlockedReason(match);
     const canEditMatch =
       (isUserOrganizer || isPlayerInMatch) &&
       !isReadOnly &&
@@ -1282,7 +1311,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       player2 &&
       !player1IsBye &&
       !player2IsBye &&
-      !firstResultBlocked;
+      !firstResultBlocked &&
+      !resultChangeBlocked;
     
     // Get scores
     const player1Sets = match.player1Sets ?? 0;
@@ -1371,7 +1401,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             e.currentTarget.style.boxShadow = 'none';
           }
         }}
-        title={canEditMatch ? 'Click to enter/edit match result' : firstResultBlocked || ''}
+        title={canEditMatch ? 'Click to enter/edit match result' : resultChangeBlocked || firstResultBlocked || ''}
       >
         {/* Player 1 */}
         <div style={{ 
@@ -1490,15 +1520,52 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               </div>
             </button>
           </div>
-        ) : hasScore && !isForfeit ? (
-          <div style={{ 
+        ) : hasResult ? (
+          <div
+            onContextMenu={(e) => {
+              if (canEditMatch) {
+                e.preventDefault();
+                setEditingMatch({
+                  matchId: match.bracketMatchId || match.matchId || 0,
+                  member1Id: player1!.member.id,
+                  member2Id: player2!.member.id,
+                  player1Sets: (match.player1Sets || 0).toString(),
+                  player2Sets: (match.player2Sets || 0).toString(),
+                  player1Forfeit: match.player1Forfeit || false,
+                  player2Forfeit: match.player2Forfeit || false,
+                  opponentPassword: '',
+                });
+              }
+            }}
+            onTouchStart={() => {
+              if (canEditMatch) {
+                startLongPress(() => setEditingMatch({
+                  matchId: match.bracketMatchId || match.matchId || 0,
+                  member1Id: player1!.member.id,
+                  member2Id: player2!.member.id,
+                  player1Sets: (match.player1Sets || 0).toString(),
+                  player2Sets: (match.player2Sets || 0).toString(),
+                  player1Forfeit: match.player1Forfeit || false,
+                  player2Forfeit: match.player2Forfeit || false,
+                  opponentPassword: '',
+                }));
+              }
+            }}
+            onTouchEnd={clearLongPressTimer}
+            onTouchMove={clearLongPressTimer}
+            onTouchCancel={clearLongPressTimer}
+            title={canEditMatch ? 'Right-click or long-press to modify/remove result' : undefined}
+            style={{
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'center',
             minWidth: '60px', // Same as entry button container
             height: '20px', // Same as entry button container
+            cursor: canEditMatch ? 'context-menu' : 'default',
           }}>
-            <span style={{ fontSize: '14px', color: '#666', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{player1Sets} - {player2Sets}</span>
+            <span style={{ fontSize: '14px', color: '#666', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+              {isForfeit ? 'FF' : `${player1Sets} - ${player2Sets}`}
+            </span>
           </div>
         ) : null}
         
@@ -1672,9 +1739,12 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         }
       }
     } else {
-      // Find by matchId
+      // Existing playoff edits may carry BracketMatch.id to avoid Match.id collisions.
       for (const roundMatches of Object.values(matchesByRound)) {
-        const found = roundMatches.find(m => m.matchId === editingMatch.matchId);
+        const found = roundMatches.find(m =>
+          m.matchId === editingMatch.matchId ||
+          m.bracketMatchId === editingMatch.matchId
+        );
         if (found) {
           matchBeingSaved = found;
           break;
@@ -1713,10 +1783,12 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           member2Id: matchBeingSaved.bracketMember2Id ?? null,
           linkedMatch: matchBeingSaved.linkedMatch ?? null,
         });
-        if (block) {
-          alert(block);
-          return;
-        }
+        if (block) return;
+      }
+
+      if (matchBeingSaved && getPlayoffResultChangeBlockedReason(matchBeingSaved)) {
+        setEditingMatch(null);
+        return;
       }
 
       attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
@@ -2097,6 +2169,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}
+            modifyConfirmationMessage={RATING_IMPACT_MODIFY_MESSAGE}
           />
         );
       })()}

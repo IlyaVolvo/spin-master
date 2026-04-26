@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TraditionalBracket } from './TraditionalBracket';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
-import { MatchEntryPopup } from './MatchEntryPopup';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
 import { updateMatchCountsCache } from './utils/matchCacheUtils';
 import api from '../utils/api';
 import {
@@ -390,6 +390,7 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
             onSetEditingMatch={setEditingFinalMatch}
             onSave={handleSaveFinalMatch}
             onCancel={() => setEditingFinalMatch(null)}
+            modifyConfirmationMessage={RATING_IMPACT_MODIFY_MESSAGE}
           />
         );
       })()}

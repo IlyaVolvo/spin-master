@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
-import { MatchEntryPopup } from '../../MatchEntryPopup';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
 import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
 import { saveScrollPosition, withWindowScrollPreserved } from '../../../utils/scrollPosition';
 import './SwissActivePanel.css';
@@ -68,6 +68,22 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 }) => {
   const navigate = useNavigate();
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPress = (open: () => void) => {
+    clearLongPressTimer();
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      open();
+    }, 550);
+  };
 
   const swissData = (tournament as any).swissData;
   const totalRounds = swissData?.numberOfRounds ?? 0;
@@ -494,12 +510,30 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 
                   {/* Score / Enter score */}
                   <div
-                    onClick={() => handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id)}
+                    onContextMenu={(e) => {
+                      if (isPlayed) {
+                        e.preventDefault();
+                        handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id);
+                      }
+                    }}
+                    onTouchStart={() => {
+                      if (isPlayed) {
+                        startLongPress(() => handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id));
+                      }
+                    }}
+                    onTouchEnd={clearLongPressTimer}
+                    onTouchMove={clearLongPressTimer}
+                    onTouchCancel={clearLongPressTimer}
+                    onClick={() => {
+                      if (!isPlayed) {
+                        handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id);
+                      }
+                    }}
                     style={{
-                      cursor: 'pointer', display: 'flex', alignItems: 'center',
+                      cursor: isPlayed ? 'context-menu' : 'pointer', display: 'flex', alignItems: 'center',
                       justifyContent: 'center', minWidth: '70px', flexShrink: 0,
                     }}
-                    title={isPlayed ? 'Click to edit match' : 'Click to enter score'}
+                    title={isPlayed ? 'Right-click or long-press to modify/remove result' : 'Click to enter score'}
                   >
                     {isPlayed ? (
                       <span style={{
@@ -652,6 +686,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
           onSetEditingMatch={setEditingMatch}
           onSave={handleMatchSave}
           onCancel={handleMatchCancel}
+          modifyConfirmationMessage={RATING_IMPACT_MODIFY_MESSAGE}
         />
       )}
     </div>

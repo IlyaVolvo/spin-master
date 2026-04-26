@@ -14,13 +14,15 @@
  *   npx tsx scripts/populateDatabase.ts
  */
 
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Gender, PrismaClient, Prisma } from '@prisma/client';
 import * as dotenv from 'dotenv';
 import { createHash, randomBytes } from 'crypto';
 
 dotenv.config({ path: '.env' });
 
 const prisma = new PrismaClient();
+
+const GENDER_NOT_SPECIFIED = 'NOT_SPECIFIED' as Gender;
 
 const SEED_DEFAULT_PASSWORD = process.env.SEED_DEFAULT_PASSWORD?.trim() || 'changeme';
 const SYS_ADMIN_EMAIL = process.env.SYS_ADMIN_EMAIL?.trim() || 'admin@pingpong.com';
@@ -136,7 +138,7 @@ const chineseLastNames = [
 /**
  * Determine gender from first name
  */
-function determineGender(firstName: string): 'MALE' | 'FEMALE' | 'NOT_SPECIFIED' {
+function determineGender(firstName: string): Gender {
   const name = firstName.toLowerCase();
   
   // Build exact male names from the name pools
@@ -165,11 +167,11 @@ function determineGender(firstName: string): 'MALE' | 'FEMALE' | 'NOT_SPECIFIED'
   
   // Check exact matches first (most reliable)
   if (exactMaleNames.includes(name)) {
-    return 'MALE';
+    return Gender.MALE;
   }
   
   if (exactFemaleNames.includes(name)) {
-    return 'FEMALE';
+    return Gender.FEMALE;
   }
   
   // Fallback to pattern matching for names not in our lists
@@ -178,10 +180,10 @@ function determineGender(firstName: string): 'MALE' | 'FEMALE' | 'NOT_SPECIFIED'
   
   // Check if it matches female patterns
   if (femalePatterns.some(pattern => name.endsWith(pattern) && name.length > 3)) {
-    return 'FEMALE';
+    return Gender.FEMALE;
   }
   
-  return 'NOT_SPECIFIED';
+  return GENDER_NOT_SPECIFIED;
 }
 
 /**
@@ -401,7 +403,7 @@ async function createPlayers(): Promise<any[]> {
     firstName: string;
     lastName: string;
     email: string;
-    gender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
+    gender: Gender;
     password: string;
     roles: MemberRoleType[];
     birthDate: Date;
@@ -1823,7 +1825,7 @@ async function main() {
             firstName: SYS_ADMIN_FIRST_NAME,
             lastName: SYS_ADMIN_LAST_NAME,
             email: SYS_ADMIN_EMAIL,
-            gender: 'NOT_SPECIFIED',
+            gender: GENDER_NOT_SPECIFIED,
             password: adminPassword,
             roles: [MemberRole.ADMIN],
             isActive: true,

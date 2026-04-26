@@ -141,11 +141,19 @@ export interface TournamentPlugin {
     userId?: number;
   }): Promise<{
     match: any;
+    skipRatingCalculation?: boolean;
     tournamentStateChange?: {
       shouldMarkComplete?: boolean;
       message?: string;
     };
   }>;
+
+  cancelMatch?(context: {
+    matchId: number;
+    tournamentId: number;
+    prisma: any;
+    userId?: number;
+  }): Promise<{ match?: any; message?: string }>;
   
   // Generic plugin-specific request handler
   // Allows plugins to define their own custom endpoints

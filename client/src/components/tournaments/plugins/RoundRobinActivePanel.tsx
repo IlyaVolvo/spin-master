@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
@@ -35,6 +35,22 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   onSuccess,
 }) => {
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPress = (open: () => void) => {
+    clearLongPressTimer();
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      open();
+    }, 550);
+  };
 
   // Build results matrix for display and editing
   const buildResultsMatrix = (tournament: any) => {
@@ -290,6 +306,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                     const isDiagonal = participant1.member.id === participant2.member.id;
                     const hasScore = score && score !== '';
                     const isForfeit = score === 'W' || score === 'L';
+                    const match = matchMap[`${participant1.member.id}-${participant2.member.id}`];
                     const cellStyle: React.CSSProperties = {
                       padding: '8px',
                       border: '1px solid #ddd',
@@ -299,7 +316,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                       opacity: isDiagonal ? 1 : hasScore ? 1 : 0.7,
                       minWidth: '80px',
                       width: '80px',
-                      cursor: !isDiagonal ? 'pointer' : 'default',
+                      cursor: !isDiagonal ? (hasScore ? 'context-menu' : 'pointer') : 'default',
                     };
 
                     // Highlight winner (higher score or W) for played matches
@@ -324,8 +341,22 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                       <td
                         key={participant2.member.id}
                         style={cellStyle}
+                        onContextMenu={(e) => {
+                          if (!isDiagonal && hasScore && match) {
+                            e.preventDefault();
+                            handleCellClick(participant1.member.id, participant2.member.id);
+                          }
+                        }}
+                        onTouchStart={() => {
+                          if (!isDiagonal && hasScore && match) {
+                            startLongPress(() => handleCellClick(participant1.member.id, participant2.member.id));
+                          }
+                        }}
+                        onTouchEnd={clearLongPressTimer}
+                        onTouchMove={clearLongPressTimer}
+                        onTouchCancel={clearLongPressTimer}
                         onClick={() => {
-                          if (!isDiagonal) {
+                          if (!isDiagonal && !hasScore) {
                             handleCellClick(participant1.member.id, participant2.member.id);
                           }
                         }}
@@ -333,7 +364,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                           isDiagonal 
                             ? 'Diagonal cell' 
                             : hasScore 
-                              ? 'Click to edit match' 
+                              ? 'Right-click or long-press to modify/remove result'
                               : 'Click to add match'
                         }
                       >

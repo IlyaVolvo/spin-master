@@ -155,6 +155,114 @@ describe('PlayoffPlugin', () => {
     jest.clearAllMocks();
   });
 
+  describe('match result modification restrictions', () => {
+    it('rejects cancelling when the next-round match has already been played', async () => {
+      const bracketMatch = {
+        ...makeBracketMatch({
+          id: 1,
+          round: 2,
+          position: 1,
+          member1Id: 1,
+          member2Id: 4,
+          match: {
+            id: 10,
+            member1Id: 1,
+            member2Id: 4,
+            player1Sets: 3,
+            player2Sets: 1,
+          },
+        }),
+        tournament: { id: 1, status: 'ACTIVE' },
+        nextMatchId: 3,
+        nextMatch: {
+          id: 3,
+          match: {
+            id: 11,
+            member1Id: 1,
+            member2Id: 2,
+            player1Sets: 3,
+            player2Sets: 0,
+          },
+        },
+      };
+      const prisma = {
+        bracketMatch: {
+          findUnique: jest.fn().mockResolvedValue(bracketMatch),
+          findFirst: jest.fn().mockResolvedValue({
+            id: 3,
+            tournamentId: 1,
+            matchId: 11,
+            match: bracketMatch.nextMatch.match,
+          }),
+        },
+      };
+
+      await expect(plugin.cancelMatch!({ matchId: 1, tournamentId: 1, prisma })).rejects.toThrow(
+        'next-round match has already been played'
+      );
+    });
+
+    it('updates downstream bracket slot when a modified result changes winner', async () => {
+      const existingMatch = {
+        id: 10,
+        tournamentId: 1,
+        member1Id: 1,
+        member2Id: 4,
+        player1Sets: 3,
+        player2Sets: 1,
+        player1Forfeit: false,
+        player2Forfeit: false,
+      };
+      const bracketMatch = {
+        ...makeBracketMatch({
+          id: 1,
+          round: 2,
+          position: 1,
+          member1Id: 1,
+          member2Id: 4,
+          match: existingMatch,
+        }),
+        nextMatchId: 3,
+        nextMatch: { id: 3, match: null },
+      };
+      const prisma = {
+        bracketMatch: {
+          findUnique: jest.fn().mockResolvedValue(bracketMatch),
+          findFirst: jest.fn().mockResolvedValue({
+            id: 3,
+            tournamentId: 1,
+            matchId: null,
+            match: null,
+          }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+        match: {
+          update: jest.fn().mockResolvedValue({ ...existingMatch, player1Sets: 1, player2Sets: 3 }),
+        },
+        ratingHistory: {
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn(),
+        },
+      };
+
+      const result = await plugin.updateMatch({
+        matchId: 1,
+        tournamentId: 1,
+        player1Sets: 1,
+        player2Sets: 3,
+        player1Forfeit: false,
+        player2Forfeit: false,
+        prisma,
+      });
+
+      expect(result.skipRatingCalculation).toBe(true);
+      expect(prisma.bracketMatch.update).toHaveBeenCalledWith({
+        where: { id: 3 },
+        data: { member1Id: 4 },
+      });
+    });
+  });
+
   // ─── Basic Properties ──────────────────────────────────────────────────
 
   describe('type and isBasic', () => {
@@ -402,7 +510,7 @@ describe('PlayoffPlugin', () => {
       expect(result.tournamentStateChange).toBeUndefined();
       expect(mockPrisma.bracketMatch!.findUnique).toHaveBeenCalledWith({
         where: { id: 5 },
-        include: { match: true },
+        include: { match: true, nextMatch: { include: { match: true } } },
       });
     });
 

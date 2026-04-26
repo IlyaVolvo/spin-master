@@ -573,6 +573,7 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     userId?: number;
   }): Promise<{
     match: any;
+    skipRatingCalculation?: boolean;
     tournamentStateChange?: {
       shouldMarkComplete?: boolean;
       message?: string;
@@ -583,13 +584,23 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     // 1) Resolve BracketMatch by id first so BracketMatch.id cannot collide with Match.id on PATCH .../matches.
     const bracketMatchForId = await prisma.bracketMatch.findUnique({
       where: { id: matchId },
-      include: { match: true },
+      include: { match: true, nextMatch: { include: { match: true } } },
     });
     const bracketInTournament =
       bracketMatchForId && bracketMatchForId.tournamentId === tournamentId;
 
     if (bracketInTournament) {
       if (bracketMatchForId.match) {
+        await this.assertPlayoffResultCanChange(prisma, tournamentId, bracketMatchForId);
+        const previousWinnerId = this.getMatchWinnerId(bracketMatchForId.match);
+        const nextWinnerId = player1Forfeit
+          ? bracketMatchForId.match.member2Id
+          : player2Forfeit
+            ? bracketMatchForId.match.member1Id
+            : player1Sets > player2Sets
+              ? bracketMatchForId.match.member1Id
+              : bracketMatchForId.match.member2Id;
+        const winnerChanged = previousWinnerId !== nextWinnerId;
         const updatedMatch = await prisma.match.update({
           where: { id: bracketMatchForId.match.id },
           data: {
@@ -600,7 +611,11 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
           },
           include: { tournament: true },
         });
-        return { match: updatedMatch };
+        if (winnerChanged && nextWinnerId) {
+          await this.updateNextBracketSlot(prisma, bracketMatchForId, nextWinnerId);
+          await this.replaceMatchRatingsAndReplay(prisma, updatedMatch, nextWinnerId);
+        }
+        return { match: updatedMatch, skipRatingCalculation: true };
       }
 
       const { match: updatedMatch, tournamentCompleted } = await recordPlayoffBracketMatchResult(prisma, {
@@ -630,6 +645,7 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     if (existingMatch) {
       const bracketLink = await prisma.bracketMatch.findFirst({
         where: { tournamentId, matchId: existingMatch.id },
+        include: { nextMatch: { include: { match: true } } },
       });
       if (!bracketLink) {
         throw new PlayoffBracketResultError(
@@ -637,6 +653,16 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
           400
         );
       }
+      await this.assertPlayoffResultCanChange(prisma, tournamentId, bracketLink);
+      const previousWinnerId = this.getMatchWinnerId(existingMatch);
+      const nextWinnerId = player1Forfeit
+        ? existingMatch.member2Id
+        : player2Forfeit
+          ? existingMatch.member1Id
+          : player1Sets > player2Sets
+            ? existingMatch.member1Id
+            : existingMatch.member2Id;
+      const winnerChanged = previousWinnerId !== nextWinnerId;
       const updatedMatch = await prisma.match.update({
         where: { id: existingMatch.id },
         data: {
@@ -647,7 +673,11 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
         },
         include: { tournament: true },
       });
-      return { match: updatedMatch };
+      if (winnerChanged && nextWinnerId) {
+        await this.updateNextBracketSlot(prisma, bracketLink, nextWinnerId);
+        await this.replaceMatchRatingsAndReplay(prisma, updatedMatch, nextWinnerId);
+      }
+      return { match: updatedMatch, skipRatingCalculation: true };
     }
 
     // 3) Legacy: id is a bracket slot in another tournament or unknown — delegate to service (404).
@@ -671,6 +701,78 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     }
 
     return { match: updatedMatch };
+  }
+
+  private async assertPlayoffResultCanChange(prisma: any, tournamentId: number, bracketMatch: any): Promise<void> {
+    if (!bracketMatch?.nextMatchId) return;
+
+    const nextMatch = await prisma.bracketMatch.findFirst({
+      where: {
+        id: bracketMatch.nextMatchId,
+        tournamentId,
+      },
+      include: { match: true },
+    });
+
+    if (nextMatch?.matchId || nextMatch?.match) {
+      throw new PlayoffBracketResultError(
+        'Cannot modify this playoff result because the next-round match has already been played',
+        400
+      );
+    }
+  }
+
+  private async updateNextBracketSlot(prisma: any, bracketMatch: any, winnerId: number): Promise<void> {
+    if (!bracketMatch?.nextMatchId) return;
+    const isPlayer1Slot = (bracketMatch.position - 1) % 2 === 0;
+    await prisma.bracketMatch.update({
+      where: { id: bracketMatch.nextMatchId },
+      data: isPlayer1Slot ? { member1Id: winnerId } : { member2Id: winnerId },
+    });
+  }
+
+  async cancelMatch(context: {
+    matchId: number;
+    tournamentId: number;
+    prisma: any;
+    userId?: number;
+  }): Promise<{ match?: any; message?: string }> {
+    const { matchId, tournamentId, prisma } = context;
+    let bracketMatch = await prisma.bracketMatch.findUnique({
+      where: { id: matchId },
+      include: { match: true, nextMatch: { include: { match: true } }, tournament: true },
+    });
+    if (!bracketMatch || bracketMatch.tournamentId !== tournamentId) {
+      const match = await prisma.match.findFirst({ where: { id: matchId, tournamentId } });
+      if (!match) throw new PlayoffBracketResultError('Match not found', 404);
+      bracketMatch = await prisma.bracketMatch.findFirst({
+        where: { tournamentId, matchId: match.id },
+        include: { match: true, nextMatch: { include: { match: true } }, tournament: true },
+      });
+    }
+    if (!bracketMatch?.match) {
+      throw new PlayoffBracketResultError('Match not found', 404);
+    }
+    if (bracketMatch.tournament.status !== 'ACTIVE') {
+      throw new PlayoffBracketResultError('Tournament is not active', 400);
+    }
+    await this.assertPlayoffResultCanChange(prisma, tournamentId, bracketMatch);
+
+    await this.removeMatchRatingsAndReplay(prisma, bracketMatch.match.id);
+    if (bracketMatch.nextMatchId) {
+      const isPlayer1Slot = (bracketMatch.position - 1) % 2 === 0;
+      await prisma.bracketMatch.update({
+        where: { id: bracketMatch.nextMatchId },
+        data: isPlayer1Slot ? { member1Id: null } : { member2Id: null },
+      });
+    }
+    await prisma.bracketMatch.update({
+      where: { id: bracketMatch.id },
+      data: { matchId: null },
+    });
+    await prisma.match.delete({ where: { id: bracketMatch.match.id } });
+
+    return { message: 'Playoff result removed' };
   }
 
   protected async getTournamentSpecificUpdateData(

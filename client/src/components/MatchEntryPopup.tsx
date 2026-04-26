@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 
 interface Player {
@@ -31,6 +31,20 @@ interface MatchEntryPopupProps {
   onCancel: () => void;
   onClear?: () => void;
   showClearButton?: boolean;
+  modifyConfirmationMessage?: string;
+}
+
+export const RATING_IMPACT_MODIFY_MESSAGE =
+  'Modify this match result? If the winner changes, the previous result will be cancelled, ratings may be adjusted, and the corrected result will be recorded.';
+
+function getEditingWinnerId(match: MatchEntryEditingState): number | null {
+  if (match.player1Forfeit) return match.member2Id;
+  if (match.player2Forfeit) return match.member1Id;
+  const player1Sets = parseInt(match.player1Sets) || 0;
+  const player2Sets = parseInt(match.player2Sets) || 0;
+  if (player1Sets > player2Sets) return match.member1Id;
+  if (player2Sets > player1Sets) return match.member2Id;
+  return null;
 }
 
 export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
@@ -44,8 +58,13 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   onCancel,
   onClear,
   showClearButton = false,
+  modifyConfirmationMessage = 'Modify this match result? This will update the recorded score.',
 }) => {
+  const [confirmAction, setConfirmAction] = useState<'modify' | 'clear' | null>(null);
+  const originalWinnerIdRef = useRef(getEditingWinnerId(editingMatch));
   const isForfeit = editingMatch.player1Forfeit || editingMatch.player2Forfeit;
+  const isModification = editingMatch.matchId > 0;
+  const winnerChanged = isModification && getEditingWinnerId(editingMatch) !== originalWinnerIdRef.current;
   
   const player1Sets = parseInt(editingMatch.player1Sets) || 0;
   const player2Sets = parseInt(editingMatch.player2Sets) || 0;
@@ -53,7 +72,27 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   const missingOpponentPassword = requireOpponentPassword && !editingMatch.opponentPassword?.trim();
   const isDisabled = scoresEqual || missingOpponentPassword;
 
+  const confirmConfig =
+    confirmAction === 'clear'
+      ? {
+          title: 'Remove Match Result',
+          message: 'Remove this match result? This will undo any rating or bracket effects when required.',
+          confirmText: 'Remove Result',
+          confirmColor: '#e74c3c',
+          onConfirm: onClear,
+        }
+      : confirmAction === 'modify'
+        ? {
+            title: 'Modify Match Result',
+            message: modifyConfirmationMessage,
+            confirmText: 'Modify Result',
+            confirmColor: '#27ae60',
+            onConfirm: onSave,
+          }
+        : null;
+
   return (
+    <>
     <div style={{
       position: 'fixed',
       top: '50%',
@@ -211,7 +250,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             </div>
             {showClearButton && onClear && (
               <button
-                onClick={onClear}
+                onClick={() => setConfirmAction('clear')}
                 style={{
                   backgroundColor: '#dc3545',
                   color: 'white',
@@ -249,7 +288,13 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             ❌
           </button>
           <button
-            onClick={onSave}
+            onClick={() => {
+              if (winnerChanged) {
+                setConfirmAction('modify');
+              } else {
+                onSave();
+              }
+            }}
             title={
               missingOpponentPassword
                 ? 'Enter opponent password'
@@ -357,6 +402,61 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
       )}
       </div>
     </div>
+    {confirmConfig && (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10002,
+          padding: '16px',
+        }}
+      >
+        <div
+          className="card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="match-result-confirm-title"
+          style={{
+            width: '100%',
+            maxWidth: '440px',
+            margin: 0,
+            borderTop: `4px solid ${confirmConfig.confirmColor}`,
+          }}
+        >
+          <h3 id="match-result-confirm-title" style={{ marginBottom: '12px', color: confirmConfig.confirmColor }}>
+            {confirmConfig.title}
+          </h3>
+          <p style={{ marginBottom: '20px', lineHeight: 1.45, color: '#555' }}>{confirmConfig.message}</p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setConfirmAction(null)}
+              style={{ backgroundColor: '#95a5a6', color: 'white' }}
+            >
+              Keep Editing
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmAction(null);
+                confirmConfig.onConfirm?.();
+              }}
+              style={{ backgroundColor: confirmConfig.confirmColor, color: 'white' }}
+            >
+              {confirmConfig.confirmText}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };
 

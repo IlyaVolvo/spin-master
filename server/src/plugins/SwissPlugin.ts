@@ -422,6 +422,7 @@ export class SwissPlugin extends BaseTournamentPlugin {
     userId?: number;
   }): Promise<{
     match: any;
+    skipRatingCalculation?: boolean;
     tournamentStateChange?: {
       shouldMarkComplete?: boolean;
       message?: string;
@@ -441,6 +442,22 @@ export class SwissPlugin extends BaseTournamentPlugin {
       throw new Error('Match does not belong to this tournament');
     }
 
+    const currentTournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: { swissData: true },
+    });
+    if (currentTournament?.status !== 'ACTIVE') {
+      throw new Error('Tournament is not active');
+    }
+    if (match.round !== currentTournament?.swissData?.currentRound) {
+      throw new Error('Swiss results can only be modified in the current round');
+    }
+
+    const currentRoundComplete = await this.isRoundComplete(prisma, tournamentId, match.round);
+    if (currentRoundComplete) {
+      throw new Error('Swiss results can only be modified while the current round is still incomplete');
+    }
+
     // Determine winner
     const winnerId = player1Forfeit 
       ? match.member2Id 
@@ -450,6 +467,12 @@ export class SwissPlugin extends BaseTournamentPlugin {
           ? match.member1Id 
           : match.member2Id;
     
+    const previousWinnerId = this.getMatchWinnerId(match);
+    const winnerChanged = previousWinnerId !== winnerId;
+    if (winnerChanged) {
+      await this.rollbackMatchRatings(prisma, match.id);
+    }
+
     const updatedMatch = await prisma.match.update({
       where: { id: matchId },
       data: {
@@ -495,7 +518,46 @@ export class SwissPlugin extends BaseTournamentPlugin {
     
     return {
       match: { ...updatedMatch, winnerId },
+      skipRatingCalculation: !winnerChanged,
     };
+  }
+
+  async cancelMatch(context: {
+    matchId: number;
+    tournamentId: number;
+    prisma: any;
+    userId?: number;
+  }): Promise<{ match?: any; message?: string }> {
+    const { matchId, tournamentId, prisma } = context;
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: { tournament: { include: { swissData: true } } },
+    });
+    if (!match || match.tournamentId !== tournamentId) {
+      throw new Error('Match not found');
+    }
+    if (match.tournament.status !== 'ACTIVE') {
+      throw new Error('Tournament is not active');
+    }
+    if (match.round !== match.tournament.swissData?.currentRound) {
+      throw new Error('Swiss results can only be removed in the current round');
+    }
+    const currentRoundComplete = await this.isRoundComplete(prisma, tournamentId, match.round);
+    if (currentRoundComplete) {
+      throw new Error('Swiss results can only be removed while the current round is still incomplete');
+    }
+
+    await this.rollbackMatchRatings(prisma, match.id);
+    const updated = await prisma.match.update({
+      where: { id: match.id },
+      data: {
+        player1Sets: 0,
+        player2Sets: 0,
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+    return { match: updated, message: 'Swiss result removed' };
   }
 
   protected async getTournamentSpecificUpdateData(
@@ -525,5 +587,24 @@ export class SwissPlugin extends BaseTournamentPlugin {
     }
     
     return {};
+  }
+
+  private async isRoundComplete(prisma: any, tournamentId: number, round: number | null): Promise<boolean> {
+    if (round == null) return false;
+    const roundMatches = await prisma.match.findMany({
+      where: { tournamentId, round },
+      select: {
+        player1Sets: true,
+        player2Sets: true,
+        player1Forfeit: true,
+        player2Forfeit: true,
+      },
+    });
+
+    return roundMatches.length > 0 && roundMatches.every((m: any) => {
+      const hasScore = (m.player1Sets ?? 0) > 0 || (m.player2Sets ?? 0) > 0;
+      const hasForfeit = m.player1Forfeit || m.player2Forfeit;
+      return hasScore || hasForfeit;
+    });
   }
 }

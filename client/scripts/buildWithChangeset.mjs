@@ -1,4 +1,9 @@
 import { spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const viteBin = join(scriptDir, '..', 'node_modules', '.bin', process.platform === 'win32' ? 'vite.cmd' : 'vite');
 
 const resolvedChangeset = (
   process.env.COMMIT_SHA ||
@@ -14,9 +19,8 @@ const env = {
   VITE_CHANGESET_ID: resolvedChangeset,
 };
 
-const result = spawnSync('vite', ['build'], {
+const result = spawnSync(viteBin, ['build'], {
   stdio: 'inherit',
-  shell: true,
   env,
 });
 

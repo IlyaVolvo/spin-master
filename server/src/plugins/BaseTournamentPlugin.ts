@@ -27,6 +27,7 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
     userId?: number;
   }): Promise<{
     match: any;
+    skipRatingCalculation?: boolean;
     tournamentStateChange?: {
       shouldMarkComplete?: boolean;
       message?: string;
@@ -141,6 +142,235 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
 
   async onTournamentCompletionRatingCalculation?(context: { tournament: any; prisma: any }): Promise<void> {
     // Default implementation - do nothing
+  }
+
+  protected getMatchWinnerId(match: any): number | null {
+    if (!match) return null;
+    if (match.player1Forfeit) return match.member2Id ?? null;
+    if (match.player2Forfeit) return match.member1Id ?? null;
+    if ((match.player1Sets ?? 0) > (match.player2Sets ?? 0)) return match.member1Id ?? null;
+    if ((match.player2Sets ?? 0) > (match.player1Sets ?? 0)) return match.member2Id ?? null;
+    return null;
+  }
+
+  protected async rollbackMatchRatings(prisma: any, matchId: number): Promise<void> {
+    if (typeof prisma.ratingHistory?.findMany !== 'function') return;
+    const histories = await prisma.ratingHistory.findMany({
+      where: { matchId },
+      orderBy: { timestamp: 'desc' },
+    });
+    if (histories.length === 0) return;
+
+    for (const h of histories) {
+      if (h.ratingChange == null) continue;
+      const member = await prisma.member.findUnique({ where: { id: h.memberId } });
+      if (!member || member.rating == null) continue;
+      await prisma.member.update({
+        where: { id: h.memberId },
+        data: { rating: member.rating - h.ratingChange },
+      });
+    }
+
+    await prisma.ratingHistory.deleteMany({ where: { matchId } });
+  }
+
+  protected async replaceMatchRatingsAndReplay(prisma: any, match: any, winnerId: number): Promise<void> {
+    const plan = await this.buildRatingReplayPlan(prisma, match.id);
+    const rating1Before = plan.beforeRatings.get(match.member1Id);
+    const rating2Before = plan.beforeRatings.get(match.member2Id);
+
+    if (rating1Before === undefined || rating2Before === undefined) {
+      await this.rollbackMatchRatings(prisma, match.id);
+      return;
+    }
+
+    await prisma.ratingHistory.deleteMany({ where: { matchId: match.id } });
+
+    const { adjustRatingsForSingleMatch } = await import('../services/usattRatingService');
+    await adjustRatingsForSingleMatch(
+      match.member1Id,
+      match.member2Id,
+      winnerId === match.member1Id,
+      match.tournamentId,
+      match.id,
+      {
+        rating1BeforeOverride: rating1Before,
+        rating2BeforeOverride: rating2Before,
+        timestamp: plan.replacementTimestamp,
+      },
+    );
+
+    const replacementRows = await prisma.ratingHistory.findMany({
+      where: { matchId: match.id },
+      orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
+    });
+
+    await this.replayLaterRatingRows(prisma, plan, replacementRows);
+  }
+
+  protected async removeMatchRatingsAndReplay(prisma: any, matchId: number): Promise<void> {
+    const plan = await this.buildRatingReplayPlan(prisma, matchId);
+    if (plan.affectedMemberIds.length === 0) return;
+
+    await prisma.ratingHistory.deleteMany({ where: { matchId } });
+    await this.replayLaterRatingRows(prisma, plan, []);
+  }
+
+  private async buildRatingReplayPlan(prisma: any, matchId: number): Promise<{
+    affectedMemberIds: number[];
+    beforeRatings: Map<number, number>;
+    laterRows: any[];
+    replacementTimestamp: Date;
+  }> {
+    if (typeof prisma.ratingHistory?.findMany !== 'function') {
+      return {
+        affectedMemberIds: [],
+        beforeRatings: new Map(),
+        laterRows: [],
+        replacementTimestamp: new Date(),
+      };
+    }
+
+    const histories = await prisma.ratingHistory.findMany({
+      where: { matchId },
+      orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
+    });
+
+    if (histories.length === 0) {
+      return {
+        affectedMemberIds: [],
+        beforeRatings: new Map(),
+        laterRows: [],
+        replacementTimestamp: new Date(),
+      };
+    }
+
+    const beforeRatings = new Map<number, number>();
+    for (const history of histories) {
+      const ratingBefore = await this.resolveRatingBeforeHistoryRow(prisma, history);
+      if (ratingBefore !== undefined) {
+        beforeRatings.set(history.memberId, ratingBefore);
+      }
+    }
+
+    const affectedMemberIds = Array.from(beforeRatings.keys());
+    const replacementTimestamp = histories.reduce((min: Date, history: any) =>
+      history.timestamp < min ? history.timestamp : min,
+    histories[0].timestamp);
+    const laterThresholdTimestamp = histories.reduce((max: Date, history: any) =>
+      history.timestamp > max ? history.timestamp : max,
+    histories[0].timestamp);
+    const laterThresholdId = histories
+      .filter((history: any) => history.timestamp.getTime() === laterThresholdTimestamp.getTime())
+      .reduce((max: number, history: any) => Math.max(max, history.id), 0);
+
+    const laterRows = affectedMemberIds.length > 0
+      ? await prisma.ratingHistory.findMany({
+          where: {
+            memberId: { in: affectedMemberIds },
+            matchId: { not: matchId },
+            OR: [
+              { timestamp: { gt: laterThresholdTimestamp } },
+              { timestamp: laterThresholdTimestamp, id: { gt: laterThresholdId } },
+            ],
+          },
+          orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
+        })
+      : [];
+
+    return { affectedMemberIds, beforeRatings, laterRows, replacementTimestamp };
+  }
+
+  private async resolveRatingBeforeHistoryRow(prisma: any, targetRow: any): Promise<number | undefined> {
+    const priorRows = await prisma.ratingHistory.findMany({
+      where: {
+        memberId: targetRow.memberId,
+        OR: [
+          { timestamp: { lt: targetRow.timestamp } },
+          { timestamp: targetRow.timestamp, id: { lt: targetRow.id } },
+        ],
+      },
+      orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
+    });
+
+    let rating: number | undefined;
+
+    for (const row of priorRows) {
+      if (row.matchId === targetRow.matchId) continue;
+      if (row.ratingChange != null && rating !== undefined) {
+        rating = Math.max(0, Math.round(rating + row.ratingChange));
+      } else if (row.ratingChange != null && row.rating != null) {
+        rating = row.rating - row.ratingChange;
+        rating = Math.max(0, Math.round(rating + row.ratingChange));
+      } else if (row.rating != null) {
+        rating = row.rating;
+      }
+    }
+
+    if (rating !== undefined) {
+      return rating;
+    }
+
+    if (targetRow.rating != null && targetRow.ratingChange != null) {
+      return targetRow.rating - targetRow.ratingChange;
+    }
+
+    const member = await prisma.member.findUnique({
+      where: { id: targetRow.memberId },
+      select: { rating: true },
+    });
+    return member?.rating ?? undefined;
+  }
+
+  private async replayLaterRatingRows(
+    prisma: any,
+    plan: {
+      affectedMemberIds: number[];
+      beforeRatings: Map<number, number>;
+      laterRows: any[];
+    },
+    replacementRows: any[],
+  ): Promise<void> {
+    const runningRatings = new Map<number, number>();
+
+    for (const memberId of plan.affectedMemberIds) {
+      const before = plan.beforeRatings.get(memberId);
+      if (before !== undefined) {
+        runningRatings.set(memberId, before);
+      }
+    }
+
+    for (const row of replacementRows) {
+      if (row.rating != null) {
+        runningRatings.set(row.memberId, row.rating);
+      }
+    }
+
+    for (const row of plan.laterRows) {
+      const current = runningRatings.get(row.memberId);
+      if (current === undefined) continue;
+
+      if (row.ratingChange == null) {
+        if (row.rating != null) {
+          runningRatings.set(row.memberId, row.rating);
+        }
+        continue;
+      }
+
+      const nextRating = Math.max(0, Math.round(current + row.ratingChange));
+      await prisma.ratingHistory.update({
+        where: { id: row.id },
+        data: { rating: nextRating },
+      });
+      runningRatings.set(row.memberId, nextRating);
+    }
+
+    for (const [memberId, rating] of runningRatings.entries()) {
+      await prisma.member.update({
+        where: { id: memberId },
+        data: { rating },
+      });
+    }
   }
 
   async resolveMatchId?(context: {
