@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
 import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
+import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { saveScrollPosition, withWindowScrollPreserved } from '../../../utils/scrollPosition';
 import './SwissActivePanel.css';
 
@@ -16,6 +18,8 @@ interface EditingMatch {
   player1Forfeit: boolean;
   player2Forfeit: boolean;
   opponentPassword?: string;
+  expectedHadResult?: boolean;
+  expectedMatchUpdatedAt?: string;
 }
 
 interface RoundResult {
@@ -65,6 +69,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
   onMatchUpdate,
   onError,
   onSuccess,
+  suppressScoreEntry,
 }) => {
   const navigate = useNavigate();
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
@@ -279,9 +284,18 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
     return participant.playerRatingAtTime ?? participant.member.rating ?? '—';
   };
 
+  const handleError = (message: string) => {
+    if (isDuplicateScoreMessage(message)) {
+      flushSync(() => {
+        setEditingMatch(null);
+      });
+    }
+    onError?.(message);
+  };
+
   const handleMatchClick = (member1Id: number, member2Id: number, matchId: number) => {
     if (!canOpenTournamentMatchEditor(member1Id, member2Id)) {
-      onError?.('You can only enter scores for your own matches, or you must be an organizer.');
+      handleError('You can only enter scores for your own matches, or you must be an organizer.');
       return;
     }
     const match = tournament.matches.find(m => m.id === matchId);
@@ -295,6 +309,8 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
         opponentPassword: '',
+        expectedHadResult: (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0 || !!match.player1Forfeit || !!match.player2Forfeit,
+        expectedMatchUpdatedAt: match.updatedAt,
       });
     }
   };
@@ -309,6 +325,8 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: parseInt(editingMatch.player2Sets) || 0,
         player1Forfeit: editingMatch.player1Forfeit,
         player2Forfeit: editingMatch.player2Forfeit,
+        expectedHadResult: editingMatch.expectedHadResult,
+        expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
       };
       attachOpponentPasswordIfNeeded(payload, editingMatch.opponentPassword);
       await withWindowScrollPreserved(async () => {
@@ -317,8 +335,9 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         setEditingMatch(null);
         onSuccess?.('Match updated successfully');
       });
-    } catch (error) {
-      onError?.('Failed to update match');
+    } catch (error: any) {
+      const message = error?.response?.data?.error || error?.message || 'Failed to update match';
+      handleError(message);
     }
   };
 
@@ -676,7 +695,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
       </div>
 
       {/* Match Entry Popup */}
-      {editingMatch && (
+      {!suppressScoreEntry && editingMatch && (
         <MatchEntryPopup
           editingMatch={editingMatch}
           player1={getPlayer(editingMatch.member1Id)!}

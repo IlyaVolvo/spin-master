@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup } from '../../MatchEntryPopup';
 import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
 import { canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
+import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { sortParticipantsByRating } from '../utils/participantSort';
 import './RoundRobinActivePanel.css';
 
@@ -25,6 +27,8 @@ interface EditingMatch {
   player1Forfeit: boolean;
   player2Forfeit: boolean;
   opponentPassword?: string;
+  expectedHadResult?: boolean;
+  expectedMatchUpdatedAt?: string;
 }
 
 export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
@@ -33,6 +37,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   onMatchUpdate,
   onError,
   onSuccess,
+  suppressScoreEntry,
 }) => {
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,6 +55,15 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
       longPressTimerRef.current = null;
       open();
     }, 550);
+  };
+
+  const handleError = (message: string) => {
+    if (isDuplicateScoreMessage(message)) {
+      flushSync(() => {
+        setEditingMatch(null);
+      });
+    }
+    onError(message);
   };
 
   // Build results matrix for display and editing
@@ -145,6 +159,8 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
         opponentPassword: '',
+        expectedHadResult: (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0 || !!match.player1Forfeit || !!match.player2Forfeit,
+        expectedMatchUpdatedAt: match.updatedAt,
       });
     } else {
       // Add new match
@@ -157,6 +173,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player1Forfeit: false,
         player2Forfeit: false,
         opponentPassword: '',
+        expectedHadResult: false,
       });
     }
   };
@@ -175,6 +192,8 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: parseInt(editingMatch.player2Sets) || 0,
         player1Forfeit: editingMatch.player1Forfeit,
         player2Forfeit: editingMatch.player2Forfeit,
+        expectedHadResult: editingMatch.expectedHadResult,
+        expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
       };
 
       if (editingMatch.matchId === 0) {
@@ -183,7 +202,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
           matchData,
           {
             onSuccess,
-            onError,
+            onError: handleError,
             onTournamentUpdate,
             onMatchUpdate,
             onTournamentComplete: () => {
@@ -199,7 +218,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
           matchData,
           {
             onSuccess,
-            onError,
+            onError: handleError,
             onTournamentUpdate,
             onMatchUpdate,
             onTournamentComplete: () => {
@@ -462,7 +481,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
       </div>
 
       {/* Match Entry Popup - using the proper component */}
-      {editingMatch && (
+      {!suppressScoreEntry && editingMatch && (
         <MatchEntryPopup
           editingMatch={editingMatch}
           player1={getPlayer(editingMatch.member1Id)!}

@@ -8,6 +8,8 @@ export interface MatchData {
   player2Sets?: number;
   player1Forfeit?: boolean;
   player2Forfeit?: boolean;
+  expectedHadResult?: boolean;
+  expectedMatchUpdatedAt?: string;
 }
 
 export interface MatchUpdateCallbacks {
@@ -15,6 +17,33 @@ export interface MatchUpdateCallbacks {
   onError?: (error: string) => void;
   onTournamentUpdate?: (tournament: any) => void;
   onMatchUpdate?: (match: any) => void;
+}
+
+export function buildMatchApiData(matchData: MatchData, opponentPassword?: string): Record<string, unknown> {
+  const apiData: Record<string, unknown> = {
+    member1Id: matchData.member1Id,
+    member2Id: matchData.member2Id,
+  };
+
+  if (matchData.player1Forfeit || matchData.player2Forfeit) {
+    apiData.player1Forfeit = matchData.player1Forfeit || false;
+    apiData.player2Forfeit = matchData.player2Forfeit || false;
+  } else {
+    apiData.player1Sets = matchData.player1Sets || 0;
+    apiData.player2Sets = matchData.player2Sets || 0;
+    apiData.player1Forfeit = false;
+    apiData.player2Forfeit = false;
+  }
+
+  if (matchData.expectedHadResult !== undefined) {
+    apiData.expectedHadResult = matchData.expectedHadResult;
+  }
+  if (matchData.expectedMatchUpdatedAt) {
+    apiData.expectedMatchUpdatedAt = matchData.expectedMatchUpdatedAt;
+  }
+
+  attachOpponentPasswordIfNeeded(apiData, opponentPassword);
+  return apiData;
 }
 
 /**
@@ -60,24 +89,7 @@ export class MatchUpdater {
     }
 
     try {
-      const apiData: any = {
-        member1Id: matchData.member1Id,
-        member2Id: matchData.member2Id,
-      };
-
-      // If forfeit, send forfeit flags; otherwise send sets
-      if (matchData.player1Forfeit || matchData.player2Forfeit) {
-        apiData.player1Forfeit = matchData.player1Forfeit || false;
-        apiData.player2Forfeit = matchData.player2Forfeit || false;
-      } else {
-        apiData.player1Sets = matchData.player1Sets || 0;
-        apiData.player2Sets = matchData.player2Sets || 0;
-        apiData.player1Forfeit = false;
-        apiData.player2Forfeit = false;
-      }
-
-      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
-
+      const apiData = buildMatchApiData(matchData, opponentPassword);
       const response = await api.post(`/tournaments/${this.tournamentId}/matches`, apiData);
       const savedMatch = response.data;
       
@@ -112,24 +124,7 @@ export class MatchUpdater {
     }
 
     try {
-      const apiData: any = {
-        member1Id: matchData.member1Id,
-        member2Id: matchData.member2Id,
-      };
-
-      // If forfeit, send forfeit flags; otherwise send sets
-      if (matchData.player1Forfeit || matchData.player2Forfeit) {
-        apiData.player1Forfeit = matchData.player1Forfeit || false;
-        apiData.player2Forfeit = matchData.player2Forfeit || false;
-      } else {
-        apiData.player1Sets = matchData.player1Sets || 0;
-        apiData.player2Sets = matchData.player2Sets || 0;
-        apiData.player1Forfeit = false;
-        apiData.player2Forfeit = false;
-      }
-
-      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
-
+      const apiData = buildMatchApiData(matchData, opponentPassword);
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;
       

@@ -1,6 +1,5 @@
-import { MatchData, MatchUpdateCallbacks } from './matchUpdater';
+import { buildMatchApiData, MatchData, MatchUpdateCallbacks } from './matchUpdater';
 import api from '../../../utils/api';
-import { attachOpponentPasswordIfNeeded } from '../../../utils/matchScorePayload';
 
 export interface RoundRobinMatchUpdateCallbacks extends MatchUpdateCallbacks {
   onTournamentComplete?: () => void;
@@ -50,24 +49,7 @@ export class RoundRobinMatchUpdater {
     }
 
     try {
-      const apiData: any = {
-        member1Id: matchData.member1Id,
-        member2Id: matchData.member2Id,
-      };
-
-      // If forfeit, send forfeit flags; otherwise send sets
-      if (matchData.player1Forfeit || matchData.player2Forfeit) {
-        apiData.player1Forfeit = matchData.player1Forfeit || false;
-        apiData.player2Forfeit = matchData.player2Forfeit || false;
-      } else {
-        apiData.player1Sets = matchData.player1Sets || 0;
-        apiData.player2Sets = matchData.player2Sets || 0;
-        apiData.player1Forfeit = false;
-        apiData.player2Forfeit = false;
-      }
-
-      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
-
+      const apiData = buildMatchApiData(matchData, opponentPassword);
       // Use the generic match update endpoint with matchId=0 for new match creation
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/0`, apiData);
       const savedMatch = response.data;
@@ -108,24 +90,7 @@ export class RoundRobinMatchUpdater {
     }
 
     try {
-      const apiData: any = {
-        member1Id: matchData.member1Id,
-        member2Id: matchData.member2Id,
-      };
-
-      // If forfeit, send forfeit flags; otherwise send sets
-      if (matchData.player1Forfeit || matchData.player2Forfeit) {
-        apiData.player1Forfeit = matchData.player1Forfeit || false;
-        apiData.player2Forfeit = matchData.player2Forfeit || false;
-      } else {
-        apiData.player1Sets = matchData.player1Sets || 0;
-        apiData.player2Sets = matchData.player2Sets || 0;
-        apiData.player1Forfeit = false;
-        apiData.player2Forfeit = false;
-      }
-
-      attachOpponentPasswordIfNeeded(apiData, opponentPassword);
-
+      const apiData = buildMatchApiData(matchData, opponentPassword);
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;
       

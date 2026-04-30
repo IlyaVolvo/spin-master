@@ -258,6 +258,7 @@ export interface PanelProps {
   onTournamentUpdate: (tournament: Tournament) => void;
   onError: (error: string) => void;
   onSuccess: (message: string) => void;
+  suppressScoreEntry?: boolean;
 }
 
 export interface TournamentSetupProps extends PanelProps {

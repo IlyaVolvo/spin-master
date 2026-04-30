@@ -58,6 +58,33 @@ export function duplicateTournamentMatchError(): ClientHttpError {
   return new ClientHttpError(MATCH_RESULT_ALREADY_ENTERED_MESSAGE, 409);
 }
 
+export async function duplicateTournamentMatchErrorForMatch(prisma: any, match: {
+  member1Id: number;
+  member2Id: number | null;
+  player1Sets: number;
+  player2Sets: number;
+  player1Forfeit?: boolean | null;
+  player2Forfeit?: boolean | null;
+}): Promise<ClientHttpError> {
+  if (!match.member2Id) {
+    return duplicateTournamentMatchError();
+  }
+
+  const members = await prisma.member.findMany({
+    where: { id: { in: [match.member1Id, match.member2Id].filter(Boolean) } },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  const membersById = new Map<number, MatchResultMember>(
+    members.map((member: MatchResultMember) => [member.id, member])
+  );
+  const recordedResult = formatRecordedResult(match, membersById);
+
+  return new ClientHttpError(
+    `A result for this match has already been entered: ${recordedResult}. Refresh the tournament to see the recorded score.`,
+    409
+  );
+}
+
 export async function duplicateTournamentMatchErrorWithRecordedResult(
   prisma: any,
   tournamentId: number,
@@ -83,17 +110,5 @@ export async function duplicateTournamentMatchErrorWithRecordedResult(
     return duplicateTournamentMatchError();
   }
 
-  const members = await prisma.member.findMany({
-    where: { id: { in: [existingMatch.member1Id, existingMatch.member2Id].filter(Boolean) } },
-    select: { id: true, firstName: true, lastName: true },
-  });
-  const membersById = new Map<number, MatchResultMember>(
-    members.map((member: MatchResultMember) => [member.id, member])
-  );
-  const recordedResult = formatRecordedResult(existingMatch, membersById);
-
-  return new ClientHttpError(
-    `A result for this match has already been entered: ${recordedResult}. Refresh the tournament to see the recorded score.`,
-    409
-  );
+  return duplicateTournamentMatchErrorForMatch(prisma, existingMatch);
 }

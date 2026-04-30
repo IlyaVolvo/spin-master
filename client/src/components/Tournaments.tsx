@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../utils/api';
 import {
@@ -24,6 +25,11 @@ import { getMember, setMember } from '../utils/auth';
 import { updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
 import { isOrganizer } from '../utils/auth';
 import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
+import {
+  MATCH_RESULT_ALREADY_ENTERED_MESSAGE,
+  isDuplicateScoreMessage,
+  normalizeDuplicateScoreMessage,
+} from '../utils/duplicateScoreError';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import { Tournament, TournamentType } from '../types/tournament';
 import './tournaments/plugins'; // This will auto-register all plugins
@@ -109,9 +115,6 @@ interface TournamentParticipant {
   playerRatingAtTime: number | null;
 }
 
-const MATCH_RESULT_ALREADY_ENTERED_MESSAGE =
-  'A result for this match has already been entered. You may need to refresh the tournament to see the recorded score.';
-
 const Tournaments: React.FC = () => {
   // ALL HOOKS MUST BE CALLED AT THE TOP LEVEL, BEFORE ANY CONDITIONAL RETURNS
   // This ensures React can track hooks consistently across renders
@@ -143,6 +146,8 @@ const Tournaments: React.FC = () => {
     player1Forfeit: boolean;
     player2Forfeit: boolean;
     opponentPassword?: string;
+    expectedHadResult?: boolean;
+    expectedMatchUpdatedAt?: string;
   } | null>(null);
   // Load sticky filters from localStorage on mount
   const [dateFilterType, setDateFilterType] = useState<string>(() => {
@@ -911,6 +916,8 @@ const Tournaments: React.FC = () => {
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
         opponentPassword: '',
+        expectedHadResult: (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0 || !!match.player1Forfeit || !!match.player2Forfeit,
+        expectedMatchUpdatedAt: match.updatedAt,
       });
     } else {
       // Add new match - use the order from the cell (row player vs column player)
@@ -923,6 +930,7 @@ const Tournaments: React.FC = () => {
         player1Forfeit: false,
         player2Forfeit: false,
         opponentPassword: '',
+        expectedHadResult: false,
       });
     }
   };
@@ -955,6 +963,8 @@ const Tournaments: React.FC = () => {
       const matchData: any = {
         member1Id: editingMatch.member1Id,
         member2Id: editingMatch.member2Id,
+        expectedHadResult: editingMatch.expectedHadResult,
+        expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
       };
 
       // If forfeit, send forfeit flags; otherwise send sets
@@ -1175,14 +1185,12 @@ const Tournaments: React.FC = () => {
   };
 
   const handleTournamentError = (message: string) => {
-    if (message === MATCH_RESULT_ALREADY_ENTERED_MESSAGE || message.toLowerCase().includes('already been entered')) {
-      setEditingMatch(null);
-      setMatchResultAlreadyEnteredModal(null);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setMatchResultAlreadyEnteredModal(message);
-        });
+    if (message === MATCH_RESULT_ALREADY_ENTERED_MESSAGE || isDuplicateScoreMessage(message)) {
+      flushSync(() => {
+        setEditingMatch(null);
+        setMatchResultAlreadyEnteredModal(null);
       });
+      setMatchResultAlreadyEnteredModal(normalizeDuplicateScoreMessage(message));
       void withWindowScrollPreserved(async () => {
         await fetchData({ silent: true });
         if (selectedTournament) {
@@ -1197,6 +1205,11 @@ const Tournaments: React.FC = () => {
       return;
     }
     setError(message);
+  };
+
+  const closeMatchResultAlreadyEnteredModal = () => {
+    setEditingMatch(null);
+    setMatchResultAlreadyEnteredModal(null);
   };
 
   // Generate schedule for Round Robin tournament
@@ -2462,6 +2475,7 @@ const Tournaments: React.FC = () => {
                                             },
                                             onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
+                                            suppressScoreEntry: !!matchResultAlreadyEnteredModal,
                                           })
                                       }
                                     </div>
@@ -2482,7 +2496,7 @@ const Tournaments: React.FC = () => {
                                   )}
 
                                   {/* Match Entry Popup for child */}
-                                  {editingMatch && selectedTournament?.id === child.id && (() => {
+                                  {!matchResultAlreadyEnteredModal && editingMatch && selectedTournament?.id === child.id && (() => {
                                     const player1 = selectedTournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member;
                                     const player2 = selectedTournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member;
                                     if (!player1 || !player2 || !editingMatch.member2Id) return null;
@@ -2803,7 +2817,8 @@ const Tournaments: React.FC = () => {
                                 score: `${match.player1Sets} - ${match.player2Sets}`
                               });
                               void fetchDataPreservingScroll();
-                            }
+                            },
+                            suppressScoreEntry: !!matchResultAlreadyEnteredModal,
                           });
                           
                           console.groupEnd();
@@ -2933,7 +2948,7 @@ const Tournaments: React.FC = () => {
                     );
                   })()}
                   {/* Unified Match Entry Popup */}
-                  {editingMatch && selectedTournament && (() => {
+                  {!matchResultAlreadyEnteredModal && editingMatch && selectedTournament && (() => {
                     const player1 = selectedTournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member;
                     const player2 = selectedTournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member;
                     if (!player1 || !player2 || !editingMatch.member2Id) return null;
@@ -4010,7 +4025,7 @@ const Tournaments: React.FC = () => {
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setMatchResultAlreadyEnteredModal(null)}
+                onClick={closeMatchResultAlreadyEnteredModal}
                 style={{
                   padding: '10px 18px',
                   border: 'none',

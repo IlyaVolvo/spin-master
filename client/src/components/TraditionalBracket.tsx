@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
 import { getMember, isOrganizer } from '../utils/auth';
 import { attachOpponentPasswordIfNeeded, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
+import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../utils/duplicateScoreError';
 import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
 
 interface Member {
@@ -48,6 +50,8 @@ interface EditingMatch {
   player1Forfeit: boolean;
   player2Forfeit: boolean;
   opponentPassword?: string;
+  expectedHadResult?: boolean;
+  expectedMatchUpdatedAt?: string;
 }
 
 interface TournamentParticipant {
@@ -65,6 +69,7 @@ interface TraditionalBracketProps {
   showOnlyRound1?: boolean; // When true, only show round 1 matches (for preview/confirmation)
   onHistoryClick?: (playerId: number) => void; // Callback for history button clicks
   onError?: (message: string) => void;
+  suppressScoreEntry?: boolean;
   tournamentStatus?: 'ACTIVE' | 'COMPLETED'; // Tournament status to determine rating format
 }
 
@@ -104,6 +109,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
   showOnlyRound1 = false,
   onHistoryClick,
   onError,
+  suppressScoreEntry,
   tournamentStatus = 'ACTIVE',
 }) => {
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
@@ -123,6 +129,22 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       longPressTimerRef.current = null;
       open();
     }, 550);
+  };
+
+  const matchNodeHasResult = (node: {
+    player1Sets?: number;
+    player2Sets?: number;
+    player1Forfeit?: boolean;
+    player2Forfeit?: boolean;
+    linkedMatch?: unknown | null;
+  }) => {
+    return (
+      (node.player1Sets ?? 0) > 0 ||
+      (node.player2Sets ?? 0) > 0 ||
+      !!node.player1Forfeit ||
+      !!node.player2Forfeit ||
+      node.linkedMatch != null
+    );
   };
   
   // Calculate current rating for each player per round (incremental changes)
@@ -708,6 +730,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player1Forfeit: prevMatch.player1Forfeit || false,
               player2Forfeit: prevMatch.player2Forfeit || false,
               opponentPassword: '',
+              expectedHadResult: matchNodeHasResult(prevMatch),
             });
             
           }}
@@ -921,6 +944,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player1Forfeit: prevMatch.player1Forfeit || false,
               player2Forfeit: prevMatch.player2Forfeit || false,
               opponentPassword: '',
+              expectedHadResult: matchNodeHasResult(prevMatch),
             });
           }
         }}
@@ -1265,6 +1289,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player1Forfeit: prevMatch.player1Forfeit || false,
                   player2Forfeit: prevMatch.player2Forfeit || false,
                   opponentPassword: '',
+                  expectedHadResult: matchNodeHasResult(prevMatch),
                 });
               }
             }}
@@ -1386,6 +1411,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player1Forfeit: match.player1Forfeit || false,
               player2Forfeit: match.player2Forfeit || false,
               opponentPassword: '',
+              expectedHadResult: matchNodeHasResult(match),
             });
           }
         }}
@@ -1489,6 +1515,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player1Forfeit: false,
                   player2Forfeit: false,
                   opponentPassword: '',
+                  expectedHadResult: false,
                 });
               }}
               title="Enter score"
@@ -1536,6 +1563,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player1Forfeit: match.player1Forfeit || false,
                   player2Forfeit: match.player2Forfeit || false,
                   opponentPassword: '',
+                  expectedHadResult: matchNodeHasResult(match),
                 });
               }
             }}
@@ -1550,6 +1578,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player1Forfeit: match.player1Forfeit || false,
                   player2Forfeit: match.player2Forfeit || false,
                   opponentPassword: '',
+                  expectedHadResult: matchNodeHasResult(match),
                 }));
               }
             }}
@@ -1713,6 +1742,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     const matchData: any = {
       member1Id: editingMatch.member1Id,
       member2Id: editingMatch.member2Id,
+      expectedHadResult: editingMatch.expectedHadResult,
+      expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
     };
 
     // If forfeit, send forfeit flags; otherwise send sets
@@ -1785,7 +1816,18 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           member2Id: matchBeingSaved.bracketMember2Id ?? null,
           linkedMatch: matchBeingSaved.linkedMatch ?? null,
         });
-        if (block) return;
+        if (block) {
+          flushSync(() => {
+            setEditingMatch(null);
+          });
+          const duplicateMessage = normalizeDuplicateScoreMessage(block);
+          if (onError) {
+            onError(duplicateMessage);
+          } else {
+            alert(duplicateMessage);
+          }
+          return;
+        }
       }
 
       if (matchBeingSaved && getPlayoffResultChangeBlockedReason(matchBeingSaved)) {
@@ -1812,9 +1854,32 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       }
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || error.message || 'Failed to update match';
-      if (errorMessage.toLowerCase().includes('already been entered')) {
-        setEditingMatch(null);
+      if (isDuplicateScoreMessage(errorMessage)) {
+        flushSync(() => {
+          setEditingMatch(null);
+        });
       }
+      if (onError) {
+        onError(normalizeDuplicateScoreMessage(errorMessage));
+      } else {
+        alert(normalizeDuplicateScoreMessage(errorMessage));
+      }
+    }
+  };
+
+  const handleClearMatch = async () => {
+    if (!editingMatch || !tournamentId || editingMatch.matchId === 0) {
+      return;
+    }
+
+    try {
+      await api.delete(`/tournaments/${tournamentId}/matches/${editingMatch.matchId}`);
+      setEditingMatch(null);
+      if (onMatchUpdate) {
+        onMatchUpdate();
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to delete match result';
       if (onError) {
         onError(errorMessage);
       } else {
@@ -2163,7 +2228,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       </div>
 
       {/* Match Edit Dialog */}
-      {editingMatch && tournamentId && (() => {
+      {!suppressScoreEntry && editingMatch && tournamentId && (() => {
         const player1 = participants.find(p => p.member.id === editingMatch.member1Id);
         const player2 = participants.find(p => p.member.id === editingMatch.member2Id);
         if (!player1 || !player2) return null;
@@ -2178,6 +2243,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}
+            onClear={handleClearMatch}
+            showClearButton={editingMatch.matchId > 0}
             modifyConfirmationMessage={RATING_IMPACT_MODIFY_MESSAGE}
           />
         );

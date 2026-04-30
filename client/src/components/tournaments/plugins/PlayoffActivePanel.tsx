@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { TraditionalBracket } from '../../TraditionalBracket';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
 import { createPlayoffMatchUpdater } from '../utils/playoffMatchUpdater';
 import { shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
+import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import './PlayoffActivePanel.css';
 
 export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
@@ -12,6 +14,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
   onMatchUpdate,
   onError,
   onSuccess,
+  suppressScoreEntry,
 }) => {
   const [editingMatch, setEditingMatch] = useState<any>(null);
   const [editingBracketMatchId, setEditingBracketMatchId] = useState<number | null>(null);
@@ -19,11 +22,13 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
   const playoffUpdater = createPlayoffMatchUpdater(tournament.id);
 
   const handleError = (message: string) => {
-    if (message.toLowerCase().includes('already been entered')) {
-      setEditingMatch(null);
-      setEditingBracketMatchId(null);
+    if (isDuplicateScoreMessage(message)) {
+      flushSync(() => {
+        setEditingMatch(null);
+        setEditingBracketMatchId(null);
+      });
     }
-    onError(message);
+    onError(normalizeDuplicateScoreMessage(message));
   };
 
   // Helper function to find bracket match ID for a given match
@@ -51,6 +56,8 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: parseInt(editingMatch.player2Sets) || 0,
         player1Forfeit: editingMatch.player1Forfeit,
         player2Forfeit: editingMatch.player2Forfeit,
+        expectedHadResult: editingMatch.expectedHadResult,
+        expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
       };
 
       if (editingMatch.matchId === 0) {
@@ -68,6 +75,8 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           player2Sets: parseInt(editingMatch.player2Sets) || 0,
           player1Forfeit: editingMatch.player1Forfeit,
           player2Forfeit: editingMatch.player2Forfeit,
+          expectedHadResult: editingMatch.expectedHadResult,
+          expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
         };
 
         const bm = tournament.bracketMatches?.find(b => b.id === editingBracketMatchId);
@@ -197,11 +206,12 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
         }))}
         onMatchUpdate={() => onMatchUpdate && onMatchUpdate({} as any)}
         onError={handleError}
+        suppressScoreEntry={suppressScoreEntry}
         isReadOnly={tournament.status === 'COMPLETED'}
         tournamentStatus={tournament.status as 'ACTIVE' | 'COMPLETED'}
       />
       
-      {editingMatch && (
+      {!suppressScoreEntry && editingMatch && (
         <MatchEntryPopup
           editingMatch={editingMatch}
           player1={tournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member!}

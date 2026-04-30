@@ -12,7 +12,11 @@ import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 import { isClientHttpError } from '../http/clientHttpError';
 import { isOrganizer } from '../utils/organizerAccess';
 import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
-import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
+import {
+  duplicateTournamentMatchErrorForMatch,
+  duplicateTournamentMatchErrorWithRecordedResult,
+  isDuplicateTournamentMatchError,
+} from '../utils/matchConcurrency';
 
 const router = express.Router();
 
@@ -750,6 +754,8 @@ router.post('/:id/matches', [
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
   body('opponentPassword').optional().trim(),
+  body('expectedHadResult').optional().isBoolean(),
+  body('expectedMatchUpdatedAt').optional().isISO8601(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -757,7 +763,17 @@ router.post('/:id/matches', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit, opponentPassword } =
+    const {
+      member1Id,
+      member2Id,
+      player1Sets,
+      player2Sets,
+      player1Forfeit,
+      player2Forfeit,
+      opponentPassword,
+      expectedHadResult,
+      expectedMatchUpdatedAt,
+    } =
       req.body;
     const tournamentId = parseInt(req.params.id);
     if (isNaN(tournamentId)) {
@@ -899,6 +915,8 @@ router.patch('/:tournamentId/matches/:matchId', [
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
   body('opponentPassword').optional().trim(),
+  body('expectedHadResult').optional().isBoolean(),
+  body('expectedMatchUpdatedAt').optional().isISO8601(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -906,8 +924,17 @@ router.patch('/:tournamentId/matches/:matchId', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit, opponentPassword } =
-      req.body;
+    const {
+      member1Id,
+      member2Id,
+      player1Sets,
+      player2Sets,
+      player1Forfeit,
+      player2Forfeit,
+      opponentPassword,
+      expectedHadResult,
+      expectedMatchUpdatedAt,
+    } = req.body;
     const tournamentId = parseInt(req.params.tournamentId);
     const matchId = parseInt(req.params.matchId);
     
@@ -955,6 +982,66 @@ router.patch('/:tournamentId/matches/:matchId', [
     }
 
     const plugin = tournamentPluginRegistry.get(tournament.type);
+
+    const resultAlreadyRecorded = (match: any) => {
+      const hasScore = (match.player1Sets ?? 0) > 0 || (match.player2Sets ?? 0) > 0;
+      const hasForfeit = !!match.player1Forfeit || !!match.player2Forfeit;
+      return hasScore || hasForfeit;
+    };
+
+    const resolveCurrentMatchForDuplicateCheck = async (): Promise<any | null> => {
+      if (matchId > 0) {
+        const directMatch = await prisma.match.findFirst({
+          where: { id: matchId, tournamentId },
+        });
+        if (directMatch) return directMatch;
+
+        const resolved = plugin.resolveMatchId
+          ? await plugin.resolveMatchId({ matchId, tournamentId, prisma })
+          : null;
+        if (resolved?.match && resultAlreadyRecorded(resolved.match)) {
+          return resolved.match;
+        }
+      }
+
+      if (member1Id && member2Id) {
+        return prisma.match.findFirst({
+          where: {
+            tournamentId,
+            OR: [
+              { member1Id, member2Id },
+              { member1Id: member2Id, member2Id: member1Id },
+            ],
+          },
+          orderBy: { updatedAt: 'desc' },
+        });
+      }
+
+      return null;
+    };
+
+    const currentMatchForDuplicateCheck = await resolveCurrentMatchForDuplicateCheck();
+    if (
+      currentMatchForDuplicateCheck &&
+      expectedHadResult === false &&
+      resultAlreadyRecorded(currentMatchForDuplicateCheck)
+    ) {
+      const duplicateError = await duplicateTournamentMatchErrorForMatch(prisma, currentMatchForDuplicateCheck);
+      return res.status(duplicateError.statusCode).json({ error: duplicateError.message });
+    }
+
+    if (
+      currentMatchForDuplicateCheck &&
+      expectedHadResult === false &&
+      expectedMatchUpdatedAt &&
+      new Date(currentMatchForDuplicateCheck.updatedAt).getTime() !== new Date(expectedMatchUpdatedAt).getTime()
+    ) {
+      const reloadedMatch = await prisma.match.findUnique({ where: { id: currentMatchForDuplicateCheck.id } });
+      if (reloadedMatch && resultAlreadyRecorded(reloadedMatch)) {
+        const duplicateError = await duplicateTournamentMatchErrorForMatch(prisma, reloadedMatch);
+        return res.status(duplicateError.statusCode).json({ error: duplicateError.message });
+      }
+    }
 
     // Process forfeit scores
     let finalPlayer1Sets = player1Sets ?? 0;
