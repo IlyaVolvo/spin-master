@@ -58,10 +58,48 @@ export function emitCacheInvalidation(tournamentId?: number) {
  */
 export function emitTournamentUpdate(tournament: any) {
   emitToAll('tournament:updated', {
+    id: typeof tournament === 'number' ? tournament : tournament.id,
+    name: typeof tournament === 'number' ? undefined : tournament.name,
+    status: typeof tournament === 'number' ? undefined : tournament.status,
+    type: typeof tournament === 'number' ? undefined : tournament.type,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Emit tournament creation event
+ */
+export function emitTournamentCreated(tournament: any) {
+  emitToAll('tournament:created', {
     id: tournament.id,
     name: tournament.name,
     status: tournament.status,
     type: tournament.type,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Emit tournament deletion event
+ */
+export function emitTournamentDeleted(tournamentId: number) {
+  emitToAll('tournament:deleted', {
+    id: tournamentId,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Emit tournament state change event
+ */
+export function emitTournamentStateChanged(tournament: any, previousStatus?: string | null) {
+  emitToAll('tournament:stateChanged', {
+    id: tournament.id,
+    name: tournament.name,
+    type: tournament.type,
+    previousStatus,
+    status: tournament.status,
+    cancelled: tournament.cancelled,
     timestamp: Date.now(),
   });
 }

@@ -612,6 +612,21 @@ const Tournaments: React.FC = () => {
       refreshSilentlyPreservingScroll('tournament update');
     });
 
+    socket?.on('tournament:created', (data: { id: number; name: string; status: string; type: string; timestamp: number }) => {
+      console.log('Tournament created', data);
+      refreshSilentlyPreservingScroll('tournament creation');
+    });
+
+    socket?.on('tournament:deleted', (data: { id: number; timestamp: number }) => {
+      console.log('Tournament deleted', data);
+      refreshSilentlyPreservingScroll('tournament deletion');
+    });
+
+    socket?.on('tournament:stateChanged', (data: { id: number; previousStatus?: string | null; status: string; timestamp: number }) => {
+      console.log('Tournament state changed', data);
+      refreshSilentlyPreservingScroll('tournament state change');
+    });
+
     socket?.on('match:updated', (data: { id: number; tournamentId: number; member1Id: number; member2Id: number; timestamp: number }) => {
       console.log('Match updated', data);
       refreshSilentlyPreservingScroll('match update');
@@ -621,6 +636,9 @@ const Tournaments: React.FC = () => {
     return () => {
       socket?.off('cache:invalidate');
       socket?.off('tournament:updated');
+      socket?.off('tournament:created');
+      socket?.off('tournament:deleted');
+      socket?.off('tournament:stateChanged');
       socket?.off('match:updated');
       // Don't disconnect socket - it's shared across components
     };

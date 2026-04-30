@@ -6,7 +6,14 @@ import { TournamentType } from '@prisma/client';
 import { recalculateRankings } from '../services/rankingService';
 import { logger } from '../utils/logger';
 import { invalidateCacheAfterTournament, invalidateTournamentCache } from '../services/cacheService';
-import { emitCacheInvalidation, emitTournamentUpdate, emitMatchUpdate } from '../services/socketService';
+import {
+  emitCacheInvalidation,
+  emitTournamentCreated,
+  emitTournamentDeleted,
+  emitTournamentStateChanged,
+  emitTournamentUpdate,
+  emitMatchUpdate,
+} from '../services/socketService';
 import bcrypt from 'bcryptjs';
 import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 import { isClientHttpError } from '../http/clientHttpError';
@@ -426,6 +433,10 @@ router.post('/', [
       prisma,
     });
 
+    invalidateTournamentCache(createdTournament.id);
+    emitTournamentCreated(createdTournament);
+    emitCacheInvalidation(createdTournament.id);
+
     res.status(201).json(createdTournament);
   } catch (error) {
     logger.error('Error creating tournament', { error: error instanceof Error ? error.message : String(error) });
@@ -504,7 +515,8 @@ router.patch('/:id', [
 
     // Invalidate cache and emit update
     invalidateTournamentCache(tournamentId);
-    emitTournamentUpdate(tournamentId);
+    emitTournamentUpdate(modifiedTournament);
+    emitCacheInvalidation(tournamentId);
 
     res.json(modifiedTournament);
   } catch (error) {
@@ -596,6 +608,12 @@ router.post('/bulk', [
         });
       })
     );
+
+    createdTournaments.forEach((tournament) => {
+      invalidateTournamentCache(tournament.id);
+      emitTournamentCreated(tournament);
+      emitCacheInvalidation(tournament.id);
+    });
 
     res.status(201).json({ tournaments: createdTournaments });
   } catch (error) {
@@ -1097,6 +1115,8 @@ router.patch('/:tournamentId/matches/:matchId', [
     }
 
     // Handle tournament completion
+    let completedTournamentForNotification: any = null;
+    let completedParentTournamentForNotification: any = null;
     if (result.tournamentStateChange?.shouldMarkComplete) {
       await prisma.tournament.update({
         where: { id: tournamentId },
@@ -1114,6 +1134,7 @@ router.patch('/:tournamentId/matches/:matchId', [
       if (!completedTournament) {
         return res.status(404).json({ error: 'Tournament not found after completion update' });
       }
+      completedTournamentForNotification = completedTournament;
 
       // Calculate completion ratings if plugin supports it
       if (plugin.onTournamentCompletionRatingCalculation) {
@@ -1146,7 +1167,7 @@ router.patch('/:tournamentId/matches/:matchId', [
             });
             
             if (parentResult.shouldMarkComplete) {
-              await prisma.tournament.update({
+              completedParentTournamentForNotification = await prisma.tournament.update({
                 where: { id: parentTournament.id },
                 data: { status: 'COMPLETED', recordedAt: new Date() },
               });
@@ -1159,6 +1180,15 @@ router.patch('/:tournamentId/matches/:matchId', [
     // Invalidate cache and emit notifications
     await invalidateCacheAfterTournament(tournamentId);
     emitMatchUpdate(updatedMatch, tournamentId);
+    if (completedTournamentForNotification) {
+      emitTournamentStateChanged(completedTournamentForNotification, 'ACTIVE');
+      emitTournamentUpdate(completedTournamentForNotification);
+    }
+    if (completedParentTournamentForNotification) {
+      emitTournamentStateChanged(completedParentTournamentForNotification, 'ACTIVE');
+      emitTournamentUpdate(completedParentTournamentForNotification);
+      emitCacheInvalidation(completedParentTournamentForNotification.id);
+    }
     emitCacheInvalidation(tournamentId);
 
     res.json(updatedMatch);
@@ -1233,6 +1263,12 @@ router.patch('/:id/name', [
         matches: true,
       },
     });
+
+    if (updatedTournament) {
+      invalidateTournamentCache(tournamentId);
+      emitTournamentUpdate(updatedTournament);
+      emitCacheInvalidation(tournamentId);
+    }
 
     res.json(updatedTournament);
   } catch (error) {
@@ -1515,8 +1551,10 @@ router.patch('/:id/cancel', [
         where: { id: tournamentId },
       });
 
-      // Invalidate cache
+      // Invalidate cache and notify clients
       await invalidateCacheAfterTournament(tournamentId);
+      emitTournamentDeleted(tournamentId);
+      emitCacheInvalidation(tournamentId);
 
       return res.json({ message: 'Tournament deleted (no matches were played)', deleted: true });
     }
@@ -1568,7 +1606,9 @@ router.patch('/:id/cancel', [
 
     // Invalidate cache and emit notifications
     await invalidateCacheAfterTournament(tournamentId);
+    emitTournamentStateChanged(updatedTournament, 'ACTIVE');
     emitTournamentUpdate(updatedTournament);
+    emitCacheInvalidation(tournamentId);
 
     res.json(updatedTournament);
   } catch (error) {
