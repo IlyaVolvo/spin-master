@@ -110,6 +110,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         completed: (m.player1Sets > 0 || m.player2Sets > 0 || m.player1Forfeit || (m.player2Forfeit || false)),
       }));
   }, [tournament.matches, currentRound]);
+  const currentRoundComplete = currentRoundMatches.length > 0 && currentRoundMatches.every(match => match.completed);
 
   // Build standings with round-by-round results (only completed rounds)
   const standings: PlayerStandingRow[] = useMemo(() => {
@@ -300,6 +301,11 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
     }
     const match = tournament.matches.find(m => m.id === matchId);
     if (match) {
+      const hasResult = (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0 || !!match.player1Forfeit || !!match.player2Forfeit;
+      if (hasResult && currentRoundComplete) {
+        handleError('Swiss results can only be modified while the current round is still incomplete');
+        return;
+      }
       setEditingMatch({
         matchId: match.id,
         member1Id: match.member1Id,
@@ -309,7 +315,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
         opponentPassword: '',
-        expectedHadResult: (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0 || !!match.player1Forfeit || !!match.player2Forfeit,
+        expectedHadResult: hasResult,
         expectedMatchUpdatedAt: match.updatedAt,
       });
     }
@@ -343,6 +349,23 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 
   const handleMatchCancel = () => {
     setEditingMatch(null);
+  };
+
+  const handleMatchClear = async () => {
+    if (!editingMatch || !editingMatch.expectedHadResult) return;
+
+    try {
+      const api = (await import('../../../utils/api')).default;
+      await withWindowScrollPreserved(async () => {
+        await api.delete(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`);
+        setEditingMatch(null);
+        onMatchUpdate?.({ cleared: true, matchId: editingMatch.matchId } as any);
+        onSuccess?.('Match result cleared successfully');
+      });
+    } catch (error: any) {
+      const message = error?.response?.data?.error || error?.message || 'Failed to clear match result';
+      handleError(message);
+    }
   };
 
   const handleViewH2H = (member1Id: number, member2Id: number) => {
@@ -705,6 +728,8 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
           onSetEditingMatch={setEditingMatch}
           onSave={handleMatchSave}
           onCancel={handleMatchCancel}
+          onClear={handleMatchClear}
+          showClearButton={!!editingMatch.expectedHadResult}
           modifyConfirmationMessage={RATING_IMPACT_MODIFY_MESSAGE}
         />
       )}

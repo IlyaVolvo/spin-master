@@ -108,6 +108,27 @@ describe('MatchEntryPopup modification confirmations', () => {
     expect(props.onSave).toHaveBeenCalled();
   });
 
+  it('treats an unplayed generated match row as first result entry', () => {
+    const props = renderPopup({
+      editingMatch: {
+        matchId: 25,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '3',
+        player2Sets: '1',
+        player1Forfeit: false,
+        player2Forfeit: false,
+        expectedHadResult: false,
+      },
+      showClearButton: false,
+    });
+
+    fireEvent.click(screen.getByTitle('Enter Score & Complete Match'));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(props.onSave).toHaveBeenCalled();
+  });
+
   it('uses an in-app confirmation before clearing a result', () => {
     const props = renderPopup();
 

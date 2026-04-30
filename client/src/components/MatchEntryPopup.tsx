@@ -17,6 +17,9 @@ export interface MatchEntryEditingState {
   player2Forfeit: boolean;
   /** When required for non-organizer players, filled before save */
   opponentPassword?: string;
+  /** Existing generated match rows can still be first-time score entry (Swiss). */
+  expectedHadResult?: boolean;
+  expectedMatchUpdatedAt?: string;
 }
 
 interface MatchEntryPopupProps {
@@ -63,7 +66,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   const [confirmAction, setConfirmAction] = useState<'modify' | 'clear' | null>(null);
   const originalWinnerIdRef = useRef(getEditingWinnerId(editingMatch));
   const isForfeit = editingMatch.player1Forfeit || editingMatch.player2Forfeit;
-  const isModification = editingMatch.matchId > 0;
+  const isModification = editingMatch.matchId > 0 && editingMatch.expectedHadResult !== false;
   const winnerChanged = isModification && getEditingWinnerId(editingMatch) !== originalWinnerIdRef.current;
   
   const player1Sets = parseInt(editingMatch.player1Sets) || 0;
@@ -300,7 +303,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                 ? 'Enter opponent password'
                 : isDisabled
                   ? 'Scores cannot be equal'
-                  : editingMatch.matchId === 0
+                  : !isModification
                     ? 'Enter Score & Complete Match'
                     : 'Save Changes'
             }
