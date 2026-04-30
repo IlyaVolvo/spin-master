@@ -64,6 +64,7 @@ interface TraditionalBracketProps {
   isReadOnly?: boolean; // When true, disable all score entry and editing
   showOnlyRound1?: boolean; // When true, only show round 1 matches (for preview/confirmation)
   onHistoryClick?: (playerId: number) => void; // Callback for history button clicks
+  onError?: (message: string) => void;
   tournamentStatus?: 'ACTIVE' | 'COMPLETED'; // Tournament status to determine rating format
 }
 
@@ -102,6 +103,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
   isReadOnly = false,
   showOnlyRound1 = false,
   onHistoryClick,
+  onError,
   tournamentStatus = 'ACTIVE',
 }) => {
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
@@ -1810,7 +1812,14 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       }
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || error.message || 'Failed to update match';
-      alert(errorMessage);
+      if (errorMessage.toLowerCase().includes('already been entered')) {
+        setEditingMatch(null);
+      }
+      if (onError) {
+        onError(errorMessage);
+      } else {
+        alert(errorMessage);
+      }
     }
   };
   

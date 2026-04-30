@@ -11,6 +11,7 @@ import { invalidateCacheAfterTournament } from '../services/cacheService';
 import { emitCacheInvalidation, emitMatchUpdate } from '../services/socketService';
 import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 import { recalculateRankings } from '../services/rankingService';
+import { isClientHttpError } from '../http/clientHttpError';
 import {
   recordPlayoffBracketMatchResult,
   PlayoffBracketResultError,
@@ -89,7 +90,7 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
       newMatch = recorded.match;
       tournamentCompleted = recorded.tournamentCompleted;
     } catch (err) {
-      if (err instanceof PlayoffBracketResultError) {
+      if (err instanceof PlayoffBracketResultError || isClientHttpError(err)) {
         return res.status(err.statusCode).json({ error: err.message });
       }
       throw err;

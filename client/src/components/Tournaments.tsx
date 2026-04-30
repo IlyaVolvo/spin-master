@@ -109,6 +109,9 @@ interface TournamentParticipant {
   playerRatingAtTime: number | null;
 }
 
+const MATCH_RESULT_ALREADY_ENTERED_MESSAGE =
+  'A result for this match has already been entered. You may need to refresh the tournament to see the recorded score.';
+
 const Tournaments: React.FC = () => {
   // ALL HOOKS MUST BE CALLED AT THE TOP LEVEL, BEFORE ANY CONDITIONAL RETURNS
   // This ensures React can track hooks consistently across renders
@@ -171,6 +174,7 @@ const Tournaments: React.FC = () => {
   const [showCancelConfirmation, setShowCancelConfirmation] = useState<{ tournamentId: number; matchCount: number } | null>(null);
   const [cancelPassword, setCancelPassword] = useState<string>('');
   const [cancelPasswordErrorModal, setCancelPasswordErrorModal] = useState<string | null>(null);
+  const [matchResultAlreadyEnteredModal, setMatchResultAlreadyEnteredModal] = useState<string | null>(null);
   const cancelPasswordInputRef = useRef<HTMLInputElement | null>(null);
   const [hoveredIcon, setHoveredIcon] = useState<{ type: string; tournamentId: number; x: number; y: number } | null>(null);
   const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
@@ -1004,7 +1008,7 @@ const Tournaments: React.FC = () => {
       });
     } catch (err: unknown) {
       const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(apiError || 'Failed to save match result');
+      handleTournamentError(apiError || 'Failed to save match result');
     }
   };
 
@@ -1168,6 +1172,31 @@ const Tournaments: React.FC = () => {
     requestAnimationFrame(() => {
       cancelPasswordInputRef.current?.focus();
     });
+  };
+
+  const handleTournamentError = (message: string) => {
+    if (message === MATCH_RESULT_ALREADY_ENTERED_MESSAGE || message.toLowerCase().includes('already been entered')) {
+      setEditingMatch(null);
+      setMatchResultAlreadyEnteredModal(null);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setMatchResultAlreadyEnteredModal(message);
+        });
+      });
+      void withWindowScrollPreserved(async () => {
+        await fetchData({ silent: true });
+        if (selectedTournament) {
+          try {
+            const updated = await api.get(`/tournaments/${selectedTournament.id}`);
+            setSelectedTournament(updated.data);
+          } catch {
+            /* keep prior selection if refetch fails */
+          }
+        }
+      });
+      return;
+    }
+    setError(message);
   };
 
   // Generate schedule for Round Robin tournament
@@ -2420,7 +2449,7 @@ const Tournaments: React.FC = () => {
                                         ? childPlugin.createCompletedPanel({
                                             tournament: child as any,
                                             onTournamentUpdate: (updated) => { fetchData(); },
-                                            onError: (err) => setError(err),
+                                            onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
                                             isExpanded: true,
                                             onToggleExpand: () => {},
@@ -2431,7 +2460,7 @@ const Tournaments: React.FC = () => {
                                             onMatchUpdate: () => {
                                               void fetchDataPreservingScroll();
                                             },
-                                            onError: (err) => setError(err),
+                                            onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
                                           })
                                       }
@@ -2446,7 +2475,7 @@ const Tournaments: React.FC = () => {
                                         isExpanded: true,
                                         onToggleExpand: () => toggleSchedule(child.id),
                                         onTournamentUpdate: (updated) => { fetchData(); },
-                                        onError: (err) => setError(err),
+                                        onError: (err) => handleTournamentError(err),
                                         onSuccess: (msg) => { console.log(msg); },
                                       })}
                                     </div>
@@ -2755,7 +2784,7 @@ const Tournaments: React.FC = () => {
                                 pluginName: plugin.name,
                                 error: String(error)
                               });
-                              setError(error);
+                              handleTournamentError(error);
                             },
                             onSuccess: (message) => {
                               console.log(`✅ Plugin Success:`, {
@@ -2873,7 +2902,7 @@ const Tournaments: React.FC = () => {
                             pluginName: plugin.name,
                             error: String(error)
                           });
-                          setError(error);
+                          handleTournamentError(error);
                         },
                         onSuccess: (message) => {
                           console.log(`✅ Schedule Plugin Success:`, {
@@ -3480,7 +3509,7 @@ const Tournaments: React.FC = () => {
                                           {childPlugin.createCompletedPanel({
                                             tournament: child as any,
                                             onTournamentUpdate: (updated) => { fetchData(); },
-                                            onError: (err) => setError(err),
+                                            onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
                                             isExpanded: true,
                                             onToggleExpand: () => {},
@@ -3657,7 +3686,7 @@ const Tournaments: React.FC = () => {
                                   prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
                                 );
                               },
-                              onError: (error) => setError(error),
+                              onError: (error) => handleTournamentError(error),
                               onSuccess: (message) => {
                                 console.log('Success:', message);
                               },
@@ -3945,6 +3974,55 @@ const Tournaments: React.FC = () => {
                 }}
               >
                 Try again
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate match result popup */}
+      {matchResultAlreadyEnteredModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10002,
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            maxWidth: '420px',
+            width: '90%',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#c0392b' }}>
+              Score already entered
+            </h3>
+            <p style={{ marginBottom: '18px', color: '#333', lineHeight: 1.5 }}>
+              {matchResultAlreadyEnteredModal}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setMatchResultAlreadyEnteredModal(null)}
+                style={{
+                  padding: '10px 18px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  backgroundColor: '#e74c3c',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                }}
+              >
+                OK
               </button>
             </div>
           </div>

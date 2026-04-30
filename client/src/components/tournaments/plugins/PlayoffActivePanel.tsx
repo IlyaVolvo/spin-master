@@ -18,6 +18,14 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
 
   const playoffUpdater = createPlayoffMatchUpdater(tournament.id);
 
+  const handleError = (message: string) => {
+    if (message.toLowerCase().includes('already been entered')) {
+      setEditingMatch(null);
+      setEditingBracketMatchId(null);
+    }
+    onError(message);
+  };
+
   // Helper function to find bracket match ID for a given match
   const findBracketMatchId = (matchId: number): number | null => {
     const bracketMatch = tournament.bracketMatches?.find(bm => bm.match?.id === matchId);
@@ -48,7 +56,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
       if (editingMatch.matchId === 0) {
         // Create new match - use bracketMatchId as the matchId for playoff tournaments
         if (!editingBracketMatchId) {
-          onError('Bracket match ID is required for playoff matches');
+          handleError('Bracket match ID is required for playoff matches');
           return;
         }
 
@@ -68,7 +76,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           editingBracketMatchId,
           {
             onSuccess,
-            onError,
+            onError: handleError,
             onTournamentUpdate,
             onMatchUpdate,
             onBracketUpdate: () => {
@@ -97,7 +105,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
         // Update existing match
         await playoffUpdater.updateMatch(editingBracketMatchId || editingMatch.matchId, matchData, {
           onSuccess,
-          onError,
+          onError: handleError,
           onTournamentUpdate,
           onMatchUpdate,
         }, editingMatch.opponentPassword);
@@ -121,7 +129,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
     try {
       await playoffUpdater.deleteMatch(editingBracketMatchId || editingMatch.matchId, {
         onSuccess,
-        onError,
+        onError: handleError,
         onTournamentUpdate,
         onMatchUpdate,
         onBracketUpdate: () => {
@@ -188,6 +196,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           } : null,
         }))}
         onMatchUpdate={() => onMatchUpdate && onMatchUpdate({} as any)}
+        onError={handleError}
         isReadOnly={tournament.status === 'COMPLETED'}
         tournamentStatus={tournament.status as 'ACTIVE' | 'COMPLETED'}
       />

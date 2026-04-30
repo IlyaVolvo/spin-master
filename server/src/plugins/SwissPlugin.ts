@@ -2,6 +2,7 @@ import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationCont
 import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 import { logger } from '../utils/logger';
 import { adjustRatingsForSingleMatch } from '../services/usattRatingService';
+import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
 
 interface PlayerStanding {
   memberId: number;
@@ -352,16 +353,23 @@ export class SwissPlugin extends BaseTournamentPlugin {
 
     // Create matches for this round
     await Promise.all(
-      pairings.map(([member1Id, member2Id]) =>
-        prisma.match.create({
-          data: {
-            tournament: { connect: { id: tournamentId } },
-            member1Id,
-            member2Id,
-            round: newRound,
-          },
-        })
-      )
+      pairings.map(async ([member1Id, member2Id]) => {
+        try {
+          return await prisma.match.create({
+            data: {
+              tournament: { connect: { id: tournamentId } },
+              member1Id,
+              member2Id,
+              round: newRound,
+            },
+          });
+        } catch (error) {
+          if (isDuplicateTournamentMatchError(error)) {
+            throw await duplicateTournamentMatchErrorWithRecordedResult(prisma, tournamentId, member1Id, member2Id);
+          }
+          throw error;
+        }
+      })
     );
 
     // Update currentRound

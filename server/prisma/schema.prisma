@@ -227,6 +227,7 @@ model Match {
   @@index([member1Id])
   @@index([member2Id])
   @@index([member1Id, member2Id])
+  @@unique([tournamentId, member1Id, member2Id], map: "matches_tournament_pair_unique")
   @@map("matches")
 }
 

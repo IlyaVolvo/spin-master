@@ -5,6 +5,7 @@
 import { PrismaClient } from '@prisma/client';
 import { ClientHttpError } from '../http/clientHttpError';
 import { logger } from '../utils/logger';
+import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
 
 const prisma = new PrismaClient();
 
@@ -924,18 +925,26 @@ export async function recordPlayoffBracketMatchResult(
         ? m1
         : m2;
 
-  const newMatch = await prisma.match.create({
-    data: {
-      tournament: { connect: { id: tournamentId } },
-      member1Id: m1,
-      member2Id: m2,
-      player1Sets,
-      player2Sets,
-      player1Forfeit,
-      player2Forfeit,
-    },
-    include: { tournament: true },
-  });
+  let newMatch: any;
+  try {
+    newMatch = await prisma.match.create({
+      data: {
+        tournament: { connect: { id: tournamentId } },
+        member1Id: m1,
+        member2Id: m2,
+        player1Sets,
+        player2Sets,
+        player1Forfeit,
+        player2Forfeit,
+      },
+      include: { tournament: true },
+    });
+  } catch (error) {
+    if (isDuplicateTournamentMatchError(error)) {
+      throw await duplicateTournamentMatchErrorWithRecordedResult(prisma, tournamentId, m1, m2);
+    }
+    throw error;
+  }
 
   await prisma.bracketMatch.update({
     where: { id: bracketMatchId },

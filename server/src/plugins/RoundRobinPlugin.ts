@@ -1,6 +1,7 @@
 import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
 import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 import { createRatingHistoryForRoundRobinTournament } from '../services/usattRatingService';
+import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
 
 export class RoundRobinPlugin extends BaseTournamentPlugin {
   type = 'ROUND_ROBIN';
@@ -276,18 +277,25 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
     } else {
       // Create new match — for round robin, all matches are pre-created at tournament creation
       // This path handles the case where a match needs to be created (legacy support)
-      updatedMatch = await prisma.match.create({
-        data: {
-          tournament: { connect: { id: tournamentId } },
-          member1Id: m1Id,
-          member2Id: m2Id,
-          player1Sets,
-          player2Sets,
-          player1Forfeit,
-          player2Forfeit,
-        },
-        include: { tournament: true },
-      });
+      try {
+        updatedMatch = await prisma.match.create({
+          data: {
+            tournament: { connect: { id: tournamentId } },
+            member1Id: m1Id,
+            member2Id: m2Id,
+            player1Sets,
+            player2Sets,
+            player1Forfeit,
+            player2Forfeit,
+          },
+          include: { tournament: true },
+        });
+      } catch (error) {
+        if (isDuplicateTournamentMatchError(error)) {
+          throw await duplicateTournamentMatchErrorWithRecordedResult(prisma, tournamentId, m1Id, m2Id);
+        }
+        throw error;
+      }
     }
     
     // Check if tournament is complete

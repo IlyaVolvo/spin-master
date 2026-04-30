@@ -12,6 +12,7 @@ import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 import { isClientHttpError } from '../http/clientHttpError';
 import { isOrganizer } from '../utils/organizerAccess';
 import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
+import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
 
 const router = express.Router();
 
@@ -829,17 +830,26 @@ router.post('/:id/matches', [
       return res.status(400).json({ error: 'Cannot create match for BYE - BYE players are automatically promoted' });
     }
 
-    const match = await prisma.match.create({
-      data: {
-        tournamentId,
-        member1Id,
-        member2Id,
-        player1Sets: finalPlayer1Sets,
-        player2Sets: finalPlayer2Sets,
-        player1Forfeit: finalPlayer1Forfeit,
-        player2Forfeit: finalPlayer2Forfeit,
-      },
-    });
+    let match;
+    try {
+      match = await prisma.match.create({
+        data: {
+          tournamentId,
+          member1Id,
+          member2Id,
+          player1Sets: finalPlayer1Sets,
+          player2Sets: finalPlayer2Sets,
+          player1Forfeit: finalPlayer1Forfeit,
+          player2Forfeit: finalPlayer2Forfeit,
+        },
+      });
+    } catch (error) {
+      if (isDuplicateTournamentMatchError(error)) {
+        const duplicateError = await duplicateTournamentMatchErrorWithRecordedResult(prisma, tournamentId, member1Id, member2Id);
+        return res.status(duplicateError.statusCode).json({ error: duplicateError.message });
+      }
+      throw error;
+    }
 
     // Adjust ratings immediately after match is created
     // Delegate rating calculation to plugin
@@ -1066,6 +1076,12 @@ router.patch('/:tournamentId/matches/:matchId', [
 
     res.json(updatedMatch);
   } catch (error) {
+    if (isDuplicateTournamentMatchError(error)) {
+      const tournamentId = parseInt(req.params.tournamentId, 10);
+      const { member1Id, member2Id } = req.body;
+      const duplicateError = await duplicateTournamentMatchErrorWithRecordedResult(prisma, tournamentId, member1Id, member2Id);
+      return res.status(duplicateError.statusCode).json({ error: duplicateError.message });
+    }
     logger.error('Error updating match', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.tournamentId, matchId: req.params.matchId });
     res.status(500).json({ error: 'Internal server error' });
   }
