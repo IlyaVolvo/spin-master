@@ -12,6 +12,7 @@ const Players = lazy(() => import('./components/Players'));
 const Tournaments = lazy(() => import('./components/Tournaments'));
 const Statistics = lazy(() => import('./components/Statistics'));
 const History = lazy(() => import('./components/History'));
+const TournamentRegistrationLink = lazy(() => import('./components/TournamentRegistrationLink'));
 
 // Component to prevent default scroll restoration for routes that handle their own scroll
 function ScrollToTop() {
@@ -218,7 +219,15 @@ function App() {
   return (
     <Router>
       <ScrollToTop />
-      {!isAuth ? (
+      {window.location.pathname.startsWith('/tournament-registration/') ? (
+        <ErrorBoundary>
+          <Suspense fallback={<div>Loading...</div>}>
+            <Routes>
+              <Route path="/tournament-registration/:code" element={<TournamentRegistrationLink />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
+      ) : !isAuth ? (
         <ErrorBoundary>
         <Login onLogin={handleLogin} clubName={clubName} />
         </ErrorBoundary>
@@ -416,6 +425,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const location = useLocation();
   const [userName, setUserName] = useState<string>('');
   const [userRoles, setUserRoles] = useState<string[]>([]);
+  const [pendingPreregistrationCount, setPendingPreregistrationCount] = useState(0);
   const changesetId = (import.meta.env.VITE_CHANGESET_ID || 'devbuild').slice(0, 7);
   
   const isPlayersActive = location.pathname === '/players';
@@ -460,6 +470,29 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     
     fetchUserInfo();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchPendingPreregistrations = async () => {
+      try {
+        const response = await api.get('/tournaments/preregistration/pending-count');
+        if (!cancelled) {
+          setPendingPreregistrationCount(Number(response.data?.count) || 0);
+        }
+      } catch {
+        if (!cancelled) setPendingPreregistrationCount(0);
+      }
+    };
+
+    void fetchPendingPreregistrations();
+    const interval = window.setInterval(fetchPendingPreregistrations, 30000);
+    window.addEventListener('tournament-preregistration-count-changed', fetchPendingPreregistrations);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('tournament-preregistration-count-changed', fetchPendingPreregistrations);
+    };
+  }, []);
   
   const handlePlayersClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
@@ -476,6 +509,8 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     window.scrollTo(0, 0);
     navigate('/tournaments', { replace: true });
   };
+
+  const hasPendingPreregistrations = pendingPreregistrationCount > 0;
   
   return (
     <div className="header" style={{
@@ -536,10 +571,10 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             href="/tournaments" 
             onClick={handleTournamentsClick} 
             style={{ 
-              color: isTournamentsActive ? '#333' : 'rgba(255, 255, 255, 0.8)', 
+              color: hasPendingPreregistrations ? '#c0392b' : (isTournamentsActive ? '#333' : 'rgba(255, 255, 255, 0.8)'),
               textDecoration: 'none', 
               padding: '10px 24px 12px 24px', 
-              background: isTournamentsActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+              background: hasPendingPreregistrations ? '#fdecea' : (isTournamentsActive ? 'white' : 'rgba(255, 255, 255, 0.15)'),
               borderTopLeftRadius: '8px',
               borderTopRightRadius: '8px',
               border: isTournamentsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
@@ -555,18 +590,21 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             }} 
             onMouseEnter={(e) => {
               if (!isTournamentsActive) {
-                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.color = hasPendingPreregistrations ? '#c0392b' : 'white';
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
               }
             }}
             onMouseLeave={(e) => {
               if (!isTournamentsActive) {
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.color = hasPendingPreregistrations ? '#c0392b' : 'rgba(255, 255, 255, 0.8)';
+                e.currentTarget.style.background = hasPendingPreregistrations ? '#fdecea' : 'rgba(255, 255, 255, 0.15)';
               }
             }}
           >
             Tournaments
+            {hasPendingPreregistrations ? (
+              <span style={{ marginLeft: '6px', fontWeight: 700 }}>!</span>
+            ) : null}
           </a>
         </div>
         <h1

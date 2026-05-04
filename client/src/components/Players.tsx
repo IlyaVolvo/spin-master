@@ -6,7 +6,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder, setNameDisplayOrder, NameDisplayOrder } from '../utils/nameFormatter';
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
-import { getMember, isOrganizer, isAdmin } from '../utils/auth';
+import { getMember, setMember, isOrganizer, isAdmin } from '../utils/auth';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import type { TournamentType } from '../types/tournament';
 import type { Member, SimilarName, ImportParseReport, PlayerImportResultsPayload, PendingPlayerData } from '../types/member';
@@ -58,6 +58,7 @@ type PlayerEditBaseline = {
   address: string;
   picture: string;
   isActive: boolean;
+  tournamentNotificationsEnabled: boolean;
   rolesKey: string;
   rating: string;
 };
@@ -79,6 +80,7 @@ function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
     address: member.address || '',
     picture: member.picture || '',
     isActive: member.isActive !== undefined ? member.isActive : true,
+    tournamentNotificationsEnabled: Boolean(member.tournamentNotificationsEnabled && member.email),
     rolesKey: [...(member.roles || [])].sort().join(','),
     rating: member.rating !== null && member.rating !== undefined ? String(member.rating) : '',
   };
@@ -97,6 +99,9 @@ const Players: React.FC = () => {
   const { members, setMembers, loading, setLoading, fetchMembers } = usePlayerData({ setError });
   const currentMember = getMember();
   const isUserOrganizer = isOrganizer();
+  const [tournamentNotificationsEnabled, setTournamentNotificationsEnabled] = useState<boolean>(
+    Boolean(currentMember?.tournamentNotificationsEnabled)
+  );
   const [showAddForm, setShowAddForm] = useState(false);
   const [newPlayerFirstName, setNewPlayerFirstName] = useState('');
   const [newPlayerLastName, setNewPlayerLastName] = useState('');
@@ -104,6 +109,7 @@ const Players: React.FC = () => {
   const [newPlayerRating, setNewPlayerRating] = useState('');
   const [lastConfirmedAddRating, setLastConfirmedAddRating] = useState('');
   const [newPlayerEmail, setNewPlayerEmail] = useState('');
+  const [newPlayerTournamentNotificationsEnabled, setNewPlayerTournamentNotificationsEnabled] = useState(false);
   const [newPlayerGender, setNewPlayerGender] = useState<'MALE' | 'FEMALE' | 'NOT_SPECIFIED'>('NOT_SPECIFIED');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
   const [newPlayerAddress, setNewPlayerAddress] = useState('');
@@ -185,6 +191,9 @@ const Players: React.FC = () => {
     setTournamentType,
     creationTournamentType,
     setCreationTournamentType,
+    isPreregistrationMode,
+    setIsPreregistrationMode,
+    finalizingPreregistrationId,
     expandedMenuGroups,
     setExpandedMenuGroups,
     creationPlugin,
@@ -205,6 +214,11 @@ const Players: React.FC = () => {
     setFiltersCollapsed,
   });
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
+  const [preregistrationTournamentDate, setPreregistrationTournamentDate] = useState('');
+  const [preregistrationDeadline, setPreregistrationDeadline] = useState('');
+  const [preregistrationMinRating, setPreregistrationMinRating] = useState('');
+  const [preregistrationMaxRating, setPreregistrationMaxRating] = useState('');
+  const [preregistrationMaxParticipants, setPreregistrationMaxParticipants] = useState('');
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
   const { anchorRef: lastClickedStatsPlayerIdRef, resetAnchor: resetStatsShiftAnchor } =
     useShiftRangeAnchor();
@@ -264,6 +278,7 @@ const Players: React.FC = () => {
   const [editAddress, setEditAddress] = useState('');
   const [editPicture, setEditPicture] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
+  const [editTournamentNotificationsEnabled, setEditTournamentNotificationsEnabled] = useState(false);
   const [editRoles, setEditRoles] = useState<string[]>([]);
   const [editRating, setEditRating] = useState('');
   const [lastConfirmedEditRating, setLastConfirmedEditRating] = useState('');
@@ -1059,6 +1074,7 @@ const Players: React.FC = () => {
       const trimmedAddEmail = newPlayerEmail.trim();
       if (trimmedAddEmail) {
         playerData.email = trimmedAddEmail;
+        playerData.tournamentNotificationsEnabled = newPlayerTournamentNotificationsEnabled;
       }
       if (newPlayerBirthDate) {
         playerData.birthDate = toDateOnlyString(newPlayerBirthDate);
@@ -1095,6 +1111,7 @@ const Players: React.FC = () => {
           address: playerData.address ?? null,
           picture: playerData.picture ?? null,
           roles: playerData.roles,
+          tournamentNotificationsEnabled: Boolean(playerData.email && playerData.tournamentNotificationsEnabled),
         });
         setShowConfirmation(true);
         return;
@@ -1112,6 +1129,7 @@ const Players: React.FC = () => {
       setNewPlayerRating('');
       setLastConfirmedAddRating('');
       setNewPlayerEmail('');
+      setNewPlayerTournamentNotificationsEnabled(false);
       setNewPlayerGender('NOT_SPECIFIED');
       setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
@@ -1267,6 +1285,7 @@ const Players: React.FC = () => {
 
       if (pendingPlayerData.email && pendingPlayerData.email.trim()) {
         playerData.email = pendingPlayerData.email.trim();
+        playerData.tournamentNotificationsEnabled = Boolean(pendingPlayerData.tournamentNotificationsEnabled);
       }
       
       if (pendingPlayerData.birthDate) {
@@ -1298,6 +1317,7 @@ const Players: React.FC = () => {
       setNewPlayerBirthDate(null);
       setNewPlayerRating('');
       setNewPlayerEmail('');
+      setNewPlayerTournamentNotificationsEnabled(false);
       setNewPlayerGender('NOT_SPECIFIED');
       setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
@@ -1630,6 +1650,7 @@ const Players: React.FC = () => {
       setEditAddress(member.address || '');
       setEditPicture(member.picture || '');
       setEditIsActive(member.isActive !== undefined ? member.isActive : true);
+      setEditTournamentNotificationsEnabled(Boolean(member.email && member.tournamentNotificationsEnabled));
       setEditRoles(member.roles || []);
       setEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
       setLastConfirmedEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
@@ -1709,6 +1730,7 @@ const Players: React.FC = () => {
     setEditAddress('');
     setEditPicture('');
     setEditIsActive(true);
+    setEditTournamentNotificationsEnabled(false);
     setEditRoles([]);
     setEditRating('');
     setLastConfirmedEditRating('');
@@ -1758,6 +1780,7 @@ const Players: React.FC = () => {
         editAddress !== b.address ||
         editPicture !== b.picture ||
         editIsActive !== b.isActive ||
+        (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
         rolesKey !== b.rolesKey ||
         editRating.trim() !== b.rating.trim()
       );
@@ -1767,6 +1790,7 @@ const Players: React.FC = () => {
       editPhone !== b.phone ||
       editAddress !== b.address ||
       editPicture !== b.picture ||
+      (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
       (playerEditBaselineRef.current?.birthDateMs == null && birthMs !== b.birthDateMs)
     );
   };
@@ -1845,6 +1869,7 @@ const Players: React.FC = () => {
       
       // Both admin and regular members can edit these fields
       updateData.email = editEmail.trim() === '' ? null : editEmail.trim();
+      updateData.tournamentNotificationsEnabled = Boolean(editEmail.trim() && editTournamentNotificationsEnabled);
       updateData.phone = editPhone.trim() || null;
       updateData.address = editAddress.trim() || null;
       updateData.picture = editPicture.trim() || null;
@@ -2242,6 +2267,59 @@ const Players: React.FC = () => {
   // handleCancelTournamentCreation, handleConfirmCancelTournament, handleCancelCancelTournament,
   // handleTogglePlayerForTournament, handleFinishPlayerSelection, handleTournamentCreated)
   // are all provided by useTournamentCreation hook
+  const handleCreatePreregistrationTournament = async () => {
+    if (!creationTournamentType) {
+      setError('Please select a tournament type');
+      return;
+    }
+    try {
+      await api.post('/tournaments/preregistration', {
+        name: tournamentName.trim() || undefined,
+        type: creationTournamentType,
+        tournamentDate: preregistrationTournamentDate || undefined,
+        registrationDeadline: preregistrationDeadline || preregistrationTournamentDate || undefined,
+        minRating: preregistrationMinRating === '' ? undefined : Number(preregistrationMinRating),
+        maxRating: preregistrationMaxRating === '' ? undefined : Number(preregistrationMaxRating),
+        maxParticipants: preregistrationMaxParticipants === '' ? undefined : Number(preregistrationMaxParticipants),
+      });
+      setSuccess('Tournament preregistration created successfully');
+      setPreregistrationTournamentDate('');
+      setPreregistrationDeadline('');
+      setPreregistrationMinRating('');
+      setPreregistrationMaxRating('');
+      setPreregistrationMaxParticipants('');
+      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+      handleTournamentCreated();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to create tournament preregistration');
+    }
+  };
+
+  const handlePreregistrationTournamentDateChange = (value: string) => {
+    setPreregistrationTournamentDate((previousTournamentDate) => {
+      setPreregistrationDeadline((currentDeadline) =>
+        currentDeadline === '' || currentDeadline === previousTournamentDate ? value : currentDeadline
+      );
+      return value;
+    });
+  };
+
+  const handleTournamentNotificationsChange = async (enabled: boolean) => {
+    if (!currentMember?.id) return;
+    const previous = tournamentNotificationsEnabled;
+    setTournamentNotificationsEnabled(enabled);
+    try {
+      const response = await api.patch(`/players/${currentMember.id}`, {
+        tournamentNotificationsEnabled: enabled,
+      });
+      const updated = { ...currentMember, ...response.data };
+      setMember(updated);
+      setSuccess(enabled ? 'Tournament invitation emails enabled' : 'Tournament invitation emails disabled');
+    } catch (err: any) {
+      setTournamentNotificationsEnabled(previous);
+      setError(err.response?.data?.error || 'Failed to update tournament notification setting');
+    }
+  };
 
   const handleStartStatsSelection = () => {
     setIsSelectingForStats(true);
@@ -2973,6 +3051,92 @@ const Players: React.FC = () => {
                           return fullMenu.map(item => renderMenuItem(item));
                         })()}
                       </div>
+
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '12px',
+                        border: '1px solid #f39c12',
+                        borderRadius: '4px',
+                        backgroundColor: isPreregistrationMode ? '#fff8e1' : 'white',
+                        cursor: 'pointer',
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={isPreregistrationMode}
+                          onChange={(e) => setIsPreregistrationMode(e.target.checked)}
+                        />
+                        <span>
+                          <strong>Pre-registration mode</strong>
+                          <span style={{ display: 'block', fontSize: '12px', color: '#666' }}>
+                            Advertise the tournament now and collect player registrations before creating the event.
+                          </span>
+                        </span>
+                      </label>
+
+                      {isPreregistrationMode && (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            gap: '15px',
+                            marginTop: '14px',
+                            padding: '14px',
+                            border: '1px solid #f1c40f',
+                            borderRadius: '6px',
+                            backgroundColor: '#fffdf4',
+                          }}
+                        >
+                          <div className="form-group">
+                            <label>Tournament Date</label>
+                            <input
+                              type="datetime-local"
+                              value={preregistrationTournamentDate}
+                              onChange={(e) => handlePreregistrationTournamentDateChange(e.target.value)}
+                              step="60"
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Registration Deadline</label>
+                            <input
+                              type="datetime-local"
+                              value={preregistrationDeadline}
+                              onChange={(e) => setPreregistrationDeadline(e.target.value)}
+                              step="60"
+                              placeholder="Defaults to tournament date"
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Minimum Rating</label>
+                            <input
+                              type="number"
+                              value={preregistrationMinRating}
+                              onChange={(e) => setPreregistrationMinRating(e.target.value)}
+                              placeholder="No minimum"
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Maximum Rating</label>
+                            <input
+                              type="number"
+                              value={preregistrationMaxRating}
+                              onChange={(e) => setPreregistrationMaxRating(e.target.value)}
+                              placeholder="No maximum"
+                            />
+                          </div>
+                          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                            <label>Max Participants</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={preregistrationMaxParticipants}
+                              onChange={(e) => setPreregistrationMaxParticipants(e.target.value)}
+                              placeholder="Unlimited"
+                            />
+                          </div>
+                        </div>
+                      )}
                       
                     </div>
                     
@@ -3009,7 +3173,11 @@ const Players: React.FC = () => {
                           }
 
                           setTournamentType(selectedType);
-                          setTournamentCreationStep('player_selection');
+                          if (isPreregistrationMode) {
+                            void handleCreatePreregistrationTournament();
+                          } else {
+                            setTournamentCreationStep('player_selection');
+                          }
                         }}
                         style={{
                           padding: '10px 20px',
@@ -3022,7 +3190,7 @@ const Players: React.FC = () => {
                           fontWeight: 'bold'
                         }}
                       >
-                        Next
+                        {isPreregistrationMode ? 'Create Pre-registration' : 'Next'}
                       </button>
                     </div>
                   </div>
@@ -3238,7 +3406,7 @@ const Players: React.FC = () => {
                           </div>
                         )}
                 
-                {isCreatingTournament && tournamentCreationStep !== 'type_selection' && tournamentCreationStep !== 'player_selection' ? createPortal(
+                {isCreatingTournament && tournamentCreationStep === 'plugin_flow' ? createPortal(
                   <div
                     style={{
                       position: 'fixed',
@@ -3274,6 +3442,7 @@ const Players: React.FC = () => {
                           tournamentName,
                           setTournamentName,
                           editingTournamentId,
+                          finalizingPreregistrationId,
                           onCreated: handleTournamentCreated,
                           onError: setError,
                           onSuccess: setSuccess,
@@ -3424,6 +3593,7 @@ const Players: React.FC = () => {
               setNewPlayerRating('');
               setLastConfirmedAddRating('');
               setNewPlayerEmail('');
+              setNewPlayerTournamentNotificationsEnabled(false);
               setNewPlayerGender('NOT_SPECIFIED');
               setNewPlayerRoles(['PLAYER']);
               setNewPlayerPhone('');
@@ -3442,6 +3612,8 @@ const Players: React.FC = () => {
             setNewPlayerBirthDate={setNewPlayerBirthDate}
             newPlayerEmail={newPlayerEmail}
             setNewPlayerEmail={setNewPlayerEmail}
+            newPlayerTournamentNotificationsEnabled={newPlayerTournamentNotificationsEnabled}
+            setNewPlayerTournamentNotificationsEnabled={setNewPlayerTournamentNotificationsEnabled}
             newPlayerGender={newPlayerGender}
             setNewPlayerGender={setNewPlayerGender}
             newPlayerRoles={newPlayerRoles}
@@ -4998,6 +5170,8 @@ const Players: React.FC = () => {
                   onImportPlayers={handleImportPlayers}
                   importSendEmail={importSendEmail}
                   setImportSendEmail={setImportSendEmail}
+                  tournamentNotificationsEnabled={tournamentNotificationsEnabled}
+                  onTournamentNotificationsChange={currentMember ? handleTournamentNotificationsChange : undefined}
                 />
               </th>
             </tr>
@@ -5430,8 +5604,10 @@ const Players: React.FC = () => {
               phone: editPhone || null,
               address: editAddress || null,
               picture: editPicture || null,
+              tournamentNotificationsEnabled: editTournamentNotificationsEnabled,
             };
           }
+          const playerForEdit = player as NonNullable<typeof player>;
         const currentMember = getMember();
         const isEditingSelf = currentMember && currentMember.id === editingPlayerId;
         const isAdminUser = isAdmin();
@@ -5481,7 +5657,7 @@ const Players: React.FC = () => {
               }}
             >
               <h3 style={{ margin: '0 0 20px 0', flexShrink: 0 }}>
-                Edit Member: {formatPlayerName(editFirstName || player.firstName, editLastName || player.lastName, nameDisplayOrder)}
+                Edit Member: {formatPlayerName(editFirstName || playerForEdit.firstName, editLastName || playerForEdit.lastName, nameDisplayOrder)}
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', flex: 1, minHeight: 0, paddingRight: '10px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -5547,11 +5723,52 @@ const Players: React.FC = () => {
                             <input
                               type="email"
                               value={editEmail}
-                              onChange={(e) => { setEditEmail(e.target.value); handleEditFieldChange('email', e.target.value); }}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setEditEmail(v);
+                                if (!v.trim()) {
+                                  setEditTournamentNotificationsEnabled(false);
+                                }
+                                handleEditFieldChange('email', v);
+                              }}
                               onBlur={() => handleEditFieldBlur('email')}
                               style={{ width: '100%', padding: '8px', border: `1px solid ${editFieldTouched.email && editFieldErrors.email ? '#e74c3c' : '#ddd'}`, borderRadius: '4px' }}
                             />
                             {editFieldTouched.email && editFieldErrors.email && <span className="field-error">{editFieldErrors.email}</span>}
+                          </div>
+                          <div>
+                            {(() => {
+                              const hasEditEmail = editEmail.trim().length > 0;
+                              return (
+                                <>
+                                  <label
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '8px',
+                                      cursor: hasEditEmail ? 'pointer' : 'not-allowed',
+                                      color: hasEditEmail ? 'inherit' : '#999',
+                                      fontSize: '13px',
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={hasEditEmail && editTournamentNotificationsEnabled}
+                                      disabled={!hasEditEmail}
+                                      onChange={(e) => setEditTournamentNotificationsEnabled(e.target.checked)}
+                                      style={{ cursor: hasEditEmail ? 'pointer' : 'not-allowed', margin: 0 }}
+                                    />
+                                    <span>Tournament notifications</span>
+                                  </label>
+                                  {!hasEditEmail && (
+                                    <div style={{ marginTop: '4px', fontSize: '12px', color: '#777' }}>
+                                      Add an email before enabling notifications.
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                           {/* Gender */}
                           <div>
@@ -5706,7 +5923,7 @@ const Players: React.FC = () => {
                       />
                       {editFieldTouched.rating && editFieldErrors.rating && <span className="field-error">{editFieldErrors.rating}</span>}
                       <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#666' }}>
-                        Leave empty to remove rating. Current: {editRating ? editRating : (player.rating !== null ? player.rating : 'Not set')}
+                        Leave empty to remove rating. Current: {editRating ? editRating : (playerForEdit.rating !== null ? playerForEdit.rating : 'Not set')}
                       </p>
                     </div>
                   </div>

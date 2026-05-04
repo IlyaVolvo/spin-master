@@ -7,9 +7,11 @@ export interface Member {
   firstName: string;
   lastName: string;
   roles: string[];
+  rating?: number | null;
   isActive?: boolean;
   emailConfirmedAt?: string | null;
   mustResetPassword?: boolean;
+  tournamentNotificationsEnabled?: boolean;
   /** From API: false when password is unset (admin reset / invite). */
   hasPassword?: boolean;
 }

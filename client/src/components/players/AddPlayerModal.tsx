@@ -13,6 +13,8 @@ export interface AddPlayerModalProps {
   setNewPlayerBirthDate: (d: Date | null) => void;
   newPlayerEmail: string;
   setNewPlayerEmail: (v: string) => void;
+  newPlayerTournamentNotificationsEnabled: boolean;
+  setNewPlayerTournamentNotificationsEnabled: (v: boolean) => void;
   newPlayerGender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
   setNewPlayerGender: (v: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED') => void;
   newPlayerRoles: string[];
@@ -47,6 +49,8 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
   setNewPlayerBirthDate,
   newPlayerEmail,
   setNewPlayerEmail,
+  newPlayerTournamentNotificationsEnabled,
+  setNewPlayerTournamentNotificationsEnabled,
   newPlayerGender,
   setNewPlayerGender,
   newPlayerRoles,
@@ -180,6 +184,7 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
                 setNewPlayerEmail(v);
                 if (!v.trim()) {
                   setNewPlayerRoles(['PLAYER']);
+                  setNewPlayerTournamentNotificationsEnabled(false);
                   handleAddFieldChange('roles', ['PLAYER']);
                 }
                 handleAddFieldChange('email', v);
@@ -188,6 +193,32 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
               placeholder="email@example.com"
             />
             {addFieldTouched.email && addFieldErrors.email && <span className="field-error">{addFieldErrors.email}</span>}
+          </div>
+          <div className="form-group">
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: hasEmail ? 'pointer' : 'not-allowed',
+                color: hasEmail ? 'inherit' : '#999',
+                fontSize: '13px',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={hasEmail && newPlayerTournamentNotificationsEnabled}
+                disabled={!hasEmail}
+                onChange={(e) => setNewPlayerTournamentNotificationsEnabled(e.target.checked)}
+                style={{ cursor: hasEmail ? 'pointer' : 'not-allowed', margin: 0 }}
+              />
+              <span>Receive tournament registration notifications</span>
+            </label>
+            {!hasEmail && (
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#777' }}>
+                Add an email before enabling tournament notifications.
+              </div>
+            )}
           </div>
           <div className={`form-group ${addFieldErrors.gender && addFieldTouched.gender ? 'has-error' : addFieldTouched.gender && !addFieldErrors.gender ? 'is-valid' : ''}`}>
             <label>Gender</label>

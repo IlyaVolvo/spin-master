@@ -1,5 +1,6 @@
 import express, { Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import { createHash, randomBytes } from 'crypto';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { TournamentType } from '@prisma/client';
@@ -16,7 +17,7 @@ import {
 } from '../services/socketService';
 import bcrypt from 'bcryptjs';
 import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
-import { isClientHttpError } from '../http/clientHttpError';
+import { ClientHttpError, isClientHttpError } from '../http/clientHttpError';
 import { isOrganizer } from '../utils/organizerAccess';
 import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
 import {
@@ -24,10 +25,370 @@ import {
   duplicateTournamentMatchErrorWithRecordedResult,
   isDuplicateTournamentMatchError,
 } from '../utils/matchConcurrency';
+import {
+  buildTournamentRegistrationLink,
+  buildTournamentRegistrationDeclineLink,
+  sendTournamentInvitationEmail,
+  sendTournamentRegistrationCancelledEmail,
+  sendTournamentRegistrationClosedEmail,
+} from '../services/mailService';
 
 const router = express.Router();
 
+const PREREGISTRATION_CANCEL_REASONS = [
+  'Tournament cancelled by organizer',
+  'Not enough registered players',
+  'Schedule conflict',
+  'Venue unavailable',
+  'Weather or emergency closure',
+] as const;
+
 // Request logging is handled by requestLogger middleware in index.ts
+
+function hashRegistrationCode(code: string): string {
+  return createHash('sha256').update(code).digest('hex');
+}
+
+function generateRegistrationCode(): string {
+  return randomBytes(32).toString('hex');
+}
+
+function parseOptionalDate(value: unknown): Date | null {
+  if (value === null || value === undefined || value === '') return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseOptionalInteger(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const num = Number(value);
+  return Number.isInteger(num) ? num : null;
+}
+
+function registrationInclude() {
+  return {
+    registrations: {
+      include: { member: true },
+      orderBy: { createdAt: 'asc' as const },
+    },
+  };
+}
+
+function tournamentListInclude() {
+  return {
+    participants: {
+      include: {
+        member: true,
+      },
+    },
+    matches: true,
+    swissData: true,
+    registrations: {
+      include: { member: true },
+      orderBy: { createdAt: 'asc' as const },
+    },
+    _count: {
+      select: {
+        participants: true,
+        matches: true,
+      },
+    },
+  };
+}
+
+function tournamentSatisfiesRating(member: any, tournament: any): boolean {
+  const rating = member.rating;
+  if (tournament.minRating != null && (rating == null || rating < tournament.minRating)) return false;
+  if (tournament.maxRating != null && (rating == null || rating > tournament.maxRating)) return false;
+  return true;
+}
+
+function registrationEligibilityFailure(params: {
+  member: any;
+  tournament: any;
+  registeredCount: number;
+  alreadyRegistered: boolean;
+}): string | null {
+  const { member, tournament, registeredCount, alreadyRegistered } = params;
+  if (!member?.isActive || !member.roles?.includes('PLAYER')) {
+    return 'Only active players can register for tournaments.';
+  }
+  if (tournament.status !== 'PRE_REGISTRATION') {
+    return 'Registration is closed for this tournament.';
+  }
+  if (tournament.registrationDeadline && new Date() > new Date(tournament.registrationDeadline)) {
+    return 'The registration deadline has passed.';
+  }
+  if (!tournamentSatisfiesRating(member, tournament)) {
+    return 'Your rating is outside the allowed range for this tournament.';
+  }
+  if (!alreadyRegistered && tournament.maxParticipants != null && registeredCount >= tournament.maxParticipants) {
+    return 'This tournament has reached the maximum number of participants.';
+  }
+  return null;
+}
+
+async function sendRegistrationCancelledEmailSafely(member: any, tournament: any, reason: string): Promise<boolean> {
+  if (!member?.email) return false;
+  try {
+    await sendTournamentRegistrationCancelledEmail({
+      toEmail: member.email,
+      firstName: member.firstName,
+      tournamentName: tournament.name || `Tournament ${tournament.id}`,
+      reason,
+    });
+    return true;
+  } catch (error) {
+    logger.error('Tournament registration cancellation email failed', {
+      memberId: member.id,
+      tournamentId: tournament.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+async function sendRegistrationClosedEmailSafely(member: any, tournament: any, reason: string): Promise<boolean> {
+  if (!member?.email) return false;
+  try {
+    await sendTournamentRegistrationClosedEmail({
+      toEmail: member.email,
+      firstName: member.firstName,
+      tournamentName: tournament.name || `Tournament ${tournament.id}`,
+      reason,
+    });
+    return true;
+  } catch (error) {
+    logger.error('Tournament registration closed email failed', {
+      memberId: member.id,
+      tournamentId: tournament.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+async function notifyInvitedRegistrationClosed(tournamentId: number, reason: string): Promise<{ emailSent: number; emailFailed: number }> {
+  const tournament = await (prisma as any).tournament.findUnique({
+    where: { id: tournamentId },
+    include: {
+      registrations: {
+        where: { status: 'INVITED' },
+        include: { member: true },
+      },
+    },
+  });
+
+  if (!tournament) return { emailSent: 0, emailFailed: 0 };
+
+  let emailSent = 0;
+  let emailFailed = 0;
+  for (const registration of tournament.registrations || []) {
+    const sent = await sendRegistrationClosedEmailSafely(registration.member, tournament, reason);
+    if (sent) emailSent += 1;
+    else if (registration.member?.email) emailFailed += 1;
+  }
+
+  return { emailSent, emailFailed };
+}
+
+async function declineRegistrationByCode(code: string): Promise<{ tournamentId: number; message: string }> {
+  const registration = await (prisma as any).tournamentRegistration.findUnique({
+    where: { registrationCodeHash: hashRegistrationCode(code) },
+    include: { tournament: true, member: true },
+  });
+
+  if (!registration) {
+    throw new ClientHttpError('Registration link is invalid or expired.', 404);
+  }
+  if (registration.tournament.status !== 'PRE_REGISTRATION') {
+    throw new ClientHttpError('Registration is closed for this tournament.', 400);
+  }
+
+  await (prisma as any).tournamentRegistration.update({
+    where: { id: registration.id },
+    data: {
+      status: 'DECLINED',
+      rejectedAt: new Date(),
+      rejectionReason: 'Declined by player',
+      registeredAt: null,
+    },
+  });
+
+  return {
+    tournamentId: registration.tournamentId,
+    message: `Invitation declined for ${registration.tournament.name || `Tournament ${registration.tournament.id}`}.`,
+  };
+}
+
+async function registerMemberForTournament(params: {
+  tournamentId: number;
+  memberId: number;
+  codeHash?: string;
+}): Promise<{ status: 'REGISTERED'; message: string; registration: any; tournament: any }> {
+  const tournament = await (prisma as any).tournament.findUnique({
+    where: { id: params.tournamentId },
+    include: {
+      registrations: true,
+    },
+  });
+
+  if (!tournament) {
+    throw new ClientHttpError('Tournament not found', 404);
+  }
+
+  const member = await prisma.member.findUnique({ where: { id: params.memberId } });
+  if (!member) {
+    throw new ClientHttpError('Member not found', 404);
+  }
+
+  const existing = tournament.registrations.find((r: any) => r.memberId === params.memberId);
+  const alreadyRegistered = existing?.status === 'REGISTERED';
+  const registeredCount = tournament.registrations.filter((r: any) => r.status === 'REGISTERED').length;
+  const failure = registrationEligibilityFailure({ member, tournament, registeredCount, alreadyRegistered });
+
+  if (failure) {
+    throw new ClientHttpError(failure, 400);
+  }
+
+  if (alreadyRegistered) {
+    return { status: 'REGISTERED', message: 'You are already registered for this tournament.', registration: existing, tournament };
+  }
+
+  const registration = await (prisma as any).tournamentRegistration.upsert({
+    where: { tournamentId_memberId: { tournamentId: params.tournamentId, memberId: params.memberId } },
+    create: {
+      tournamentId: params.tournamentId,
+      memberId: params.memberId,
+      registrationCodeHash: params.codeHash || hashRegistrationCode(generateRegistrationCode()),
+      status: 'REGISTERED',
+      registeredAt: new Date(),
+    },
+    update: {
+      status: 'REGISTERED',
+      registeredAt: new Date(),
+      rejectedAt: null,
+      rejectionReason: null,
+    },
+  });
+
+  if (
+    tournament.maxParticipants != null &&
+    registeredCount < tournament.maxParticipants &&
+    registeredCount + 1 >= tournament.maxParticipants
+  ) {
+    await notifyInvitedRegistrationClosed(params.tournamentId, 'The tournament has reached the maximum number of participants.');
+  }
+
+  return { status: 'REGISTERED', message: 'Registered successfully.', registration, tournament };
+}
+
+async function loadTournamentForResponse(tournamentId: number) {
+  return (prisma as any).tournament.findUnique({
+    where: { id: tournamentId },
+    include: tournamentListInclude(),
+  });
+}
+
+// Lightweight nav badge endpoint: current player still has preregistration responses pending.
+router.get('/preregistration/pending-count', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const memberId = req.memberId || req.userId;
+    if (!memberId) {
+      return res.json({ count: 0 });
+    }
+
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: {
+        id: true,
+        isActive: true,
+        rating: true,
+        roles: true,
+      },
+    });
+
+    if (!member?.isActive || !member.roles?.includes('PLAYER')) {
+      return res.json({ count: 0 });
+    }
+
+    const preregistrationTournaments = await (prisma as any).tournament.findMany({
+      where: { status: 'PRE_REGISTRATION', parentTournamentId: null },
+      select: {
+        minRating: true,
+        maxRating: true,
+        maxParticipants: true,
+        registrations: {
+          select: { memberId: true, status: true },
+        },
+      },
+    });
+
+    const count = preregistrationTournaments.filter((tournament: any) => {
+      if (!tournamentSatisfiesRating(member, tournament)) return false;
+      const registeredCount = (tournament.registrations || []).filter((registration: any) => registration.status === 'REGISTERED').length;
+      if (tournament.maxParticipants != null && registeredCount >= tournament.maxParticipants) return false;
+      const registration = (tournament.registrations || []).find((registration: any) => registration.memberId === memberId);
+      return !registration || registration.status === 'INVITED';
+    }).length;
+
+    res.json({ count });
+  } catch (error) {
+    logger.error('Error fetching preregistration pending count', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/register/:code/decline', async (req, res) => {
+  try {
+    const code = String(req.params.code || '');
+    const result = await declineRegistrationByCode(code);
+    const updatedTournament = await loadTournamentForResponse(result.tournamentId);
+    emitTournamentUpdate(updatedTournament);
+    emitCacheInvalidation(result.tournamentId);
+    res.json({ status: 'DECLINED', message: result.message, tournament: updatedTournament });
+  } catch (error) {
+    if (isClientHttpError(error)) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    logger.error('Error declining tournament registration by link', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/register/:code', async (req, res) => {
+  try {
+    const code = String(req.params.code || '');
+    const registration = await (prisma as any).tournamentRegistration.findUnique({
+      where: { registrationCodeHash: hashRegistrationCode(code) },
+      include: { tournament: true, member: true },
+    });
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration link is invalid or expired.' });
+    }
+
+    const result = await registerMemberForTournament({
+      tournamentId: registration.tournamentId,
+      memberId: registration.memberId,
+      codeHash: registration.registrationCodeHash,
+    });
+    const updatedTournament = await loadTournamentForResponse(registration.tournamentId);
+    emitTournamentUpdate(updatedTournament);
+    emitCacheInvalidation(registration.tournamentId);
+    res.status(200).json({
+      status: result.status,
+      message: result.message,
+      tournament: updatedTournament,
+    });
+  } catch (error) {
+    if (isClientHttpError(error)) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    logger.error('Error registering by tournament link', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // All routes require authentication
 router.use(authenticate);
@@ -149,21 +510,7 @@ router.get('/', async (req, res) => {
     const tournaments = await prisma.tournament.findMany({
       where: { parentTournamentId: null }, // Only top-level tournaments; children are nested via enrichment
       orderBy: { createdAt: 'desc' },
-      include: {
-        participants: {
-          include: {
-            member: true,
-          },
-        },
-        matches: true,
-        swissData: true,
-        _count: {
-          select: {
-            participants: true,
-            matches: true,
-          },
-        },
-      },
+      include: tournamentListInclude(),
     });
 
     // For completed tournaments, calculate post-tournament rating for each participant.
@@ -276,15 +623,7 @@ router.get('/active', async (req, res) => {
     const tournaments = await prisma.tournament.findMany({
       where: { status: 'ACTIVE', parentTournamentId: null }, // Only top-level; children nested via enrichment
       orderBy: { createdAt: 'desc' },
-      include: {
-        participants: {
-          include: {
-            member: true,
-          },
-        },
-        matches: true,
-        swissData: true,
-      },
+      include: tournamentListInclude(),
     });
 
     // Use plugin-based enrichment for active tournaments
@@ -314,15 +653,7 @@ router.get('/:id', async (req, res) => {
     
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
-      include: {
-        participants: {
-          include: {
-            member: true,
-          },
-        },
-        matches: true,
-        swissData: true,
-      },
+      include: tournamentListInclude(),
     });
 
     if (!tournament) {
@@ -336,6 +667,399 @@ router.get('/:id', async (req, res) => {
     res.json(enrichedTournament);
   } catch (error) {
     logger.error('Error fetching tournament', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Advertise a tournament for preregistration without selecting participants.
+router.post('/preregistration', [
+  body('name').optional().trim(),
+  body('type').isString(),
+  body('tournamentDate').optional({ nullable: true }),
+  body('registrationDeadline').optional({ nullable: true }),
+  body('minRating').optional({ nullable: true }),
+  body('maxRating').optional({ nullable: true }),
+  body('maxParticipants').optional({ nullable: true }),
+], async (req: AuthRequest, res: Response) => {
+  try {
+    const hasOrganizerAccess = await isOrganizer(req);
+    if (!hasOrganizerAccess) {
+      return res.status(403).json({ error: 'Only Organizers can create tournament preregistration' });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const type = String(req.body.type || '');
+    if (!tournamentPluginRegistry.isRegistered(type)) {
+      return res.status(400).json({ error: `Invalid tournament type: ${type}` });
+    }
+
+    const tournamentDate = parseOptionalDate(req.body.tournamentDate);
+    const registrationDeadline = parseOptionalDate(req.body.registrationDeadline) || tournamentDate;
+    const minRating = parseOptionalInteger(req.body.minRating);
+    const maxRating = parseOptionalInteger(req.body.maxRating);
+    const maxParticipants = parseOptionalInteger(req.body.maxParticipants);
+
+    if (minRating != null && maxRating != null && minRating > maxRating) {
+      return res.status(400).json({ error: 'Minimum rating cannot exceed maximum rating' });
+    }
+    if (maxParticipants != null && maxParticipants <= 0) {
+      return res.status(400).json({ error: 'Max participants must be greater than zero' });
+    }
+
+    const tournament = await (prisma as any).tournament.create({
+      data: {
+        name: (req.body.name || '').trim() || `Tournament ${new Date().toLocaleDateString()}`,
+        type,
+        status: 'PRE_REGISTRATION',
+        tournamentDate,
+        registrationDeadline,
+        minRating,
+        maxRating,
+        maxParticipants,
+      },
+    });
+
+    const invitees = await (prisma as any).member.findMany({
+      where: {
+        isActive: true,
+        email: { not: null },
+        tournamentNotificationsEnabled: true,
+        roles: { has: 'PLAYER' },
+      },
+    });
+
+    let invitationCount = 0;
+    let emailFailureCount = 0;
+    for (const member of invitees) {
+      if (!tournamentSatisfiesRating(member, tournament)) continue;
+      const code = generateRegistrationCode();
+      const registration = await (prisma as any).tournamentRegistration.create({
+        data: {
+          tournamentId: tournament.id,
+          memberId: member.id,
+          registrationCodeHash: hashRegistrationCode(code),
+          status: 'INVITED',
+        },
+      });
+
+      try {
+        await sendTournamentInvitationEmail({
+          toEmail: member.email!,
+          firstName: member.firstName,
+          tournamentName: tournament.name || `Tournament ${tournament.id}`,
+          tournamentDate,
+          registrationDeadline,
+          registrationLink: buildTournamentRegistrationLink(code),
+          declineLink: buildTournamentRegistrationDeclineLink(code),
+        });
+        await (prisma as any).tournamentRegistration.update({
+          where: { id: registration.id },
+          data: { invitationSentAt: new Date() },
+        });
+        invitationCount += 1;
+      } catch (emailError) {
+        emailFailureCount += 1;
+        logger.error('Tournament invitation email failed', {
+          tournamentId: tournament.id,
+          memberId: member.id,
+          error: emailError instanceof Error ? emailError.message : String(emailError),
+        });
+      }
+    }
+
+    const createdTournament = await loadTournamentForResponse(tournament.id);
+    emitTournamentCreated(createdTournament);
+    emitCacheInvalidation(tournament.id);
+    res.status(201).json({ tournament: createdTournament, invitationCount, emailFailureCount });
+  } catch (error) {
+    logger.error('Error creating tournament preregistration', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/finalize-registration', [
+  body('participantIds').optional().isArray({ min: 2 }),
+  body('participantIds.*').optional().isInt({ min: 1 }),
+  body('type').optional().isString(),
+], async (req: AuthRequest, res: Response) => {
+  try {
+    const hasOrganizerAccess = await isOrganizer(req);
+    if (!hasOrganizerAccess) {
+      return res.status(403).json({ error: 'Only Organizers can finalize tournament registration' });
+    }
+
+    const tournamentId = parseInt(req.params.id);
+    if (isNaN(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    const preregistrationTournament = await (prisma as any).tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        registrations: true,
+        participants: true,
+        matches: true,
+        childTournaments: true,
+      },
+    });
+    if (!preregistrationTournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+    if (preregistrationTournament.status !== 'PRE_REGISTRATION') {
+      return res.status(400).json({ error: 'Tournament is not in preregistration mode' });
+    }
+
+    const type = String(req.body.type || preregistrationTournament.type);
+    if (type !== preregistrationTournament.type) {
+      return res.status(400).json({ error: 'Final tournament type must match the preregistered tournament type' });
+    }
+    if (!tournamentPluginRegistry.isRegistered(type)) {
+      return res.status(400).json({ error: `Invalid tournament type: ${type}` });
+    }
+    if (preregistrationTournament.participants.length > 0 || preregistrationTournament.matches.length > 0 || preregistrationTournament.childTournaments.length > 0) {
+      return res.status(400).json({ error: 'Preregistration tournament has already been finalized' });
+    }
+
+    const registeredIds = preregistrationTournament.registrations
+      .filter((registration: any) => registration.status === 'REGISTERED')
+      .map((registration: any) => registration.memberId);
+    const participantIds = Array.isArray(req.body.participantIds) && req.body.participantIds.length > 0
+      ? req.body.participantIds.map((id: any) => Number(id))
+      : registeredIds;
+    if (participantIds.length < 2) {
+      return res.status(400).json({ error: 'At least 2 registered players are required to create the tournament' });
+    }
+
+    const players = await prisma.member.findMany({
+      where: {
+        id: { in: participantIds },
+        isActive: true,
+      },
+    });
+    if (players.length !== participantIds.length) {
+      return res.status(400).json({ error: 'Some participants are not active or not found' });
+    }
+
+    let rootCreateUsed = false;
+    const tournamentDelegate = Object.create((prisma as any).tournament);
+    tournamentDelegate.create = async (args: any) => {
+      if (rootCreateUsed) {
+        return (prisma as any).tournament.create(args);
+      }
+      rootCreateUsed = true;
+      return (prisma as any).tournament.update({
+        where: { id: tournamentId },
+        data: {
+          ...args.data,
+          status: 'ACTIVE',
+        },
+        include: args.include,
+      });
+    };
+    const pluginPrisma = Object.create(prisma);
+    pluginPrisma.tournament = tournamentDelegate;
+
+    const plugin = tournamentPluginRegistry.get(type);
+    const createdTournament = await plugin.createTournament({
+      name: req.body.name || preregistrationTournament.name || `Tournament ${new Date().toLocaleDateString()}`,
+      participantIds,
+      players,
+      bracketPositions: req.body.bracketPositions,
+      roundRobinSize: req.body.roundRobinSize,
+      groups: req.body.groups,
+      additionalData: req.body.additionalData || req.body,
+      prisma: pluginPrisma,
+    });
+
+    await notifyInvitedRegistrationClosed(tournamentId, 'The tournament has been finalized.');
+
+    invalidateTournamentCache(createdTournament.id);
+    emitTournamentStateChanged(createdTournament, 'PRE_REGISTRATION');
+    emitCacheInvalidation(createdTournament.id);
+    res.json(createdTournament);
+  } catch (error) {
+    logger.error('Error finalizing tournament registration', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/cancel-preregistration', [
+  body('reason').isString().trim().notEmpty(),
+  body('customReason').optional({ nullable: true }).isString().trim(),
+], async (req: AuthRequest, res: Response) => {
+  try {
+    const hasOrganizerAccess = await isOrganizer(req);
+    if (!hasOrganizerAccess) {
+      return res.status(403).json({ error: 'Only Organizers can cancel tournament preregistration' });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const tournamentId = parseInt(req.params.id);
+    if (isNaN(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    const selectedReason = String(req.body.reason || '').trim();
+    const customReason = String(req.body.customReason || '').trim();
+    const reason = customReason
+      ? `${selectedReason}: ${customReason}`
+      : selectedReason;
+
+    if (!PREREGISTRATION_CANCEL_REASONS.includes(selectedReason as any)) {
+      return res.status(400).json({
+        error: 'Invalid cancellation reason',
+        reasons: PREREGISTRATION_CANCEL_REASONS,
+      });
+    }
+
+    const tournament = await (prisma as any).tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        registrations: {
+          include: { member: true },
+        },
+      },
+    });
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+    if (tournament.status !== 'PRE_REGISTRATION') {
+      return res.status(400).json({ error: 'Only preregistration tournaments can be cancelled here' });
+    }
+
+    const recipients = new Map<number, any>();
+    for (const registration of tournament.registrations || []) {
+      if (
+        registration.member?.email &&
+        (registration.invitationSentAt || registration.status === 'REGISTERED')
+      ) {
+        recipients.set(registration.memberId, registration.member);
+      }
+    }
+
+    let emailSent = 0;
+    let emailFailed = 0;
+    for (const member of recipients.values()) {
+      const sent = await sendRegistrationCancelledEmailSafely(member, tournament, reason);
+      if (sent) emailSent += 1;
+      else emailFailed += 1;
+    }
+
+    await (prisma as any).tournament.delete({ where: { id: tournamentId } });
+    try {
+      invalidateTournamentCache(tournamentId);
+      emitTournamentDeleted(tournamentId);
+      emitCacheInvalidation(tournamentId);
+    } catch (notificationError) {
+      logger.error('Preregistration cancellation succeeded but notification/cache invalidation failed', {
+        tournamentId,
+        error: notificationError instanceof Error ? notificationError.message : String(notificationError),
+        stack: notificationError instanceof Error ? notificationError.stack : undefined,
+      });
+    }
+
+    res.json({
+      message: 'Tournament preregistration cancelled',
+      emailSent,
+      emailFailed,
+    });
+  } catch (error) {
+    logger.error('Error cancelling tournament preregistration', {
+      tournamentId: req.params.id,
+      error: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : typeof error,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/register', async (req: AuthRequest, res: Response) => {
+  try {
+    const tournamentId = parseInt(req.params.id);
+    const memberId = req.memberId || req.userId;
+    if (isNaN(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+    if (!memberId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const result = await registerMemberForTournament({ tournamentId, memberId });
+    const updatedTournament = await loadTournamentForResponse(tournamentId);
+    emitTournamentUpdate(updatedTournament);
+    emitCacheInvalidation(tournamentId);
+    res.status(200).json({
+      status: result.status,
+      message: result.message,
+      tournament: updatedTournament,
+    });
+  } catch (error) {
+    if (isClientHttpError(error)) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    logger.error('Error registering for tournament', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/decline', async (req: AuthRequest, res: Response) => {
+  try {
+    const tournamentId = parseInt(req.params.id);
+    const memberId = req.memberId || req.userId;
+    if (isNaN(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+    if (!memberId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const tournament = await (prisma as any).tournament.findUnique({
+      where: { id: tournamentId },
+    });
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+    if (tournament.status !== 'PRE_REGISTRATION') {
+      return res.status(400).json({ error: 'Registration is closed for this tournament.' });
+    }
+
+    await (prisma as any).tournamentRegistration.upsert({
+      where: { tournamentId_memberId: { tournamentId, memberId } },
+      create: {
+        tournamentId,
+        memberId,
+        registrationCodeHash: hashRegistrationCode(generateRegistrationCode()),
+        status: 'DECLINED',
+        rejectedAt: new Date(),
+        rejectionReason: 'Declined by player',
+      },
+      update: {
+        status: 'DECLINED',
+        rejectedAt: new Date(),
+        rejectionReason: 'Declined by player',
+        registeredAt: null,
+      },
+    });
+
+    const updatedTournament = await loadTournamentForResponse(tournamentId);
+    emitTournamentUpdate(updatedTournament);
+    emitCacheInvalidation(tournamentId);
+    res.json({
+      status: 'DECLINED',
+      message: 'Invitation declined.',
+      tournament: updatedTournament,
+    });
+  } catch (error) {
+    logger.error('Error declining tournament registration', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -369,6 +1093,9 @@ router.post('/', [
     }
 
     const { name, participantIds, type, bracketPositions, roundRobinSize, groups, additionalData } = req.body;
+    const preregistrationTournamentId = parseOptionalInteger(
+      req.body.preregistrationTournamentId ?? additionalData?.preregistrationTournamentId
+    );
     
     // Get valid types from plugin registry
     const validTypes = tournamentPluginRegistry.getTypes();
@@ -421,6 +1148,47 @@ router.post('/', [
       tournamentName = `Tournament ${new Date().toLocaleDateString()}`;
     }
 
+    let pluginPrisma: any = prisma;
+    let previousStatus: string | null = null;
+    if (preregistrationTournamentId != null) {
+      const preregistrationTournament = await (prisma as any).tournament.findUnique({
+        where: { id: preregistrationTournamentId },
+        include: { participants: true, matches: true, childTournaments: true },
+      });
+      if (!preregistrationTournament) {
+        return res.status(404).json({ error: 'Preregistration tournament not found' });
+      }
+      if (preregistrationTournament.status !== 'PRE_REGISTRATION') {
+        return res.status(400).json({ error: 'Tournament is not in preregistration mode' });
+      }
+      if (preregistrationTournament.type !== type) {
+        return res.status(400).json({ error: 'Final tournament type must match the preregistered tournament type' });
+      }
+      if (preregistrationTournament.participants.length > 0 || preregistrationTournament.matches.length > 0 || preregistrationTournament.childTournaments.length > 0) {
+        return res.status(400).json({ error: 'Preregistration tournament has already been finalized' });
+      }
+      previousStatus = preregistrationTournament.status;
+
+      let rootCreateUsed = false;
+      const tournamentDelegate = Object.create((prisma as any).tournament);
+      tournamentDelegate.create = async (args: any) => {
+        if (rootCreateUsed) {
+          return (prisma as any).tournament.create(args);
+        }
+        rootCreateUsed = true;
+        return (prisma as any).tournament.update({
+          where: { id: preregistrationTournamentId },
+          data: {
+            ...args.data,
+            status: 'ACTIVE',
+          },
+          include: args.include,
+        });
+      };
+      pluginPrisma = Object.create(prisma);
+      pluginPrisma.tournament = tournamentDelegate;
+    }
+
     // Delegate tournament creation to plugin
     const createdTournament = await plugin.createTournament({
       name: tournamentName,
@@ -430,11 +1198,15 @@ router.post('/', [
       roundRobinSize,
       groups,
       additionalData,
-      prisma,
+      prisma: pluginPrisma,
     });
 
     invalidateTournamentCache(createdTournament.id);
-    emitTournamentCreated(createdTournament);
+    if (previousStatus) {
+      emitTournamentStateChanged(createdTournament, previousStatus);
+    } else {
+      emitTournamentCreated(createdTournament);
+    }
     emitCacheInvalidation(createdTournament.id);
 
     res.status(201).json(createdTournament);

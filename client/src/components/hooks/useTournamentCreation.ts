@@ -46,6 +46,8 @@ export function useTournamentCreation({
   const [tournamentName, setTournamentName] = useState('');
   const [tournamentType, setTournamentType] = useState<TournamentType>('');
   const [creationTournamentType, setCreationTournamentType] = useState<TournamentType | null>(null);
+  const [isPreregistrationMode, setIsPreregistrationMode] = useState(false);
+  const [finalizingPreregistrationId, setFinalizingPreregistrationId] = useState<number | null>(null);
   const [expandedMenuGroups, setExpandedMenuGroups] = useState<Set<string>>(new Set());
 
   // Derived
@@ -118,6 +120,34 @@ export function useTournamentCreation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.repeatTournament, members.length, isCreatingTournament]);
 
+  // Start final tournament creation from a preregistration tournament.
+  useEffect(() => {
+    if (location.state?.finalizeRegistration === true && location.state?.tournamentId && !isCreatingTournament && members.length > 0) {
+      const participantIds = location.state.participantIds || [];
+
+      setEditingTournamentId(null);
+      setRepeatingTournament(false);
+      setFinalizingPreregistrationId(location.state.tournamentId);
+      setExistingParticipantIds(new Set(participantIds));
+      setIsCreatingTournament(true);
+      setTournamentCreationStep('player_selection');
+      setSelectedPlayersForTournament(participantIds);
+      setTournamentName(location.state.tournamentName || '');
+      if (!location.state.tournamentType) {
+        throw new Error('tournamentType is required in navigation state for finalizeRegistration');
+      }
+      setTournamentType(location.state.tournamentType);
+      setCreationTournamentType(location.state.tournamentType);
+      setIsPreregistrationMode(false);
+
+      navigate('/players', {
+        state: { ...location.state, finalizeRegistration: false },
+        replace: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.finalizeRegistration, location.state?.tournamentId, members.length, isCreatingTournament]);
+
   // Auto-expand filters when in player selection mode for tournaments
   useEffect(() => {
     if (isCreatingTournament && tournamentCreationStep === 'player_selection' && filtersCollapsed) {
@@ -134,6 +164,8 @@ export function useTournamentCreation({
     setTournamentName('');
     setTournamentType('');
     setCreationTournamentType(null);
+    setIsPreregistrationMode(false);
+    setFinalizingPreregistrationId(null);
     setExpandedMenuGroups(new Set());
     resetShiftRangeAnchor();
   };
@@ -146,6 +178,8 @@ export function useTournamentCreation({
     setSelectedPlayersForTournament([]);
     setTournamentName('');
     setTournamentType('');
+    setIsPreregistrationMode(false);
+    setFinalizingPreregistrationId(null);
     setShowCancelConfirmation(false);
     resetShiftRangeAnchor();
   };
@@ -270,6 +304,9 @@ export function useTournamentCreation({
     setTournamentType,
     creationTournamentType,
     setCreationTournamentType,
+    isPreregistrationMode,
+    setIsPreregistrationMode,
+    finalizingPreregistrationId,
     expandedMenuGroups,
     setExpandedMenuGroups,
 

@@ -11,6 +11,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
   tournamentName,
   setTournamentName,
   editingTournamentId,
+  finalizingPreregistrationId,
   onCreated,
   onError,
   onSuccess,
@@ -123,7 +124,10 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
         tournamentData.name = tournamentName.trim();
       }
 
-      if (editingTournamentId) {
+      if (finalizingPreregistrationId) {
+        await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        onSuccess('Preliminary + Final Round Robin tournament created from preregistration successfully');
+      } else if (editingTournamentId) {
         await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
         onSuccess('Preliminary + Final Round Robin tournament modified successfully');
       } else {
@@ -498,7 +502,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
         boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
       }}>
         <h3 style={{ marginTop: 0, marginBottom: '20px' }}>
-          {editingTournamentId ? 'Confirm Tournament Modification' : 'Confirm Tournament Creation'}
+          {finalizingPreregistrationId ? 'Confirm Tournament Creation' : editingTournamentId ? 'Confirm Tournament Modification' : 'Confirm Tournament Creation'}
         </h3>
 
         {/* Configuration summary */}
@@ -620,7 +624,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
               fontWeight: 'bold',
             }}
           >
-            {editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
+            {finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
           </button>
         </div>
       </div>

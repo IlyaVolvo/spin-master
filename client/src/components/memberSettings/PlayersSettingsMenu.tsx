@@ -29,6 +29,8 @@ export interface PlayersSettingsMenuProps {
   onImportPlayers: (event: React.ChangeEvent<HTMLInputElement>) => void;
   importSendEmail: boolean;
   setImportSendEmail: React.Dispatch<React.SetStateAction<boolean>>;
+  tournamentNotificationsEnabled?: boolean;
+  onTournamentNotificationsChange?: (enabled: boolean) => void | Promise<void>;
 }
 
 /**
@@ -62,6 +64,8 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   onImportPlayers,
   importSendEmail,
   setImportSendEmail,
+  tournamentNotificationsEnabled,
+  onTournamentNotificationsChange,
 }) => (
   <div style={{ position: 'relative', display: 'inline-block' }} data-settings-menu>
     <button
@@ -206,6 +210,19 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
             </select>
           </label>
         </div>
+        {onTournamentNotificationsChange && (
+          <div style={{ borderTop: '1px solid #ddd', paddingTop: '6px', marginTop: '6px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
+              <input
+                type="checkbox"
+                checked={!!tournamentNotificationsEnabled}
+                onChange={(e) => void onTournamentNotificationsChange(e.target.checked)}
+                style={{ cursor: 'pointer', margin: 0 }}
+              />
+              <span>Receive tournament invitation emails</span>
+            </label>
+          </div>
+        )}
         <div style={{ borderTop: '1px solid #ddd', marginTop: '6px', marginBottom: '6px' }} />
         {isAdminUser && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>

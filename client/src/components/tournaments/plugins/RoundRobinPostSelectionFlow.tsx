@@ -13,6 +13,7 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
   tournamentName,
   setTournamentName,
   editingTournamentId,
+  finalizingPreregistrationId,
   onCreated,
   onError,
   onSuccess,
@@ -110,7 +111,10 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
           tournamentData.name = tournamentName.trim();
         }
 
-        if (editingTournamentId) {
+        if (finalizingPreregistrationId) {
+          await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+          onSuccess('Tournament created from preregistration successfully');
+        } else if (editingTournamentId) {
           await api.patch(`/tournaments/${editingTournamentId}`, {
             name: tournamentData.name,
             participantIds: selectedPlayerIds,
@@ -434,7 +438,7 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
               fontWeight: 'bold',
             }}
           >
-            {isMultiTournamentMode ? `Create ${playerGroups.length} Tournaments` : (editingTournamentId ? 'Modify Tournament' : 'Create Tournament')}
+            {isMultiTournamentMode ? `Create ${playerGroups.length} Tournaments` : (finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament')}
           </button>
         </div>
       </div>

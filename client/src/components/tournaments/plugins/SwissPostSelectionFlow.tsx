@@ -10,6 +10,7 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
   tournamentName,
   setTournamentName,
   editingTournamentId,
+  finalizingPreregistrationId,
   onCreated,
   onError,
   onSuccess,
@@ -61,7 +62,10 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         tournamentData.name = tournamentName.trim();
       }
 
-      if (editingTournamentId) {
+      if (finalizingPreregistrationId) {
+        await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        onSuccess('Swiss tournament created from preregistration successfully');
+      } else if (editingTournamentId) {
         await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
         onSuccess('Swiss tournament modified successfully');
       } else {
@@ -313,7 +317,7 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
               fontWeight: 'bold',
             }}
           >
-            {editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
+          {finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
           </button>
         </div>
       </div>

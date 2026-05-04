@@ -14,6 +14,7 @@ export interface Member {
   picture?: string | null;
   phone?: string | null;
   address?: string | null;
+  tournamentNotificationsEnabled?: boolean;
   /** Present on session/me payloads when returned by API. */
   hasPassword?: boolean;
 }
@@ -60,5 +61,6 @@ export interface PendingPlayerData {
   address: string | null;
   picture: string | null;
   roles: string[];
+  tournamentNotificationsEnabled?: boolean;
   emailConfirmedAt?: string | null;
 }

@@ -11,6 +11,7 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
   tournamentName,
   setTournamentName,
   editingTournamentId,
+  finalizingPreregistrationId,
   onCreated,
   onError,
   onSuccess,
@@ -96,7 +97,10 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         tournamentData.name = tournamentName.trim();
       }
 
-      if (editingTournamentId) {
+      if (finalizingPreregistrationId) {
+        await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        onSuccess('Tournament created from preregistration successfully');
+      } else if (editingTournamentId) {
         await api.patch(`/tournaments/${editingTournamentId}`, {
           name: tournamentData.name,
           participantIds: selectedPlayerIds,
@@ -272,7 +276,7 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
             fontWeight: 'bold',
           }}
         >
-          {editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
+          {finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
         </button>
         <button
           onClick={() => setStep('organize_bracket')}

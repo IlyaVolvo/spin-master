@@ -174,6 +174,10 @@ const Tournaments: React.FC = () => {
   const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
   const [expandedParticipants, setExpandedParticipants] = useState<Set<number>>(new Set());
   const [expandedCompound, setExpandedCompound] = useState<Set<number>>(new Set());
+  const [preregistrationSectionCollapsed, setPreregistrationSectionCollapsed] = useState<boolean>(false);
+  const [cancelPreregistration, setCancelPreregistration] = useState<Tournament | null>(null);
+  const [cancelPreregistrationReason, setCancelPreregistrationReason] = useState('Tournament cancelled by organizer');
+  const [cancelPreregistrationCustomReason, setCancelPreregistrationCustomReason] = useState('');
   const [activeSectionCollapsed, setActiveSectionCollapsed] = useState<boolean>(false);
   const [completedSectionCollapsed, setCompletedSectionCollapsed] = useState<boolean>(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState<{ tournamentId: number; matchCount: number } | null>(null);
@@ -183,6 +187,14 @@ const Tournaments: React.FC = () => {
   const cancelPasswordInputRef = useRef<HTMLInputElement | null>(null);
   const [hoveredIcon, setHoveredIcon] = useState<{ type: string; tournamentId: number; x: number; y: number } | null>(null);
   const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
+  const currentMember = getMember();
+  const preregistrationCancelReasons = [
+    'Tournament cancelled by organizer',
+    'Not enough registered players',
+    'Schedule conflict',
+    'Venue unavailable',
+    'Weather or emergency closure',
+  ];
 
   // Calculate date range based on filter type
   const getDateRangeForType = (type: string): { start: string; end: string } => {
@@ -331,6 +343,12 @@ const Tournaments: React.FC = () => {
     
     return filtered;
   }, [tournaments, effectiveDateRange, tournamentNameFilter]);
+
+  const filteredPreregistrationTournaments = useMemo(() => {
+    return tournaments
+      .filter(t => t.status === 'PRE_REGISTRATION')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [tournaments]);
 
 
   // Memoize combined active events (tournaments + matches) sorted by time
@@ -541,6 +559,7 @@ const Tournaments: React.FC = () => {
       setTournaments(tournamentsRes.data);
       setActiveTournaments(activeRes.data);
       setStandaloneMatches(matchesRes.data);
+      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
 
       tournamentsCache.data = tournamentsRes.data;
       tournamentsCache.activeData = activeRes.data;
@@ -818,6 +837,69 @@ const Tournaments: React.FC = () => {
     }
 
     setConfirmCompleteTournamentId(tournamentId);
+  };
+
+  const handleRegisterForTournament = async (tournamentId: number) => {
+    try {
+      const response = await api.post(`/tournaments/${tournamentId}/register`);
+      if (response.data?.tournament) {
+        setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+      }
+      setSuccess(response.data?.message || 'Registered successfully');
+      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to register for tournament');
+    }
+  };
+
+  const handleDeclineTournamentInvitation = async (tournamentId: number) => {
+    try {
+      const response = await api.post(`/tournaments/${tournamentId}/decline`);
+      if (response.data?.tournament) {
+        setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+      }
+      setSuccess(response.data?.message || 'Invitation declined');
+      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to decline invitation');
+    }
+  };
+
+  const handleCancelPreregistration = async () => {
+    if (!cancelPreregistration) return;
+    try {
+      const response = await api.post(`/tournaments/${cancelPreregistration.id}/cancel-preregistration`, {
+        reason: cancelPreregistrationReason,
+        customReason: cancelPreregistrationCustomReason.trim() || undefined,
+      });
+      setTournaments(prev => prev.filter(t => t.id !== cancelPreregistration.id));
+      setActiveTournaments(prev => prev.filter(t => t.id !== cancelPreregistration.id));
+      setSelectedTournament(prev => prev?.id === cancelPreregistration.id ? null : prev);
+      setCancelPreregistration(null);
+      setCancelPreregistrationCustomReason('');
+      setSuccess(response.data?.message || 'Tournament preregistration cancelled');
+      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to cancel tournament preregistration');
+    }
+  };
+
+  const handleFinalizePreregistration = (tournament: Tournament) => {
+    const participantIds = (tournament.registrations || [])
+      .filter(registration => registration.status === 'REGISTERED')
+      .map(registration => registration.memberId);
+
+    saveStateBeforeNavigate();
+    navigate('/players', {
+      state: {
+        finalizeRegistration: true,
+        tournamentId: tournament.id,
+        tournamentName: tournament.name,
+        tournamentType: tournament.type,
+        participantIds,
+        from: 'tournaments',
+      },
+    });
   };
 
   const executeCompleteTournament = async () => {
@@ -2217,6 +2299,222 @@ const Tournaments: React.FC = () => {
       <div className="card">
         {error && <div className="error-message">{error}</div>}
         {success && <div className="success-message">{success}</div>}
+
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '15px',
+          marginTop: '0',
+          marginBottom: '20px',
+          padding: '16px 20px',
+          backgroundColor: '#fff8e1',
+          borderRadius: '8px',
+          border: '2px solid #f39c12',
+          position: 'sticky',
+          top: 0,
+          zIndex: 9999,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        }}>
+          <button
+            onClick={() => setPreregistrationSectionCollapsed(!preregistrationSectionCollapsed)}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#b26a00', padding: '4px 8px' }}
+            title={preregistrationSectionCollapsed ? 'Expand Pre-registration section' : 'Collapse Pre-registration section'}
+          >
+            {preregistrationSectionCollapsed ? '▼' : '▲'}
+          </button>
+          <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 'bold', color: '#b26a00' }}>Pre-registration</h2>
+        </div>
+        {!preregistrationSectionCollapsed && (
+          filteredPreregistrationTournaments.length === 0 ? (
+            <p>No preregistration tournaments</p>
+          ) : (
+            filteredPreregistrationTournaments.map((tournament) => {
+              const registered = (tournament.registrations || []).filter(r => r.status === 'REGISTERED');
+              const invited = (tournament.registrations || []).filter(r => r.status === 'INVITED');
+              const declined = (tournament.registrations || []).filter(r => r.status === 'DECLINED');
+              const currentRegistration = currentMember
+                ? (tournament.registrations || []).find(r => r.memberId === currentMember.id)
+                : null;
+              const deadlinePassed = tournament.registrationDeadline
+                ? new Date() > new Date(tournament.registrationDeadline)
+                : false;
+              const currentPlayerRating = currentRegistration?.member?.rating ?? currentMember?.rating ?? null;
+              const hasRatingRestriction = tournament.minRating !== null && tournament.minRating !== undefined
+                || tournament.maxRating !== null && tournament.maxRating !== undefined;
+              const playerMeetsRating =
+                !hasRatingRestriction ||
+                (
+                  currentPlayerRating !== null &&
+                  currentPlayerRating !== undefined &&
+                  (tournament.minRating === null || tournament.minRating === undefined || currentPlayerRating >= tournament.minRating) &&
+                  (tournament.maxRating === null || tournament.maxRating === undefined || currentPlayerRating <= tournament.maxRating)
+                );
+              const registrationAtCapacity = tournament.maxParticipants != null && registered.length >= tournament.maxParticipants;
+              const playerCanRespond = Boolean(currentMember?.roles?.includes('PLAYER') && playerMeetsRating);
+              const showRegisterAction =
+                playerCanRespond &&
+                !deadlinePassed &&
+                !registrationAtCapacity &&
+                currentRegistration?.status !== 'REGISTERED';
+              const showDeclineAction =
+                playerCanRespond &&
+                currentRegistration?.status !== 'DECLINED' &&
+                (
+                  currentRegistration?.status === 'REGISTERED' ||
+                  (!registrationAtCapacity && (
+                    currentRegistration === null ||
+                    currentRegistration === undefined ||
+                    currentRegistration.status === 'INVITED'
+                  ))
+                );
+              return (
+                <div key={tournament.id} ref={(el) => { tournamentRefs.current[tournament.id] = el; }} style={{ marginBottom: '20px', padding: '15px', border: '1px solid #f39c12', borderRadius: '4px', backgroundColor: '#fffdf5' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '15px', marginBottom: '10px' }}>
+                    <div>
+                      <TournamentHeader tournament={tournament as any} onEditClick={() => handleStartEditTournamentName(tournament)} />
+                      <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
+                        <strong>Date:</strong> {tournament.tournamentDate ? new Date(tournament.tournamentDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Not set'}
+                        {' | '}<strong>Deadline:</strong> {tournament.registrationDeadline ? new Date(tournament.registrationDeadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Tournament date'}
+                        {' | '}<strong>Ratings:</strong> {tournament.minRating ?? 'All'} - {tournament.maxRating ?? 'All'}
+                        {' | '}<strong>Max:</strong> {tournament.maxParticipants ?? 'Unlimited'}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
+                        <strong>Registered ({registered.length}{tournament.maxParticipants ? `/${tournament.maxParticipants}` : ''}):</strong>{' '}
+                        {registered.length > 0
+                          ? registered.map(r => formatPlayerName(r.member.firstName, r.member.lastName, getNameDisplayOrder())).join(', ')
+                          : 'No players registered yet'}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
+                        <strong>Declined ({declined.length}):</strong>{' '}
+                        {declined.length > 0
+                          ? declined.map(r => formatPlayerName(r.member.firstName, r.member.lastName, getNameDisplayOrder())).join(', ')
+                          : 'No players declined'}
+                      </div>
+                      {(invited.length > 0 || declined.length > 0) && (
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                          Invited: {invited.length} | Declined: {declined.length}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', flexShrink: 0, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {(showRegisterAction || showDeclineAction) && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                          <div style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Player Response
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            {showRegisterAction && (
+                              <button
+                                onClick={() => handleRegisterForTournament(tournament.id)}
+                                style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#27ae60', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                              >
+                                Register
+                              </button>
+                            )}
+                            {showDeclineAction && (
+                              <button
+                                onClick={() => handleDeclineTournamentInvitation(tournament.id)}
+                                style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#e67e22', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                              >
+                                Decline
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {isUserOrganizer && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end', paddingLeft: showRegisterAction || showDeclineAction ? '16px' : 0, borderLeft: showRegisterAction || showDeclineAction ? '1px solid #e0e0e0' : 'none' }}>
+                          <div style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Organizer Actions
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => handleFinalizePreregistration(tournament)}
+                            title="Create tournament from registered players"
+                            style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#3498db', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                          >
+                            Finalize
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCancelPreregistration(tournament);
+                              setCancelPreregistrationReason(preregistrationCancelReasons[0]);
+                              setCancelPreregistrationCustomReason('');
+                            }}
+                            style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                          >
+                            Cancel
+                          </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )
+        )}
+
+        {cancelPreregistration && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 10002,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setCancelPreregistration(null);
+            }}
+          >
+            <div className="card" style={{ maxWidth: '560px', width: '100%' }} onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ marginTop: 0 }}>Cancel Tournament Registration</h3>
+              <p>
+                Cancel preregistration for <strong>{cancelPreregistration.name}</strong>? This will remove the
+                tournament and its registration records, then email invited/registered players who have an email.
+              </p>
+              <div className="form-group">
+                <label>Reason</label>
+                <select
+                  value={cancelPreregistrationReason}
+                  onChange={(e) => setCancelPreregistrationReason(e.target.value)}
+                  style={{ width: '100%', padding: '8px' }}
+                >
+                  {preregistrationCancelReasons.map((reason) => (
+                    <option key={reason} value={reason}>{reason}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Additional details (optional)</label>
+                <textarea
+                  value={cancelPreregistrationCustomReason}
+                  onChange={(e) => setCancelPreregistrationCustomReason(e.target.value)}
+                  rows={3}
+                  placeholder="Add custom details for the email"
+                  style={{ width: '100%', padding: '8px', resize: 'vertical' }}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                <button className="button-filter" type="button" onClick={() => setCancelPreregistration(null)}>
+                  Keep Registration
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCancelPreregistration()}
+                  style={{ padding: '8px 14px', border: 'none', borderRadius: '4px', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  Confirm Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ 
           display: 'flex', 

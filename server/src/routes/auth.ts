@@ -869,6 +869,7 @@ router.get('/member/me', async (req: Request, res: Response) => {
           address: true,
           picture: true,
           mustResetPassword: true,
+          tournamentNotificationsEnabled: true,
           emailConfirmedAt: true,
           password: true,
         },

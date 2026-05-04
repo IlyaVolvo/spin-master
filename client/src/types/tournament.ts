@@ -8,6 +8,7 @@ export type TournamentType = string;
 // Tournament Status Enum
 // Tracks the lifecycle state of a tournament
 export enum TournamentStatus {
+  PRE_REGISTRATION = 'PRE_REGISTRATION',
   ACTIVE = 'ACTIVE',
   COMPLETED = 'COMPLETED',
 }
@@ -21,6 +22,24 @@ export interface Member {
   birthDate: string | null;
   isActive: boolean;
   rating: number | null; // ELO-style rating for matchmaking and rankings
+  email?: string | null;
+  tournamentNotificationsEnabled?: boolean;
+}
+
+export type TournamentRegistrationStatus = 'INVITED' | 'REGISTERED' | 'DECLINED';
+
+export interface TournamentRegistration {
+  id: number;
+  tournamentId: number;
+  memberId: number;
+  member: Member;
+  status: TournamentRegistrationStatus;
+  invitationSentAt?: string | null;
+  registeredAt?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 // Tournament Participant Interface
@@ -119,7 +138,13 @@ export interface Tournament {
   parentTournamentId?: number | null; // For child tournaments in compound structures
   createdAt: string;
   recordedAt?: string; // When results were recorded (for historical tournaments)
+  tournamentDate?: string | null;
+  registrationDeadline?: string | null;
+  minRating?: number | null;
+  maxRating?: number | null;
+  maxParticipants?: number | null;
   participants: TournamentParticipant[]; // Only for basic tournaments
+  registrations?: TournamentRegistration[];
   matches: Match[]; // Only for basic tournaments
   bracketMatches?: BracketMatch[]; // Playoff bracket structure
   swissData?: SwissTournamentData; // Swiss tournament configuration
@@ -229,6 +254,7 @@ export interface PostSelectionFlowProps {
   tournamentName: string;
   setTournamentName: (name: string) => void;
   editingTournamentId: number | null;
+  finalizingPreregistrationId?: number | null;
   onCreated: () => void;
   onError: (error: string) => void;
   onSuccess: (message: string) => void;

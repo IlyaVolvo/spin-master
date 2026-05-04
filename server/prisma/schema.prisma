@@ -63,6 +63,10 @@ model Member {
 
   // Tournament participations
   tournamentParticipants TournamentParticipant[]
+  tournamentRegistrations TournamentRegistration[]
+
+  // Tournament registration invitation opt-in. Existing users default to not subscribed.
+  tournamentNotificationsEnabled Boolean @default(false)
 
   @@index([email])
   @@map("members")
@@ -107,6 +111,11 @@ model Tournament {
   cancelled  Boolean          @default(false) // True if tournament was cancelled
   createdAt  DateTime         @default(now())
   recordedAt DateTime         @updatedAt
+  tournamentDate DateTime?
+  registrationDeadline DateTime?
+  minRating Int?
+  maxRating Int?
+  maxParticipants Int?
 
   // Hierarchical structure: compound tournaments reference parent
   // If null, this is a root tournament (either basic or top-level compound)
@@ -115,6 +124,7 @@ model Tournament {
   // Relations
   // Participants: only for basic tournaments (enforced at application level)
   participants   TournamentParticipant[]
+  registrations  TournamentRegistration[]
   
   // Matches: only for basic tournaments (each match references one basic tournament)
   matches        Match[]
@@ -137,8 +147,38 @@ model Tournament {
 }
 
 enum TournamentStatus {
+  PRE_REGISTRATION
   ACTIVE
   COMPLETED
+}
+
+enum TournamentRegistrationStatus {
+  INVITED
+  REGISTERED
+  DECLINED
+}
+
+model TournamentRegistration {
+  id                   Int                          @id @default(autoincrement())
+  tournamentId          Int
+  memberId              Int
+  registrationCodeHash  String                       @unique
+  status                TournamentRegistrationStatus @default(INVITED)
+  invitationSentAt      DateTime?
+  registeredAt          DateTime?
+  rejectedAt            DateTime?
+  rejectionReason       String?
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  member     Member     @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([tournamentId, memberId])
+  @@index([tournamentId])
+  @@index([memberId])
+  @@index([status])
+  @@map("tournament_registrations")
 }
 
 // Tournament types: Basic tournaments have players and matches

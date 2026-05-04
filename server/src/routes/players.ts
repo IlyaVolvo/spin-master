@@ -918,6 +918,7 @@ router.post('/', [
   body('phone').optional().trim(),
   body('address').optional().trim(),
   body('picture').optional().trim(),
+  body('tournamentNotificationsEnabled').optional().isBoolean(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -925,7 +926,7 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck } = req.body;
+    const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck, tournamentNotificationsEnabled } = req.body;
     const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
     const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
     const trimmedEmailInput = typeof email === 'string' ? email.trim() : '';
@@ -1035,6 +1036,7 @@ router.post('/', [
             address: address || null,
             picture: picture || null,
             roles,
+            tournamentNotificationsEnabled: Boolean(hasEmail && tournamentNotificationsEnabled),
           },
         });
       }
@@ -1064,6 +1066,7 @@ router.post('/', [
           mustResetPassword: false,
           passwordResetToken: null,
           passwordResetTokenExpiry: null,
+          tournamentNotificationsEnabled: false,
         } as any,
       });
 
@@ -1114,6 +1117,7 @@ router.post('/', [
         mustResetPassword: true,
         passwordResetToken: passwordResetToken,
         passwordResetTokenExpiry: passwordResetExpiry,
+        tournamentNotificationsEnabled: Boolean(tournamentNotificationsEnabled),
       } as any,
     });
 
@@ -1378,6 +1382,7 @@ router.patch('/:id', [
   body('address').optional().trim(),
   body('picture').optional().trim(),
   body('roles').optional().isArray(),
+  body('tournamentNotificationsEnabled').optional().isBoolean(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -1422,7 +1427,7 @@ router.patch('/:id', [
       return res.status(403).json({ error: 'Only Administrators can modify other members\' profiles.' });
     }
 
-    const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, ...rest } = req.body;
+    const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, tournamentNotificationsEnabled, ...rest } = req.body;
 
     // Birth date is optional on PATCH (may be omitted, set, or cleared to null); invalid values rejected below.
 
@@ -1516,6 +1521,16 @@ router.patch('/:id', [
     if (phone !== undefined) updateData.phone = phone || null;
     if (address !== undefined) updateData.address = address || null;
     if (picture !== undefined) updateData.picture = picture || null;
+    if (tournamentNotificationsEnabled !== undefined) {
+      if (!isCurrentMember && !hasAdminAccess) {
+        return res.status(403).json({ error: 'Only the member themselves or Admins can change tournament notification settings' });
+      }
+      const finalEmail =
+        Object.prototype.hasOwnProperty.call(updateData, 'email') ? updateData.email : existingMember.email;
+      updateData.tournamentNotificationsEnabled = Boolean(tournamentNotificationsEnabled && finalEmail);
+    } else if (Object.prototype.hasOwnProperty.call(updateData, 'email') && !updateData.email) {
+      updateData.tournamentNotificationsEnabled = false;
+    }
     
     // Roles can only be changed by Admins
     if (roles !== undefined && Array.isArray(roles)) {

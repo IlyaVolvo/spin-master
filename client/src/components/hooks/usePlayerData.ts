@@ -17,6 +17,7 @@ interface Member {
   picture?: string | null;
   phone?: string | null;
   address?: string | null;
+  tournamentNotificationsEnabled?: boolean;
 }
 
 // Module-level cache to persist across component mounts/unmounts
