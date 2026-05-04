@@ -204,6 +204,9 @@ async function declineRegistrationByCode(code: string): Promise<{ tournamentId: 
   if (registration.tournament.status !== 'PRE_REGISTRATION') {
     throw new ClientHttpError('Registration is closed for this tournament.', 400);
   }
+  if (registration.tournament.registrationDeadline && new Date() > new Date(registration.tournament.registrationDeadline)) {
+    throw new ClientHttpError('Registration is closed for this tournament.', 400);
+  }
 
   await (prisma as any).tournamentRegistration.update({
     where: { id: registration.id },
@@ -315,6 +318,7 @@ router.get('/preregistration/pending-count', authenticate, async (req: AuthReque
     const preregistrationTournaments = await (prisma as any).tournament.findMany({
       where: { status: 'PRE_REGISTRATION', parentTournamentId: null },
       select: {
+        registrationDeadline: true,
         minRating: true,
         maxRating: true,
         maxParticipants: true,
@@ -325,6 +329,7 @@ router.get('/preregistration/pending-count', authenticate, async (req: AuthReque
     });
 
     const count = preregistrationTournaments.filter((tournament: any) => {
+      if (tournament.registrationDeadline && new Date() > new Date(tournament.registrationDeadline)) return false;
       if (!tournamentSatisfiesRating(member, tournament)) return false;
       const registeredCount = (tournament.registrations || []).filter((registration: any) => registration.status === 'REGISTERED').length;
       if (tournament.maxParticipants != null && registeredCount >= tournament.maxParticipants) return false;
@@ -929,7 +934,11 @@ router.post('/:id/cancel-preregistration', [
       },
     });
     if (!tournament) {
-      return res.status(404).json({ error: 'Tournament not found' });
+      return res.json({
+        message: 'Tournament preregistration already cancelled',
+        emailSent: 0,
+        emailFailed: 0,
+      });
     }
     if (tournament.status !== 'PRE_REGISTRATION') {
       return res.status(400).json({ error: 'Only preregistration tournaments can be cancelled here' });
@@ -945,6 +954,21 @@ router.post('/:id/cancel-preregistration', [
       }
     }
 
+    const deleteResult = await (prisma as any).tournament.deleteMany({
+      where: {
+        id: tournamentId,
+        status: 'PRE_REGISTRATION',
+      },
+    });
+
+    if (deleteResult.count === 0) {
+      return res.json({
+        message: 'Tournament preregistration already cancelled',
+        emailSent: 0,
+        emailFailed: 0,
+      });
+    }
+
     let emailSent = 0;
     let emailFailed = 0;
     for (const member of recipients.values()) {
@@ -953,7 +977,6 @@ router.post('/:id/cancel-preregistration', [
       else emailFailed += 1;
     }
 
-    await (prisma as any).tournament.delete({ where: { id: tournamentId } });
     try {
       invalidateTournamentCache(tournamentId);
       emitTournamentDeleted(tournamentId);
@@ -1029,6 +1052,9 @@ router.post('/:id/decline', async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Tournament not found' });
     }
     if (tournament.status !== 'PRE_REGISTRATION') {
+      return res.status(400).json({ error: 'Registration is closed for this tournament.' });
+    }
+    if (tournament.registrationDeadline && new Date() > new Date(tournament.registrationDeadline)) {
       return res.status(400).json({ error: 'Registration is closed for this tournament.' });
     }
 

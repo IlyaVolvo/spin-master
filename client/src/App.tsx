@@ -603,7 +603,9 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           >
             Tournaments
             {hasPendingPreregistrations ? (
-              <span style={{ marginLeft: '6px', fontWeight: 700 }}>!</span>
+              <span style={{ marginLeft: '6px', fontWeight: 700 }}>
+                ({pendingPreregistrationCount})
+              </span>
             ) : null}
           </a>
         </div>

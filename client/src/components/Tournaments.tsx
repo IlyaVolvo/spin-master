@@ -2351,13 +2351,15 @@ const Tournaments: React.FC = () => {
                 );
               const registrationAtCapacity = tournament.maxParticipants != null && registered.length >= tournament.maxParticipants;
               const playerCanRespond = Boolean(currentMember?.roles?.includes('PLAYER') && playerMeetsRating);
+              const registrationOpen = !deadlinePassed;
               const showRegisterAction =
                 playerCanRespond &&
-                !deadlinePassed &&
+                registrationOpen &&
                 !registrationAtCapacity &&
                 currentRegistration?.status !== 'REGISTERED';
               const showDeclineAction =
                 playerCanRespond &&
+                registrationOpen &&
                 currentRegistration?.status !== 'DECLINED' &&
                 (
                   currentRegistration?.status === 'REGISTERED' ||
