@@ -473,14 +473,36 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
 
   useEffect(() => {
     let cancelled = false;
+    let deadlineTimeout: number | null = null;
+
+    const scheduleDeadlineRefresh = (nextDeadlineAt: unknown) => {
+      if (deadlineTimeout !== null) {
+        window.clearTimeout(deadlineTimeout);
+        deadlineTimeout = null;
+      }
+      if (typeof nextDeadlineAt !== 'string' || nextDeadlineAt.trim() === '') return;
+
+      const deadlineTime = new Date(nextDeadlineAt).getTime();
+      if (!Number.isFinite(deadlineTime)) return;
+
+      const delay = Math.max(0, deadlineTime - Date.now() + 1000);
+      deadlineTimeout = window.setTimeout(() => {
+        void fetchPendingPreregistrations();
+      }, delay);
+    };
+
     const fetchPendingPreregistrations = async () => {
       try {
         const response = await api.get('/tournaments/preregistration/pending-count');
         if (!cancelled) {
           setPendingPreregistrationCount(Number(response.data?.count) || 0);
+          scheduleDeadlineRefresh(response.data?.nextDeadlineAt);
         }
       } catch {
-        if (!cancelled) setPendingPreregistrationCount(0);
+        if (!cancelled) {
+          setPendingPreregistrationCount(0);
+          scheduleDeadlineRefresh(null);
+        }
       }
     };
 
@@ -490,6 +512,9 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      if (deadlineTimeout !== null) {
+        window.clearTimeout(deadlineTimeout);
+      }
       window.removeEventListener('tournament-preregistration-count-changed', fetchPendingPreregistrations);
     };
   }, []);

@@ -328,16 +328,27 @@ router.get('/preregistration/pending-count', authenticate, async (req: AuthReque
       },
     });
 
-    const count = preregistrationTournaments.filter((tournament: any) => {
-      if (tournament.registrationDeadline && new Date() > new Date(tournament.registrationDeadline)) return false;
+    const now = new Date();
+    const pendingTournaments = preregistrationTournaments.filter((tournament: any) => {
+      if (tournament.registrationDeadline && now >= new Date(tournament.registrationDeadline)) return false;
       if (!tournamentSatisfiesRating(member, tournament)) return false;
       const registeredCount = (tournament.registrations || []).filter((registration: any) => registration.status === 'REGISTERED').length;
       if (tournament.maxParticipants != null && registeredCount >= tournament.maxParticipants) return false;
       const registration = (tournament.registrations || []).find((registration: any) => registration.memberId === memberId);
       return !registration || registration.status === 'INVITED';
-    }).length;
+    });
 
-    res.json({ count });
+    const nextDeadlineAt = pendingTournaments.reduce((nextDeadline: Date | null, tournament: any) => {
+      if (!tournament.registrationDeadline) return nextDeadline;
+      const deadline = new Date(tournament.registrationDeadline);
+      if (Number.isNaN(deadline.getTime()) || deadline <= now) return nextDeadline;
+      return !nextDeadline || deadline < nextDeadline ? deadline : nextDeadline;
+    }, null as Date | null);
+
+    res.json({
+      count: pendingTournaments.length,
+      nextDeadlineAt: nextDeadlineAt ? nextDeadlineAt.toISOString() : null,
+    });
   } catch (error) {
     logger.error('Error fetching preregistration pending count', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });

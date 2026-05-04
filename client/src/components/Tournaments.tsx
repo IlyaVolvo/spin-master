@@ -178,6 +178,7 @@ const Tournaments: React.FC = () => {
   const [cancelPreregistration, setCancelPreregistration] = useState<Tournament | null>(null);
   const [cancelPreregistrationReason, setCancelPreregistrationReason] = useState('Tournament cancelled by organizer');
   const [cancelPreregistrationCustomReason, setCancelPreregistrationCustomReason] = useState('');
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [activeSectionCollapsed, setActiveSectionCollapsed] = useState<boolean>(false);
   const [completedSectionCollapsed, setCompletedSectionCollapsed] = useState<boolean>(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState<{ tournamentId: number; matchCount: number } | null>(null);
@@ -349,6 +350,26 @@ const Tournaments: React.FC = () => {
       .filter(t => t.status === 'PRE_REGISTRATION')
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [tournaments]);
+
+  useEffect(() => {
+    const nextDeadline = filteredPreregistrationTournaments.reduce<number | null>((earliestDeadline, tournament) => {
+      if (!tournament.registrationDeadline) return earliestDeadline;
+      const deadline = new Date(tournament.registrationDeadline).getTime();
+      if (!Number.isFinite(deadline) || deadline <= Date.now()) return earliestDeadline;
+      return earliestDeadline === null || deadline < earliestDeadline ? deadline : earliestDeadline;
+    }, null);
+
+    if (nextDeadline === null) return;
+
+    const timeout = window.setTimeout(() => {
+      setCurrentTime(Date.now());
+      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+    }, Math.max(0, nextDeadline - Date.now() + 1000));
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [filteredPreregistrationTournaments, currentTime]);
 
 
   // Memoize combined active events (tournaments + matches) sorted by time
@@ -2336,7 +2357,7 @@ const Tournaments: React.FC = () => {
                 ? (tournament.registrations || []).find(r => r.memberId === currentMember.id)
                 : null;
               const deadlinePassed = tournament.registrationDeadline
-                ? new Date() > new Date(tournament.registrationDeadline)
+                ? currentTime >= new Date(tournament.registrationDeadline).getTime()
                 : false;
               const currentPlayerRating = currentRegistration?.member?.rating ?? currentMember?.rating ?? null;
               const hasRatingRestriction = tournament.minRating !== null && tournament.minRating !== undefined
@@ -2373,7 +2394,29 @@ const Tournaments: React.FC = () => {
                 <div key={tournament.id} ref={(el) => { tournamentRefs.current[tournament.id] = el; }} style={{ marginBottom: '20px', padding: '15px', border: '1px solid #f39c12', borderRadius: '4px', backgroundColor: '#fffdf5' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '15px', marginBottom: '10px' }}>
                     <div>
-                      <TournamentHeader tournament={tournament as any} onEditClick={() => handleStartEditTournamentName(tournament)} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <TournamentHeader tournament={tournament as any} onEditClick={() => handleStartEditTournamentName(tournament)} />
+                        {(showRegisterAction || showDeclineAction) && (
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {showRegisterAction && (
+                              <button
+                                onClick={() => handleRegisterForTournament(tournament.id)}
+                                style={{ padding: '6px 10px', border: 'none', borderRadius: '4px', backgroundColor: '#27ae60', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                              >
+                                Register
+                              </button>
+                            )}
+                            {showDeclineAction && (
+                              <button
+                                onClick={() => handleDeclineTournamentInvitation(tournament.id)}
+                                style={{ padding: '6px 10px', border: 'none', borderRadius: '4px', backgroundColor: '#e67e22', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                              >
+                                Decline
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
                         <strong>Date:</strong> {tournament.tournamentDate ? new Date(tournament.tournamentDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Not set'}
                         {' | '}<strong>Deadline:</strong> {tournament.registrationDeadline ? new Date(tournament.registrationDeadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Tournament date'}
@@ -2399,33 +2442,8 @@ const Tournaments: React.FC = () => {
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: '16px', flexShrink: 0, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {(showRegisterAction || showDeclineAction) && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
-                          <div style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            Player Response
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            {showRegisterAction && (
-                              <button
-                                onClick={() => handleRegisterForTournament(tournament.id)}
-                                style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#27ae60', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
-                              >
-                                Register
-                              </button>
-                            )}
-                            {showDeclineAction && (
-                              <button
-                                onClick={() => handleDeclineTournamentInvitation(tournament.id)}
-                                style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#e67e22', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
-                              >
-                                Decline
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
                       {isUserOrganizer && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end', paddingLeft: showRegisterAction || showDeclineAction ? '16px' : 0, borderLeft: showRegisterAction || showDeclineAction ? '1px solid #e0e0e0' : 'none' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
                           <div style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                             Organizer Actions
                           </div>
