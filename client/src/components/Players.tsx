@@ -68,6 +68,41 @@ function normalizeMemberGender(g: string | null | undefined): 'MALE' | 'FEMALE' 
   return 'NOT_SPECIFIED';
 }
 
+const formatDateTimeLocal = (date: Date) => {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const getDefaultPreregistrationTournamentDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(18, 0, 0, 0);
+  return formatDateTimeLocal(date);
+};
+
+const getDefaultPreregistrationDeadline = (tournamentDateValue: string) => {
+  const tournamentDate = new Date(tournamentDateValue);
+  if (Number.isNaN(tournamentDate.getTime())) return '';
+  tournamentDate.setMinutes(tournamentDate.getMinutes() - 30);
+  return formatDateTimeLocal(tournamentDate);
+};
+
+const getDefaultPreregistrationDateValues = () => {
+  const tournamentDate = getDefaultPreregistrationTournamentDate();
+  return {
+    tournamentDate,
+    deadline: getDefaultPreregistrationDeadline(tournamentDate),
+  };
+};
+
+const clampDeadlineToTournamentDate = (deadlineValue: string, tournamentDateValue: string) => {
+  if (!deadlineValue || !tournamentDateValue) return deadlineValue;
+  const deadline = new Date(deadlineValue);
+  const tournamentDate = new Date(tournamentDateValue);
+  if (Number.isNaN(deadline.getTime()) || Number.isNaN(tournamentDate.getTime())) return deadlineValue;
+  return deadline > tournamentDate ? tournamentDateValue : deadlineValue;
+};
+
 function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
   const bd = member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null;
   return {
@@ -214,8 +249,12 @@ const Players: React.FC = () => {
     setFiltersCollapsed,
   });
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
-  const [preregistrationTournamentDate, setPreregistrationTournamentDate] = useState('');
-  const [preregistrationDeadline, setPreregistrationDeadline] = useState('');
+  const [preregistrationTournamentDate, setPreregistrationTournamentDate] = useState(
+    () => getDefaultPreregistrationDateValues().tournamentDate
+  );
+  const [preregistrationDeadline, setPreregistrationDeadline] = useState(
+    () => getDefaultPreregistrationDateValues().deadline
+  );
   const [preregistrationMinRating, setPreregistrationMinRating] = useState('');
   const [preregistrationMaxRating, setPreregistrationMaxRating] = useState('');
   const [preregistrationMaxParticipants, setPreregistrationMaxParticipants] = useState('');
@@ -2283,8 +2322,9 @@ const Players: React.FC = () => {
         maxParticipants: preregistrationMaxParticipants === '' ? undefined : Number(preregistrationMaxParticipants),
       });
       setSuccess('Tournament preregistration created successfully');
-      setPreregistrationTournamentDate('');
-      setPreregistrationDeadline('');
+      const defaultDates = getDefaultPreregistrationDateValues();
+      setPreregistrationTournamentDate(defaultDates.tournamentDate);
+      setPreregistrationDeadline(defaultDates.deadline);
       setPreregistrationMinRating('');
       setPreregistrationMaxRating('');
       setPreregistrationMaxParticipants('');
@@ -2297,11 +2337,28 @@ const Players: React.FC = () => {
 
   const handlePreregistrationTournamentDateChange = (value: string) => {
     setPreregistrationTournamentDate((previousTournamentDate) => {
+      const previousDefaultDeadline = getDefaultPreregistrationDeadline(previousTournamentDate);
+      const nextDefaultDeadline = getDefaultPreregistrationDeadline(value);
       setPreregistrationDeadline((currentDeadline) =>
-        currentDeadline === '' || currentDeadline === previousTournamentDate ? value : currentDeadline
+        currentDeadline === '' || currentDeadline === previousDefaultDeadline
+          ? nextDefaultDeadline
+          : clampDeadlineToTournamentDate(currentDeadline, value)
       );
       return value;
     });
+  };
+
+  const handlePreregistrationDeadlineChange = (value: string) => {
+    setPreregistrationDeadline(clampDeadlineToTournamentDate(value, preregistrationTournamentDate));
+  };
+
+  const handlePreregistrationModeChange = (enabled: boolean) => {
+    setIsPreregistrationMode(enabled);
+    if (enabled) {
+      const defaultDates = getDefaultPreregistrationDateValues();
+      setPreregistrationTournamentDate((currentTournamentDate) => currentTournamentDate || defaultDates.tournamentDate);
+      setPreregistrationDeadline((currentDeadline) => currentDeadline || defaultDates.deadline);
+    }
   };
 
   const handleTournamentNotificationsChange = async (enabled: boolean) => {
@@ -3065,7 +3122,7 @@ const Players: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={isPreregistrationMode}
-                          onChange={(e) => setIsPreregistrationMode(e.target.checked)}
+                          onChange={(e) => handlePreregistrationModeChange(e.target.checked)}
                         />
                         <span>
                           <strong>Pre-registration mode</strong>
@@ -3102,9 +3159,10 @@ const Players: React.FC = () => {
                             <input
                               type="datetime-local"
                               value={preregistrationDeadline}
-                              onChange={(e) => setPreregistrationDeadline(e.target.value)}
+                              onChange={(e) => handlePreregistrationDeadlineChange(e.target.value)}
                               step="60"
-                              placeholder="Defaults to tournament date"
+                              max={preregistrationTournamentDate || undefined}
+                              placeholder="Defaults to 30 minutes before tournament"
                             />
                           </div>
                           <div className="form-group">

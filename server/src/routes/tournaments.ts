@@ -59,6 +59,17 @@ function parseOptionalDate(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function getDefaultPreregistrationTournamentDate(): Date {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(18, 0, 0, 0);
+  return date;
+}
+
+function getDefaultPreregistrationDeadline(tournamentDate: Date): Date {
+  return new Date(tournamentDate.getTime() - 30 * 60 * 1000);
+}
+
 function parseOptionalInteger(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const num = Number(value);
@@ -713,12 +724,15 @@ router.post('/preregistration', [
       return res.status(400).json({ error: `Invalid tournament type: ${type}` });
     }
 
-    const tournamentDate = parseOptionalDate(req.body.tournamentDate);
-    const registrationDeadline = parseOptionalDate(req.body.registrationDeadline) || tournamentDate;
+    const tournamentDate = parseOptionalDate(req.body.tournamentDate) || getDefaultPreregistrationTournamentDate();
+    const registrationDeadline = parseOptionalDate(req.body.registrationDeadline) || getDefaultPreregistrationDeadline(tournamentDate);
     const minRating = parseOptionalInteger(req.body.minRating);
     const maxRating = parseOptionalInteger(req.body.maxRating);
     const maxParticipants = parseOptionalInteger(req.body.maxParticipants);
 
+    if (registrationDeadline > tournamentDate) {
+      return res.status(400).json({ error: 'Registration deadline cannot be after the tournament date' });
+    }
     if (minRating != null && maxRating != null && minRating > maxRating) {
       return res.status(400).json({ error: 'Minimum rating cannot exceed maximum rating' });
     }
