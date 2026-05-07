@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { PostSelectionFlowProps } from '../../../types/tournament';
 import api from '../../../utils/api';
+import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
 
 type Step = 'configure' | 'confirmation';
 
@@ -22,9 +23,12 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
   const [step, setStep] = useState<Step>('configure');
 
   const numPlayers = selectedPlayerIds.length;
-  const minRounds = Math.ceil(Math.log2(numPlayers)) + 1;
-  const maxRounds = Math.floor(numPlayers / 2);
-  const [numberOfRounds, setNumberOfRounds] = useState<number>(Math.min(minRounds, maxRounds));
+  const swissRules = getSystemConfig().tournamentRules.swiss;
+  const minRounds = 3;
+  const maxRounds = Math.floor(numPlayers / swissRules.maxRoundsDivisor);
+  const [numberOfRounds, setNumberOfRounds] = useState<number>(
+    calculateSwissDefaultRounds(numPlayers, swissRules.maxRoundsDivisor)
+  );
 
   // Sort players by rating for preview
   const sortedPlayers = useMemo(() => {
@@ -134,7 +138,7 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
               }}
             />
             <div style={{ marginTop: '4px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-              Min: {minRounds} (log2({numPlayers}) + 1), Max: {maxRounds} (50% of players)
+              Min: {minRounds}, Max: {maxRounds} ({Math.round(100 / swissRules.maxRoundsDivisor)}% of players)
             </div>
           </div>
 

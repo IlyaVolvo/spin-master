@@ -9,6 +9,19 @@ vi.mock('../utils/nameFormatter', () => ({
   getNameDisplayOrder: () => 'firstLast',
 }));
 
+vi.mock('../utils/systemConfig', () => ({
+  getSystemConfig: () => ({
+    tournamentRules: {
+      matchScore: {
+        min: 1,
+        max: 7,
+        allowEqualScores: false,
+      },
+    },
+  }),
+  subscribeToSystemConfig: () => () => undefined,
+}));
+
 const player1 = { id: 1, firstName: 'One', lastName: 'Player' };
 const player2 = { id: 2, firstName: 'Two', lastName: 'Player' };
 
@@ -106,6 +119,16 @@ describe('MatchEntryPopup modification confirmations', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(props.onSave).toHaveBeenCalled();
+  });
+
+  it('uses configured match score bounds for score inputs', () => {
+    renderPopup();
+
+    const inputs = screen.getAllByRole('spinbutton');
+    expect(inputs[0]).toHaveAttribute('min', '1');
+    expect(inputs[0]).toHaveAttribute('max', '7');
+    expect(inputs[1]).toHaveAttribute('min', '1');
+    expect(inputs[1]).toHaveAttribute('max', '7');
   });
 
   it('treats an unplayed generated match row as first result entry', () => {

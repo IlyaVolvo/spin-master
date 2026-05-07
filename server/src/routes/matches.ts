@@ -4,6 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { processMatchRating } from '../services/matchRatingService';
+import { getTournamentRulesConfig } from '../services/systemConfigService';
 import bcrypt from 'bcryptjs';
 
 const router = express.Router();
@@ -38,6 +39,17 @@ async function isOrganizer(req: AuthRequest): Promise<boolean> {
   }
   
   return false;
+}
+
+function validateConfiguredMatchScore(player1Sets: number, player2Sets: number, player1Forfeit = false, player2Forfeit = false): string | null {
+  const { matchScore } = getTournamentRulesConfig();
+  if (player1Sets < matchScore.min || player1Sets > matchScore.max || player2Sets < matchScore.min || player2Sets > matchScore.max) {
+    return `Scores must be between ${matchScore.min} and ${matchScore.max}`;
+  }
+  if (!matchScore.allowEqualScores && !player1Forfeit && !player2Forfeit && player1Sets === player2Sets) {
+    return 'Scores cannot be equal. One player must win.';
+  }
+  return null;
 }
 
 // Get all standalone matches (matches without tournament association)
@@ -173,13 +185,12 @@ router.post('/', [
       }
     }
 
-    // Validate score
-    if (player1Sets === 0 && player2Sets === 0) {
-      return res.status(400).json({ error: 'At least one player must have scored' });
-    }
-
     const finalPlayer1Forfeit = player1Forfeit || false;
     const finalPlayer2Forfeit = player2Forfeit || false;
+    const scoreError = validateConfiguredMatchScore(player1Sets, player2Sets, finalPlayer1Forfeit, finalPlayer2Forfeit);
+    if (scoreError) {
+      return res.status(400).json({ error: scoreError });
+    }
 
     // Create the standalone match
     const match = await prisma.match.create({

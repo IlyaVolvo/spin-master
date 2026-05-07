@@ -4,6 +4,8 @@ import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated } from './utils/auth';
 import api from './utils/api';
+import { connectSocket } from './utils/socket';
+import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig } from './utils/systemConfig';
 import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPosition';
 import { getErrorMessage } from './utils/errorHandler';
 
@@ -13,6 +15,7 @@ const Tournaments = lazy(() => import('./components/Tournaments'));
 const Statistics = lazy(() => import('./components/Statistics'));
 const History = lazy(() => import('./components/History'));
 const TournamentRegistrationLink = lazy(() => import('./components/TournamentRegistrationLink'));
+const SystemSettings = lazy(() => import('./components/SystemSettings'));
 
 // Component to prevent default scroll restoration for routes that handle their own scroll
 function ScrollToTop() {
@@ -36,7 +39,7 @@ function AuthRedirect() {
   
   useEffect(() => {
     // If we're at root or any non-matching path, navigate to /players
-    const validPaths = ['/players', '/tournaments', '/statistics', '/history'];
+    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings'];
     if (!validPaths.includes(location.pathname)) {
       navigate('/players', { replace: true });
     }
@@ -54,20 +57,37 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .get<{ clubName: string | null }>('/config')
+    loadPublicSystemConfig()
       .then((res) => {
         if (cancelled) return;
-        const name = res.data?.clubName;
+        const name = res.branding?.clubName;
         setClubName(typeof name === 'string' && name.trim() !== '' ? name.trim() : null);
       })
       .catch(() => {
         if (!cancelled) setClubName(null);
       });
+    const unsubscribe = subscribeToSystemConfig((config) => {
+      if (cancelled) return;
+      const name = config.branding?.clubName;
+      setClubName(typeof name === 'string' && name.trim() !== '' ? name.trim() : null);
+    });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuth) return;
+    const socket = connectSocket();
+    const refreshConfig = () => {
+      void loadPublicSystemConfig();
+    };
+    socket?.on('system:configUpdated', refreshConfig);
+    return () => {
+      socket?.off('system:configUpdated', refreshConfig);
+    };
+  }, [isAuth]);
 
   useEffect(() => {
     const resetParams = new URLSearchParams(window.location.search);
@@ -248,6 +268,7 @@ function App() {
                 <Route path="/tournaments" element={<Tournaments />} />
                 <Route path="/statistics" element={<Statistics />} />
                 <Route path="/history" element={<History />} />
+                <Route path="/system-settings" element={<SystemSettings />} />
               </Routes>
             </Suspense>
             </ErrorBoundary>
@@ -286,6 +307,7 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
   const [loading, setLoading] = useState(false);
   /** False when DB password is unset (admin reset / invite) — matches server change-password behavior. */
   const [needsCurrentPassword, setNeedsCurrentPassword] = useState(true);
+  const [minimumPasswordLength, setMinimumPasswordLength] = useState(() => getSystemConfig().authPolicy.minimumPasswordLength);
 
   useEffect(() => {
     let cancelled = false;
@@ -304,8 +326,12 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
       }
     };
     sync();
+    const unsubscribe = subscribeToSystemConfig((config) => {
+      setMinimumPasswordLength(config.authPolicy.minimumPasswordLength);
+    });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
 
@@ -323,8 +349,8 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError('New password must be at least 6 characters long');
+    if (newPassword.length < minimumPasswordLength) {
+      setError(`New password must be at least ${minimumPasswordLength} characters long`);
       return;
     }
 
@@ -396,7 +422,7 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={minimumPasswordLength}
               autoFocus={!needsCurrentPassword}
             />
           </div>
@@ -407,7 +433,7 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={minimumPasswordLength}
             />
           </div>
           {error && <div className="error-message">{error}</div>}
@@ -430,6 +456,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   
   const isPlayersActive = location.pathname === '/players';
   const isTournamentsActive = location.pathname === '/tournaments';
+  const isSettingsActive = location.pathname === '/system-settings';
   
   // Format roles as comma-separated first letters
   const formatRoles = (roles: string[]): string => {
@@ -535,7 +562,16 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     navigate('/tournaments', { replace: true });
   };
 
+  const handleSettingsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/system-settings', { replace: true });
+  };
+
   const hasPendingPreregistrations = pendingPreregistrationCount > 0;
+  const isAdminUser = userRoles.some(role => String(role).toUpperCase() === 'ADMIN');
   
   return (
     <div className="header" style={{
@@ -633,6 +669,50 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
               </span>
             ) : null}
           </a>
+          {isAdminUser ? (
+            <a
+              className="app-header-tab"
+              href="/system-settings"
+              onClick={handleSettingsClick}
+              title="System settings"
+              aria-label="System settings"
+              style={{
+                color: isSettingsActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
+                textDecoration: 'none',
+                padding: '8px 11px 10px 11px',
+                background: isSettingsActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+                borderTopLeftRadius: '8px',
+                borderTopRightRadius: '8px',
+                border: isSettingsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+                borderBottom: isSettingsActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
+                transition: 'all 0.2s',
+                fontSize: '15px',
+                fontWeight: isSettingsActive ? '600' : '500',
+                cursor: 'pointer',
+                position: 'relative',
+                zIndex: isSettingsActive ? 10 : 1,
+                boxShadow: isSettingsActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+                marginBottom: isSettingsActive ? '0' : '1px',
+                marginLeft: '18px',
+                minWidth: '34px',
+                textAlign: 'center'
+              }}
+              onMouseEnter={(e) => {
+                if (!isSettingsActive) {
+                  e.currentTarget.style.color = 'white';
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isSettingsActive) {
+                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                }
+              }}
+            >
+              ⚙
+            </a>
+          ) : null}
         </div>
         <h1
           className="app-header-title"

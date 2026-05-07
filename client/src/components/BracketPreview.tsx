@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
+import { getSystemConfig } from '../utils/systemConfig';
 
 interface Player {
   id: number;
@@ -35,12 +36,13 @@ export const BracketPreview: React.FC<BracketPreviewProps> = ({
   const [isDraggingFromTempZone, setIsDraggingFromTempZone] = useState(false);
   const [rejectedDropPosition, setRejectedDropPosition] = useState<number | null>(null);
   
-  // Calculate max number of seeded players:
-  // No more than a quarter of the bracket size (next power of 2 >= numPlayers).
-  // Must be a power of 2 >= 2, or 0 if bracket size < 8.
+  // Calculate max seeded players from the configured 1/N bracket ratio.
   const calculateMaxSeeds = (numPlayers: number): number => {
     const bracketSize = Math.pow(2, Math.ceil(Math.log2(numPlayers)));
-    return bracketSize >= 8 ? bracketSize / 4 : 0;
+    const seedDivisor = getSystemConfig().tournamentRules.playoff.seedDivisor;
+    const target = Math.floor(bracketSize / seedDivisor);
+    if (target < 2) return 0;
+    return Math.pow(2, Math.floor(Math.log2(target)));
   };
 
   // Get valid seed values: all powers of 2 <= maxSeeds (including 0 for random)

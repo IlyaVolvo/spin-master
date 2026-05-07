@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { getToken } from './auth';
+import { getSystemConfig } from './systemConfig';
 
 let socket: Socket | null = null;
 
@@ -14,12 +15,13 @@ export function connectSocket(): Socket | null {
 
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
   const token = getToken();
+  const { clientRuntime } = getSystemConfig();
 
   socket = io(apiUrl, {
     transports: ['websocket', 'polling'],
     reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionAttempts: 5,
+    reconnectionDelay: clientRuntime.socketReconnectionDelayMs,
+    reconnectionAttempts: clientRuntime.socketReconnectionAttempts,
   });
 
   socket.on('connect', () => {

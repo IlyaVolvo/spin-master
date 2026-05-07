@@ -6,6 +6,7 @@ import { RoundRobinSchedulePanel } from './RoundRobinSchedulePanel';
 import { RoundRobinCompletedPanel } from './RoundRobinCompletedPanel';
 import { RoundRobinPostSelectionFlow } from './RoundRobinPostSelectionFlow';
 import { generateRoundRobinSchedule, calculateStandings, buildResultsMatrix, calculatePlayerStats } from './roundRobinUtils';
+import { getSystemConfig } from '../../../utils/systemConfig';
 
 // Re-export utility functions for use in other components
 export { generateRoundRobinSchedule, calculateStandings, buildResultsMatrix, calculatePlayerStats } from './roundRobinUtils';
@@ -17,8 +18,8 @@ export const RoundRobinPlugin: TournamentPlugin = {
   description: 'All players play against each other in a complete cycle',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 3,
-    maxPlayers: 32,
+    minPlayers: getSystemConfig().tournamentRules.roundRobin.minPlayers,
+    maxPlayers: getSystemConfig().tournamentRules.roundRobin.maxPlayers,
     steps: [],
     renderPostSelectionFlow: (props) => <RoundRobinPostSelectionFlow {...props} />,
   }),
@@ -32,12 +33,13 @@ export const RoundRobinPlugin: TournamentPlugin = {
       return 'Tournament name is required';
     }
     
-    if (!data.participants || data.participants.length < 2) {
-      return 'At least 2 participants are required for Round Robin tournament';
+    const rules = getSystemConfig().tournamentRules.roundRobin;
+    if (!data.participants || data.participants.length < rules.minPlayers) {
+      return `At least ${rules.minPlayers} participants are required for Round Robin tournament`;
     }
 
-    if (data.participants.length > 100) {
-      return 'Round Robin tournament cannot have more than 100 participants';
+    if (data.participants.length > rules.maxPlayers) {
+      return `Round Robin tournament cannot have more than ${rules.maxPlayers} participants`;
     }
 
     return null;

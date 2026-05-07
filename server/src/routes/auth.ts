@@ -7,6 +7,7 @@ import { body, validationResult } from 'express-validator';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { normalizeMemberEmail } from '../utils/memberValidation';
+import { getAuthPolicyConfig } from '../services/systemConfigService';
 
 const router = express.Router();
 
@@ -33,9 +34,16 @@ function generatePasswordResetToken(): string {
 }
 
 function getPasswordResetExpiryDate(): Date {
-  const expiry = new Date();
-  expiry.setHours(expiry.getHours() + 1);
-  return expiry;
+  const { passwordResetTokenTtlHours } = getAuthPolicyConfig();
+  return new Date(Date.now() + passwordResetTokenTtlHours * 60 * 60 * 1000);
+}
+
+function passwordMeetsPolicy(value: unknown): boolean {
+  const { minimumPasswordLength } = getAuthPolicyConfig();
+  if (typeof value !== 'string' || value.length < minimumPasswordLength) {
+    throw new Error(`Password must be at least ${minimumPasswordLength} characters long`);
+  }
+  return true;
 }
 
 function buildResetLink(email: string, token: string): string {
@@ -450,7 +458,7 @@ router.post('/member/forgot-password', [
 router.post('/member/reset-password-with-token', [
   body('email').isEmail(),
   body('token').notEmpty(),
-  body('newPassword').isLength({ min: 6 }),
+  body('newPassword').custom(passwordMeetsPolicy),
 ], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -582,7 +590,7 @@ router.post('/member/validate-current-password', [
 // Member change password (requires member authentication)
 router.post('/member/change-password', [
   body('currentPassword').optional(), // Optional if password is empty (admin reset)
-  body('newPassword').isLength({ min: 6 }),
+  body('newPassword').custom(passwordMeetsPolicy),
 ], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -670,7 +678,7 @@ router.post('/member/change-password', [
 // Admin reset member password (requires admin authentication) - Session-based
 router.post('/member/:id/reset-password', [
   body('email').optional().isEmail(),
-  body('newPassword').optional().isLength({ min: 6 }),
+  body('newPassword').optional().custom(passwordMeetsPolicy),
 ], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { TournamentSetupProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
 import './SwissSetupPanel.css';
 
 interface SwissSetupData {
@@ -19,11 +20,12 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
   onCancel,
   onError,
 }) => {
+  const swissRules = getSystemConfig().tournamentRules.swiss;
   const [setupData, setSetupData] = useState<SwissSetupData>({
     name: '',
     participants: [],
     numberOfRounds: 3,
-    pairByRating: true,
+    pairByRating: swissRules.pairByRating,
   });
   const [availablePlayers, setAvailablePlayers] = useState<Array<{
     id: number;
@@ -63,28 +65,21 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
   // Auto-adjust number of rounds when participants change
   React.useEffect(() => {
     const participantCount = setupData.participants.length;
-    if (participantCount >= 6) {
-      const maxRounds = Math.floor(participantCount / 2);
-      // Suggest rounds based on participant count: around 20% of participants, minimum 3
-      const suggestedRounds = Math.min(Math.max(3, Math.floor(participantCount * 0.2)), maxRounds);
+    if (participantCount >= swissRules.minPlayers) {
+      const maxRounds = Math.floor(participantCount / swissRules.maxRoundsDivisor);
+      const suggestedRounds = calculateSwissDefaultRounds(participantCount, swissRules.maxRoundsDivisor);
       
       if (setupData.numberOfRounds > maxRounds) {
         setSetupData(prev => ({ ...prev, numberOfRounds: maxRounds }));
-      } else if (setupData.numberOfRounds === 3 && participantCount > 15) {
+      } else if (setupData.numberOfRounds === 3) {
         setSetupData(prev => ({ ...prev, numberOfRounds: suggestedRounds }));
       }
     }
-  }, [setupData.participants.length, setupData.numberOfRounds]);
+  }, [setupData.participants.length, setupData.numberOfRounds, swissRules]);
 
   const handleAddParticipant = (player: any) => {
     if (setupData.participants.some(p => p.id === player.id)) {
       return; // Already added
-    }
-
-    // Check if adding would exceed maximum participants
-    if (setupData.participants.length >= 200) {
-      onError('Swiss tournament cannot have more than 200 participants');
-      return;
     }
 
     const participant = {
@@ -107,9 +102,13 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
   };
 
   const handleRoundsChange = (newRounds: number) => {
-    const maxRounds = Math.floor(setupData.participants.length / 2);
+    const maxRounds = Math.floor(setupData.participants.length / swissRules.maxRoundsDivisor);
+    if (newRounds < 3) {
+      onError('Number of rounds must be at least 3');
+      return;
+    }
     if (newRounds > maxRounds) {
-      onError(`Number of rounds cannot exceed ${maxRounds} (50% of participants)`);
+      onError(`Number of rounds cannot exceed ${maxRounds}`);
       return;
     }
     setSetupData(prev => ({ ...prev, numberOfRounds: newRounds }));
@@ -122,19 +121,19 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
       return;
     }
 
-    if (setupData.participants.length < 6) {
-      onError('Swiss tournament requires at least 6 participants for meaningful pairings');
+    if (setupData.participants.length < swissRules.minPlayers) {
+      onError(`Swiss tournament requires at least ${swissRules.minPlayers} participants for meaningful pairings`);
       return;
     }
 
-    if (setupData.numberOfRounds < 1) {
-      onError('Number of rounds must be at least 1');
+    if (setupData.numberOfRounds < 3) {
+      onError('Number of rounds must be at least 3');
       return;
     }
 
-    const maxRounds = Math.floor(setupData.participants.length / 2);
+    const maxRounds = Math.floor(setupData.participants.length / swissRules.maxRoundsDivisor);
     if (setupData.numberOfRounds > maxRounds) {
-      onError(`Number of rounds cannot exceed ${maxRounds} (50% of participants)`);
+      onError(`Number of rounds cannot exceed ${maxRounds}`);
       return;
     }
 
@@ -167,7 +166,7 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
   };
 
   const totalMatches = (setupData.participants.length / 2) * setupData.numberOfRounds;
-  const maxRounds = Math.floor(setupData.participants.length / 2);
+  const maxRounds = Math.floor(setupData.participants.length / swissRules.maxRoundsDivisor);
 
   return (
     <div className="swiss-setup">
@@ -191,13 +190,13 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
             <input
               id="number-of-rounds"
               type="number"
-              min="1"
+              min="3"
               max={maxRounds}
               value={setupData.numberOfRounds}
-              onChange={(e) => handleRoundsChange(parseInt(e.target.value) || 1)}
+              onChange={(e) => handleRoundsChange(parseInt(e.target.value) || 3)}
             />
             <small className="form-help">
-              Maximum: {maxRounds} rounds (50% of participants)
+              Minimum: 3 rounds, maximum: {maxRounds} rounds
             </small>
           </div>
 
@@ -215,7 +214,7 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
       </div>
 
       <div className="swiss-setup__section">
-        <h4>Participants ({setupData.participants.length} - minimum 6)</h4>
+        <h4>Participants ({setupData.participants.length} - minimum {swissRules.minPlayers})</h4>
         <div className="swiss-setup__search">
           <input
             type="text"

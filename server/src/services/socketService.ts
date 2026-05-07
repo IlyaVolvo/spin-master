@@ -54,6 +54,16 @@ export function emitCacheInvalidation(tournamentId?: number) {
 }
 
 /**
+ * Emit system configuration update event.
+ * Clients use this to refresh public runtime settings immediately.
+ */
+export function emitSystemConfigUpdated() {
+  emitToAll('system:configUpdated', {
+    timestamp: Date.now(),
+  });
+}
+
+/**
  * Emit tournament update event
  */
 export function emitTournamentUpdate(tournament: any) {

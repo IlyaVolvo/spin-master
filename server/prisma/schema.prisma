@@ -286,6 +286,20 @@ model PointExchangeRule {
   @@map("point_exchange_rules")
 }
 
+model SystemConfig {
+  id                String   @id @default("system")
+  branding          Json     @default("{}")
+  authPolicy        Json     @default("{}")
+  preregistration   Json     @default("{}")
+  ratingValidation  Json     @default("{}")
+  tournamentRules   Json     @default("{}")
+  clientRuntime     Json     @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("system_config")
+}
+
 // PreliminaryConfig: Configuration for compound preliminary tournaments
 // Used by both PRELIMINARY_WITH_FINAL_ROUND_ROBIN and PRELIMINARY_WITH_FINAL_PLAYOFF
 model PreliminaryConfig {

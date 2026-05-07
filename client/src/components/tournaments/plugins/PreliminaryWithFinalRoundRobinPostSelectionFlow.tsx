@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { PostSelectionFlowProps, Member } from '../../../types/tournament';
 import api from '../../../utils/api';
+import { getSystemConfig } from '../../../utils/systemConfig';
 import { snakeDraftGroups, computeGroupCapacities } from './roundRobinUtils';
 
 type Step = 'configure' | 'confirm_groups' | 'confirmation';
@@ -20,9 +21,10 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
   formatPlayerName,
   nameDisplayOrder,
 }) => {
+  const preliminaryRules = getSystemConfig().tournamentRules.preliminary;
   const [step, setStep] = useState<Step>('configure');
-  const [groupSize, setGroupSize] = useState<number>(4);
-  const [finalRoundRobinSize, setFinalRoundRobinSize] = useState<number>(6);
+  const [groupSize, setGroupSize] = useState<number>(preliminaryRules.groupSizeDefault);
+  const [finalRoundRobinSize, setFinalRoundRobinSize] = useState<number>(preliminaryRules.finalRoundRobinSizeDefault);
   const [autoQualifiedCount, setAutoQualifiedCount] = useState<number>(0);
   const [playerGroups, setPlayerGroups] = useState<number[][]>([]);
   const [draggedPlayer, setDraggedPlayer] = useState<{ playerId: number; fromGroupIndex: number } | null>(null);
@@ -171,7 +173,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
             <input
               type="number"
               min="0"
-              max={Math.max(0, selectedPlayerIds.length - 6)}
+              max={Math.max(0, selectedPlayerIds.length - preliminaryRules.reservedFinalSpotsForAutoQualified)}
               value={autoQualifiedCount}
               onChange={(e) => {
                 const value = parseInt(e.target.value);
@@ -200,12 +202,12 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
             </label>
             <input
               type="number"
-              min="3"
-              max="12"
+              min={preliminaryRules.groupSizeMin}
+              max={preliminaryRules.groupSizeMax}
               value={groupSize}
               onChange={(e) => {
                 const value = parseInt(e.target.value);
-                if (!isNaN(value) && value >= 3 && value <= 12) {
+                if (!isNaN(value) && value >= preliminaryRules.groupSizeMin && value <= preliminaryRules.groupSizeMax) {
                   setGroupSize(value);
                 }
               }}
@@ -219,7 +221,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
               }}
             />
             <div style={{ marginTop: '4px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-              Desired group size (3-12). Actual size may be 1 less if not evenly divisible.
+              Desired group size ({preliminaryRules.groupSizeMin}-{preliminaryRules.groupSizeMax}). Actual size may be 1 less if not evenly divisible.
             </div>
           </div>
 

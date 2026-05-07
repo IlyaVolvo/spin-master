@@ -1,5 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
+import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
 
 interface Player {
   id: number;
@@ -64,16 +65,20 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   modifyConfirmationMessage = 'Modify this match result? This will update the recorded score.',
 }) => {
   const [confirmAction, setConfirmAction] = useState<'modify' | 'clear' | null>(null);
+  const [systemConfig, setSystemConfig] = useState(() => getSystemConfig());
   const originalWinnerIdRef = useRef(getEditingWinnerId(editingMatch));
   const isForfeit = editingMatch.player1Forfeit || editingMatch.player2Forfeit;
   const isModification = editingMatch.matchId > 0 && editingMatch.expectedHadResult !== false;
   const winnerChanged = isModification && getEditingWinnerId(editingMatch) !== originalWinnerIdRef.current;
+  const scoreRule = systemConfig.tournamentRules.matchScore;
   
   const player1Sets = parseInt(editingMatch.player1Sets) || 0;
   const player2Sets = parseInt(editingMatch.player2Sets) || 0;
-  const scoresEqual = !isForfeit && player1Sets === player2Sets;
+  const scoresEqual = !scoreRule.allowEqualScores && !isForfeit && player1Sets === player2Sets;
   const missingOpponentPassword = requireOpponentPassword && !editingMatch.opponentPassword?.trim();
   const isDisabled = scoresEqual || missingOpponentPassword;
+
+  useEffect(() => subscribeToSystemConfig(setSystemConfig), []);
 
   const confirmConfig =
     confirmAction === 'clear'
@@ -133,8 +138,8 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             </label>
             <input
               type="number"
-              min="0"
-              max="10"
+              min={scoreRule.min}
+              max={scoreRule.max}
               value={editingMatch.player1Sets}
               onChange={(e) => onSetEditingMatch({
                 ...editingMatch,
@@ -183,8 +188,8 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             </label>
             <input
               type="number"
-              min="0"
-              max="10"
+              min={scoreRule.min}
+              max={scoreRule.max}
               value={editingMatch.player2Sets}
               onChange={(e) => onSetEditingMatch({
                 ...editingMatch,

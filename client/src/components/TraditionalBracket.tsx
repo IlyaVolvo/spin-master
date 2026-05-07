@@ -7,6 +7,7 @@ import { getMember, isOrganizer } from '../utils/auth';
 import { attachOpponentPasswordIfNeeded, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
 import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../utils/duplicateScoreError';
 import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
+import { getSystemConfig } from '../utils/systemConfig';
 
 interface Member {
   id: number;
@@ -361,14 +362,12 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
   // Calculate number of rounds from bracket size
   const calculateRounds = (bracketSize: number): number => Math.log2(bracketSize);
   
-  // Calculate number of seeded players based on bracket size (standard: 1/4 rounded to power of 2)
-  // Calculate the ceiling of quarter, round to nearest power of 2, and limit between 2 and 32
+  // Calculate seeded players from the configured 1/N bracket ratio.
   const calculateNumSeeded = (bracketSize: number): number => {
-    const quarter = Math.ceil(bracketSize / 4); // Get ceiling of quarter
-    const safeQuarter = Math.max(1, quarter); // Ensure we don't take log of 0
-    const exponent = Math.ceil(Math.log2(safeQuarter)); // Round up to next power of 2
-    const powerOfTwo = Math.pow(2, exponent); // Calculate the power of 2
-    return Math.max(2, Math.min(32, powerOfTwo)); // Clamp between 2 and 32
+    const seedDivisor = getSystemConfig().tournamentRules.playoff.seedDivisor;
+    const target = Math.floor(bracketSize / seedDivisor);
+    if (target < 2) return 0;
+    return Math.pow(2, Math.floor(Math.log2(target)));
   };
   
   // Generate match key from round and position (unused, kept for potential future use)

@@ -35,6 +35,7 @@ import { Tournament, TournamentType } from '../types/tournament';
 import './tournaments/plugins'; // This will auto-register all plugins
 import { calculateStandings, buildResultsMatrix, generateRoundRobinSchedule } from './tournaments/plugins/roundRobinUtils';
 import { formatParticipantsWithRating } from './tournaments/utils/participantSort';
+import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
 
 // Module-level cache to persist across component mounts/unmounts
 const tournamentsCache: {
@@ -185,17 +186,14 @@ const Tournaments: React.FC = () => {
   const [cancelPassword, setCancelPassword] = useState<string>('');
   const [cancelPasswordErrorModal, setCancelPasswordErrorModal] = useState<string | null>(null);
   const [matchResultAlreadyEnteredModal, setMatchResultAlreadyEnteredModal] = useState<string | null>(null);
+  const [systemConfig, setSystemConfig] = useState(() => getSystemConfig());
   const cancelPasswordInputRef = useRef<HTMLInputElement | null>(null);
   const [hoveredIcon, setHoveredIcon] = useState<{ type: string; tournamentId: number; x: number; y: number } | null>(null);
-  const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
+  const [hoverTimeout, setHoverTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
   const currentMember = getMember();
-  const preregistrationCancelReasons = [
-    'Tournament cancelled by organizer',
-    'Not enough registered players',
-    'Schedule conflict',
-    'Venue unavailable',
-    'Weather or emergency closure',
-  ];
+  const preregistrationCancelReasons = systemConfig.preregistration.cancelReasonPresets;
+
+  useEffect(() => subscribeToSystemConfig(setSystemConfig), []);
 
   // Calculate date range based on filter type
   const getDateRangeForType = (type: string): { start: string; end: string } => {
@@ -609,7 +607,7 @@ const Tournaments: React.FC = () => {
     const now = Date.now();
     const cacheAge = now - tournamentsCache.lastFetch;
     const hasCache = tournamentsCache.data !== null && tournamentsCache.activeData !== null;
-    const isCacheFresh = cacheAge < 30000; // 30 seconds
+    const isCacheFresh = cacheAge < systemConfig.clientRuntime.tournamentsListCacheTtlMs;
     
     if (hasCache) {
       // Use cached data immediately for fast UI
@@ -682,7 +680,7 @@ const Tournaments: React.FC = () => {
       socket?.off('match:updated');
       // Don't disconnect socket - it's shared across components
     };
-  }, [fetchData]);
+  }, [fetchData, systemConfig.clientRuntime.tournamentsListCacheTtlMs]);
 
   // ============================================================================
   // PLUGIN-BASED HELPER FUNCTIONS

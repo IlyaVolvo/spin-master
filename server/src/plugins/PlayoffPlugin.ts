@@ -4,6 +4,7 @@ import {
   recordPlayoffBracketMatchResult,
   PlayoffBracketResultError,
 } from '../services/playoffBracketService';
+import { getTournamentRulesConfig } from '../services/systemConfigService';
 
 /** Shown on bracket API next to slot names: live `member.rating` during ACTIVE; `postRatingAtTime` when enriched for COMPLETED. */
 function participantBracketDisplayRating(participant: any | undefined): number | null {
@@ -443,8 +444,9 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     const seededPlayers = generateSeeding(participants);
     const bracketSize = calculateBracketSize(participants.length);
     const numSeedsToUse = numSeeds !== undefined ? parseInt(numSeeds) : undefined;
+    const seedDivisor = getTournamentRulesConfig().playoff.seedDivisor;
     
-    const bracketPositions = generateBracketPositions(seededPlayers, bracketSize, numSeedsToUse);
+    const bracketPositions = generateBracketPositions(seededPlayers, bracketSize, numSeedsToUse, seedDivisor);
 
     return { bracketPositions, bracketSize };
   }
@@ -477,7 +479,7 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     
     const seededPlayers = generateSeeding(tournament.participants);
     const bracketSize = calculateBracketSize(tournament.participants.length);
-    const bracketPositions = generateBracketPositions(seededPlayers, bracketSize);
+    const bracketPositions = generateBracketPositions(seededPlayers, bracketSize, undefined, getTournamentRulesConfig().playoff.seedDivisor);
     
     // Update bracket matches with new positions
     const bracketMatches = await prisma.bracketMatch.findMany({

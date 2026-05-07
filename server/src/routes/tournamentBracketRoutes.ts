@@ -18,9 +18,21 @@ import {
 } from '../services/playoffBracketService';
 import { isOrganizer } from '../utils/organizerAccess';
 import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
+import { getTournamentRulesConfig } from '../services/systemConfigService';
 
 const router = express.Router();
 router.use(authenticate);
+
+function validateConfiguredMatchScore(player1Sets: number, player2Sets: number, player1Forfeit = false, player2Forfeit = false): string | null {
+  const { matchScore } = getTournamentRulesConfig();
+  if (player1Sets < matchScore.min || player1Sets > matchScore.max || player2Sets < matchScore.min || player2Sets > matchScore.max) {
+    return `Scores must be between ${matchScore.min} and ${matchScore.max}`;
+  }
+  if (!matchScore.allowEqualScores && !player1Forfeit && !player2Forfeit && player1Sets === player2Sets) {
+    return 'Scores cannot be equal. One player must win.';
+  }
+  return null;
+}
 
 router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
   body('player1Sets').optional().isInt({ min: 0 }),
@@ -63,8 +75,9 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
       finalPlayer1Forfeit = false;
     }
 
-    if (!finalPlayer1Forfeit && !finalPlayer2Forfeit && finalPlayer1Sets === finalPlayer2Sets) {
-      return res.status(400).json({ error: 'Scores cannot be equal. One player must win.' });
+    const scoreError = validateConfiguredMatchScore(finalPlayer1Sets, finalPlayer2Sets, finalPlayer1Forfeit, finalPlayer2Forfeit);
+    if (scoreError) {
+      return res.status(400).json({ error: scoreError });
     }
 
     const scoreAuth = await authorizeTournamentScoreEntryRequest(prisma, req, {

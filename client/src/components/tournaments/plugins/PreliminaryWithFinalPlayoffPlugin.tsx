@@ -9,6 +9,7 @@ import type {
 } from '../../../types/tournament';
 import { PreliminaryWithFinalPlayoffPostSelectionFlow } from './PreliminaryWithFinalPlayoffPostSelectionFlow';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { getSystemConfig } from '../../../utils/systemConfig';
 
 // ─── Active Panel ────────────────────────────────────────────────────────────
 // Shows child tournaments (preliminary groups + playoff if created) with their status
@@ -344,7 +345,7 @@ export const PreliminaryWithFinalPlayoffPlugin: TournamentPlugin = {
   description: 'Preliminary round-robin groups followed by a final playoff bracket for top qualifiers',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 8,
+    minPlayers: getSystemConfig().tournamentRules.preliminary.groupSizeMin + getSystemConfig().tournamentRules.playoff.minPlayers,
     maxPlayers: -1,
     steps: [],
     renderPostSelectionFlow: (props) => (

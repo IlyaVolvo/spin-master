@@ -37,6 +37,15 @@ export function calculateBracketSize(playerCount: number): number {
   return Math.pow(2, Math.ceil(Math.log2(playerCount)));
 }
 
+export function calculateSeededPlayerCount(totalPlayersOrBracketSize: number, seedDivisor: number): number {
+  if (!Number.isFinite(totalPlayersOrBracketSize) || totalPlayersOrBracketSize < 2) return 0;
+  if (!Number.isInteger(seedDivisor) || seedDivisor < 1) return 0;
+
+  const target = Math.floor(totalPlayersOrBracketSize / seedDivisor);
+  if (target < 2) return 0;
+  return Math.pow(2, Math.floor(Math.log2(target)));
+}
+
 /**
  * Generate standard seeding for a bracket
  * Returns array of player IDs in seeded order (seed 1 = highest rating, seed n = lowest rating)
@@ -69,15 +78,16 @@ export function generateSeeding(participants: Array<{ memberId: number; playerRa
  * 
  * @param seededPlayers - Array of all player IDs sorted by seed (highest rating first)
  * @param bracketSize - Size of bracket (power of 2)
- * @param numSeeded - Number of seeded positions (default: all players are seeded)
+ * @param numSeeded - Number of seeded positions (default: calculated from seedDivisor)
+ * @param seedDivisor - Seed roughly 1/N of the bracket when numSeeded is omitted
  */
-export function generateBracketPositions(seededPlayers: number[], bracketSize: number, numSeeded?: number): Array<number | null> {
+export function generateBracketPositions(seededPlayers: number[], bracketSize: number, numSeeded?: number, seedDivisor = 4): Array<number | null> {
   const positions: Array<number | null> = new Array(bracketSize).fill(null);
   const numPlayers = seededPlayers.length;
   
   // Validate numSeeded parameter according to rules:
   // - Can be 0 OR any power of 2 >= 2 (powers of 2 are: 2, 4, 8, 16, ...)
-  // - Must be <= bracketSize / 4 (no more than a quarter of the bracket)
+  // - Must be <= the configured 1/N bracket seed count
   // - bracketSize is the next power of 2 >= numPlayers
   // Examples:
   //   - numPlayers = 7:  bracketSize = 8,  max = 8/4 = 2, valid = 0, 2
@@ -88,9 +98,7 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
   //   - numPlayers = 32: bracketSize = 32, max = 32/4 = 8, valid = 0, 2, 4, 8
   let numSeededToUse: number;
   
-  // Calculate maximum allowed numSeeded = bracketSize / 4
-  // bracketSize is already a power of 2, so bracketSize/4 is always a power of 2 (for bracketSize >= 8)
-  const maxSeeded = bracketSize >= 8 ? bracketSize / 4 : 0;
+  const maxSeeded = calculateSeededPlayerCount(bracketSize, seedDivisor);
   
   if (numSeeded === undefined) {
     // Default: use the maximum allowed numSeeded (or 0 if not possible)
@@ -115,7 +123,7 @@ export function generateBracketPositions(seededPlayers: number[], bracketSize: n
       }
       
       if (numSeededToUse > maxSeeded) {
-        throw new Error(`numSeeded (${numSeededToUse}) must be <= ${maxSeeded} (bracketSize ${bracketSize} / 4)`);
+        throw new Error(`numSeeded (${numSeededToUse}) must be <= ${maxSeeded} (bracketSize ${bracketSize} / seed divisor ${seedDivisor})`);
       }
     }
   }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { PostSelectionFlowProps, Member } from '../../../types/tournament';
 import { BracketPreview } from '../../BracketPreview';
 import api from '../../../utils/api';
+import { getSystemConfig } from '../../../utils/systemConfig';
 
 type Step = 'organize_bracket' | 'completion';
 
@@ -28,7 +29,10 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
 
   const calculateMaxSeeds = (numPlayers: number): number => {
     const bracketSize = Math.pow(2, Math.ceil(Math.log2(numPlayers)));
-    return bracketSize >= 8 ? bracketSize / 4 : 0;
+    const seedDivisor = getSystemConfig().tournamentRules.playoff.seedDivisor;
+    const target = Math.floor(bracketSize / seedDivisor);
+    if (target < 2) return 0;
+    return Math.pow(2, Math.floor(Math.log2(target)));
   };
 
   const fetchBracketPreview = async (numSeeds?: number) => {

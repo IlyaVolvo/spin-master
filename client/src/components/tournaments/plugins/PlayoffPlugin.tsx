@@ -6,6 +6,7 @@ import { PlayoffActivePanel } from './PlayoffActivePanel';
 import { PlayoffSchedulePanel } from './PlayoffSchedulePanel';
 import { PlayoffCompletedPanel } from './PlayoffCompletedPanel';
 import { PlayoffPostSelectionFlow } from './PlayoffPostSelectionFlow';
+import { getSystemConfig } from '../../../utils/systemConfig';
 
 const PlayoffBracketWizardStep: React.FC<TournamentCreationStepProps> = ({
   selectedPlayerIds,
@@ -106,8 +107,8 @@ export const PlayoffPlugin: TournamentPlugin = {
   description: 'Single or double elimination tournament bracket',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 6,
-    maxPlayers: 128,
+    minPlayers: getSystemConfig().tournamentRules.playoff.minPlayers,
+    maxPlayers: -1,
     steps: [
       {
         id: 'organize_bracket',
@@ -127,18 +128,20 @@ export const PlayoffPlugin: TournamentPlugin = {
       return 'Tournament name is required';
     }
     
-    if (!data.participants || data.participants.length < 2) {
-      return 'At least 2 participants are required for Playoff tournament';
+    const rules = getSystemConfig().tournamentRules.playoff;
+    if (!data.participants || data.participants.length < rules.minPlayers) {
+      return `At least ${rules.minPlayers} participants are required for Playoff tournament`;
     }
 
-    if (data.participants.length > 64) {
-      return 'Playoff tournament cannot have more than 64 participants';
+    if (data.participants.length > rules.maxPlayers) {
+      return `Playoff tournament cannot have more than ${rules.maxPlayers} participants`;
     }
 
     // Validate bracket size
-    const validSizes = [2, 4, 8, 16, 32, 64];
-    if (!validSizes.includes(data.bracketSize)) {
-      return 'Bracket size must be a power of 2 (2, 4, 8, 16, 32, or 64)';
+    const bracketSize = Number(data.bracketSize);
+    const isPowerOfTwo = Number.isInteger(bracketSize) && bracketSize >= 2 && (bracketSize & (bracketSize - 1)) === 0;
+    if (!isPowerOfTwo || bracketSize > rules.maxPlayers) {
+      return `Bracket size must be a power of 2 up to ${rules.maxPlayers}`;
     }
 
     if (data.participants.length > data.bracketSize) {

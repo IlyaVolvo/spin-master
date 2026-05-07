@@ -4,6 +4,7 @@ import { SwissSetupPanel } from './SwissSetupPanel.tsx';
 import { SwissActivePanel } from './SwissActivePanel';
 import { SwissCompletedPanel } from './SwissCompletedPanel';
 import { SwissPostSelectionFlow } from './SwissPostSelectionFlow';
+import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
 
 // Swiss icon component
 const SwissIcon: React.FC<{ size: number; color: string }> = ({ size, color }) => (
@@ -22,7 +23,7 @@ export const SwissPlugin: TournamentPlugin = {
   icon: SwissIcon,
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: 6,
+    minPlayers: getSystemConfig().tournamentRules.swiss.minPlayers,
     maxPlayers: -1,
     steps: [],
     renderPostSelectionFlow: (props) => (
@@ -39,21 +40,22 @@ export const SwissPlugin: TournamentPlugin = {
       return 'Tournament name is required';
     }
     
-    if (!data.participants || data.participants.length < 6) {
-      return 'Swiss tournament requires at least 6 participants for meaningful pairings';
+    const rules = getSystemConfig().tournamentRules.swiss;
+    if (!data.participants || data.participants.length < rules.minPlayers) {
+      return `Swiss tournament requires at least ${rules.minPlayers} participants for meaningful pairings`;
     }
 
     if (data.participants.length > 200) {
       return 'Swiss tournament cannot have more than 200 participants';
     }
 
-    if (!data.numberOfRounds || data.numberOfRounds < 1) {
-      return 'Number of rounds must be at least 1';
+    if (!data.numberOfRounds || data.numberOfRounds < 3) {
+      return 'Number of rounds must be at least 3';
     }
 
-    const maxRounds = Math.floor(data.participants.length / 2);
+    const maxRounds = Math.floor(data.participants.length / rules.maxRoundsDivisor);
     if (data.numberOfRounds > maxRounds) {
-      return `Number of rounds cannot exceed ${maxRounds} (50% of participants)`;
+      return `Number of rounds cannot exceed ${maxRounds}`;
     }
 
     // For Swiss tournaments, we don't require even participants
@@ -97,8 +99,10 @@ export const SwissPlugin: TournamentPlugin = {
 
   calculateExpectedMatches: (tournament) => {
     const swissData = (tournament as any).swissData;
-    const numberOfRounds = swissData?.numberOfRounds ?? 3;
     const participantCount = tournament.participants.length;
+    const swissRules = getSystemConfig().tournamentRules.swiss;
+    const numberOfRounds = swissData?.numberOfRounds
+      ?? calculateSwissDefaultRounds(participantCount, swissRules.maxRoundsDivisor);
     return numberOfRounds * Math.floor(participantCount / 2);
   },
 

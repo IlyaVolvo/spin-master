@@ -1,3 +1,21 @@
+type RatingValidationBounds = {
+  ratingInputMin: number;
+  ratingInputMax: number;
+  suspiciousRatingMin: number;
+  suspiciousRatingMax: number;
+};
+
+let ratingValidationBounds: RatingValidationBounds = {
+  ratingInputMin: 0,
+  ratingInputMax: 9999,
+  suspiciousRatingMin: 800,
+  suspiciousRatingMax: 2100,
+};
+
+export function setRatingValidationBounds(bounds: RatingValidationBounds): void {
+  ratingValidationBounds = bounds;
+}
+
 export function isValidMemberName(name: string): boolean {
   if (typeof name !== 'string') return false;
 
@@ -111,7 +129,8 @@ export function isValidRatingInput(value: unknown): boolean {
   if (normalized === '') return true;
 
   const num = Number(normalized);
-  return Number.isInteger(num) && num >= 0 && num <= 9999;
+  const { ratingInputMin, ratingInputMax } = ratingValidationBounds;
+  return Number.isInteger(num) && num >= ratingInputMin && num <= ratingInputMax;
 }
 
 export function isSuspiciousRating(value: unknown): boolean {
@@ -122,5 +141,6 @@ export function isSuspiciousRating(value: unknown): boolean {
   if (normalized === '') return false;
 
   const num = Number(normalized);
-  return num < 800 || num > 2100;
+  const { suspiciousRatingMin, suspiciousRatingMax } = ratingValidationBounds;
+  return num < suspiciousRatingMin || num > suspiciousRatingMax;
 }

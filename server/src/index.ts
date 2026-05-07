@@ -12,9 +12,11 @@ import { requestLogger } from './middleware/requestLogger';
 import authRoutes from './routes/auth';
 import matchRoutes from './routes/matches';
 import playerRoutes from './routes/players';
+import systemConfigRoutes from './routes/systemConfig';
 import tournamentBracketRoutes from './routes/tournamentBracketRoutes';
 import tournamentRoutes from './routes/tournaments';
 import { initializeCache } from './services/cacheService';
+import { initializeSystemConfig } from './services/systemConfigService';
 import { setIO } from './services/socketService';
 import { logger } from './utils/logger';
 
@@ -117,6 +119,7 @@ logger.debug('Session middleware configured', {
 // Request logging is handled by requestLogger middleware when ENABLE_LOGGING is true
 
 // Routes
+app.use('/api', systemConfigRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/tournaments', tournamentBracketRoutes);
@@ -126,14 +129,6 @@ app.use('/api/matches', matchRoutes);
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
-});
-
-// Public client config (e.g. club display name from deployment env — omit when unset)
-app.get('/api/config', (_req, res) => {
-  const raw = process.env.CLUB_NAME;
-  const clubName =
-    typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
-  res.json({ clubName });
 });
 
 const clientBuildCandidates = [
@@ -187,6 +182,12 @@ io.on('connection', (socket) => {
 
 // Only start the server if this file is run directly, not when imported as a module
 if (require.main === module) {
+  initializeSystemConfig().then(() => {
+    logger.info('System configuration initialization completed');
+  }).catch((error) => {
+    logger.error('System configuration initialization failed', { error: error instanceof Error ? error.message : String(error) });
+  });
+
   // Initialize cache on startup (non-blocking)
   initializeCache().then(() => {
     logger.info('Cache initialization completed');

@@ -32,16 +32,13 @@ import {
   sendTournamentRegistrationCancelledEmail,
   sendTournamentRegistrationClosedEmail,
 } from '../services/mailService';
+import {
+  calculateSwissDefaultRounds,
+  getPreregistrationConfig,
+  getTournamentRulesConfig,
+} from '../services/systemConfigService';
 
 const router = express.Router();
-
-const PREREGISTRATION_CANCEL_REASONS = [
-  'Tournament cancelled by organizer',
-  'Not enough registered players',
-  'Schedule conflict',
-  'Venue unavailable',
-  'Weather or emergency closure',
-] as const;
 
 // Request logging is handled by requestLogger middleware in index.ts
 
@@ -60,20 +57,79 @@ function parseOptionalDate(value: unknown): Date | null {
 }
 
 function getDefaultPreregistrationTournamentDate(): Date {
+  const config = getPreregistrationConfig();
+  const [hours, minutes] = config.defaultTournamentTime.split(':').map(Number);
   const date = new Date();
-  date.setDate(date.getDate() + 1);
-  date.setHours(18, 0, 0, 0);
+  date.setDate(date.getDate() + config.defaultTournamentOffsetDays);
+  date.setHours(hours, minutes, 0, 0);
   return date;
 }
 
 function getDefaultPreregistrationDeadline(tournamentDate: Date): Date {
-  return new Date(tournamentDate.getTime() - 30 * 60 * 1000);
+  const { registrationDeadlineOffsetMinutes } = getPreregistrationConfig();
+  return new Date(tournamentDate.getTime() - registrationDeadlineOffsetMinutes * 60 * 1000);
 }
 
 function parseOptionalInteger(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const num = Number(value);
   return Number.isInteger(num) ? num : null;
+}
+
+function validateTournamentRuleRequest(type: string, participantCount: number, data: any): string | null {
+  const rules = getTournamentRulesConfig();
+  switch (type) {
+    case 'ROUND_ROBIN':
+      if (participantCount < rules.roundRobin.minPlayers) return `Round Robin requires at least ${rules.roundRobin.minPlayers} players`;
+      if (participantCount > rules.roundRobin.maxPlayers) return `Round Robin allows at most ${rules.roundRobin.maxPlayers} players`;
+      return null;
+    case 'PLAYOFF': {
+      const bracketSize = Number(data?.bracketSize ?? data?.additionalData?.bracketSize);
+      if (participantCount < rules.playoff.minPlayers) return `Playoff requires at least ${rules.playoff.minPlayers} players`;
+      if (Number.isInteger(bracketSize)) {
+        const isPowerOfTwo = bracketSize >= 2 && (bracketSize & (bracketSize - 1)) === 0;
+        if (!isPowerOfTwo) {
+          return 'Bracket size must be a power of 2';
+        }
+      }
+      return null;
+    }
+    case 'SWISS': {
+      const roundsValue = data?.numberOfRounds ?? data?.additionalData?.numberOfRounds;
+      const numberOfRounds = roundsValue == null
+        ? calculateSwissDefaultRounds(participantCount, rules.swiss.maxRoundsDivisor)
+        : Number(roundsValue);
+      const maxRounds = Math.floor(participantCount / rules.swiss.maxRoundsDivisor);
+      if (participantCount < rules.swiss.minPlayers) return `Swiss requires at least ${rules.swiss.minPlayers} players`;
+      if (!Number.isInteger(numberOfRounds) || numberOfRounds < 3) return 'Number of rounds must be at least 3';
+      if (numberOfRounds > maxRounds) return `Number of rounds cannot exceed ${maxRounds}`;
+      return null;
+    }
+    case 'MULTI_ROUND_ROBINS':
+      if (participantCount < rules.multiRoundRobins.minPlayers) return `Multi Round Robins requires at least ${rules.multiRoundRobins.minPlayers} players`;
+      return null;
+    case 'PRELIMINARY_WITH_FINAL_PLAYOFF':
+    case 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN': {
+      const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
+      if (Number.isInteger(groupSize) && (groupSize < rules.preliminary.groupSizeMin || groupSize > rules.preliminary.groupSizeMax)) {
+        return `Preliminary group size must be between ${rules.preliminary.groupSizeMin} and ${rules.preliminary.groupSizeMax}`;
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+function validateConfiguredMatchScore(player1Sets: number, player2Sets: number, player1Forfeit = false, player2Forfeit = false): string | null {
+  const { matchScore } = getTournamentRulesConfig();
+  if (player1Sets < matchScore.min || player1Sets > matchScore.max || player2Sets < matchScore.min || player2Sets > matchScore.max) {
+    return `Scores must be between ${matchScore.min} and ${matchScore.max}`;
+  }
+  if (!matchScore.allowEqualScores && !player1Forfeit && !player2Forfeit && player1Sets === player2Sets) {
+    return 'Scores cannot be equal. One player must win.';
+  }
+  return null;
 }
 
 function registrationInclude() {
@@ -874,6 +930,11 @@ router.post('/:id/finalize-registration', [
       return res.status(400).json({ error: 'Some participants are not active or not found' });
     }
 
+    const ruleError = validateTournamentRuleRequest(type, participantIds.length, req.body);
+    if (ruleError) {
+      return res.status(400).json({ error: ruleError });
+    }
+
     let rootCreateUsed = false;
     const tournamentDelegate = Object.create((prisma as any).tournament);
     tournamentDelegate.create = async (args: any) => {
@@ -943,10 +1004,11 @@ router.post('/:id/cancel-preregistration', [
       ? `${selectedReason}: ${customReason}`
       : selectedReason;
 
-    if (!PREREGISTRATION_CANCEL_REASONS.includes(selectedReason as any)) {
+    const cancelReasonPresets = getPreregistrationConfig().cancelReasonPresets;
+    if (!cancelReasonPresets.includes(selectedReason)) {
       return res.status(400).json({
         error: 'Invalid cancellation reason',
-        reasons: PREREGISTRATION_CANCEL_REASONS,
+        reasons: cancelReasonPresets,
       });
     }
 
@@ -1184,6 +1246,11 @@ router.post('/', [
       return res.status(400).json({ error: 'Some participants are not active or not found' });
     }
 
+    const ruleError = validateTournamentRuleRequest(type, participantIds.length, req.body);
+    if (ruleError) {
+      return res.status(400).json({ error: ruleError });
+    }
+
     // Generate tournament name
     let tournamentName = name;
     if (!tournamentName) {
@@ -1326,6 +1393,14 @@ router.patch('/:id', [
       return res.status(400).json({ error: 'Some participants are not active or not found' });
     }
 
+    const ruleError = validateTournamentRuleRequest(existingTournament.type, participantIds.length, {
+      ...req.body,
+      additionalData,
+    });
+    if (ruleError) {
+      return res.status(400).json({ error: ruleError });
+    }
+
     // Modify tournament using plugin
     const modifiedTournament = await plugin.modifyTournament!({
       tournamentId,
@@ -1396,6 +1471,13 @@ router.post('/bulk', [
       return res.status(400).json({ 
         error: `Some participants are not active or not found: ${missingIds.join(', ')}` 
       });
+    }
+
+    for (const tournamentData of tournaments as Array<{ participantIds: number[]; type: string }>) {
+      const ruleError = validateTournamentRuleRequest(tournamentData.type, tournamentData.participantIds.length, tournamentData);
+      if (ruleError) {
+        return res.status(400).json({ error: ruleError });
+      }
     }
 
     // Create all tournaments in a transaction
@@ -1510,9 +1592,9 @@ router.post('/matches/create', [
       return res.status(400).json({ error: 'Players must be different' });
     }
 
-    // Validate scores - must have a winner (no ties)
-    if (player1Sets === player2Sets) {
-      return res.status(400).json({ error: 'Match cannot end in a tie' });
+    const scoreError = validateConfiguredMatchScore(player1Sets, player2Sets);
+    if (scoreError) {
+      return res.status(400).json({ error: scoreError });
     }
 
     // Verify both players are active
@@ -1681,6 +1763,11 @@ router.post('/:id/matches', [
       finalPlayer2Forfeit = true;
     }
 
+    const scoreError = validateConfiguredMatchScore(finalPlayer1Sets, finalPlayer2Sets, finalPlayer1Forfeit, finalPlayer2Forfeit);
+    if (scoreError) {
+      return res.status(400).json({ error: scoreError });
+    }
+
     // Check if this is a BYE match (memberId === 0) - BYE matches should not have Match records
     const isByeMatch = member1Id === 0 || member2Id === 0 || member2Id === null;
     if (isByeMatch) {
@@ -1788,15 +1875,6 @@ router.patch('/:tournamentId/matches/:matchId', [
       return res.status(400).json({ error: 'Only one player can forfeit' });
     }
 
-    // Validate scores: cannot be equal unless it's a forfeit
-    if (!player1Forfeit && !player2Forfeit) {
-      const p1Sets = player1Sets ?? 0;
-      const p2Sets = player2Sets ?? 0;
-      if (p1Sets === p2Sets) {
-        return res.status(400).json({ error: 'Scores cannot be equal. One player must win.' });
-      }
-    }
-
     // Get tournament with participants and plugin
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
@@ -1898,6 +1976,11 @@ router.patch('/:tournamentId/matches/:matchId', [
       finalPlayer1Sets = 1;
       finalPlayer2Sets = 0;
       finalPlayer1Forfeit = false;
+    }
+
+    const scoreError = validateConfiguredMatchScore(finalPlayer1Sets, finalPlayer2Sets, finalPlayer1Forfeit, finalPlayer2Forfeit);
+    if (scoreError) {
+      return res.status(400).json({ error: scoreError });
     }
     
     let result;

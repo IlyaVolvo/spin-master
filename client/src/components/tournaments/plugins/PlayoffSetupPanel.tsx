@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { TournamentSetupProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { getSystemConfig } from '../../../utils/systemConfig';
 import './PlayoffSetupPanel.css';
 
 interface PlayoffSetupData {
@@ -10,7 +11,6 @@ interface PlayoffSetupData {
     name: string;
     rating: number | null;
   }>;
-  bracketSize: number;
   isDoubleElimination: boolean;
   seedByRating: boolean;
 }
@@ -20,10 +20,10 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
   onCancel,
   onError,
 }) => {
+  const playoffRules = getSystemConfig().tournamentRules.playoff;
   const [setupData, setSetupData] = useState<PlayoffSetupData>({
     name: '',
     participants: [],
-    bracketSize: 8,
     isDoubleElimination: false,
     seedByRating: true,
   });
@@ -37,8 +37,11 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Valid bracket sizes (powers of 2)
-  const validBracketSizes = [2, 4, 8, 16, 32, 64];
+  const derivedBracketSize = useMemo(() => {
+    const participantCount = setupData.participants.length;
+    if (participantCount <= 1) return 2;
+    return Math.pow(2, Math.ceil(Math.log2(participantCount)));
+  }, [setupData.participants.length]);
 
   // Load available players
   React.useEffect(() => {
@@ -65,25 +68,9 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
     });
   }, [availablePlayers, searchTerm]);
 
-  // Auto-adjust bracket size when participants change
-  React.useEffect(() => {
-    const participantCount = setupData.participants.length;
-    if (participantCount > 0) {
-      const nextPowerOfTwo = Math.pow(2, Math.ceil(Math.log2(participantCount)));
-      if (nextPowerOfTwo <= 64 && nextPowerOfTwo !== setupData.bracketSize) {
-        setSetupData(prev => ({ ...prev, bracketSize: nextPowerOfTwo }));
-      }
-    }
-  }, [setupData.participants.length, setupData.bracketSize]);
-
   const handleAddParticipant = (player: any) => {
     if (setupData.participants.some(p => p.id === player.id)) {
       return; // Already added
-    }
-
-    if (setupData.participants.length >= setupData.bracketSize) {
-      onError(`Cannot add more than ${setupData.bracketSize} participants to this bracket`);
-      return;
     }
 
     const participant = {
@@ -105,14 +92,6 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
     }));
   };
 
-  const handleBracketSizeChange = (newSize: number) => {
-    if (setupData.participants.length > newSize) {
-      onError(`Cannot reduce bracket size below current participant count (${setupData.participants.length})`);
-      return;
-    }
-    setSetupData(prev => ({ ...prev, bracketSize: newSize }));
-  };
-
   const handleSubmit = async () => {
     // Validation
     if (!setupData.name.trim()) {
@@ -120,13 +99,8 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
       return;
     }
 
-    if (setupData.participants.length < 2) {
-      onError('At least 2 participants are required');
-      return;
-    }
-
-    if (setupData.participants.length > setupData.bracketSize) {
-      onError('Number of participants cannot exceed bracket size');
+    if (setupData.participants.length < playoffRules.minPlayers) {
+      onError(`At least ${playoffRules.minPlayers} participants are required`);
       return;
     }
 
@@ -141,7 +115,6 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
           name: setupData.name,
           type: 'PLAYOFF',
           participantIds: setupData.participants.map(p => p.id),
-          bracketSize: setupData.bracketSize,
           isDoubleElimination: setupData.isDoubleElimination,
           seedByRating: setupData.seedByRating,
         }),
@@ -161,10 +134,10 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
   };
 
   const totalMatches = setupData.isDoubleElimination 
-    ? (setupData.bracketSize * 2) - 1 
-    : setupData.bracketSize - 1;
+    ? (derivedBracketSize * 2) - 1 
+    : derivedBracketSize - 1;
 
-  const totalRounds = Math.log2(setupData.bracketSize);
+  const totalRounds = Math.log2(derivedBracketSize);
 
   return (
     <div className="playoff-setup">
@@ -184,18 +157,13 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
 
         <div className="playoff-setup__options">
           <div className="form-group">
-            <label htmlFor="bracket-size">Bracket Size</label>
-            <select
-              id="bracket-size"
-              value={setupData.bracketSize}
-              onChange={(e) => handleBracketSizeChange(parseInt(e.target.value))}
-            >
-              {validBracketSizes.map(size => (
-                <option key={size} value={size} disabled={setupData.participants.length > size}>
-                  {size} participants
-                </option>
-              ))}
-            </select>
+            <label>Bracket Size</label>
+            <div style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '4px', backgroundColor: '#f8f9fa' }}>
+              {derivedBracketSize} participants
+            </div>
+            <small className="form-help">
+              Automatically set to the smallest power of 2 that fits the selected players.
+            </small>
           </div>
 
           <div className="form-group">
@@ -223,7 +191,7 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
       </div>
 
       <div className="playoff-setup__section">
-        <h4>Participants ({setupData.participants.length}/{setupData.bracketSize})</h4>
+        <h4>Participants ({setupData.participants.length}/{derivedBracketSize})</h4>
         <div className="playoff-setup__search">
           <input
             type="text"
@@ -240,7 +208,7 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
               {filteredPlayers.map(player => (
                 <div
                   key={player.id}
-                  className={`player-item ${setupData.participants.some(p => p.id === player.id) ? 'selected' : ''} ${setupData.participants.length >= setupData.bracketSize ? 'disabled' : ''}`}
+                  className={`player-item ${setupData.participants.some(p => p.id === player.id) ? 'selected' : ''}`}
                   onClick={() => handleAddParticipant(player)}
                 >
                   <span className="player-name">
@@ -286,7 +254,7 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
             <p><strong>Tournament Type:</strong> {setupData.isDoubleElimination ? 'Double Elimination' : 'Single Elimination'}</p>
             <p><strong>Total Rounds:</strong> {totalRounds}</p>
             <p><strong>Total Matches:</strong> {totalMatches}</p>
-            <p><strong>Byes:</strong> {setupData.bracketSize - setupData.participants.length}</p>
+            <p><strong>Byes:</strong> {derivedBracketSize - setupData.participants.length}</p>
           </div>
         </div>
       )}
@@ -303,7 +271,7 @@ export const PlayoffSetupPanel: React.FC<TournamentSetupProps> = ({
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={loading || setupData.participants.length < 2}
+          disabled={loading || setupData.participants.length < playoffRules.minPlayers}
           className="button-primary"
         >
           {loading ? 'Creating...' : 'Create Tournament'}

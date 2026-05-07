@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { PostSelectionFlowProps } from '../../../types/tournament';
 import api from '../../../utils/api';
+import { getSystemConfig } from '../../../utils/systemConfig';
 import { rankBasedGroups, computeGroupCapacities } from './roundRobinUtils';
 
 type Step = 'select_group_size' | 'confirm_groups' | 'confirmation';
@@ -20,8 +21,9 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
   formatPlayerName,
   nameDisplayOrder,
 }) => {
+  const multiRoundRobinRules = getSystemConfig().tournamentRules.multiRoundRobins;
   const [step, setStep] = useState<Step>('select_group_size');
-  const [groupSize, setGroupSize] = useState<number>(4);
+  const [groupSize, setGroupSize] = useState<number>(Math.max(4, multiRoundRobinRules.minGroupSize));
   const [playerGroups, setPlayerGroups] = useState<number[][]>([]);
   const [draggedPlayer, setDraggedPlayer] = useState<{ playerId: number; fromGroupIndex: number } | null>(null);
   const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null);
@@ -42,12 +44,12 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
   }, [sortedSelectedPlayers, groupSize]);
 
   const handleContinueFromGroupSize = () => {
-    if (sortedSelectedPlayers.length < 4) {
-      onError('Need at least 4 players for Multi Round Robin');
+    if (sortedSelectedPlayers.length < multiRoundRobinRules.minPlayers) {
+      onError(`Need at least ${multiRoundRobinRules.minPlayers} players for Multi Round Robin`);
       return;
     }
-    if (groupSize < 3) {
-      onError('Group size must be at least 3');
+    if (groupSize < multiRoundRobinRules.minGroupSize) {
+      onError(`Group size must be at least ${multiRoundRobinRules.minGroupSize}`);
       return;
     }
     const groups = rankBasedGroups(selectedPlayerIds, groupSize, (id) => members.find(p => p.id === id));
@@ -57,8 +59,8 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
 
   const handleCreate = async () => {
     try {
-      if (playerGroups.length < 2) {
-        onError('Need at least 2 groups for Multi Round Robin.');
+      if (playerGroups.length < multiRoundRobinRules.minGroups) {
+        onError(`Need at least ${multiRoundRobinRules.minGroups} groups for Multi Round Robin.`);
         return;
       }
 
@@ -128,12 +130,12 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
             </label>
             <input
               type="number"
-              min="3"
+              min={multiRoundRobinRules.minGroupSize}
               max="12"
               value={groupSize}
               onChange={(e) => {
                 const value = parseInt(e.target.value);
-                if (!isNaN(value) && value >= 3 && value <= 12) {
+                if (!isNaN(value) && value >= multiRoundRobinRules.minGroupSize && value <= 12) {
                   setGroupSize(value);
                 }
               }}
