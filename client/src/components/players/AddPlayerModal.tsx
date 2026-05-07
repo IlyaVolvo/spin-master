@@ -36,6 +36,8 @@ export interface AddPlayerModalProps {
   handleAddFieldBlur: (field: string) => void;
   handleAddRatingBlur: () => void | Promise<void>;
   submitButtonLabel?: string;
+  /** When true, Save is disabled (e.g. missing/invalid required fields or duplicate name/email). */
+  submitDisabled?: boolean;
 }
 
 export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
@@ -72,6 +74,7 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
   handleAddFieldBlur,
   handleAddRatingBlur,
   submitButtonLabel = 'Save Member & Send Invitation',
+  submitDisabled = false,
 }) => {
   const hasEmail = newPlayerEmail.trim().length > 0;
 
@@ -351,7 +354,15 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
           <button type="button" onClick={onClose} className="button-filter">
             Cancel
           </button>
-          <button type="submit" className="button-3d">
+          <button
+            type="submit"
+            className="button-3d"
+            disabled={submitDisabled}
+            style={{
+              opacity: submitDisabled ? 0.55 : 1,
+              cursor: submitDisabled ? 'not-allowed' : 'pointer',
+            }}
+          >
             {submitButtonLabel}
           </button>
         </div>

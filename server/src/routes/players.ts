@@ -668,6 +668,68 @@ function calculateSimilarity(str1: string, str2: string): number {
   return ((maxLength - distance) / maxLength) * 100;
 }
 
+type MemberDuplicateCheck = {
+  duplicateName: boolean;
+  duplicateEmail: boolean;
+  similarNames: Array<{ name: string; similarity: number }>;
+};
+
+async function checkMemberDuplicates(params: {
+  firstName?: string;
+  lastName?: string;
+  email?: string | null;
+  excludeMemberId?: number;
+}): Promise<MemberDuplicateCheck> {
+  const firstName = typeof params.firstName === 'string' ? params.firstName.trim() : '';
+  const lastName = typeof params.lastName === 'string' ? params.lastName.trim() : '';
+  const email = typeof params.email === 'string' ? normalizeMemberEmail(params.email) : '';
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  const members = await prisma.member.findMany({
+    where: params.excludeMemberId ? { id: { not: params.excludeMemberId } } : undefined,
+    select: { firstName: true, lastName: true, email: true },
+  });
+
+  const duplicateName = !!(
+    firstName &&
+    lastName &&
+    members.find(
+      (p) =>
+        p.firstName.toLowerCase() === firstName.toLowerCase() &&
+        p.lastName.toLowerCase() === lastName.toLowerCase()
+    )
+  );
+
+  const duplicateEmail = !!(
+    email &&
+    members.find((p) => p.email && normalizeMemberEmail(p.email) === email)
+  );
+
+  const similarNames =
+    firstName && lastName
+      ? members
+          .map((p: { firstName: string; lastName: string }) => {
+            const existingFullName = `${p.firstName} ${p.lastName}`;
+            return {
+              name: existingFullName,
+              similarity: calculateSimilarity(fullName, existingFullName),
+              distance: levenshteinDistance(fullName, existingFullName),
+            };
+          })
+          .filter((p: { name: string; similarity: number; distance: number }) => {
+            if (p.name.toLowerCase() === fullName.toLowerCase()) return false;
+            return p.similarity >= 80 || p.distance <= 2;
+          })
+          .sort((a: { similarity: number }, b: { similarity: number }) => b.similarity - a.similarity)
+          .map((p: { name: string; similarity: number }) => ({
+            name: p.name,
+            similarity: Math.round(p.similarity),
+          }))
+      : [];
+
+  return { duplicateName, duplicateEmail, similarNames };
+}
+
 function generateQrTokenHash(): string {
   return createHash('sha256')
     .update(`${randomBytes(32).toString('hex')}:${Date.now()}:${Math.random()}`)
@@ -846,6 +908,33 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Check add/edit form duplicates without attempting to save.
+router.get('/duplicate-check', async (req: AuthRequest, res: Response) => {
+  try {
+    const excludeMemberIdRaw = req.query.excludeMemberId;
+    const excludeMemberId =
+      typeof excludeMemberIdRaw === 'string' && excludeMemberIdRaw.trim()
+        ? Number(excludeMemberIdRaw)
+        : undefined;
+
+    if (excludeMemberId !== undefined && (!Number.isInteger(excludeMemberId) || excludeMemberId <= 0)) {
+      return res.status(400).json({ error: 'Invalid exclude member ID' });
+    }
+
+    const result = await checkMemberDuplicates({
+      firstName: typeof req.query.firstName === 'string' ? req.query.firstName : '',
+      lastName: typeof req.query.lastName === 'string' ? req.query.lastName : '',
+      email: typeof req.query.email === 'string' ? req.query.email : '',
+      excludeMemberId,
+    });
+
+    res.json(result);
+  } catch (error) {
+    logger.error('Error checking member duplicates', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get single member
 router.get('/:id', async (req, res) => {
   try {
@@ -980,49 +1069,33 @@ router.post('/', [
       return res.status(400).json({ errors: validationErrors.map(msg => ({ msg, param: 'validation' })) });
     }
 
-    const fullName = `${trimmedFirstName} ${trimmedLastName}`;
-
-    const allMembers = await prisma.member.findMany({
-      select: { firstName: true, lastName: true },
+    const duplicateCheck = await checkMemberDuplicates({
+      firstName: trimmedFirstName,
+      lastName: trimmedLastName,
+      email: hasEmail ? trimmedEmailInput : '',
     });
 
-    const exactMatch = allMembers.find(
-      (p) =>
-        p.firstName.toLowerCase() === trimmedFirstName.toLowerCase() &&
-        p.lastName.toLowerCase() === trimmedLastName.toLowerCase()
-    );
-
-    if (exactMatch) {
-      return res.status(400).json({ error: 'A member with this name already exists' });
+    if (duplicateCheck.duplicateName || duplicateCheck.duplicateEmail) {
+      return res.status(409).json({
+        error: 'Duplicate member fields',
+        fieldErrors: {
+          ...(duplicateCheck.duplicateName ? {
+            firstName: 'A member with this name already exists',
+            lastName: 'A member with this name already exists',
+          } : {}),
+          ...(duplicateCheck.duplicateEmail ? { email: 'A member with this email already exists' } : {}),
+        },
+      });
     }
 
     const proposedBirthIso = parsedBirthDate ? parsedBirthDate.toISOString() : null;
 
     if (!skipSimilarityCheck) {
-      const similarMembers = allMembers
-        .map((p: { firstName: string; lastName: string }) => {
-          const existingFullName = `${p.firstName} ${p.lastName}`;
-          return {
-            firstName: p.firstName,
-            lastName: p.lastName,
-            fullName: existingFullName,
-            similarity: calculateSimilarity(fullName, existingFullName),
-            distance: levenshteinDistance(fullName, existingFullName),
-          };
-        })
-        .filter((p: { similarity: number; distance: number }) => p.similarity >= 80 || p.distance <= 2)
-        .sort((a: { similarity: number }, b: { similarity: number }) => b.similarity - a.similarity);
-
-      const similarNames = similarMembers.map((p: { fullName: string; similarity: number }) => ({
-        name: p.fullName,
-        similarity: Math.round(p.similarity),
-      }));
-
-      if (similarNames.length > 0) {
+      if (duplicateCheck.similarNames.length > 0) {
         return res.status(200).json({
           requiresConfirmation: true,
           message: 'Similar member names found',
-          similarNames: similarNames,
+          similarNames: duplicateCheck.similarNames,
           proposedFirstName: trimmedFirstName,
           proposedLastName: trimmedLastName,
           proposedMemberData: {
@@ -1086,12 +1159,6 @@ router.post('/', [
     }
 
     const finalEmail = normalizeMemberEmail(trimmedEmailInput);
-    const existing = await prisma.member.findUnique({
-      where: { email: finalEmail },
-    });
-    if (existing) {
-      return res.status(400).json({ error: 'A member with this email already exists' });
-    }
 
     const finalRoles = roles as MemberRole[];
     const passwordResetToken = generatePasswordResetToken();
@@ -1480,7 +1547,10 @@ router.patch('/:id', [
             where: { email: newEmailNormalized, NOT: { id: memberId } },
           });
           if (emailExists) {
-            return res.status(400).json({ error: 'Email already in use' });
+            return res.status(409).json({
+              error: 'Duplicate member fields',
+              fieldErrors: { email: 'A member with this email already exists' },
+            });
           }
           updateData.email = newEmailNormalized;
         }
@@ -1555,7 +1625,13 @@ router.patch('/:id', [
       });
 
       if (duplicate) {
-        return res.status(400).json({ error: 'A member with this name already exists' });
+        return res.status(409).json({
+          error: 'Duplicate member fields',
+          fieldErrors: {
+            firstName: 'A member with this name already exists',
+            lastName: 'A member with this name already exists',
+          },
+        });
       }
     }
 

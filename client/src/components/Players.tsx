@@ -63,6 +63,15 @@ type PlayerEditBaseline = {
   rating: string;
 };
 
+type AddDuplicateCheckResult = {
+  duplicateName: boolean;
+  duplicateEmail: boolean;
+  similarNames: SimilarName[];
+};
+
+const DUPLICATE_NAME_MESSAGE = 'A member with this name already exists';
+const DUPLICATE_EMAIL_MESSAGE = 'A member with this email already exists';
+
 function normalizeMemberGender(g: string | null | undefined): 'MALE' | 'FEMALE' | 'NOT_SPECIFIED' {
   if (g === 'MALE' || g === 'FEMALE' || g === 'NOT_SPECIFIED') return g;
   return 'NOT_SPECIFIED';
@@ -351,10 +360,13 @@ const Players: React.FC = () => {
   // Field-level validation for add-player form
   const [addFieldErrors, setAddFieldErrors] = useState<Record<string, string>>({});
   const [addFieldTouched, setAddFieldTouched] = useState<Record<string, boolean>>({});
+  const [addDuplicateCheck, setAddDuplicateCheck] = useState<AddDuplicateCheckResult | null>(null);
+  const addDuplicateCheckSeqRef = useRef(0);
 
   // Field-level validation for edit form
   const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string>>({});
   const [editFieldTouched, setEditFieldTouched] = useState<Record<string, boolean>>({});
+  const editDuplicateCheckSeqRef = useRef(0);
 
   // Load column visibility settings from localStorage on mount
   useEffect(() => {
@@ -813,6 +825,146 @@ const Players: React.FC = () => {
     }
   };
 
+  const clearAddDuplicateErrors = (fields: Array<'firstName' | 'lastName' | 'email'>) => {
+    setAddFieldErrors(prev => {
+      let changed = false;
+      const next = { ...prev };
+      if ((fields.includes('firstName') || fields.includes('lastName'))) {
+        if (next.firstName === DUPLICATE_NAME_MESSAGE) {
+          next.firstName = '';
+          changed = true;
+        }
+        if (next.lastName === DUPLICATE_NAME_MESSAGE) {
+          next.lastName = '';
+          changed = true;
+        }
+      }
+      if (fields.includes('email') && next.email === DUPLICATE_EMAIL_MESSAGE) {
+        next.email = '';
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  };
+
+  const applyAddDuplicateFieldErrors = (check: AddDuplicateCheckResult): boolean => {
+    const fieldErrors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+
+    if (check.duplicateName) {
+      fieldErrors.firstName = DUPLICATE_NAME_MESSAGE;
+      fieldErrors.lastName = DUPLICATE_NAME_MESSAGE;
+      touched.firstName = true;
+      touched.lastName = true;
+    }
+
+    if (check.duplicateEmail) {
+      fieldErrors.email = DUPLICATE_EMAIL_MESSAGE;
+      touched.email = true;
+    }
+
+    if (Object.keys(fieldErrors).length === 0) {
+      return false;
+    }
+
+    setAddFieldErrors(prev => ({ ...prev, ...fieldErrors }));
+    setAddFieldTouched(prev => ({ ...prev, ...touched }));
+    return true;
+  };
+
+  const buildAddPlayerData = () => {
+    const playerData: any = {
+      firstName: newPlayerFirstName.trim(),
+      lastName: newPlayerLastName.trim(),
+      gender: newPlayerGender,
+      roles: newPlayerRoles,
+    };
+
+    const trimmedAddEmail = newPlayerEmail.trim();
+    if (trimmedAddEmail) {
+      playerData.email = trimmedAddEmail;
+      playerData.tournamentNotificationsEnabled = newPlayerTournamentNotificationsEnabled;
+    }
+    if (newPlayerBirthDate) {
+      playerData.birthDate = toDateOnlyString(newPlayerBirthDate);
+    }
+    if (newPlayerRating) {
+      playerData.rating = parseInt(newPlayerRating);
+    }
+    if (newPlayerPhone.trim()) {
+      playerData.phone = newPlayerPhone.trim();
+    }
+    if (newPlayerAddress.trim()) {
+      playerData.address = newPlayerAddress.trim();
+    }
+    if (newPlayerPicture.trim()) {
+      playerData.picture = newPlayerPicture.trim();
+    }
+
+    return playerData;
+  };
+
+  const buildPendingAddPlayerData = (playerData: any): PendingPlayerData => ({
+    firstName: playerData.firstName,
+    lastName: playerData.lastName,
+    email: playerData.email ?? null,
+    gender: playerData.gender,
+    birthDate: playerData.birthDate ?? null,
+    rating: playerData.rating ?? null,
+    phone: playerData.phone ?? null,
+    address: playerData.address ?? null,
+    picture: playerData.picture ?? null,
+    roles: playerData.roles,
+    tournamentNotificationsEnabled: Boolean(playerData.email && playerData.tournamentNotificationsEnabled),
+  });
+
+  const fetchAddDuplicateCheck = async (expectedSeq?: number): Promise<AddDuplicateCheckResult | null> => {
+    const firstName = newPlayerFirstName.trim();
+    const lastName = newPlayerLastName.trim();
+    const email = newPlayerEmail.trim();
+
+    if (
+      (firstName && !isValidMemberName(firstName)) ||
+      (lastName && !isValidMemberName(lastName)) ||
+      (email && !isValidEmailFormat(email)) ||
+      (!firstName && !lastName && !email)
+    ) {
+      if (expectedSeq === undefined || addDuplicateCheckSeqRef.current === expectedSeq) {
+        setAddDuplicateCheck(null);
+        clearAddDuplicateErrors(['firstName', 'lastName', 'email']);
+      }
+      return null;
+    }
+
+    const response = await api.get('/players/duplicate-check', {
+      params: { firstName, lastName, email },
+    });
+    const result = response.data as AddDuplicateCheckResult;
+    if (expectedSeq !== undefined && addDuplicateCheckSeqRef.current !== expectedSeq) {
+      return null;
+    }
+    setAddDuplicateCheck(result);
+    clearAddDuplicateErrors(['firstName', 'lastName', 'email']);
+    applyAddDuplicateFieldErrors(result);
+    return result;
+  };
+
+  useEffect(() => {
+    if (!showAddForm) return;
+
+    const checkId = addDuplicateCheckSeqRef.current + 1;
+    addDuplicateCheckSeqRef.current = checkId;
+    const timer = window.setTimeout(async () => {
+      try {
+        await fetchAddDuplicateCheck(checkId);
+      } catch {
+        // Save still performs server validation; avoid blocking typing on transient checks.
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [showAddForm, newPlayerFirstName, newPlayerLastName, newPlayerEmail]);
+
   const validateAddField = (field: string, value?: any): string => {
     switch (field) {
       case 'firstName': {
@@ -912,6 +1064,14 @@ const Players: React.FC = () => {
   };
 
   const handleAddFieldChange = (field: string, value: any) => {
+    if (field === 'firstName' || field === 'lastName') {
+      setAddDuplicateCheck(null);
+      clearAddDuplicateErrors(['firstName', 'lastName']);
+    } else if (field === 'email') {
+      setAddDuplicateCheck(null);
+      clearAddDuplicateErrors(['email']);
+    }
+
     // If field has been touched, re-validate on change for immediate feedback
     if (addFieldTouched[field]) {
       const error = validateAddField(field, value);
@@ -934,6 +1094,19 @@ const Players: React.FC = () => {
     setAddFieldTouched(touched);
     return !hasError;
   };
+
+  /** Same field set as validateAllAddFields, without mutating touched/errors (for disabling Save). */
+  const isAddPlayerFormValid = (): boolean => {
+    const fields = ['firstName', 'lastName', 'email', 'birthDate', 'gender', 'roles', 'rating', 'phone', 'picture'];
+    return fields.every((field) => !validateAddField(field));
+  };
+
+  const isAddPlayerSubmitBlockedByDuplicates = (): boolean =>
+    addFieldErrors.firstName === DUPLICATE_NAME_MESSAGE ||
+    addFieldErrors.lastName === DUPLICATE_NAME_MESSAGE ||
+    addFieldErrors.email === DUPLICATE_EMAIL_MESSAGE ||
+    !!addDuplicateCheck?.duplicateName ||
+    !!addDuplicateCheck?.duplicateEmail;
 
   const validateEditField = (field: string, value?: any): string => {
     switch (field) {
@@ -997,10 +1170,129 @@ const Players: React.FC = () => {
     }
   };
 
+  const clearEditDuplicateErrors = (fields: Array<'firstName' | 'lastName' | 'email'>) => {
+    setEditFieldErrors(prev => {
+      let changed = false;
+      const next = { ...prev };
+      if ((fields.includes('firstName') || fields.includes('lastName'))) {
+        if (next.firstName === DUPLICATE_NAME_MESSAGE) {
+          next.firstName = '';
+          changed = true;
+        }
+        if (next.lastName === DUPLICATE_NAME_MESSAGE) {
+          next.lastName = '';
+          changed = true;
+        }
+      }
+      if (fields.includes('email') && next.email === DUPLICATE_EMAIL_MESSAGE) {
+        next.email = '';
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  };
+
+  const applyEditDuplicateFieldErrors = (
+    check: AddDuplicateCheckResult,
+    fields: Array<'name' | 'email'> = ['name', 'email']
+  ): boolean => {
+    const fieldErrors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+
+    if (fields.includes('name') && check.duplicateName) {
+      fieldErrors.firstName = DUPLICATE_NAME_MESSAGE;
+      fieldErrors.lastName = DUPLICATE_NAME_MESSAGE;
+      touched.firstName = true;
+      touched.lastName = true;
+    }
+
+    if (fields.includes('email') && check.duplicateEmail) {
+      fieldErrors.email = DUPLICATE_EMAIL_MESSAGE;
+      touched.email = true;
+    }
+
+    if (Object.keys(fieldErrors).length === 0) {
+      return false;
+    }
+
+    setEditFieldErrors(prev => ({ ...prev, ...fieldErrors }));
+    setEditFieldTouched(prev => ({ ...prev, ...touched }));
+    return true;
+  };
+
+  const fetchEditDuplicateCheck = async (
+    scope: 'name' | 'email' | 'all',
+    expectedSeq?: number
+  ): Promise<AddDuplicateCheckResult | null> => {
+    if (!editingPlayerId) return null;
+
+    const firstName = editFirstName.trim();
+    const lastName = editLastName.trim();
+    const email = editEmail.trim();
+    const baseline = playerEditBaselineRef.current;
+    const nameChanged =
+      !!baseline &&
+      (firstName.toLowerCase() !== baseline.firstName.trim().toLowerCase() ||
+        lastName.toLowerCase() !== baseline.lastName.trim().toLowerCase());
+    const emailChanged =
+      !!baseline &&
+      email.toLowerCase() !== baseline.email.trim().toLowerCase();
+
+    const shouldCheckName =
+      (scope === 'name' || scope === 'all') &&
+      nameChanged &&
+      isValidMemberName(firstName) &&
+      isValidMemberName(lastName);
+    const shouldCheckEmail =
+      (scope === 'email' || scope === 'all') &&
+      emailChanged &&
+      email.length > 0 &&
+      isValidEmailFormat(email);
+
+    if (!shouldCheckName && !shouldCheckEmail) {
+      if (expectedSeq === undefined || editDuplicateCheckSeqRef.current === expectedSeq) {
+        if (scope === 'name') clearEditDuplicateErrors(['firstName', 'lastName']);
+        if (scope === 'email') clearEditDuplicateErrors(['email']);
+        if (scope === 'all') clearEditDuplicateErrors(['firstName', 'lastName', 'email']);
+      }
+      return null;
+    }
+
+    const response = await api.get('/players/duplicate-check', {
+      params: {
+        firstName: shouldCheckName ? firstName : '',
+        lastName: shouldCheckName ? lastName : '',
+        email: shouldCheckEmail ? email : '',
+        excludeMemberId: editingPlayerId,
+      },
+    });
+    const result = response.data as AddDuplicateCheckResult;
+
+    if (expectedSeq !== undefined && editDuplicateCheckSeqRef.current !== expectedSeq) {
+      return null;
+    }
+
+    if (shouldCheckName) {
+      clearEditDuplicateErrors(['firstName', 'lastName']);
+    }
+    if (shouldCheckEmail) {
+      clearEditDuplicateErrors(['email']);
+    }
+
+    applyEditDuplicateFieldErrors(result, [
+      ...(shouldCheckName ? (['name'] as const) : []),
+      ...(shouldCheckEmail ? (['email'] as const) : []),
+    ]);
+    return result;
+  };
+
   const handleEditFieldBlur = (field: string) => {
     setEditFieldTouched(prev => ({ ...prev, [field]: true }));
     const error = validateEditField(field);
     setEditFieldErrors(prev => ({ ...prev, [field]: error }));
+    if (!error && (field === 'firstName' || field === 'lastName')) {
+      void fetchEditDuplicateCheck('name');
+    }
   };
 
   const handleEditRatingBlur = async () => {
@@ -1033,11 +1325,36 @@ const Players: React.FC = () => {
   };
 
   const handleEditFieldChange = (field: string, value: any) => {
+    if (field === 'firstName' || field === 'lastName') {
+      clearEditDuplicateErrors(['firstName', 'lastName']);
+    } else if (field === 'email') {
+      clearEditDuplicateErrors(['email']);
+    }
+
     if (editFieldTouched[field]) {
       const error = validateEditField(field, value);
       setEditFieldErrors(prev => ({ ...prev, [field]: error }));
     }
   };
+
+  useEffect(() => {
+    if (!editingPlayerId) return;
+
+    const emailError = validateEditField('email');
+    if (emailError) return;
+
+    const checkId = editDuplicateCheckSeqRef.current + 1;
+    editDuplicateCheckSeqRef.current = checkId;
+    const timer = window.setTimeout(async () => {
+      try {
+        await fetchEditDuplicateCheck('email', checkId);
+      } catch {
+        // Submit still performs server validation; don't surface transient checks globally.
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [editingPlayerId, editEmail]);
 
   const validateAllEditFields = (canEditRestricted: boolean): boolean => {
     const fields = canEditRestricted
@@ -1056,6 +1373,19 @@ const Players: React.FC = () => {
     setEditFieldTouched(touched);
     return !hasError;
   };
+
+  /** Same field set as validateAllEditFields, without mutating state (for disabling Save). */
+  const editFieldsSatisfyValidation = (canEditRestricted: boolean): boolean => {
+    const fields = canEditRestricted
+      ? ['firstName', 'lastName', 'email', 'gender', 'birthDate', 'rating', 'phone', 'picture']
+      : ['email', 'phone', 'picture', 'birthDate'];
+    return fields.every((field) => !validateEditField(field));
+  };
+
+  const isEditSubmitBlockedByDuplicates = (): boolean =>
+    editFieldErrors.firstName === DUPLICATE_NAME_MESSAGE ||
+    editFieldErrors.lastName === DUPLICATE_NAME_MESSAGE ||
+    editFieldErrors.email === DUPLICATE_EMAIL_MESSAGE;
 
   /** Re-sync birth-date range validation when dependent fields update. */
   useEffect(() => {
@@ -1102,36 +1432,19 @@ const Players: React.FC = () => {
       setLastConfirmedAddRating(newPlayerRating);
     }
 
-    try {
-      const playerData: any = {
-        firstName: newPlayerFirstName.trim(),
-        lastName: newPlayerLastName.trim(),
-        gender: newPlayerGender,
-        roles: newPlayerRoles,
-      };
+    const playerData = buildAddPlayerData();
 
-      const trimmedAddEmail = newPlayerEmail.trim();
-      if (trimmedAddEmail) {
-        playerData.email = trimmedAddEmail;
-        playerData.tournamentNotificationsEnabled = newPlayerTournamentNotificationsEnabled;
+    try {
+      const currentDuplicateCheck = await fetchAddDuplicateCheck();
+      if (currentDuplicateCheck && applyAddDuplicateFieldErrors(currentDuplicateCheck)) {
+        return;
       }
-      if (newPlayerBirthDate) {
-        playerData.birthDate = toDateOnlyString(newPlayerBirthDate);
-      }
-      
-      if (newPlayerRating) {
-        playerData.rating = parseInt(newPlayerRating);
-      }
-      
-      // Optional fields
-      if (newPlayerPhone.trim()) {
-        playerData.phone = newPlayerPhone.trim();
-      }
-      if (newPlayerAddress.trim()) {
-        playerData.address = newPlayerAddress.trim();
-      }
-      if (newPlayerPicture.trim()) {
-        playerData.picture = newPlayerPicture.trim();
+
+      if (currentDuplicateCheck?.similarNames.length) {
+        setSimilarNames(currentDuplicateCheck.similarNames);
+        setPendingPlayerData(buildPendingAddPlayerData(playerData));
+        setShowConfirmation(true);
+        return;
       }
 
       const response = await api.post('/players', playerData);
@@ -1139,19 +1452,7 @@ const Players: React.FC = () => {
       // Check if confirmation is required
       if (response.data.requiresConfirmation) {
         setSimilarNames(response.data.similarNames);
-        setPendingPlayerData(response.data.proposedMemberData || {
-          firstName: playerData.firstName,
-          lastName: playerData.lastName,
-          email: playerData.email ?? null,
-          gender: playerData.gender,
-          birthDate: playerData.birthDate ?? null,
-          rating: playerData.rating ?? null,
-          phone: playerData.phone ?? null,
-          address: playerData.address ?? null,
-          picture: playerData.picture ?? null,
-          roles: playerData.roles,
-          tournamentNotificationsEnabled: Boolean(playerData.email && playerData.tournamentNotificationsEnabled),
-        });
+        setPendingPlayerData(response.data.proposedMemberData || buildPendingAddPlayerData(playerData));
         setShowConfirmation(true);
         return;
       }
@@ -1176,9 +1477,20 @@ const Players: React.FC = () => {
       setNewPlayerPicture('');
       setAddFieldErrors({});
       setAddFieldTouched({});
+      setAddDuplicateCheck(null);
       setShowAddForm(false);
       fetchMembers();
     } catch (err: any) {
+      const fieldErrors = err.response?.data?.fieldErrors;
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
+          acc[field] = true;
+          return acc;
+        }, {});
+        setAddFieldErrors(prev => ({ ...prev, ...fieldErrors }));
+        setAddFieldTouched(prev => ({ ...prev, ...touchedFields }));
+        return;
+      }
       const errorMessage = err.response?.data?.error || 'Failed to add player';
       setError(errorMessage);
     }
@@ -1364,12 +1676,24 @@ const Players: React.FC = () => {
       setNewPlayerPicture('');
       setAddFieldErrors({});
       setAddFieldTouched({});
+      setAddDuplicateCheck(null);
       setShowAddForm(false);
       setShowConfirmation(false);
       setSimilarNames([]);
       setPendingPlayerData(null);
       fetchMembers();
     } catch (err: any) {
+      const fieldErrors = err.response?.data?.fieldErrors;
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
+          acc[field] = true;
+          return acc;
+        }, {});
+        setAddFieldErrors(prev => ({ ...prev, ...fieldErrors }));
+        setAddFieldTouched(prev => ({ ...prev, ...touchedFields }));
+        setShowConfirmation(false);
+        return;
+      }
       const errorMessage = err.response?.data?.error || 'Failed to add player';
       setError(errorMessage);
       setShowConfirmation(false);
@@ -1860,6 +2184,15 @@ const Players: React.FC = () => {
       return;
     }
 
+    try {
+      const duplicateCheck = await fetchEditDuplicateCheck('all');
+      if (duplicateCheck && applyEditDuplicateFieldErrors(duplicateCheck)) {
+        return;
+      }
+    } catch {
+      // Let the save request provide authoritative validation if the pre-check fails.
+    }
+
     if (
       canEditRestrictedProfileFields &&
       editRating.trim() !== '' &&
@@ -1925,6 +2258,16 @@ const Players: React.FC = () => {
       handleCancelEdit(); // This will set editingPlayerId to null and clear all form fields
       fetchMembers();
     } catch (err: any) {
+      const fieldErrors = err.response?.data?.fieldErrors;
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
+          acc[field] = true;
+          return acc;
+        }, {});
+        setEditFieldErrors(prev => ({ ...prev, ...fieldErrors }));
+        setEditFieldTouched(prev => ({ ...prev, ...touchedFields }));
+        return;
+      }
       setError(err.response?.data?.error || 'Failed to update member');
     }
   };
@@ -3659,6 +4002,7 @@ const Players: React.FC = () => {
               setNewPlayerPicture('');
               setAddFieldErrors({});
               setAddFieldTouched({});
+              setAddDuplicateCheck(null);
               setError('');
             }}
             onSubmit={handleAddPlayer}
@@ -3692,6 +4036,7 @@ const Players: React.FC = () => {
             handleAddFieldChange={handleAddFieldChange}
             handleAddFieldBlur={handleAddFieldBlur}
             handleAddRatingBlur={handleAddRatingBlur}
+            submitDisabled={!isAddPlayerFormValid() || isAddPlayerSubmitBlockedByDuplicates()}
             submitButtonLabel={
               newPlayerEmail.trim()
                 ? 'Save Member & Send Invitation'
@@ -5675,6 +6020,10 @@ const Players: React.FC = () => {
           !!isEditingSelf,
           playerEditBaselineRef.current?.birthDateMs ?? null,
         );
+        const editCanSave =
+          hasPlayerEditChanges() &&
+          editFieldsSatisfyValidation(canEditRestrictedProfileFields) &&
+          !isEditSubmitBlockedByDuplicates();
         
         return (
           <div 
@@ -6242,13 +6591,13 @@ const Players: React.FC = () => {
                     e.stopPropagation();
                     handleSaveEdit();
                   }}
-                  disabled={!hasPlayerEditChanges()}
+                  disabled={!editCanSave}
                   className="button-3d success"
                   style={{
                     fontSize: '13px',
                     padding: '8px 16px',
-                    opacity: hasPlayerEditChanges() ? 1 : 0.55,
-                    cursor: hasPlayerEditChanges() ? 'pointer' : 'not-allowed',
+                    opacity: editCanSave ? 1 : 0.55,
+                    cursor: editCanSave ? 'pointer' : 'not-allowed',
                   }}
                 >
                   Save
