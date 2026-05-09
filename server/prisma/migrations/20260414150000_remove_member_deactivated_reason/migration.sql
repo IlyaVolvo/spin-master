@@ -1,6 +1,7 @@
 -- Deactivation does not change rating; remove legacy rows and enum value.
+-- Compare via ::text so DELETE works if MEMBER_DEACTIVATED was already removed from the enum.
 DELETE FROM "rating_history"
-WHERE "reason" = 'MEMBER_DEACTIVATED';
+WHERE "reason"::text = 'MEMBER_DEACTIVATED';
 
 CREATE TYPE "RatingChangeReason_new" AS ENUM (
   'TOURNAMENT_COMPLETED',
