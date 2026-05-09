@@ -58,6 +58,8 @@ interface RatingHistoryPoint {
   tournamentId: number | null;
   tournamentName: string | null;
   matchId: number | null;
+  /** Standalone match line: opponent + score (no link). */
+  eventDetail?: string | null;
 }
 
 interface PlayerRatingHistory {
@@ -226,10 +228,9 @@ const History: React.FC = () => {
                       return new Date(b.date).getTime() - new Date(a.date).getTime();
                     })
                     .map((point, idx) => {
-                      // Determine what to link to based on available data
-                      const hasTournament = point.tournamentId !== null;
-                      const hasMatch = point.matchId !== null;
                       const eventName = point.tournamentName || 'Rating';
+                      const linkToTournament =
+                        !point.eventDetail && point.tournamentId !== null;
 
                       return (
                         <tr key={idx}>
@@ -244,7 +245,9 @@ const History: React.FC = () => {
                             />
                           </td>
                           <td style={{ padding: '10px' }}>
-                            {hasTournament || hasMatch ? (
+                            {point.eventDetail ? (
+                              <span>{point.eventDetail}</span>
+                            ) : linkToTournament ? (
                               <a
                                 href="/tournaments"
                                 onClick={(e) => {
@@ -252,18 +255,17 @@ const History: React.FC = () => {
                                   navigate('/tournaments', {
                                     state: {
                                       tournamentId: point.tournamentId,
-                                      matchId: point.matchId,
                                       from: 'history',
-                                      restoreScroll: false
-                                    }
+                                      restoreScroll: false,
+                                    },
                                   });
                                 }}
                                 style={{
                                   color: '#3498db',
                                   textDecoration: 'underline',
-                                  cursor: 'pointer'
+                                  cursor: 'pointer',
                                 }}
-                                title="Click to view tournament/match"
+                                title="Open tournament"
                               >
                                 {eventName}
                               </a>

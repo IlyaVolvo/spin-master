@@ -93,18 +93,55 @@ function tournamentDepthFromParentMap(
   return steps;
 }
 
-/** Prefer the match's tournament when present (rating_history.tournamentId can be stale vs matches.tournamentId). */
+/** Prefer the match row's tournament id when matchId is known (rating_history.tournamentId can be stale). Return null when the match is standalone. */
 function effectiveTournamentIdForHistoryRow(
   record: { tournamentId: number | null; matchId: number | null },
   matchTournamentIdByMatchId: Map<number, number | null>
 ): number | null {
   if (record.matchId != null) {
     const tid = matchTournamentIdByMatchId.get(record.matchId);
-    if (tid !== undefined && tid !== null) {
+    if (tid !== undefined) {
       return tid;
     }
   }
   return record.tournamentId;
+}
+
+type MatchRowForRatingHistory = {
+  id: number;
+  tournamentId: number | null;
+  member1Id: number;
+  member2Id: number | null;
+  player1Sets: number;
+  player2Sets: number;
+  player1Forfeit: boolean;
+  player2Forfeit: boolean;
+};
+
+/** Plain-text Event line for standalone matches (no tournament drill-down). */
+function formatStandaloneRatingEventDetail(
+  memberId: number,
+  match: MatchRowForRatingHistory,
+  opponentById: Map<number, { firstName: string; lastName: string }>
+): string | null {
+  const oppId =
+    match.member1Id === memberId
+      ? match.member2Id
+      : match.member2Id === memberId
+        ? match.member1Id
+        : null;
+  if (oppId == null || oppId <= 0) return null;
+  const opp = opponentById.get(oppId);
+  const oppName = opp ? `${opp.firstName} ${opp.lastName}`.trim() : `Player #${oppId}`;
+  if (match.player1Forfeit || match.player2Forfeit) {
+    const lost =
+      (match.member1Id === memberId && match.player1Forfeit) ||
+      (match.member2Id === memberId && match.player2Forfeit);
+    return `vs ${oppName} — ${lost ? 'forfeit (lost)' : 'forfeit (won)'}`;
+  }
+  const mySets = match.member1Id === memberId ? match.player1Sets : match.player2Sets;
+  const theirSets = match.member1Id === memberId ? match.player2Sets : match.player1Sets;
+  return `vs ${oppName} — ${mySets}-${theirSets}`;
 }
 
 /**
@@ -1778,15 +1815,45 @@ router.post('/rating-history', [
       .filter((id: number | null | undefined): id is number => typeof id === 'number');
     const matchIdsForHistory: number[] = [...new Set(matchIdList)];
     const matchTournamentIdByMatchId = new Map<number, number | null>();
+    const matchById = new Map<number, MatchRowForRatingHistory>();
     if (matchIdsForHistory.length > 0) {
       const matchRows = await prisma.match.findMany({
         where: { id: { in: matchIdsForHistory } },
-        select: { id: true, tournamentId: true },
+        select: {
+          id: true,
+          tournamentId: true,
+          member1Id: true,
+          member2Id: true,
+          player1Sets: true,
+          player2Sets: true,
+          player1Forfeit: true,
+          player2Forfeit: true,
+        },
       });
       for (const m of matchRows) {
         matchTournamentIdByMatchId.set(m.id, m.tournamentId);
+        matchById.set(m.id, m);
       }
     }
+
+    const standaloneOpponentIds = new Set<number>();
+    for (const r of ratingHistoryRecords) {
+      if (r.matchId == null) continue;
+      const row = matchById.get(r.matchId);
+      if (!row || row.member2Id == null) continue;
+      const tid = effectiveTournamentIdForHistoryRow(r, matchTournamentIdByMatchId);
+      if (tid != null) continue;
+      const opp = row.member1Id === r.memberId ? row.member2Id : row.member1Id;
+      if (opp != null && opp > 0) standaloneOpponentIds.add(opp);
+    }
+    const standaloneOpponentMembers =
+      standaloneOpponentIds.size > 0
+        ? await prisma.member.findMany({
+            where: { id: { in: [...standaloneOpponentIds] } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [];
+    const opponentByIdForStandalone = new Map(standaloneOpponentMembers.map((o) => [o.id, o]));
 
     // Tournament names + parent chain (include ids from matches so labels match the actual match context)
     const tournamentIds = [
@@ -1826,6 +1893,8 @@ router.post('/rating-history', [
       tournamentName: string | null;
       matchId: number | null;
       reason: string | null;
+      /** Standalone match: opponent + score; no tournament link. */
+      eventDetail: string | null;
     };
 
     const ratingHistory: { [memberId: number]: HistoryPointDto[] } = {};
@@ -1848,19 +1917,32 @@ router.post('/rating-history', [
           tournamentName: 'Starting rating',
           matchId: null,
           reason: null,
+          eventDetail: null,
         });
       }
 
       for (const { record, rating, ratingBefore, ratingChange } of replayedHistory.points) {
+        const tid = effectiveTournamentIdForHistoryRow(record, matchTournamentIdByMatchId);
+        const matchRow = record.matchId != null ? matchById.get(record.matchId) : undefined;
+        let eventDetail: string | null = null;
+        if (
+          tid == null &&
+          matchRow &&
+          record.matchId != null &&
+          (record.reason === 'MATCH_COMPLETED' || record.reason === 'RESULT_CORRECTED')
+        ) {
+          eventDetail = formatStandaloneRatingEventDetail(member.id, matchRow, opponentByIdForStandalone);
+        }
         points.push({
           date: record.timestamp.toISOString(),
           rating,
           ratingBefore,
           ratingChange: ratingChange ?? null,
-          tournamentId: effectiveTournamentIdForHistoryRow(record, matchTournamentIdByMatchId),
+          tournamentId: tid,
           tournamentName: tournamentNameForRecord(record),
           matchId: record.matchId,
           reason: record.reason,
+          eventDetail,
         });
       }
 
@@ -1874,6 +1956,7 @@ router.post('/rating-history', [
           tournamentName: 'Initial rating',
           matchId: null,
           reason: null,
+          eventDetail: null,
         });
       }
 
@@ -1888,6 +1971,7 @@ router.post('/rating-history', [
           tournamentName: 'Current (live)',
           matchId: null,
           reason: null,
+          eventDetail: null,
         });
       }
 

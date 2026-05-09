@@ -11,6 +11,43 @@ const router = express.Router();
 
 router.use(authenticate);
 
+/** Minimal match rows for Players “games played” — all rows in `matches`, any tournamentId (or none). */
+router.get('/player-game-rows', async (req: AuthRequest, res: Response) => {
+  try {
+    const rows = await prisma.match.findMany({
+      select: {
+        id: true,
+        member1Id: true,
+        member2Id: true,
+        player1Sets: true,
+        player2Sets: true,
+        player1Forfeit: true,
+        player2Forfeit: true,
+        updatedAt: true,
+        createdAt: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    res.json({
+      matches: rows.map((m) => ({
+        id: m.id,
+        member1Id: m.member1Id,
+        member2Id: m.member2Id,
+        player1Sets: m.player1Sets,
+        player2Sets: m.player2Sets,
+        player1Forfeit: m.player1Forfeit,
+        player2Forfeit: m.player2Forfeit,
+        updatedAt: m.updatedAt.toISOString(),
+        createdAt: m.createdAt.toISOString(),
+      })),
+    });
+  } catch (error) {
+    logger.error('Error fetching match rows for player game counts', { error });
+    res.status(500).json({ error: 'Failed to fetch matches' });
+  }
+});
+
 // Helper function to check if user has ORGANIZER role
 async function isOrganizer(req: AuthRequest): Promise<boolean> {
   if (req.member && Array.isArray(req.member.roles)) {

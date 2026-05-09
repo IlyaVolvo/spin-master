@@ -32,7 +32,16 @@ import {
   toggleRangeInSelectionSet,
 } from '../utils/shiftRangeSelection';
 import { generatePlayersCsv, downloadCsv } from './utils/playerCsvUtils';
-import { matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
+import {
+  matchesCache,
+  matchCountsCache,
+  updateMatchCountsCache,
+  removeMatchFromCache,
+  collectCachedMatchesFromTournamentsPayload,
+  normalizeCachedMatchRows,
+  matchCountsAsGamesPlayed,
+  type CachedMatch,
+} from './utils/matchCacheUtils';
 import {
   getBirthDateBounds,
   isSuspiciousRating,
@@ -45,7 +54,7 @@ import {
 import './tournaments/plugins';
 
 // membersCache is imported from ./hooks/usePlayerData
-// matchesCache, matchCountsCache, getMatchCountsCacheKey, updateMatchCountsCache, removeMatchFromCache
+// matchesCache, matchCountsCache, updateMatchCountsCache, removeMatchFromCache
 // are imported from ./utils/matchCacheUtils
 
 type PlayerEditBaseline = {
@@ -574,16 +583,9 @@ const Players: React.FC = () => {
       return new Map<number, number>();
     }
 
-    // Create cache key based on time period parameters
-    const customStartKey = gamesCustomStartDate ? gamesCustomStartDate.toISOString() : null;
-    const customEndKey = gamesCustomEndDate ? gamesCustomEndDate.toISOString() : null;
-    const cacheKey = getMatchCountsCacheKey(gamesTimePeriod, customStartKey, customEndKey);
-    
-    // Check if we have cached data for this exact configuration
-    const cachedCounts = matchCountsCache.get(cacheKey);
-    if (cachedCounts) {
-      return cachedCounts;
-    }
+    // Always derive from `matches` — do not short-circuit on matchCountsCache: an empty
+    // Map is truthy in JS, so we previously returned a stale empty Map after e.g. an
+    // initial fetch failure then masked non-empty data.
 
     // Calculate the date range based on selected time period
     const now = new Date();
@@ -620,6 +622,8 @@ const Players: React.FC = () => {
     const matchCounts = new Map<number, number>();
 
     matches.forEach(match => {
+      if (!matchCountsAsGamesPlayed(match)) return;
+
       if (gamesTimePeriod === 'all') {
         // Count all matches regardless of date
         // Count for player1 (member1Id)
@@ -647,9 +651,6 @@ const Players: React.FC = () => {
         }
       }
     });
-
-    // Cache the result
-    matchCountsCache.set(cacheKey, matchCounts);
 
     return matchCounts;
   }, [showGamesColumn, matches, gamesTimePeriod, gamesCustomStartDate, gamesCustomEndDate]);
@@ -789,39 +790,63 @@ const Players: React.FC = () => {
   fetchMembersRef.current = fetchMembers;
 
   const fetchMatches = async () => {
-    try {
-      const response = await api.get('/tournaments');
-      const allMatches: Array<{
-        id: number;
-        member1Id: number;
-        member2Id: number | null;
-        updatedAt: string;
-        createdAt: string;
-      }> = [];
-      
-      // Extract all matches from all tournaments
-      response.data.forEach((tournament: any) => {
-        if (tournament.matches && Array.isArray(tournament.matches)) {
-          tournament.matches.forEach((match: any) => {
-            allMatches.push({
-              id: match.id,
-              member1Id: match.member1Id,
-              member2Id: match.member2Id,
-              updatedAt: match.updatedAt || match.createdAt,
-              createdAt: match.createdAt,
-            });
-          });
-        }
-      });
-      
-      // Update cache
+    const applyMatches = (allMatches: CachedMatch[]) => {
       matchesCache.data = allMatches;
       matchesCache.lastFetch = Date.now();
-      // Note: We don't clear match counts cache here - it will be updated incrementally
-      
+      matchCountsCache.clear();
       setMatches(allMatches);
-    } catch (err: any) {
-      // Don't show error to user, just log it
+    };
+
+    /** Union by match id: tournament tree, standalone list, then DB snapshot (authoritative). */
+    const mergeMatchSources = (
+      tree: CachedMatch[],
+      standalone: CachedMatch[],
+      primary: CachedMatch[]
+    ): CachedMatch[] => {
+      const byId = new Map<number, CachedMatch>();
+      for (const m of tree) byId.set(m.id, m);
+      for (const m of standalone) byId.set(m.id, m);
+      for (const m of primary) byId.set(m.id, m);
+      return Array.from(byId.values()).sort((a, b) => a.id - b.id);
+    };
+
+    try {
+      const results = await Promise.allSettled([
+        api.get('/matches/player-game-rows', { timeout: 120000 }),
+        api.get('/tournaments'),
+        api.get('/matches'),
+      ]);
+
+      let primary: CachedMatch[] = [];
+      if (results[0].status === 'fulfilled') {
+        const response = results[0].value;
+        let raw: unknown = response.data?.matches;
+        if (!Array.isArray(raw) && Array.isArray(response.data)) {
+          raw = response.data;
+        }
+        primary = normalizeCachedMatchRows(raw);
+      } else {
+        console.error('fetchMatches: /matches/player-game-rows failed', results[0].reason);
+      }
+
+      let fromTree: CachedMatch[] = [];
+      if (results[1].status === 'fulfilled') {
+        fromTree = collectCachedMatchesFromTournamentsPayload(results[1].value.data);
+      } else {
+        console.error('fetchMatches: GET /tournaments failed', results[1].reason);
+      }
+
+      let standalone: CachedMatch[] = [];
+      if (results[2].status === 'fulfilled') {
+        const data = results[2].value.data;
+        standalone = normalizeCachedMatchRows(Array.isArray(data) ? data : []);
+      } else {
+        console.error('fetchMatches: GET /matches (standalone) failed', results[2].reason);
+      }
+
+      applyMatches(mergeMatchSources(fromTree, standalone, primary));
+    } catch (err: unknown) {
+      console.error('fetchMatches: unexpected error', err);
     }
   };
 

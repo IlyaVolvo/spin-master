@@ -20,6 +20,8 @@ interface RatingHistoryPoint {
   tournamentId: number | null;
   tournamentName: string | null;
   matchId: number | null;
+  /** Standalone match: opponent + score from API; no tournament link. */
+  eventDetail?: string | null;
 }
 
 interface PlayerRatingHistory {
@@ -332,9 +334,9 @@ const Statistics: React.FC = () => {
                             return new Date(b.date).getTime() - new Date(a.date).getTime();
                           })
                           .map((point, idx) => {
-                          const hasTournament = point.tournamentId !== null;
-                          const hasMatch = point.matchId !== null;
                           const eventName = point.tournamentName || 'Rating';
+                          const linkToTournament =
+                            !point.eventDetail && point.tournamentId !== null;
 
                           return (
                           <tr key={idx}>
@@ -349,7 +351,9 @@ const Statistics: React.FC = () => {
                               />
                             </td>
                             <td style={{ padding: '8px' }}>
-                                {hasTournament || hasMatch ? (
+                                {point.eventDetail ? (
+                                  <span>{point.eventDetail}</span>
+                                ) : linkToTournament ? (
                                   <a
                                     href="/tournaments"
                                     onClick={(e) => {
@@ -357,10 +361,9 @@ const Statistics: React.FC = () => {
                                       navigate('/tournaments', {
                                         state: {
                                           tournamentId: point.tournamentId,
-                                          matchId: point.matchId,
                                           from: 'statistics',
-                                          restoreScroll: false
-                                        }
+                                          restoreScroll: false,
+                                        },
                                       });
                                     }}
                                     style={{
@@ -376,7 +379,7 @@ const Statistics: React.FC = () => {
                                       e.currentTarget.style.color = '#3498db';
                                       e.currentTarget.style.textDecoration = 'underline';
                                     }}
-                                    title="Click to view tournament/match"
+                                    title="Open tournament"
                                   >
                                     {eventName}
                                   </a>
