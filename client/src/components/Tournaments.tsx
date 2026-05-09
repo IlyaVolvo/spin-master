@@ -70,6 +70,43 @@ interface StandaloneMatchFromAPI {
   player2RatingChange: number | null;
 }
 
+function isCompoundTournamentNode(tournament: Tournament): boolean {
+  const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+  return !plugin.isBasic;
+}
+
+/** Depth-first search for a tournament id (includes nested childTournaments). */
+function findTournamentByIdInForest(id: number, roots: Tournament[]): Tournament | null {
+  for (const t of roots) {
+    if (t.id === id) return t;
+    const children = t.childTournaments;
+    if (children?.length) {
+      const found = findTournamentByIdInForest(id, children);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * Compound ancestor ids from root down to the parent of `targetId`.
+ * Expanding these reveals nested basic tournaments (e.g. Swiss group under a preliminary compound).
+ */
+function findAncestorCompoundIdsForTarget(targetId: number, roots: Tournament[]): number[] | null {
+  function walk(nodes: Tournament[], ancestorCompoundIds: number[]): number[] | null {
+    for (const n of nodes) {
+      if (n.id === targetId) return ancestorCompoundIds;
+      const children = n.childTournaments;
+      if (!children?.length) continue;
+      const next = isCompoundTournamentNode(n) ? [...ancestorCompoundIds, n.id] : ancestorCompoundIds;
+      const found = walk(children, next);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(roots, []);
+}
+
 interface Member {
   id: number;
   firstName: string;
@@ -454,38 +491,69 @@ const Tournaments: React.FC = () => {
     }
   }, [location]);
 
-  // Handle navigation to a specific tournament (from History)
+  // Handle navigation to a specific tournament (from History / Statistics).
+  // Roots are a forest: basic tournaments nested under compounds must be found recursively,
+  // and compound ancestors expanded so the target card and its results are visible.
   useEffect(() => {
     const tournamentId = location.state?.tournamentId as number | undefined;
-    if (tournamentId && !loading) {
-      // Find the tournament to determine if it's active or completed
-      const tournament = [...tournaments, ...activeTournaments].find(t => t.id === tournamentId);
-      
-      if (tournament) {
-        // Expand the section if it's collapsed
-        if (tournament.status === 'ACTIVE' && activeSectionCollapsed) {
-          setActiveSectionCollapsed(false);
-        } else if (tournament.status === 'COMPLETED' && completedSectionCollapsed) {
-          setCompletedSectionCollapsed(false);
-        }
-        
-        // Expand the tournament
-        setExpandedDetails(prev => {
-          const newSet = new Set(prev);
-          newSet.add(tournamentId);
-          return newSet;
-        });
-        
-        // Scroll to the tournament after a delay to ensure it's rendered
-        setTimeout(() => {
-          const tournamentElement = tournamentRefs.current[tournamentId];
-          if (tournamentElement) {
-            tournamentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }, 300);
-      }
+    if (!tournamentId || loading) return;
+
+    let roots: Tournament[] | null = null;
+    const inCompletedForest = findTournamentByIdInForest(tournamentId, tournaments);
+    const inActiveForest = findTournamentByIdInForest(tournamentId, activeTournaments);
+    const tournament = inCompletedForest ?? inActiveForest;
+
+    if (inCompletedForest) roots = tournaments;
+    else if (inActiveForest) roots = activeTournaments;
+
+    if (!tournament || !roots) return;
+
+    if (tournament.status === 'ACTIVE') {
+      if (activeSectionCollapsed) setActiveSectionCollapsed(false);
+    } else if (tournament.status === 'COMPLETED') {
+      if (completedSectionCollapsed) setCompletedSectionCollapsed(false);
+    } else if (tournament.status === 'PRE_REGISTRATION') {
+      if (preregistrationSectionCollapsed) setPreregistrationSectionCollapsed(false);
     }
-  }, [location.state?.tournamentId, loading, tournaments, activeTournaments, activeSectionCollapsed, completedSectionCollapsed]);
+
+    const ancestorCompoundIds =
+      findAncestorCompoundIdsForTarget(tournamentId, roots) ?? [];
+
+    setExpandedCompound(prev => {
+      const next = new Set(prev);
+      for (const id of ancestorCompoundIds) next.add(id);
+      return next;
+    });
+
+    const targetIsCompound = isCompoundTournamentNode(tournament);
+    setExpandedDetails(prev => {
+      const next = new Set(prev);
+      if (!targetIsCompound) next.add(tournamentId);
+      return next;
+    });
+
+    setExpandedParticipants(prev => {
+      const next = new Set(prev);
+      if (!targetIsCompound) next.add(tournamentId);
+      return next;
+    });
+
+    const scrollDelay = ancestorCompoundIds.length > 0 ? 500 : 320;
+    setTimeout(() => {
+      const tournamentElement = tournamentRefs.current[tournamentId];
+      if (tournamentElement) {
+        tournamentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, scrollDelay);
+  }, [
+    location.state?.tournamentId,
+    loading,
+    tournaments,
+    activeTournaments,
+    activeSectionCollapsed,
+    completedSectionCollapsed,
+    preregistrationSectionCollapsed,
+  ]);
   
   // Save UI state when it changes (debounced to avoid excessive saves)
   const saveUIStateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2712,6 +2780,9 @@ const Tournaments: React.FC = () => {
                               return (
                                 <div
                                   key={child.id}
+                                  ref={(el) => {
+                                    tournamentRefs.current[child.id] = el;
+                                  }}
                                   style={{
                                     marginBottom: '12px',
                                     marginLeft: '10px',
@@ -3790,6 +3861,9 @@ const Tournaments: React.FC = () => {
                                   return (
                                     <div
                                       key={child.id}
+                                      ref={(el) => {
+                                        tournamentRefs.current[child.id] = el;
+                                      }}
                                       style={{
                                         marginBottom: '12px',
                                         marginLeft: '10px',
