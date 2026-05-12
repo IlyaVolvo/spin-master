@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Organizer role — Spin Master tutorial</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tutorial.css" />
+</head>
+<body class="theme-organizer">
+  <div class="page-top">
+    <p class="lead" style="margin-bottom:0.75rem"><a href="index.html">← All role tutorials</a></p>
+    <h1>Organizer</h1>
+    <p class="lead">
+      The <strong>ORGANIZER</strong> role is what the server checks for creating tournaments, preregistration, and organizer-only match entry. You keep normal player access and gain <strong>+ Tournament</strong>, full participant selection for <strong>+ Match</strong>, and broader tournament score editing in the UI.
+    </p>
+    <nav class="nav-row" aria-label="Other roles">
+      <a href="player.html">Player tutorial</a>
+      <a href="administrator.html">Administrator tutorial</a>
+    </nav>
+    <nav class="scenario-toc" aria-label="On this page">
+      <a href="#visual-tour">Visual tour</a>
+      <a href="#type-modal">Type &amp; parameters</a>
+      <a href="#formats">Formats &amp; roster sizes</a>
+      <a href="#immediate">Immediate create</a>
+      <a href="#prereg">Pre-registration</a>
+      <a href="#modify">Modify</a>
+      <a href="#repeat">Repeat</a>
+      <a href="#permissions">Permissions</a>
+    </nav>
+  </div>
+  <main>
+    <section class="steps" id="visual-tour">
+      <h2>1. Sign in</h2>
+      <figure class="shot">
+        <img src="assets/login.png" width="1280" height="900" alt="Spin Master login form" loading="lazy" decoding="async" />
+        <figcaption>Login — same entry point as other roles.</figcaption>
+      </figure>
+    </section>
+
+    <section class="steps">
+      <h2>2. Players toolbar with tournament creation</h2>
+      <p class="lead" style="margin-top:0">Organizers see <strong>+ Tournament</strong> next to <strong>+ Match</strong>. <strong>+ Player</strong> remains an Administrator control.</p>
+      <figure class="shot">
+        <img src="assets/organizer-players.png" width="1280" height="900" alt="Players page with Tournament and Match buttons visible" loading="lazy" decoding="async" />
+        <figcaption>Players page — organizer account.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/organizer-toolbar.png" width="1280" height="54" alt="Cropped toolbar showing plus Tournament and plus Match" loading="lazy" decoding="async" />
+        <figcaption>Toolbar crop — <strong>+ Tournament</strong> and <strong>+ Match</strong>.</figcaption>
+      </figure>
+    </section>
+
+    <section class="steps">
+      <h2>3. Opening the tournament wizard</h2>
+      <p class="lead" style="margin-top:0"><strong>+ Tournament</strong> opens the <em>Tournament Type</em> modal on the Players page. From there you either start an immediate event or create a pre-registration listing.</p>
+      <figure class="shot">
+        <img src="assets/organizer-new-tournament.png" width="1280" height="900" alt="Tournament creation step showing type or participant selection" loading="lazy" decoding="async" />
+        <figcaption>Wizard — type selection modal or the next step (player selection / configuration), depending on when the screenshot was captured.</figcaption>
+      </figure>
+    </section>
+
+    <section class="steps" id="type-modal">
+      <h2>4. Tournament type modal — what you configure here</h2>
+      <div class="scenario-block">
+        <h3>Single screen: name, format, optional pre-registration</h3>
+        <ol>
+          <li><strong>Tournament name (optional).</strong> Leave blank to let the app auto-generate a name later in the flow.</li>
+          <li><strong>Format.</strong> Pick one radio option. The menu includes nested items under <strong>Preliminary</strong> (expand the row to see <em>Round Robin Final</em> and <em>Playoff Final</em>). Additional registered plugins can appear at the bottom of the list.</li>
+          <li><strong>Pre-registration mode (checkbox).</strong> When checked, the primary action becomes <strong>Create Pre-registration</strong> instead of <strong>Next</strong>. You must fill the yellow-highlighted panel: <em>Tournament Date</em>, <em>Registration Deadline</em> (cannot be after the tournament date; often defaults to shortly before), optional <em>Minimum / Maximum Rating</em>, and optional <em>Max Participants</em>.</li>
+          <li><strong>Footer actions.</strong> <strong>Cancel</strong> closes the modal. <strong>Next</strong> (immediate mode) moves to <strong>Players selection</strong>. <strong>Create Pre-registration</strong> posts the listing and returns you to the flow appropriate for organizers (typically the Tournaments view).</li>
+        </ol>
+        <p class="callout" style="margin-top:0.75rem">
+          Default date/time offsets for pre-registration can be tuned under <strong>System settings</strong> (administrators) via the preregistration section.
+        </p>
+      </div>
+    </section>
+
+    <section class="steps" id="formats">
+      <h2>5. Supported formats and minimum roster sizes</h2>
+      <p class="lead" style="margin-top:0">The creation wizard enforces per-format limits when you select players. Upper caps and extra rules (groups, seeds, Swiss rounds) appear in the <strong>Configuration</strong> step for that plugin.</p>
+      <table class="tutorial-table" aria-label="Tournament formats and minimum players">
+        <thead>
+          <tr>
+            <th>Format (menu label)</th>
+            <th>When to use it</th>
+            <th>Typical minimum players</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Round Robin</td>
+            <td>Everyone in one group plays everyone else once; standings from results.</td>
+            <td>3</td>
+          </tr>
+          <tr>
+            <td>Playoff / Bracket</td>
+            <td>Seeded elimination bracket; preview before commit.</td>
+            <td>6</td>
+          </tr>
+          <tr>
+            <td>Multi Round Robin</td>
+            <td>Split the field into several smaller round-robin groups (snake-style assignment).</td>
+            <td>6</td>
+          </tr>
+          <tr>
+            <td>Preliminary → Round Robin Final</td>
+            <td>Qualifying round-robin groups, then a final round-robin for qualifiers (and optional auto-qualified players).</td>
+            <td>8</td>
+          </tr>
+          <tr>
+            <td>Preliminary → Playoff Final</td>
+            <td>Qualifying round-robin groups, then a knockout final bracket.</td>
+            <td>8</td>
+          </tr>
+          <tr>
+            <td>Swiss</td>
+            <td>Multiple rounds of pairings without full round-robin; round count and pairings are configured in the wizard.</td>
+            <td>6</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="steps" id="immediate">
+      <h2>6. Scenario A — Create a tournament immediately</h2>
+      <div class="scenario-block">
+        <h3>End-to-end path (Players → Tournaments)</h3>
+        <ol>
+          <li>On <strong>Players</strong>, click <strong>+ Tournament</strong>.</li>
+          <li>In the modal, optionally set the name, choose the format, leave <strong>Pre-registration mode</strong> unchecked, then click <strong>Next</strong>.</li>
+          <li><strong>Players selection.</strong> The gray summary bar shows the type, stage (<em>Players selection</em>), and how many players are selected. Only <strong>active</strong> members with the <strong>PLAYER</strong> role are eligible. Filters expand automatically so you can narrow the table; use row actions to select/deselect, including <strong>Select All</strong> / <strong>Deselect All</strong> where offered, and shift-click range selection on the table when supported.</li>
+          <li>Continue into <strong>Configuration</strong> (the progress indicator labels this stage). Here the plugin asks for format-specific inputs: e.g. bracket preview and seeds for playoffs, group sizing for multi RR or preliminary flows, Swiss round counts, etc.</li>
+          <li>Confirm and create. On success you are taken to <strong>Tournaments</strong> to run matches, print schedules, complete the event, etc.</li>
+        </ol>
+        <h4>Cancel / back navigation</h4>
+        <p>While still on the Players wizard, cancel or step back according to the on-screen controls. If you arrived from <strong>Modify</strong> or <strong>Repeat</strong> (below), cancelling returns you to <strong>Tournaments</strong> instead of dropping only the inner step.</p>
+      </div>
+    </section>
+
+    <section class="steps" id="prereg">
+      <h2>7. Scenario B — Pre-registration, finalize, cancel</h2>
+      <div class="scenario-block">
+        <h3>B1 — Open registration before the event exists</h3>
+        <ol>
+          <li>Click <strong>+ Tournament</strong>, choose the eventual format and optional name.</li>
+          <li>Enable <strong>Pre-registration mode</strong>, set date, deadline, and optional rating / capacity gates.</li>
+          <li>Click <strong>Create Pre-registration</strong>. Players can register or decline from the tournament card on <strong>Tournaments</strong>; pending items can surface a count in the header tab.</li>
+        </ol>
+        <h3>B2 — Turn registrations into a real bracket or schedule</h3>
+        <ol>
+          <li>On <strong>Tournaments</strong>, open the preregistration event.</li>
+          <li>Click <strong>Finalize</strong> when you are ready. The app collects members whose registration status is <strong>REGISTERED</strong> and navigates to <strong>Players</strong> with the creation wizard pre-loaded: same type, name, and that participant list.</li>
+          <li>Adjust the roster if needed, then complete the normal <strong>Configuration</strong> step and create the live tournament structure.</li>
+        </ol>
+        <h3>B3 — Cancel a pre-registration</h3>
+        <p>Organizers can cancel an advertised pre-registration from the Tournaments UI (with reason / presets where implemented). The listing is removed from active views after success.</p>
+      </div>
+    </section>
+
+    <section class="steps" id="modify">
+      <h2>8. Scenario C — Modify an existing tournament</h2>
+      <div class="scenario-block">
+        <p>On <strong>Tournaments</strong>, eligible events show <strong>✏️ Modify</strong> for organizers while the structure is still changeable (for example, compound tournaments hide modify once results exist on child events).</p>
+        <ol>
+          <li>Click <strong>✏️ Modify</strong>. The app saves UI state, navigates to <strong>Players</strong>, and opens the wizard in modification mode with the tournament id, type, name, and current participant ids prefilled.</li>
+          <li>Change the player selection and/or format-specific settings as allowed, then save. Cancelling sends you back to <strong>Tournaments</strong> without applying changes.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="steps" id="repeat">
+      <h2>9. Scenario D — Repeat a past setup</h2>
+      <div class="scenario-block">
+        <p>Completed or reference tournaments expose <strong>🔄 Repeat</strong> for organizers. That starts a <em>new</em> creation on <strong>Players</strong> with the same <strong>type</strong>, <strong>name</strong>, and <strong>participant list</strong> copied forward so you can tweak the roster or title before running the configuration step again.</p>
+        <p>Repeat is intended for recurring club nights; it does not delete or alter the original tournament record.</p>
+      </div>
+    </section>
+
+    <section class="steps" id="permissions">
+      <h2>10. Permissions at a glance</h2>
+      <div class="perms">
+        <div class="perm-yes">Everything a Player can do</div>
+        <div class="perm-yes">Create and manage tournaments and preregistration</div>
+        <div class="perm-yes">Record standalone matches for any two active players without opponent password</div>
+        <div class="perm-yes">Edit tournament match results across the event as implemented in the app</div>
+        <div class="perm-no">Add members or change roles / admin-only profile fields</div>
+        <div class="perm-no">System settings (Administrator)</div>
+      </div>
+      <p class="callout" style="margin-top:1rem">
+        Tournament APIs require <code>ORGANIZER</code>. Accounts that only have <code>ADMIN</code> do not get organizer controls until <code>ORGANIZER</code> is assigned as well.
+      </p>
+    </section>
+  </main>
+  <footer><a href="index.html">Role tutorials home</a></footer>
+</body>
+</html>

@@ -32,13 +32,32 @@ function ScrollToTop() {
   return null;
 }
 
+/** Static HTML in public/role-tutorials/ — avoid SPA sending these paths to /players. */
+function isRoleTutorialsPath(pathname: string): boolean {
+  return pathname === '/role-tutorials' || pathname.startsWith('/role-tutorials/');
+}
+
+/**
+ * Visiting /role-tutorials (no file) loads the React app first; bounce once to the real static file
+ * so public/role-tutorials/index.html is served by Vite (or express static in production).
+ */
+function RoleTutorialsSpaRedirect() {
+  const location = useLocation();
+  useEffect(() => {
+    if (location.pathname === '/role-tutorials' || location.pathname === '/role-tutorials/') {
+      window.location.replace('/role-tutorials/index.html');
+    }
+  }, [location.pathname]);
+  return null;
+}
+
 // Component to handle navigation to /players on initial auth
 function AuthRedirect() {
   const location = useLocation();
   const navigate = useNavigate();
   
   useEffect(() => {
-    // If we're at root or any non-matching path, navigate to /players
+    if (isRoleTutorialsPath(location.pathname)) return;
     const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings'];
     if (!validPaths.includes(location.pathname)) {
       navigate('/players', { replace: true });
@@ -239,6 +258,7 @@ function App() {
   return (
     <Router>
       <ScrollToTop />
+      <RoleTutorialsSpaRedirect />
       {window.location.pathname.startsWith('/tournament-registration/') ? (
         <ErrorBoundary>
           <Suspense fallback={<div>Loading...</div>}>

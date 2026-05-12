@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spin Master — Role tutorials</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tutorial.css" />
+</head>
+<body>
+  <div class="page-top">
+    <h1>Spin Master role tutorials</h1>
+    <p class="lead">
+      Visual walkthroughs for <strong>Player</strong>, <strong>Organizer</strong>, and <strong>Administrator</strong> accounts. Screenshots are captured from the live app; regenerate them after UI changes (see server scripts below).
+    </p>
+    <p class="lead" style="font-size:0.95rem;margin-top:-0.25rem">
+      If you open the app at <code>/role-tutorials</code> (no filename), the SPA forwards here once to this static page.
+    </p>
+    <nav class="nav-row" aria-label="Role tutorials">
+      <a href="player.html">Player tutorial</a>
+      <a href="organizer.html">Organizer tutorial</a>
+      <a href="administrator.html">Administrator tutorial</a>
+    </nav>
+    <p class="lead" style="font-size:0.92rem;margin-top:0.5rem">
+      The <a href="organizer.html">Organizer</a> page includes step-by-step scenarios for every tournament format, player selection, parameterization, pre-registration, modification, and repeat.
+    </p>
+  </div>
+  <main>
+    <section class="steps">
+      <h2>Regenerating screenshots (maintainers)</h2>
+      <ol>
+        <li>Start the client so it can reach the API (for example <code>npm run dev</code> from the repo root).</li>
+        <li><code>cd server && npm run seed:role-tutorials</code> — upserts three demo logins in your database.</li>
+        <li><code>cd server && ROLE_TUTORIAL_BASE_URL=http://localhost:3000 npm run capture:role-tutorials</code> — writes PNGs under <code>client/public/role-tutorials/assets/</code>. Set <code>PUPPETEER_EXECUTABLE_PATH</code> if Chrome is not in the default location.</li>
+      </ol>
+      <p class="callout" style="margin-top:1rem">
+        Demo logins share the password from <code>server/scripts/seedRoleTutorialUsers.ts</code> (constant <code>ROLE_TUTORIAL_PASSWORD</code>). Use only on non-production databases.
+      </p>
+    </section>
+  </main>
+  <footer>Static files are served at <code>/role-tutorials/</code> when the Vite app or production build is running.</footer>
+</body>
+</html>
