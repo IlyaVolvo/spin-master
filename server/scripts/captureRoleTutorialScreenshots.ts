@@ -8,6 +8,10 @@
  *
  *   cd server && npx tsx scripts/seedRoleTutorialUsers.ts
  *   cd server && npx tsx scripts/captureRoleTutorialScreenshots.ts
+ *
+ * Branding: before screenshots, logs in as tutorial-admin and sets Club Name to
+ * ROLE_TUTORIAL_CLUB_NAME (default "Portland Table Tennis Club") in System Settings so
+ * login and header shots match the tutorial. Set ROLE_TUTORIAL_SKIP_BRANDING=1 to skip.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,6 +21,12 @@ const ASSETS_DIR = path.resolve(__dirname, '../../client/public/role-tutorials/a
 const BASE_URL = (process.env.ROLE_TUTORIAL_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 const PASSWORD = 'TutorialDemo#2026'; // keep in sync with ROLE_TUTORIAL_PASSWORD in seedRoleTutorialUsers.ts
+
+const TUTORIAL_CLUB_NAME =
+  (process.env.ROLE_TUTORIAL_CLUB_NAME || 'Portland Table Tennis Club').trim() || 'Portland Table Tennis Club';
+
+const ADMIN_TUTORIAL_EMAIL =
+  (process.env.ROLE_TUTORIAL_ADMIN_EMAIL || 'tutorial-admin@spin-master.local').trim();
 
 const CHROME_PATH =
   process.env.PUPPETEER_EXECUTABLE_PATH ||
@@ -106,6 +116,39 @@ async function clipHeader(page: Page): Promise<{ x: number; y: number; width: nu
   });
 }
 
+/** Set public club name so login + header screenshots show tutorial branding. */
+async function ensureTutorialClubBranding(page: Page): Promise<void> {
+  if (process.env.ROLE_TUTORIAL_SKIP_BRANDING === '1') {
+    console.warn('ROLE_TUTORIAL_SKIP_BRANDING=1 — leaving existing club name unchanged.');
+    return;
+  }
+  try {
+    await loginAs(page, ADMIN_TUTORIAL_EMAIL);
+    await page.goto(`${BASE_URL}/system-settings`, { waitUntil: 'networkidle2', timeout: 60000 });
+    await delay(500);
+    const input = page.locator('[data-testid="system-settings-club-name"]');
+    await input.setTimeout(20000);
+    await input.click({ clickCount: 3 });
+    await page.keyboard.press('Backspace');
+    await input.fill(TUTORIAL_CLUB_NAME);
+    const saved = await clickButtonContaining(page, 'Save Settings');
+    if (!saved) {
+      console.warn('Save Settings button not found; club name may not persist.');
+    } else {
+      await delay(1200);
+    }
+    await logout(page);
+    console.log('Tutorial branding set to:', TUTORIAL_CLUB_NAME);
+  } catch (err) {
+    console.warn('Could not set tutorial club branding (need tutorial-admin + System Settings):', err);
+    try {
+      await logout(page);
+    } catch {
+      await page.goto(`${BASE_URL}/players`, { waitUntil: 'domcontentloaded' }).catch(() => null);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   if (!fs.existsSync(CHROME_PATH)) {
     console.error(`Chrome not found at ${CHROME_PATH}. Set PUPPETEER_EXECUTABLE_PATH.`);
@@ -122,6 +165,8 @@ async function main(): Promise<void> {
 
   try {
     const page = await browser.newPage();
+
+    await ensureTutorialClubBranding(page);
 
     await page.goto(`${BASE_URL}/players`, { waitUntil: 'networkidle2', timeout: 60000 });
     await page.screenshot({ path: path.join(ASSETS_DIR, 'login.png'), type: 'png' });

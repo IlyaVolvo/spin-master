@@ -197,6 +197,7 @@ export default function SystemSettings() {
       <Section title="Core Settings">
         <FieldRow label="Club Name">
           <input
+            data-testid="system-settings-club-name"
             value={config.branding.clubName ?? ''}
             onChange={(event) => updateConfig(draft => {
               draft.branding.clubName = event.target.value.trim() === '' ? null : event.target.value;

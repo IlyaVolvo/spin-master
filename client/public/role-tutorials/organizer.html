@@ -23,8 +23,13 @@
     <nav class="scenario-toc" aria-label="On this page">
       <a href="#visual-tour">Visual tour</a>
       <a href="#type-modal">Type &amp; parameters</a>
-      <a href="#formats">Formats &amp; roster sizes</a>
+      <a href="#formats">Formats &amp; sizes</a>
       <a href="#immediate">Immediate create</a>
+      <a href="#player-selection">Player selection</a>
+      <a href="#playoff-setup">Playoff</a>
+      <a href="#multi-rr-setup">Multi RR</a>
+      <a href="#prelim-rr-final">Prelim + RR final</a>
+      <a href="#prelim-playoff-final">Prelim + Playoff</a>
       <a href="#prereg">Pre-registration</a>
       <a href="#modify">Modify</a>
       <a href="#repeat">Repeat</a>
@@ -125,14 +130,13 @@
     </section>
 
     <section class="steps" id="immediate">
-      <h2>6. Scenario A — Create a tournament immediately</h2>
+      <h2>6. Scenario A — Create a tournament immediately (overview)</h2>
       <div class="scenario-block">
         <h3>End-to-end path (Players → Tournaments)</h3>
         <ol>
           <li>On <strong>Players</strong>, click <strong>+ Tournament</strong>.</li>
           <li>In the modal, optionally set the name, choose the format, leave <strong>Pre-registration mode</strong> unchecked, then click <strong>Next</strong>.</li>
-          <li><strong>Players selection.</strong> The gray summary bar shows the type, stage (<em>Players selection</em>), and how many players are selected. Only <strong>active</strong> members with the <strong>PLAYER</strong> role are eligible. Filters expand automatically so you can narrow the table; use row actions to select/deselect, including <strong>Select All</strong> / <strong>Deselect All</strong> where offered, and shift-click range selection on the table when supported.</li>
-          <li>Continue into <strong>Configuration</strong> (the progress indicator labels this stage). Here the plugin asks for format-specific inputs: e.g. bracket preview and seeds for playoffs, group sizing for multi RR or preliminary flows, Swiss round counts, etc.</li>
+          <li>Complete <strong>Players selection</strong> (see <a href="#player-selection">§7</a>), then the format-specific <strong>Configuration</strong> wizard (§8–11 for the compound formats covered here; Round Robin and Swiss follow the same staging pattern with their own fields).</li>
           <li>Confirm and create. On success you are taken to <strong>Tournaments</strong> to run matches, print schedules, complete the event, etc.</li>
         </ol>
         <h4>Cancel / back navigation</h4>
@@ -140,8 +144,79 @@
       </div>
     </section>
 
+    <section class="steps" id="player-selection">
+      <h2>7. Selecting players (shared across formats)</h2>
+      <div class="scenario-block">
+        <p>After <strong>Next</strong> from the type modal, the blue-bordered summary bar shows the chosen type, the <strong>Players selection</strong> stage, and a chip list of selected members (rating on each chip).</p>
+        <ul>
+          <li>Only <strong>active</strong> members who carry the <strong>PLAYER</strong> role appear for selection, regardless of other filters you normally use on the roster.</li>
+          <li>Filters <strong>expand automatically</strong> so you can narrow by name, rating band, age, etc., while you build the roster.</li>
+          <li>Use each row’s selection control to add or remove players. Toolbar actions typically include <strong>Select All</strong> and <strong>Deselect All</strong> for the visible list.</li>
+          <li><strong>Shift+click</strong> on the player column uses a range anchor: the second click adds or removes every eligible row between the anchor and the current row (same mechanic as statistics selection).</li>
+          <li>The footer shows how many players are selected versus the format minimum; you cannot continue until the count is valid.</li>
+          <li>When satisfied, continue into <strong>Configuration</strong> — the label in the progress indicator — where the plugin-specific steps below begin.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="steps" id="playoff-setup">
+      <h2>8. Playoff / Bracket — configuration</h2>
+      <div class="scenario-block">
+        <ol>
+          <li><strong>Organize bracket.</strong> The server builds a <em>bracket preview</em> from your selected <code>participantIds</code> and a seed count derived from system rules. The <strong>BracketPreview</strong> surface lets you drag players between slots, move someone temporarily to the “temp” zone while reshuffling, and <strong>reseed</strong> with a different number of seeds.</li>
+          <li>Validation before <strong>Continue</strong>: you cannot proceed while a drag is unfinished or while a player sits in the temporary drop zone — finish the drag or clear the zone first.</li>
+          <li><strong>First round matches.</strong> The next step lists the opening pairings implied by your bracket ordering so you can sanity-check names and byes before submit.</li>
+          <li>Submit runs <code>POST /api/tournaments</code> with <code>type: PLAYOFF</code>, optional explicit <code>bracketPositions</code> array, and the resolved name (your modal name or an auto-generated <em>Playoff &lt;date&gt;</em> string).</li>
+        </ol>
+        <p class="callout" style="margin-top:0.75rem">Minimum roster size for playoffs is enforced both when leaving player selection and again inside the wizard (see the formats table — typically <strong>6</strong> players).</p>
+      </div>
+    </section>
+
+    <section class="steps" id="multi-rr-setup">
+      <h2>9. Multi Round Robin — configuration</h2>
+      <div class="scenario-block">
+        <h3>Step 1 — Players per group</h3>
+        <p>Choose an integer <strong>Players per group</strong> within the allowed band (defaults lean toward groups of at least four; upper bound in the UI is <strong>12</strong>). The summary explains how many parallel groups will be created and notes when the last group is smaller because the division is uneven.</p>
+        <p>Initial group assignment uses <strong>rating order</strong>: strongest players are packed into Group&nbsp;1, then Group&nbsp;2, and so on (not a snake across groups at this stage — that pattern appears in preliminary flows).</p>
+        <h3>Step 2 — Confirm groups</h3>
+        <p>You review each round-robin pod. Drag-and-drop players between groups if you need to rebalance manually. Every group must keep at least <strong>two</strong> players before you can create.</p>
+        <h3>Submit payload</h3>
+        <p>Creation sends <code>type: MULTI_ROUND_ROBINS</code> with <code>additionalData.groups</code> as an array of member-id arrays — one child round robin per group.</p>
+      </div>
+    </section>
+
+    <section class="steps" id="prelim-rr-final">
+      <h2>10. Preliminary + Final Round Robin — configuration</h2>
+      <div class="scenario-block">
+        <h3>Tournament configuration step</h3>
+        <ul>
+          <li><strong>Auto-qualified players</strong> — count of top-rated entrants who <em>skip</em> the preliminary stage and go straight to the final round-robin pod.</li>
+          <li><strong>Players per preliminary group</strong> — target size within the system min/max; the copy explains that the last group may be one player short if the division is uneven.</li>
+          <li><strong>Final Round Robin size</strong> — how many players will contest the championship round robin. The UI enforces a minimum of <code>auto-qualified + number of preliminary groups</code> (every group sends at least its winner forward). You may increase the size to admit extra slots for second- or third-place finishers; the summary highlights how many “extra” slots that implies.</li>
+        </ul>
+        <h3>Confirm groups</h3>
+        <p>Preliminary pods are generated with a <strong>snake draft</strong> across groups (balances strength). Review the matrix, drag players between preliminary groups if corrections are needed, then continue through the confirmation step.</p>
+        <h3>Submit payload</h3>
+        <p><code>type: PRELIMINARY_WITH_FINAL_ROUND_ROBIN</code> with <code>additionalData</code> carrying <code>groups</code>, <code>finalRoundRobinSize</code>, <code>autoQualifiedCount</code>, and the resolved <code>autoQualifiedMemberIds</code> list.</p>
+      </div>
+    </section>
+
+    <section class="steps" id="prelim-playoff-final">
+      <h2>11. Preliminary + Final Playoff — configuration</h2>
+      <div class="scenario-block">
+        <h3>Tournament configuration step</h3>
+        <ul>
+          <li>Same <strong>auto-qualified</strong> and <strong>preliminary group size</strong> controls as the Round Robin final variant.</li>
+          <li><strong>Final playoff bracket size</strong> — must be a <strong>power of two</strong> strictly between the theoretical minimum (<code>auto-qualified + preliminary groups</code>) and the total player count. The UI lists only valid sizes and auto-selects the smallest feasible bracket when inputs change.</li>
+          <li>An <strong>extra spots</strong> readout explains how many wildcard slots exist beyond the auto-qualified players plus one qualifier per preliminary group.</li>
+        </ul>
+        <h3>Confirm groups &amp; submit</h3>
+        <p>Snake-generated preliminary groups are editable via drag-and-drop, identical in spirit to the Round Robin final workflow. Submit uses <code>type: PRELIMINARY_WITH_FINAL_PLAYOFF</code> with <code>additionalData.playoffBracketSize</code> plus the group matrices and auto-qualified ids.</p>
+      </div>
+    </section>
+
     <section class="steps" id="prereg">
-      <h2>7. Scenario B — Pre-registration, finalize, cancel</h2>
+      <h2>12. Scenario B — Pre-registration, finalize, cancel</h2>
       <div class="scenario-block">
         <h3>B1 — Open registration before the event exists</h3>
         <ol>
@@ -161,7 +236,7 @@
     </section>
 
     <section class="steps" id="modify">
-      <h2>8. Scenario C — Modify an existing tournament</h2>
+      <h2>13. Scenario C — Modify an existing tournament</h2>
       <div class="scenario-block">
         <p>On <strong>Tournaments</strong>, eligible events show <strong>✏️ Modify</strong> for organizers while the structure is still changeable (for example, compound tournaments hide modify once results exist on child events).</p>
         <ol>
@@ -172,7 +247,7 @@
     </section>
 
     <section class="steps" id="repeat">
-      <h2>9. Scenario D — Repeat a past setup</h2>
+      <h2>14. Scenario D — Repeat a past setup</h2>
       <div class="scenario-block">
         <p>Completed or reference tournaments expose <strong>🔄 Repeat</strong> for organizers. That starts a <em>new</em> creation on <strong>Players</strong> with the same <strong>type</strong>, <strong>name</strong>, and <strong>participant list</strong> copied forward so you can tweak the roster or title before running the configuration step again.</p>
         <p>Repeat is intended for recurring club nights; it does not delete or alter the original tournament record.</p>
@@ -180,7 +255,7 @@
     </section>
 
     <section class="steps" id="permissions">
-      <h2>10. Permissions at a glance</h2>
+      <h2>15. Permissions at a glance</h2>
       <div class="perms">
         <div class="perm-yes">Everything a Player can do</div>
         <div class="perm-yes">Create and manage tournaments and preregistration</div>

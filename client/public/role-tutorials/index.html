@@ -33,7 +33,7 @@
       <ol>
         <li>Start the client so it can reach the API (for example <code>npm run dev</code> from the repo root).</li>
         <li><code>cd server && npm run seed:role-tutorials</code> — upserts three demo logins in your database.</li>
-        <li><code>cd server && ROLE_TUTORIAL_BASE_URL=http://localhost:3000 npm run capture:role-tutorials</code> — writes PNGs under <code>client/public/role-tutorials/assets/</code>. Set <code>PUPPETEER_EXECUTABLE_PATH</code> if Chrome is not in the default location.</li>
+        <li><code>cd server && ROLE_TUTORIAL_BASE_URL=http://localhost:3000 npm run capture:role-tutorials</code> — writes PNGs under <code>client/public/role-tutorials/assets/</code>. Set <code>PUPPETEER_EXECUTABLE_PATH</code> if Chrome is not in the default location. The script signs in as <code>tutorial-admin@spin-master.local</code> first and sets <strong>Club Name</strong> to <code>ROLE_TUTORIAL_CLUB_NAME</code> (default <em>Portland Table Tennis Club</em>) so login and header screenshots match the tutorial; use <code>ROLE_TUTORIAL_SKIP_BRANDING=1</code> to leave branding unchanged.</li>
       </ol>
       <p class="callout" style="margin-top:1rem">
         Demo logins share the password from <code>server/scripts/seedRoleTutorialUsers.ts</code> (constant <code>ROLE_TUTORIAL_PASSWORD</code>). Use only on non-production databases.

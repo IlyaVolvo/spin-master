@@ -3960,8 +3960,8 @@ const Players: React.FC = () => {
                 <div style={{ marginLeft: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <button 
                   onClick={handleViewHistory}
-                  disabled={selectedPlayerForHistory === null || selectedOpponentsForHistory.length === 0}
-                  style={(selectedPlayerForHistory === null || selectedOpponentsForHistory.length === 0) ? {
+                  disabled={selectedPlayerForHistory === null}
+                  style={selectedPlayerForHistory === null ? {
                     backgroundColor: '#95a5a6',
                     color: '#fff',
                     cursor: 'not-allowed',
@@ -3983,7 +3983,11 @@ const Players: React.FC = () => {
                       fontWeight: 'bold',
                       letterSpacing: 'normal',
                     }}
-                    title={selectedOpponentsForHistory.length === 0 ? 'Select at least one opponent to view history' : 'View match history with selected opponents'}
+                    title={
+                      selectedOpponentsForHistory.length === 0
+                        ? 'View full rating history for the selected player'
+                        : 'View match history vs selected opponents'
+                    }
                 >
                   View History
                 </button>

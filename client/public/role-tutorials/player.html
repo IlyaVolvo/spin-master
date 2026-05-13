@@ -14,38 +14,46 @@
     <p class="lead" style="margin-bottom:0.75rem"><a href="index.html">← All role tutorials</a></p>
     <h1>Player</h1>
     <p class="lead">
-      Members with the <strong>PLAYER</strong> role (and <strong>COACH</strong> at the same permission tier) browse the club roster, follow tournaments, and manage their own profile. Use <strong>+ Match</strong> to log a casual match: you stay on one side of the pairing and confirm with the opponent’s password before entering scores.
+      Members with the <strong>PLAYER</strong> role (and <strong>COACH</strong> at the same permission tier) browse the club roster, follow tournaments, and manage their own profile. Use <strong>+ Match</strong> to log a casual match: you stay on one side of the pairing and confirm with the opponent’s password before scores when required.
     </p>
     <nav class="nav-row" aria-label="Other roles">
       <a href="organizer.html">Organizer tutorial</a>
       <a href="administrator.html">Administrator tutorial</a>
     </nav>
+    <nav class="scenario-toc" aria-label="On this page">
+      <a href="#sign-in">Sign in</a>
+      <a href="#players-toolbar">Players</a>
+      <a href="#record-match">Match</a>
+      <a href="#statistics">Statistics</a>
+      <a href="#history">History</a>
+      <a href="#permissions">Permissions</a>
+    </nav>
   </div>
   <main>
-    <section class="steps">
+    <section class="steps" id="sign-in">
       <h2>1. Sign in</h2>
-      <p class="lead" style="margin-top:0">Use the same login screen as everyone else. After sign-in you see the main tabs (Players, Tournaments, Statistics, History) without the admin-only system gear.</p>
+      <p class="lead" style="margin-top:0">After sign-in you see <strong>Players</strong>, <strong>Tournaments</strong>, <strong>Statistics</strong>, and <strong>History</strong> in the header (no admin-only system gear).</p>
       <figure class="shot">
         <img src="assets/login.png" width="1280" height="900" alt="Spin Master login form with email and password fields" loading="lazy" decoding="async" />
         <figcaption>Login — shared by all roles.</figcaption>
       </figure>
     </section>
 
-    <section class="steps">
+    <section class="steps" id="players-toolbar">
       <h2>2. Players list and toolbar</h2>
-      <p class="lead" style="margin-top:0">The Players page loads the standard member list. Player accounts do not see <strong>+ Player</strong> or <strong>+ Tournament</strong>; <strong>+ Match</strong> and <strong>Stats</strong> are available.</p>
+      <p class="lead" style="margin-top:0">Player accounts do not see <strong>+ Player</strong> or <strong>+ Tournament</strong>. You always have <strong>+ Match</strong> and <strong>Stats</strong> for personal and analytical workflows.</p>
       <figure class="shot">
         <img src="assets/player-players.png" width="1280" height="900" alt="Players page as a player account showing member table without admin or organizer create buttons" loading="lazy" decoding="async" />
         <figcaption>Players page — player-only account.</figcaption>
       </figure>
       <figure class="shot">
         <img src="assets/player-toolbar.png" width="1280" height="54" alt="Cropped toolbar with plus Match and Stats buttons only" loading="lazy" decoding="async" />
-        <figcaption>Toolbar crop — <strong>+ Match</strong> and <strong>Stats</strong>; no <strong>+ Tournament</strong> / <strong>+ Player</strong>.</figcaption>
+        <figcaption>Toolbar — <strong>+ Match</strong> and <strong>Stats</strong>.</figcaption>
       </figure>
     </section>
 
-    <section class="steps">
-      <h2>3. Record a match</h2>
+    <section class="steps" id="record-match">
+      <h2>3. Record a casual match</h2>
       <p class="lead" style="margin-top:0">Choose <strong>+ Match</strong>, pick an active opponent (you cannot remove yourself from the pairing), then complete the opponent-password step before scores when the flow requires it.</p>
       <figure class="shot">
         <img src="assets/player-record-match.png" width="1280" height="900" alt="Players page in match recording mode with row selection" loading="lazy" decoding="async" />
@@ -53,8 +61,48 @@
       </figure>
     </section>
 
-    <section class="steps">
-      <h2>Permissions at a glance</h2>
+    <section class="steps" id="statistics">
+      <h2>4. Statistics — individual and group rating views</h2>
+      <div class="scenario-block">
+        <h3>What Statistics shows</h3>
+        <p>The <strong>Statistics</strong> tab loads <em>rating history over time</em> for the players you pass in from the Players page: a multi-line chart plus per-player detail tables (dates, ratings, events).</p>
+        <h4>Individual (one player, fast path)</h4>
+        <ol>
+          <li>On <strong>Players</strong>, use the per-row chart control (<strong>Show statistics for a player</strong>) for any member.</li>
+          <li>The app navigates to <strong>Statistics</strong> with that single player pre-selected; the chart and tables load immediately.</li>
+        </ol>
+        <h4>Group (compare several players)</h4>
+        <ol>
+          <li>Click the toolbar button <strong>Stats</strong> to enter statistics selection mode.</li>
+          <li>Select two or more active players from the table (checkbox column). Use <strong>Shift+click</strong> between two rows to add a contiguous range, the same pattern as other bulk-selection flows on the table.</li>
+          <li>Click <strong>View Statistics</strong>. You land on <strong>Statistics</strong> with every selected <code>memberId</code> passed in state.</li>
+          <li>On the Statistics page, use the <strong>Selected Players</strong> chips to show or hide each curve on the chart (checkbox on each chip). <strong>Shift+click</strong> between two chips toggles an entire range of players for the chart legend.</li>
+        </ol>
+        <p class="callout" style="margin-top:0.75rem">If no players were selected, Statistics explains that you need to pick players on the <strong>Players</strong> tab first.</p>
+      </div>
+    </section>
+
+    <section class="steps" id="history">
+      <h2>5. History — rating log vs head-to-head matches</h2>
+      <div class="scenario-block">
+        <h3>Open the History workflow from Players</h3>
+        <ol>
+          <li>Use the row action <strong>Game history for the player against selected group</strong> (history/globe style control). The table switches to history-selection mode with a sticky header row for your <strong>focal player</strong>.</li>
+          <li>Click another row’s opponent checkbox to add or remove opponents. <strong>Shift+click</strong> extends selection across a range of visible rows. <strong>Select All</strong> chooses every visible player except the focal player as opponents; <strong>Deselect All</strong> clears opponents.</li>
+          <li>Click <strong>View History</strong>:
+            <ul>
+              <li><strong>With one or more opponents selected</strong> — <strong>History</strong> shows <em>match history</em> for the focal player against that opponent set (grouped summaries and match list with scores and rating-after where available).</li>
+              <li><strong>With no opponents</strong> (use <strong>Deselect All</strong>) — <strong>History</strong> shows the focal player’s <em>full rating history</em> timeline (same family of data as Statistics, presented as a chronological rating log on the History page).</li>
+            </ul>
+          </li>
+          <li><strong>Cancel</strong> leaves selection mode without navigating.</li>
+        </ol>
+        <p class="callout" style="margin-top:0.75rem">Opening <strong>History</strong> from the header alone, without going through Players first, shows a short message until a player is supplied via the flow above.</p>
+      </div>
+    </section>
+
+    <section class="steps" id="permissions">
+      <h2>6. Permissions at a glance</h2>
       <div class="perms">
         <div class="perm-yes">View tournaments, statistics, and history</div>
         <div class="perm-yes">Edit tournament results for matches you are in (password may be required)</div>
