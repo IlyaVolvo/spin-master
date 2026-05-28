@@ -16,6 +16,7 @@ const Statistics = lazy(() => import('./components/Statistics'));
 const History = lazy(() => import('./components/History'));
 const TournamentRegistrationLink = lazy(() => import('./components/TournamentRegistrationLink'));
 const SystemSettings = lazy(() => import('./components/SystemSettings'));
+const ClubCheckin = lazy(() => import('./components/ClubCheckin'));
 
 // Component to prevent default scroll restoration for routes that handle their own scroll
 function ScrollToTop() {
@@ -58,7 +59,7 @@ function AuthRedirect() {
   
   useEffect(() => {
     if (isRoleTutorialsPath(location.pathname)) return;
-    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings'];
+    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings', '/club/checkin'];
     if (!validPaths.includes(location.pathname)) {
       navigate('/players', { replace: true });
     }
@@ -259,11 +260,12 @@ function App() {
     <Router>
       <ScrollToTop />
       <RoleTutorialsSpaRedirect />
-      {window.location.pathname.startsWith('/tournament-registration/') ? (
+      {window.location.pathname.startsWith('/tournament-registration/') || (!isAuth && window.location.pathname === '/club/checkin') ? (
         <ErrorBoundary>
           <Suspense fallback={<div>Loading...</div>}>
             <Routes>
               <Route path="/tournament-registration/:code" element={<TournamentRegistrationLink />} />
+              <Route path="/club/checkin" element={<ClubCheckin />} />
             </Routes>
           </Suspense>
         </ErrorBoundary>
@@ -289,6 +291,7 @@ function App() {
                 <Route path="/statistics" element={<Statistics />} />
                 <Route path="/history" element={<History />} />
                 <Route path="/system-settings" element={<SystemSettings />} />
+                <Route path="/club/checkin" element={<ClubCheckin />} />
               </Routes>
             </Suspense>
             </ErrorBoundary>
@@ -476,6 +479,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   
   const isPlayersActive = location.pathname === '/players';
   const isTournamentsActive = location.pathname === '/tournaments';
+  const isClubActive = location.pathname === '/club/checkin';
   const isSettingsActive = location.pathname === '/system-settings';
   
   // Format roles as comma-separated first letters
@@ -580,6 +584,14 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     clearAllUIStates();
     window.scrollTo(0, 0);
     navigate('/tournaments', { replace: true });
+  };
+
+  const handleClubClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/club/checkin', { replace: true });
   };
 
   const handleSettingsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -688,6 +700,43 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                 ({pendingPreregistrationCount})
               </span>
             ) : null}
+          </a>
+          <a 
+            className="app-header-tab"
+            href="/club/checkin" 
+            onClick={handleClubClick} 
+            style={{ 
+              color: isClubActive ? '#333' : 'rgba(255, 255, 255, 0.8)', 
+              textDecoration: 'none', 
+              padding: '10px 24px 12px 24px', 
+              background: isClubActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+              borderTopLeftRadius: '8px',
+              borderTopRightRadius: '8px',
+              border: isClubActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+              borderBottom: isClubActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
+              transition: 'all 0.2s', 
+              fontSize: '16px', 
+              fontWeight: isClubActive ? '600' : '500', 
+              cursor: 'pointer',
+              position: 'relative',
+              zIndex: isClubActive ? 10 : 1,
+              boxShadow: isClubActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+              marginBottom: isClubActive ? '0' : '1px'
+            }} 
+            onMouseEnter={(e) => {
+              if (!isClubActive) {
+                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isClubActive) {
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+              }
+            }}
+          >
+            Club
           </a>
           {isAdminUser ? (
             <a

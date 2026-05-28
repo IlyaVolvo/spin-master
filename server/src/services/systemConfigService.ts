@@ -66,6 +66,16 @@ export type ClientRuntimeConfig = {
   socketReconnectionAttempts: number;
 };
 
+export type VisitPricingFormulaParams = {
+  basePricePerVisitCents: number;
+  exponent: number;
+};
+
+export type ClubPlansConfig = {
+  categories: string[];
+  visitPricingFormula: Record<string, VisitPricingFormulaParams>;
+};
+
 export type SystemConfig = {
   branding: BrandingConfig;
   authPolicy: AuthPolicyConfig;
@@ -73,6 +83,7 @@ export type SystemConfig = {
   ratingValidation: RatingValidationConfig;
   tournamentRules: TournamentRulesConfig;
   clientRuntime: ClientRuntimeConfig;
+  clubPlans: ClubPlansConfig;
 };
 
 export type SystemConfigPatch = Partial<{
@@ -151,6 +162,12 @@ export function getDefaultSystemConfig(): SystemConfig {
       tournamentsListCacheTtlMs: 30000,
       socketReconnectionDelayMs: 1000,
       socketReconnectionAttempts: 5,
+    },
+    clubPlans: {
+      categories: ['Normal'],
+      visitPricingFormula: {
+        Normal: { basePricePerVisitCents: 1000, exponent: 0.08 },
+      },
     },
   };
 }
@@ -314,6 +331,39 @@ function validateClientRuntime(value: unknown): ClientRuntimeConfig {
   };
 }
 
+function validateClubPlans(value: unknown): ClubPlansConfig {
+  const config = deepMerge(getDefaultSystemConfig().clubPlans, value);
+
+  if (!Array.isArray(config.categories) || config.categories.length === 0) {
+    throw new Error('clubPlans.categories must include at least one category');
+  }
+  const categories = config.categories.map((cat: unknown, i: number) => {
+    if (typeof cat !== 'string' || cat.trim() === '') {
+      throw new Error(`clubPlans.categories[${i}] must be a non-empty string`);
+    }
+    return cat.trim();
+  });
+
+  const visitPricingFormula: Record<string, VisitPricingFormulaParams> = {};
+  if (isRecord(config.visitPricingFormula)) {
+    for (const [key, val] of Object.entries(config.visitPricingFormula)) {
+      if (!isRecord(val)) continue;
+      visitPricingFormula[key] = {
+        basePricePerVisitCents: requireInteger(
+          (val as Record<string, unknown>).basePricePerVisitCents,
+          `clubPlans.visitPricingFormula.${key}.basePricePerVisitCents`,
+          1,
+        ),
+        exponent: typeof (val as Record<string, unknown>).exponent === 'number'
+          ? (val as Record<string, unknown>).exponent as number
+          : 0.08,
+      };
+    }
+  }
+
+  return { categories, visitPricingFormula };
+}
+
 export function validateSystemConfig(input: unknown): SystemConfig {
   const merged = deepMerge(getDefaultSystemConfig(), input);
   return {
@@ -323,6 +373,7 @@ export function validateSystemConfig(input: unknown): SystemConfig {
     ratingValidation: validateRatingValidation(merged.ratingValidation),
     tournamentRules: validateTournamentRules(merged.tournamentRules),
     clientRuntime: validateClientRuntime(merged.clientRuntime),
+    clubPlans: validateClubPlans(merged.clubPlans),
   };
 }
 
@@ -341,6 +392,7 @@ async function persistConfig(config: SystemConfig): Promise<void> {
       ratingValidation: toPrismaJson(config.ratingValidation),
       tournamentRules: toPrismaJson(config.tournamentRules),
       clientRuntime: toPrismaJson(config.clientRuntime),
+      clubPlans: toPrismaJson(config.clubPlans),
     },
     update: {
       branding: toPrismaJson(config.branding),
@@ -349,6 +401,7 @@ async function persistConfig(config: SystemConfig): Promise<void> {
       ratingValidation: toPrismaJson(config.ratingValidation),
       tournamentRules: toPrismaJson(config.tournamentRules),
       clientRuntime: toPrismaJson(config.clientRuntime),
+      clubPlans: toPrismaJson(config.clubPlans),
     },
   });
 }
@@ -363,6 +416,7 @@ export async function initializeSystemConfig(): Promise<SystemConfig> {
         ratingValidation: row.ratingValidation,
         tournamentRules: row.tournamentRules,
         clientRuntime: row.clientRuntime,
+        clubPlans: row.clubPlans,
       }
     : undefined;
 
@@ -415,4 +469,8 @@ export function getTournamentRulesConfig(): TournamentRulesConfig {
 
 export function getClientRuntimeConfig(): ClientRuntimeConfig {
   return getSystemConfig().clientRuntime;
+}
+
+export function getClubPlansConfig(): ClubPlansConfig {
+  return getSystemConfig().clubPlans;
 }

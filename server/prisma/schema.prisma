@@ -55,6 +55,13 @@ model Member {
   passwordResetToken String? // Token for password reset (forgot password flow)
   passwordResetTokenExpiry DateTime? // Expiration time for reset token
 
+  // One-time check-in code (sent via email, expires after 10 min)
+  checkinCode       String?
+  checkinCodeExpiry DateTime?
+
+  // Payment category for club plans (e.g. "Regular", "Child", "Senior")
+  paymentCategory String @default("Regular")
+
   // QR-based authentication token hash
   qrTokenHash String @unique
 
@@ -67,6 +74,14 @@ model Member {
 
   // Tournament registration invitation opt-in. Existing users default to not subscribed.
   tournamentNotificationsEnabled Boolean @default(false)
+
+  // Club check-in / payment relations
+  clubVisits       ClubVisit[]
+  clubEntitlements ClubEntitlement[]
+  clubPayments     ClubPayment[]
+
+  // Discount percentage for next plan purchase (0-100)
+  clubDiscount     Int @default(0)
 
   @@index([email])
   @@map("members")
@@ -294,6 +309,7 @@ model SystemConfig {
   ratingValidation  Json     @default("{}")
   tournamentRules   Json     @default("{}")
   clientRuntime     Json     @default("{}")
+  clubPlans         Json     @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -312,6 +328,123 @@ model PreliminaryConfig {
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   @@map("preliminary_configs")
+}
+
+// ==============================
+// CLUB CHECK-IN / PAYMENT SYSTEM
+// ==============================
+
+enum ClubPlanType {
+  PERIOD
+  VISIT_COUNT
+}
+
+model ClubPlan {
+  id        Int          @id @default(autoincrement())
+  name      String       // Display name: "Monthly", "10 Visits", etc.
+  type      ClubPlanType // PERIOD or VISIT_COUNT
+  isActive  Boolean      @default(true)
+  sortOrder Int          @default(0)
+  config    Json         // { periodUnit, periodValue, visitCount, prices: { "Normal": { priceCents, isDefault } } }
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  entitlements ClubEntitlement[]
+
+  @@index([type, isActive])
+  @@map("club_plans")
+}
+
+enum ClubVisitClosedBy {
+  SCAN
+  MANUAL
+  AUTO
+}
+
+enum ClubEntitlementType {
+  YEARLY
+  MONTHLY
+  VISIT_PACK
+  PAY_PER_VISIT_EXTERNAL
+}
+
+enum ClubPaymentProvider {
+  MANUAL
+  EXTERNAL_CHECKOUT
+  STRIPE
+}
+
+enum ClubPaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+// ClubVisit: Records member check-in/check-out at the club
+// Only the first visit of a club-local day triggers entitlement / payment logic
+model ClubVisit {
+  id                  Int                 @id @default(autoincrement())
+  memberId            Int
+  clubDate            String              // Club-local date "YYYY-MM-DD" (avoids timezone issues)
+  checkInAt           DateTime            @default(now()) @map("checkedInAt")
+  checkOutAt          DateTime?           @map("checkedOutAt")
+  closedBy            ClubVisitClosedBy?  // How the visit was closed
+  dailyPaymentApplied Boolean             @default(false) // True if this is the first visit of the day that debited entitlement
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([clubDate])
+  @@index([memberId, clubDate])
+  @@map("club_visits")
+}
+
+// ClubEntitlement: A purchased plan that grants club access
+model ClubEntitlement {
+  id              Int                 @id @default(autoincrement())
+  memberId        Int
+  type            ClubEntitlementType
+  label           String?
+  validFrom       DateTime
+  validTo         DateTime?           // For time-based plans
+  visitsRemaining Int?                // For VISIT_PACK: remaining visits
+  active          Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Plan reference
+  planId       Int?
+  planCategory String?    // Snapshot of category used at purchase: "Normal", "Child", etc.
+
+  member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  plan     ClubPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@index([memberId])
+  @@index([planId])
+  @@map("club_entitlements")
+}
+
+// ClubPayment: Ledger-only payment record
+model ClubPayment {
+  id          Int                  @id @default(autoincrement())
+  memberId    Int
+  amountCents Int                  @default(0)
+  currency    String               @default("USD")
+  provider    ClubPaymentProvider  @default(MANUAL)
+  externalRef String?
+  status      ClubPaymentStatus
+  purpose     String
+  metadata    Json?
+  recordedAt  DateTime             @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([memberId])
+  @@index([externalRef])
+  @@map("club_payments")
 }
 
 // SwissTournamentData: Configuration for SWISS tournaments

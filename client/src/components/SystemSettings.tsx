@@ -7,6 +7,7 @@ import {
   SystemConfig,
 } from '../utils/systemConfig';
 import { getErrorMessage } from '../utils/errorHandler';
+import ClubPlanManager from './ClubPlanManager';
 
 type NumericInputProps = {
   label: string;
@@ -194,17 +195,85 @@ export default function SystemSettings() {
       {error ? <div className="error-message" style={{ marginBottom: '16px' }}>{error}</div> : null}
       {message ? <div className="success-message" style={{ marginBottom: '16px' }}>{message}</div> : null}
 
-      <Section title="Core Settings">
-        <FieldRow label="Club Name">
+      <div style={{ marginBottom: '24px' }}>
+        <label style={{ display: 'block', fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          Club Name
+        </label>
+        <input
+          data-testid="system-settings-club-name"
+          value={config.branding.clubName ?? ''}
+          onChange={(event) => updateConfig(draft => {
+            draft.branding.clubName = event.target.value.trim() === '' ? null : event.target.value;
+          })}
+          style={{ ...valueInputStyle, fontSize: '22px', fontWeight: 600, color: '#2980b9', padding: '10px 14px' }}
+        />
+      </div>
+
+      <Section title="Payment Categories">
+        <p style={{ margin: '0 0 8px', color: '#666', fontSize: '13px' }}>
+          Categories assigned to members that determine plan pricing. "Regular" is always required and used as the default.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+          {(config.clubPlans?.categories ?? ['Regular']).map((cat, i) => (
+            <span key={i} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              background: '#eaf2f8', color: '#2c3e50', padding: '4px 10px',
+              borderRadius: '14px', fontSize: '13px', fontWeight: 500,
+            }}>
+              {cat}
+              {cat !== 'Regular' && (
+                <button
+                  type="button"
+                  onClick={() => updateConfig(draft => {
+                    draft.clubPlans.categories = draft.clubPlans.categories.filter((_: string, idx: number) => idx !== i);
+                  })}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: '#c0392b', fontWeight: 700, fontSize: '14px', padding: '0 2px', lineHeight: 1,
+                  }}
+                  title="Remove category"
+                >×</button>
+              )}
+            </span>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           <input
-            data-testid="system-settings-club-name"
-            value={config.branding.clubName ?? ''}
-            onChange={(event) => updateConfig(draft => {
-              draft.branding.clubName = event.target.value.trim() === '' ? null : event.target.value;
-            })}
-            style={valueInputStyle}
+            placeholder="New category name…"
+            id="new-category-input"
+            style={{ ...valueInputStyle, flex: 1, maxWidth: '200px' }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const input = e.currentTarget;
+                const val = input.value.trim();
+                if (val && !(config.clubPlans?.categories ?? []).includes(val)) {
+                  updateConfig(draft => { draft.clubPlans.categories = [...(draft.clubPlans.categories ?? ['Regular']), val]; });
+                  input.value = '';
+                }
+              }
+            }}
           />
-        </FieldRow>
+          <button
+            type="button"
+            onClick={() => {
+              const input = document.getElementById('new-category-input') as HTMLInputElement;
+              const val = input?.value.trim();
+              if (val && !(config.clubPlans?.categories ?? []).includes(val)) {
+                updateConfig(draft => { draft.clubPlans.categories = [...(draft.clubPlans.categories ?? ['Regular']), val]; });
+                input.value = '';
+              }
+            }}
+            style={{ padding: '4px 12px', fontSize: '13px' }}
+          >Add</button>
+        </div>
+      </Section>
+
+      <Section title="Club Payment Plans">
+        <ClubPlanManager />
+      </Section>
+
+      <Section title="Core Settings">
         <NumericInput
           label="Minimum Password Length"
           min={6}
@@ -321,6 +390,7 @@ export default function SystemSettings() {
         <NumericInput label="Socket Reconnection Delay (ms)" value={config.clientRuntime.socketReconnectionDelayMs} onChange={(value) => updateConfig(draft => { draft.clientRuntime.socketReconnectionDelayMs = value; })} />
         <NumericInput label="Socket Reconnection Attempts" value={config.clientRuntime.socketReconnectionAttempts} onChange={(value) => updateConfig(draft => { draft.clientRuntime.socketReconnectionAttempts = value; })} />
       </Section>
+
     </div>
   );
 }

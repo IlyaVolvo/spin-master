@@ -66,6 +66,7 @@ type PlayerEditBaseline = {
   phone: string;
   address: string;
   picture: string;
+  paymentCategory: string;
   isActive: boolean;
   tournamentNotificationsEnabled: boolean;
   rolesKey: string;
@@ -132,6 +133,7 @@ function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
     phone: member.phone || '',
     address: member.address || '',
     picture: member.picture || '',
+    paymentCategory: (member as any).paymentCategory || 'Regular',
     isActive: member.isActive !== undefined ? member.isActive : true,
     tournamentNotificationsEnabled: Boolean(member.tournamentNotificationsEnabled && member.email),
     rolesKey: [...(member.roles || [])].sort().join(','),
@@ -167,6 +169,7 @@ const Players: React.FC = () => {
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
   const [newPlayerAddress, setNewPlayerAddress] = useState('');
   const [newPlayerPicture, setNewPlayerPicture] = useState('');
+  const [newPlayerPaymentCategory, setNewPlayerPaymentCategory] = useState('Regular');
   const [newPlayerRoles, setNewPlayerRoles] = useState<string[]>(['PLAYER']);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [similarNames, setSimilarNames] = useState<SimilarName[]>([]);
@@ -334,6 +337,7 @@ const Players: React.FC = () => {
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editPicture, setEditPicture] = useState('');
+  const [editPaymentCategory, setEditPaymentCategory] = useState('Regular');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editTournamentNotificationsEnabled, setEditTournamentNotificationsEnabled] = useState(false);
   const [editRoles, setEditRoles] = useState<string[]>([]);

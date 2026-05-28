@@ -57,6 +57,9 @@ export type SystemConfig = {
     socketReconnectionDelayMs: number;
     socketReconnectionAttempts: number;
   };
+  clubPlans: {
+    categories: string[];
+  };
 };
 
 export type SystemConfigPatch = Partial<{
@@ -125,6 +128,9 @@ const defaultSystemConfig: SystemConfig = {
     tournamentsListCacheTtlMs: 30000,
     socketReconnectionDelayMs: 1000,
     socketReconnectionAttempts: 5,
+  },
+  clubPlans: {
+    categories: ['Regular'],
   },
 };
 

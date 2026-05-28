@@ -25,6 +25,7 @@ interface ExportablePlayer {
   phone?: string | null;
   address?: string | null;
   rating: number | null;
+  paymentCategory?: string | null;
 }
 
 // ─── CSV Export ──────────────────────────────────────────────────────────────
@@ -75,6 +76,9 @@ export function generatePlayersCsv(players: ExportablePlayer[]): string {
             break;
           case 'rating':
             value = player.rating || '';
+            break;
+          case 'paymentcategory':
+            value = player.paymentCategory || 'Regular';
             break;
           default:
             value = '';
@@ -300,6 +304,9 @@ export function parsePlayersCsv(text: string): ParsedImportResult {
           } else {
             rowRatingError = `Row ${rowNumber}: Rating must be an integer between 0 and 9999`;
           }
+          break;
+        case 'paymentcategory':
+          player.paymentCategory = value;
           break;
       }
     });

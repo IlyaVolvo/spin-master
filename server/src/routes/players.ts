@@ -222,6 +222,7 @@ interface ImportedPlayerPayload {
   phone?: string;
   address?: string;
   rating?: number;
+  paymentCategory?: string;
   mustResetPassword?: boolean;
 }
 
@@ -431,6 +432,9 @@ function parsePlayersCsv(text: string): ParsePlayersCsvResult {
           } else {
             rowRatingError = `Row ${rowNumber}: Rating must be an integer between 0 and 9999`;
           }
+          break;
+        case 'paymentcategory':
+          player.paymentCategory = value;
           break;
       }
     });
@@ -931,6 +935,7 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
         rating: true,
         phone: true,
         address: true,
+        paymentCategory: true,
       },
       orderBy: [
         { lastName: 'asc' },
@@ -1045,6 +1050,7 @@ router.post('/', [
   body('address').optional().trim(),
   body('picture').optional().trim(),
   body('tournamentNotificationsEnabled').optional().isBoolean(),
+  body('paymentCategory').optional().isString().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -1052,7 +1058,7 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck, tournamentNotificationsEnabled } = req.body;
+    const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck, tournamentNotificationsEnabled, paymentCategory } = req.body;
     const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
     const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
     const trimmedEmailInput = typeof email === 'string' ? email.trim() : '';
@@ -1170,6 +1176,7 @@ router.post('/', [
           phone: phone ? phone.trim() : null,
           address: address ? address.trim() : null,
           picture: picture ? picture.trim() : null,
+          paymentCategory: paymentCategory || 'Regular',
           qrTokenHash: generateQrTokenHash(),
           isActive: true,
           emailConfirmedAt: null,
@@ -1215,6 +1222,7 @@ router.post('/', [
         phone: phone ? phone.trim() : null,
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
+        paymentCategory: paymentCategory || 'Regular',
         qrTokenHash: generateQrTokenHash(),
         isActive: false,
         emailConfirmedAt: null,
@@ -1487,6 +1495,7 @@ router.patch('/:id', [
   body('picture').optional().trim(),
   body('roles').optional().isArray(),
   body('tournamentNotificationsEnabled').optional().isBoolean(),
+  body('paymentCategory').optional().isString().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -1531,7 +1540,7 @@ router.patch('/:id', [
       return res.status(403).json({ error: 'Only Administrators can modify other members\' profiles.' });
     }
 
-    const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, tournamentNotificationsEnabled, ...rest } = req.body;
+    const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, tournamentNotificationsEnabled, paymentCategory, ...rest } = req.body;
 
     // Birth date is optional on PATCH (may be omitted, set, or cleared to null); invalid values rejected below.
 
@@ -1628,6 +1637,7 @@ router.patch('/:id', [
     if (phone !== undefined) updateData.phone = phone || null;
     if (address !== undefined) updateData.address = address || null;
     if (picture !== undefined) updateData.picture = picture || null;
+    if (paymentCategory !== undefined) updateData.paymentCategory = paymentCategory || 'Regular';
     if (tournamentNotificationsEnabled !== undefined) {
       if (!isCurrentMember && !hasAdminAccess) {
         return res.status(403).json({ error: 'Only the member themselves or Admins can change tournament notification settings' });
@@ -2588,6 +2598,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
                   ? player.address.trim()
                   : String(player.address).trim()
                 : null,
+              paymentCategory: player.paymentCategory || 'Regular',
               qrTokenHash: generateQrTokenHash(),
               isActive: true,
               emailConfirmedAt: null,
@@ -2650,6 +2661,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
                 ? player.address.trim()
                 : String(player.address).trim()
               : null,
+            paymentCategory: player.paymentCategory || 'Regular',
             qrTokenHash: generateQrTokenHash(),
             isActive: false,
             emailConfirmedAt: null,
