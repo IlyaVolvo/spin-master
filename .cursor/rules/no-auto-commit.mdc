@@ -1,0 +1,18 @@
+---
+description: Never auto-commit; the user initiates all git commits
+alwaysApply: true
+---
+
+# No Auto Commit
+
+## Policy
+
+I don't want auto commit. I will initiate all commits myself.
+
+## Rules
+
+- Never run `git commit` unless the user explicitly asks to commit.
+- Do not commit because a task is done, tests passed, or a follow-up option implied committing.
+- Do not stage and commit as a cleanup step after implementation.
+- `git status`, `git diff`, and `git log` are fine for reporting state.
+- Draft commit messages in chat when helpful, without running commit.
