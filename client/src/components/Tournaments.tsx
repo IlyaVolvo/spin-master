@@ -209,6 +209,10 @@ const Tournaments: React.FC = () => {
     const stored = localStorage.getItem('tournaments_showCompletedMatches');
     return stored !== null ? stored === 'true' : true;
   });
+  const [showCancelledTournaments, setShowCancelledTournaments] = useState<boolean>(() => {
+    const stored = localStorage.getItem('tournaments_showCancelledTournaments');
+    return stored !== null ? stored === 'true' : false;
+  });
   const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
   const [expandedParticipants, setExpandedParticipants] = useState<Set<number>>(new Set());
   const [expandedCompound, setExpandedCompound] = useState<Set<number>>(new Set());
@@ -341,6 +345,10 @@ const Tournaments: React.FC = () => {
   // No type-based filtering - plugins handle type-specific display
   const filteredCompletedTournaments = useMemo(() => {
     let filtered = tournaments.filter(t => t.status === 'COMPLETED');
+
+    if (!showCancelledTournaments) {
+      filtered = filtered.filter(t => !t.cancelled);
+    }
     
     // Filter by tournament name
     if (tournamentNameFilter.trim()) {
@@ -378,7 +386,7 @@ const Tournaments: React.FC = () => {
     });
     
     return filtered;
-  }, [tournaments, effectiveDateRange, tournamentNameFilter]);
+  }, [tournaments, effectiveDateRange, tournamentNameFilter, showCancelledTournaments]);
 
   const filteredPreregistrationTournaments = useMemo(() => {
     return tournaments
@@ -3519,6 +3527,21 @@ const Tournaments: React.FC = () => {
                 <option value="custom">Custom</option>
               </select>
             </div>
+            {showCompletedTournaments && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px' }}>
+                <input
+                  type="checkbox"
+                  checked={showCancelledTournaments}
+                  onChange={(e) => {
+                    const value = e.target.checked;
+                    setShowCancelledTournaments(value);
+                    localStorage.setItem('tournaments_showCancelledTournaments', String(value));
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '12px', color: '#666' }}>Show cancelled</span>
+              </label>
+            )}
             {/* Custom Date Range - only show when "custom" is selected */}
             {dateFilterType === 'custom' && (
               <>
