@@ -17,6 +17,8 @@ import { formatActiveTournamentRating, formatCompletedTournamentRating } from '.
 import { PlayoffBracket } from './PlayoffBracket';
 import { MatchEntryPopup } from './MatchEntryPopup';
 import { connectSocket, disconnectSocket, getSocket } from '../utils/socket';
+import { EmptyState } from './EmptyState';
+import { EmptyActiveIcon, EmptyCalendarIcon, EmptyCompletedIcon, EmptySearchIcon } from './emptyStateIcons';
 import { ExpandCollapseButton } from './ExpandCollapseButton';
 import { TournamentHeader } from './TournamentHeader';
 import { TournamentInfo } from './TournamentInfo';
@@ -387,6 +389,44 @@ const Tournaments: React.FC = () => {
     
     return filtered;
   }, [tournaments, effectiveDateRange, tournamentNameFilter, showCancelledTournaments]);
+
+  const completedMatchingFilters = useMemo(() => {
+    let filtered = tournaments.filter(t => t.status === 'COMPLETED');
+
+    if (tournamentNameFilter.trim()) {
+      const nameFilterLower = tournamentNameFilter.trim().replace(/\s+/g, ' ').toLowerCase();
+      filtered = filtered.filter(tournament => {
+        const tournamentName = (tournament.name || '').trim().replace(/\s+/g, ' ');
+        return tournamentName.toLowerCase().includes(nameFilterLower);
+      });
+    }
+
+    if (effectiveDateRange.start || effectiveDateRange.end) {
+      filtered = filtered.filter(tournament => {
+        const createdDate = new Date(tournament.createdAt);
+        const createdAtMatches = isDateInRange(createdDate, effectiveDateRange.start, effectiveDateRange.end);
+        let recordedAtMatches = false;
+        if (tournament.recordedAt) {
+          const recordedDate = new Date(tournament.recordedAt);
+          recordedAtMatches = isDateInRange(recordedDate, effectiveDateRange.start, effectiveDateRange.end);
+        }
+        return createdAtMatches || recordedAtMatches;
+      });
+    }
+
+    return filtered;
+  }, [tournaments, effectiveDateRange, tournamentNameFilter]);
+
+  const clearCompletedFilters = useCallback(() => {
+    setTournamentNameFilter('');
+    setDateFilterType('');
+    setDateFilterStart('');
+    setDateFilterEnd('');
+    localStorage.removeItem('tournaments_nameFilter');
+    localStorage.removeItem('tournaments_dateFilterType');
+    localStorage.removeItem('tournaments_dateFilterStart');
+    localStorage.removeItem('tournaments_dateFilterEnd');
+  }, []);
 
   const filteredPreregistrationTournaments = useMemo(() => {
     return tournaments
@@ -2421,7 +2461,13 @@ const Tournaments: React.FC = () => {
         </div>
         {!preregistrationSectionCollapsed && (
           filteredPreregistrationTournaments.length === 0 ? (
-            <p>No preregistration tournaments</p>
+            <EmptyState
+              title="No pre-registration tournaments"
+              accentColor="#b26a00"
+              backgroundTint="#fff8f0"
+              borderColor="#f0dcc8"
+              icon={<EmptyCalendarIcon color="#b26a00" />}
+            />
           ) : (
             filteredPreregistrationTournaments.map((tournament) => {
               const registered = (tournament.registrations || []).filter(r => r.status === 'REGISTERED');
@@ -2648,7 +2694,13 @@ const Tournaments: React.FC = () => {
         </div>
         {!activeSectionCollapsed ? (
           filteredActiveEvents.length === 0 ? (
-            <p>No active events</p>
+            <EmptyState
+              title="Nothing active"
+              accentColor="#7b1fa2"
+              backgroundTint="#faf5fc"
+              borderColor="#e8d5f0"
+              icon={<EmptyActiveIcon color="#7b1fa2" />}
+            />
           ) : (
             <>
               {filteredActiveEvents.map((tournament) => {
@@ -3396,6 +3448,7 @@ const Tournaments: React.FC = () => {
           display: 'flex', 
           alignItems: 'center', 
           gap: '15px', 
+          flexWrap: 'wrap',
           marginTop: '40px', 
           marginBottom: '20px',
           padding: '16px 20px',
@@ -3454,174 +3507,147 @@ const Tournaments: React.FC = () => {
             />
             <span>Matches</span>
           </label>
-        </div>
-        
-        {/* Filters - always visible */}
-        {!completedSectionCollapsed && (
-        <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
-          <label style={{ fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            Filters:
+          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}>
+            <input
+              type="checkbox"
+              checked={showCancelledTournaments}
+              onChange={(e) => {
+                const value = e.target.checked;
+                setShowCancelledTournaments(value);
+                localStorage.setItem('tournaments_showCancelledTournaments', String(value));
+              }}
+              style={{ cursor: 'pointer' }}
+            />
+            <span>Cancelled</span>
           </label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
-            {/* Tournament Name Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <label style={{ fontSize: '12px', color: '#666' }}>Name:</label>
-              <input
-                type="text"
-                value={tournamentNameFilter}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setTournamentNameFilter(value);
-                  // Save to localStorage to make filter sticky
-                  if (value) {
-                    localStorage.setItem('tournaments_nameFilter', value);
-                  } else {
-                    localStorage.removeItem('tournaments_nameFilter');
-                  }
-                }}
-                placeholder="Search tournament/match name..."
-                style={{
-                  padding: '6px 10px',
-                  fontSize: '14px',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  minWidth: '200px',
-                }}
-              />
-            </div>
-            {/* Date Filter Dropdown */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <label style={{ fontSize: '12px', color: '#666' }}>Date:</label>
-              <select
-                value={dateFilterType}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setDateFilterType(value);
-                  // Save to localStorage
-                  if (value) {
-                    localStorage.setItem('tournaments_dateFilterType', value);
-                  } else {
-                    localStorage.removeItem('tournaments_dateFilterType');
-                  }
-                  // Clear custom dates when switching to preset
-                  if (value !== 'custom') {
-                    setDateFilterStart('');
-                    setDateFilterEnd('');
-                    localStorage.removeItem('tournaments_dateFilterStart');
-                    localStorage.removeItem('tournaments_dateFilterEnd');
-                  }
-                }}
-                style={{
-                  padding: '6px 10px',
-                  fontSize: '14px',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  minWidth: '120px',
-                }}
-              >
-                <option value="">All</option>
-                <option value="day">Day</option>
-                <option value="week">Week</option>
-                <option value="month">Month</option>
-                <option value="year">Calendar Year</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-            {showCompletedTournaments && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px' }}>
+          {!completedSectionCollapsed && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#1976d2' }}>Name:</label>
                 <input
-                  type="checkbox"
-                  checked={showCancelledTournaments}
+                  type="text"
+                  value={tournamentNameFilter}
                   onChange={(e) => {
-                    const value = e.target.checked;
-                    setShowCancelledTournaments(value);
-                    localStorage.setItem('tournaments_showCancelledTournaments', String(value));
+                    const value = e.target.value;
+                    setTournamentNameFilter(value);
+                    if (value) {
+                      localStorage.setItem('tournaments_nameFilter', value);
+                    } else {
+                      localStorage.removeItem('tournaments_nameFilter');
+                    }
                   }}
-                  style={{ cursor: 'pointer' }}
+                  placeholder="Search tournament/match name..."
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '14px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    minWidth: '200px',
+                  }}
                 />
-                <span style={{ fontSize: '12px', color: '#666' }}>Show cancelled</span>
-              </label>
-            )}
-            {/* Custom Date Range - only show when "custom" is selected */}
-            {dateFilterType === 'custom' && (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <label style={{ fontSize: '12px', color: '#666' }}>From:</label>
-                  <input
-                    type="date"
-                    value={dateFilterStart}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDateFilterStart(value);
-                      // Save to localStorage to make filter sticky
-                      if (value) {
-                        localStorage.setItem('tournaments_dateFilterStart', value);
-                      } else {
-                        localStorage.removeItem('tournaments_dateFilterStart');
-                      }
-                    }}
-                    style={{
-                      padding: '6px 10px',
-                      fontSize: '14px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                    }}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <label style={{ fontSize: '12px', color: '#666' }}>To:</label>
-                  <input
-                    type="date"
-                    value={dateFilterEnd}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDateFilterEnd(value);
-                      // Save to localStorage to make filter sticky
-                      if (value) {
-                        localStorage.setItem('tournaments_dateFilterEnd', value);
-                      } else {
-                        localStorage.removeItem('tournaments_dateFilterEnd');
-                      }
-                    }}
-                    style={{
-                      padding: '6px 10px',
-                      fontSize: '14px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                    }}
-                  />
-                </div>
-              </>
-            )}
-            {(tournamentNameFilter.trim() || dateFilterType) && (
-              <button
-                onClick={() => {
-                  setTournamentNameFilter('');
-                  setDateFilterType('');
-                  setDateFilterStart('');
-                  setDateFilterEnd('');
-                  // Clear sticky filters from localStorage
-                  localStorage.removeItem('tournaments_nameFilter');
-                  localStorage.removeItem('tournaments_dateFilterType');
-                  localStorage.removeItem('tournaments_dateFilterStart');
-                  localStorage.removeItem('tournaments_dateFilterEnd');
-                }}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '12px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                }}
-              >
-                Clear Filters
-              </button>
-            )}
-          </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#1976d2' }}>Date:</label>
+                <select
+                  value={dateFilterType}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setDateFilterType(value);
+                    if (value) {
+                      localStorage.setItem('tournaments_dateFilterType', value);
+                    } else {
+                      localStorage.removeItem('tournaments_dateFilterType');
+                    }
+                    if (value !== 'custom') {
+                      setDateFilterStart('');
+                      setDateFilterEnd('');
+                      localStorage.removeItem('tournaments_dateFilterStart');
+                      localStorage.removeItem('tournaments_dateFilterEnd');
+                    }
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '14px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    minWidth: '120px',
+                  }}
+                >
+                  <option value="">All</option>
+                  <option value="day">Day</option>
+                  <option value="week">Week</option>
+                  <option value="month">Month</option>
+                  <option value="year">Calendar Year</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              {dateFilterType === 'custom' && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600, color: '#1976d2' }}>From:</label>
+                    <input
+                      type="date"
+                      value={dateFilterStart}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDateFilterStart(value);
+                        if (value) {
+                          localStorage.setItem('tournaments_dateFilterStart', value);
+                        } else {
+                          localStorage.removeItem('tournaments_dateFilterStart');
+                        }
+                      }}
+                      style={{
+                        padding: '6px 10px',
+                        fontSize: '14px',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600, color: '#1976d2' }}>To:</label>
+                    <input
+                      type="date"
+                      value={dateFilterEnd}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDateFilterEnd(value);
+                        if (value) {
+                          localStorage.setItem('tournaments_dateFilterEnd', value);
+                        } else {
+                          localStorage.removeItem('tournaments_dateFilterEnd');
+                        }
+                      }}
+                      style={{
+                        padding: '6px 10px',
+                        fontSize: '14px',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              {(tournamentNameFilter.trim() || dateFilterType) && (
+                <button
+                  onClick={clearCompletedFilters}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </>
+          )}
         </div>
-        )}
 
         {!completedSectionCollapsed && (showCompletedTournaments || showCompletedMatches) ? (
           <>
@@ -3651,8 +3677,47 @@ const Tournaments: React.FC = () => {
               events.sort((a, b) => b.time - a.time);
 
               if (events.length === 0) {
-                const hasFilters = tournamentNameFilter.trim() || dateFilterType;
-                return <p>No completed tournaments{hasFilters ? ' found matching the filters' : ''}</p>;
+                const hasFilters = Boolean(tournamentNameFilter.trim() || dateFilterType);
+                const cancelledHidden =
+                  showCompletedTournaments &&
+                  !showCancelledTournaments &&
+                  completedMatchingFilters.length > 0 &&
+                  filteredCompletedTournaments.length === 0;
+
+                if (hasFilters) {
+                  return (
+                    <EmptyState
+                      title="No matching results"
+                      accentColor="#1976d2"
+                      backgroundTint="#f0f6fc"
+                      borderColor="#c5daf0"
+                      icon={<EmptySearchIcon color="#1976d2" />}
+                    />
+                  );
+                }
+
+                if (cancelledHidden) {
+                  return (
+                    <EmptyState
+                      title="No completed tournaments"
+                      accentColor="#1976d2"
+                      backgroundTint="#f0f6fc"
+                      borderColor="#c5daf0"
+                      icon={<EmptyCompletedIcon color="#1976d2" />}
+                    />
+                  );
+                }
+
+                const matchesOnly = !showCompletedTournaments && showCompletedMatches;
+                return (
+                  <EmptyState
+                    title={matchesOnly ? 'No completed matches' : 'No completed events'}
+                    accentColor="#1976d2"
+                    backgroundTint="#f0f6fc"
+                    borderColor="#c5daf0"
+                    icon={<EmptyCompletedIcon color="#1976d2" />}
+                  />
+                );
               }
 
               // Compute max first-player name length across all standalone matches for alignment
