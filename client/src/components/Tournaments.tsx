@@ -19,6 +19,7 @@ import { MatchEntryPopup } from './MatchEntryPopup';
 import { connectSocket, disconnectSocket, getSocket } from '../utils/socket';
 import { EmptyState } from './EmptyState';
 import { EmptyActiveIcon, EmptyCalendarIcon, EmptyCompletedIcon, EmptySearchIcon } from './emptyStateIcons';
+import { TriStateCheckbox } from './TriStateCheckbox';
 import { ExpandCollapseButton } from './ExpandCollapseButton';
 import { TournamentHeader } from './TournamentHeader';
 import { TournamentInfo } from './TournamentInfo';
@@ -26,6 +27,13 @@ import { TournamentNameEditor } from './TournamentNameEditor';
 import { getMember, setMember } from '../utils/auth';
 import { updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
 import { isOrganizer } from '../utils/auth';
+import {
+  cancelledFilterToTriState,
+  loadCancelledFilterMode,
+  nextCancelledFilterMode,
+  saveCancelledFilterMode,
+  type CancelledFilterMode,
+} from '../utils/cancelledFilterMode';
 import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
 import {
   MATCH_RESULT_ALREADY_ENTERED_MESSAGE,
@@ -211,10 +219,7 @@ const Tournaments: React.FC = () => {
     const stored = localStorage.getItem('tournaments_showCompletedMatches');
     return stored !== null ? stored === 'true' : true;
   });
-  const [showCancelledTournaments, setShowCancelledTournaments] = useState<boolean>(() => {
-    const stored = localStorage.getItem('tournaments_showCancelledTournaments');
-    return stored !== null ? stored === 'true' : false;
-  });
+  const [cancelledFilter, setCancelledFilter] = useState<CancelledFilterMode>(() => loadCancelledFilterMode());
   const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
   const [expandedParticipants, setExpandedParticipants] = useState<Set<number>>(new Set());
   const [expandedCompound, setExpandedCompound] = useState<Set<number>>(new Set());
@@ -348,8 +353,10 @@ const Tournaments: React.FC = () => {
   const filteredCompletedTournaments = useMemo(() => {
     let filtered = tournaments.filter(t => t.status === 'COMPLETED');
 
-    if (!showCancelledTournaments) {
+    if (cancelledFilter === 'hidden') {
       filtered = filtered.filter(t => !t.cancelled);
+    } else if (cancelledFilter === 'only') {
+      filtered = filtered.filter(t => t.cancelled);
     }
     
     // Filter by tournament name
@@ -388,7 +395,7 @@ const Tournaments: React.FC = () => {
     });
     
     return filtered;
-  }, [tournaments, effectiveDateRange, tournamentNameFilter, showCancelledTournaments]);
+  }, [tournaments, effectiveDateRange, tournamentNameFilter, cancelledFilter]);
 
   const completedMatchingFilters = useMemo(() => {
     let filtered = tournaments.filter(t => t.status === 'COMPLETED');
@@ -3507,17 +3514,23 @@ const Tournaments: React.FC = () => {
             />
             <span>Matches</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}>
-            <input
-              type="checkbox"
-              checked={showCancelledTournaments}
-              onChange={(e) => {
-                const value = e.target.checked;
-                setShowCancelledTournaments(value);
-                localStorage.setItem('tournaments_showCancelledTournaments', String(value));
-              }}
-              style={{ cursor: 'pointer' }}
-            />
+          <label
+            style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}
+            title={
+              cancelledFilter === 'only'
+                ? 'Showing only cancelled tournaments. Click to hide cancelled.'
+                : cancelledFilter === 'included'
+                  ? 'Including cancelled tournaments. Click to hide cancelled. Shift+click for only cancelled.'
+                  : 'Cancelled tournaments hidden. Click to include. Shift+click for only cancelled.'
+            }
+            onClick={(e) => {
+              e.preventDefault();
+              const next = nextCancelledFilterMode(cancelledFilter, e.shiftKey);
+              setCancelledFilter(next);
+              saveCancelledFilterMode(next);
+            }}
+          >
+            <TriStateCheckbox value={cancelledFilterToTriState(cancelledFilter)} accentColor="#1976d2" />
             <span>Cancelled</span>
           </label>
           {!completedSectionCollapsed && (
@@ -3680,7 +3693,7 @@ const Tournaments: React.FC = () => {
                 const hasFilters = Boolean(tournamentNameFilter.trim() || dateFilterType);
                 const cancelledHidden =
                   showCompletedTournaments &&
-                  !showCancelledTournaments &&
+                  cancelledFilter === 'hidden' &&
                   completedMatchingFilters.length > 0 &&
                   filteredCompletedTournaments.length === 0;
 
