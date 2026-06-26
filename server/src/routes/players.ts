@@ -2623,9 +2623,6 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
 
         const mustResetPassword =
           player.mustResetPassword !== undefined ? player.mustResetPassword : true;
-        const passwordResetToken = generatePasswordResetToken();
-        const passwordResetExpiry = getPasswordResetExpiryDate();
-        const resetLink = buildResetLink(finalEmail, passwordResetToken);
 
         const member = await prisma.member.create({
           data: {
@@ -2651,17 +2648,20 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
                 : String(player.address).trim()
               : null,
             qrTokenHash: generateQrTokenHash(),
-            isActive: false,
+            // Active immediately when skipping invitation email (export/re-import without invite).
+            isActive: !sendEmail,
             emailConfirmedAt: null,
             mustResetPassword,
-            passwordResetToken,
-            passwordResetTokenExpiry: passwordResetExpiry,
+            passwordResetToken: sendEmail ? generatePasswordResetToken() : null,
+            passwordResetTokenExpiry: sendEmail ? getPasswordResetExpiryDate() : null,
           } as any,
         });
 
         await createInitialRatingHistoryEntry(member.id, member.rating);
 
         if (sendEmail) {
+          const passwordResetExpiry = member.passwordResetTokenExpiry as Date;
+          const resetLink = buildResetLink(finalEmail, member.passwordResetToken as string);
           try {
             if (!importEmailTransporter) {
               importEmailTransporter = createSmtpTransporter();

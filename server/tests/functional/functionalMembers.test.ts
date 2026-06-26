@@ -144,6 +144,7 @@ describe('Functional: members & lists', () => {
     expect(dbRows).toHaveLength(2);
     expect(dbRows[0].firstName).toBe('Import');
     expect(dbRows[1].rating).toBe(1480);
+    expect(dbRows.every((row) => row.isActive)).toBe(true);
 
     const exportRes = await request(app).get('/api/players/export').set(authHeader(token)).expect(200);
 
@@ -176,6 +177,31 @@ describe('Functional: members & lists', () => {
     expect(dbRows[0].firstName).toBe('NoHdr');
     expect(dbRows[1].lastName).toBe('Two');
     expect(dbRows[1].rating).toBe(1600);
+  });
+
+  it('CSV import without email creates active members immediately', async () => {
+    const { token } = await seedOrganizer(prisma);
+    const csv = [
+      'FirstName,LastName,Email,BirthDate,Gender,Roles,Phone,Address,Rating',
+      'Roster,Only,,2000-01-15,MALE,P,,,1500',
+    ].join('\n');
+
+    const importRes = await request(app)
+      .post('/api/players/import')
+      .set(authHeader(token))
+      .field('sendEmail', 'false')
+      .attach('file', Buffer.from(csv, 'utf-8'), 'import.csv')
+      .expect(200);
+
+    expect(importRes.body.successful).toBe(1);
+    expect(importRes.body.addedWithoutEmail).toBe(1);
+
+    const member = await prisma.member.findFirst({
+      where: { firstName: 'Roster', lastName: 'Only' },
+    });
+    expect(member).not.toBeNull();
+    expect(member!.email).toBeNull();
+    expect(member!.isActive).toBe(true);
   });
 
   it('GET /players vs /active; rating-history & match-history', async () => {
