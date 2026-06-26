@@ -5276,7 +5276,7 @@ const Players: React.FC = () => {
           }}
           style={{
             maxHeight: filtersCollapsed ? 'calc(100vh - 200px)' : 'calc(100vh - 300px)',
-            overflowY: showSettingsMenu ? 'visible' : 'auto',
+            overflowY: 'auto',
             overflowX: 'auto',
           }}
         >
