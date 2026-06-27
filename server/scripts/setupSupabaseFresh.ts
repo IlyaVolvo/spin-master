@@ -297,6 +297,35 @@ async function ensurePointExchangeRules() {
   console.log(`   ✓ Created ${POINT_EXCHANGE_RULES.length} default point exchange rules\n`);
 }
 
+// Tables emptied by the reset (excludes preserved system_config and point_exchange_rules).
+// All use Int @id @default(autoincrement()); their identity sequences are reset to 1 below.
+const RESET_TABLE_NAMES = [
+  'rating_history',
+  'matches',
+  'bracket_matches',
+  'tournament_participants',
+  'tournament_registrations',
+  'swiss_tournament_data',
+  'preliminary_configs',
+  'tournaments',
+  'members',
+];
+
+/**
+ * Reset each emptied table's autoincrement id sequence so the next inserted row starts at 1.
+ * Resolves the actual sequence via pg_get_serial_sequence so it is robust to sequence naming.
+ * Run after deletes and before seeding the SYS ADMIN, so that admin becomes member id 1.
+ */
+async function resetIdentitySequences() {
+  for (const table of RESET_TABLE_NAMES) {
+    // setval(..., 1, false) makes the next nextval() return 1 (false = "not yet called").
+    await prisma.$executeRawUnsafe(
+      `SELECT setval(pg_get_serial_sequence($1, 'id'), 1, false)`,
+      table,
+    );
+  }
+}
+
 async function resetOperationalDataAndMembers() {
   console.log('7) Resetting operational data and members...');
 
@@ -311,7 +340,9 @@ async function resetOperationalDataAndMembers() {
   await prisma.tournament.deleteMany({});
   await prisma.member.deleteMany({});
 
-  console.log('   ✓ Cleared operational data and members\n');
+  await resetIdentitySequences();
+
+  console.log('   ✓ Cleared operational data and members; id sequences reset to 1\n');
 }
 
 async function createSysAdmin(sysAdmin: SysAdminArgs) {
