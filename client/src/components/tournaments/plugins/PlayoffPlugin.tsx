@@ -7,6 +7,7 @@ import { PlayoffSchedulePanel } from './PlayoffSchedulePanel';
 import { PlayoffCompletedPanel } from './PlayoffCompletedPanel';
 import { PlayoffPostSelectionFlow } from './PlayoffPostSelectionFlow';
 import { getSystemConfig } from '../../../utils/systemConfig';
+import { generatePlayoffSchedule } from '../utils/visibleScheduleUtils';
 
 const PlayoffBracketWizardStep: React.FC<TournamentCreationStepProps> = ({
   selectedPlayerIds,
@@ -186,6 +187,8 @@ export const PlayoffPlugin: TournamentPlugin = {
   createCompletedPanel: (props: TournamentCompletedProps) => (
     <PlayoffCompletedPanel {...props} />
   ),
+
+  generateSchedule: (tournament) => generatePlayoffSchedule(tournament),
 
   // Tournament-specific calculations
   calculateExpectedMatches: (tournament) => {

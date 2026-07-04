@@ -105,10 +105,13 @@ function buildScheduleTableHtml(tournament: Tournament): string | null {
   if (scheduleRounds.length === 0) return null;
 
   const totalMatches = scheduleRounds.reduce((sum, round) => sum + round.matches.length, 0);
-  const hasBracketStructure = Boolean(tournament.bracketMatches?.length);
+  const useMatchNumberColumn =
+    tournament.type === 'PLAYOFF' ||
+    tournament.type === 'SWISS' ||
+    tournament.type === 'ROUND_ROBIN';
 
   const playedMatches = new Set<string>();
-  if (!hasBracketStructure) {
+  if (!useMatchNumberColumn) {
     (tournament.matches || []).forEach((match) => {
       if (match.member2Id !== null && match.member2Id !== 0) {
         playedMatches.add(`${match.member1Id}-${match.member2Id}`);
@@ -120,16 +123,15 @@ function buildScheduleTableHtml(tournament: Tournament): string | null {
   const roundsWithRatings = scheduleRounds.map((round) => ({
     ...round,
     matches: round.matches.map((match: any, matchIdx: number) => {
-      if (hasBracketStructure) {
+      if (useMatchNumberColumn) {
         return {
           ...match,
-          p1Name: match.player1Name,
-          p2Name: match.player2Name,
-          p1Rating: match.player1Rating,
-          p2Rating: match.player2Rating,
-          isPlayed: false,
-          matchNumber: matchIdx + 1,
-          roundLabel: match.roundLabel,
+          p1Name: match.member1Name,
+          p2Name: match.member2Name,
+          p1Rating: match.player1Rating || '',
+          p2Rating: match.player2Rating || '',
+          isPlayed: Boolean(match.isPlayed),
+          matchNumber: match.matchNumber ?? matchIdx + 1,
         };
       }
       const p1Rating = formatActiveTournamentRating(match.member1StoredRating, match.member1CurrentRating);
@@ -150,7 +152,7 @@ function buildScheduleTableHtml(tournament: Tournament): string | null {
     <table>
       <thead>
         <tr>
-          ${hasBracketStructure ? '<th>Round</th>' : '<th>Match #</th>'}
+          <th>${useMatchNumberColumn ? 'Match #' : 'Round'}</th>
           <th>Player 1</th>
           <th>Player 2</th>
         </tr>
@@ -164,7 +166,7 @@ function buildScheduleTableHtml(tournament: Tournament): string | null {
             .map(
               (match: any) => `
             <tr class="${match.isPlayed ? 'played' : ''}">
-              <td>${hasBracketStructure ? match.roundLabel || `Round ${match.round}` : match.matchNumber}</td>
+              <td>${useMatchNumberColumn ? match.matchNumber : match.roundLabel || `Round ${match.round}`}</td>
               <td>${match.p1Name}${match.p1Rating ? `<span class="rating">(${match.p1Rating})</span>` : ''}</td>
               <td>${match.p2Name}${match.p2Rating ? `<span class="rating">(${match.p2Rating})</span>` : ''}</td>
             </tr>
