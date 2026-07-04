@@ -1,4 +1,6 @@
 import { Tournament, Match, Member, TournamentParticipant } from '../../../types/tournament';
+import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { sortParticipantsByRating } from '../utils/participantSort';
 
 /**
  * Compute per-group capacities when players aren't evenly divisible by desiredSize.
@@ -255,67 +257,104 @@ export interface ScheduleRound {
   matches: ScheduleMatch[];
 }
 
-// Generate schedule for Round Robin tournament using round-robin algorithm
+// Generate schedule for Round Robin tournament: all unique pairs organized into rounds.
 export function generateRoundRobinSchedule(tournament: Tournament): ScheduleRound[] {
-  const participants = tournament.participants;
+  const participants = sortParticipantsByRating(tournament.participants);
   const n = participants.length;
-  
+
   if (n < 2) return [];
 
-  // Round-robin algorithm: if odd number, add dummy
-  const players = [...participants];
-  const isDummy = n % 2 === 1;
-  if (isDummy) {
-    players.push({
-      id: -1,
-      memberId: -1,
-      member: { id: -1, firstName: 'BYE', lastName: '', birthDate: null, isActive: false, rating: null },
-      playerRatingAtTime: null,
-    });
+  const allPairs = new Map<string, { player1Index: number; player2Index: number }>();
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      allPairs.set(`${i}-${j}`, { player1Index: i, player2Index: j });
+    }
   }
 
-  const totalPlayers = players.length;
   const rounds: ScheduleRound[] = [];
+  const usedPairs = new Set<string>();
+  const playerMatchCounts = new Map<number, number>();
   let matchNumber = 1;
+  let roundNumber = 1;
 
-  // Generate rounds (n-1 rounds for n players, or n rounds for n+1 with dummy)
-  for (let round = 0; round < totalPlayers - 1; round++) {
+  for (let i = 0; i < n; i++) {
+    playerMatchCounts.set(i, 0);
+  }
+
+  while (usedPairs.size < allPairs.size) {
     const roundMatches: ScheduleMatch[] = [];
-    
-    // Generate matches for this round
-    for (let i = 0; i < totalPlayers / 2; i++) {
-      const home = (round + i) % (totalPlayers - 1);
-      const away = (totalPlayers - 1 - i + round) % (totalPlayers - 1);
-      
-      // Last player stays in place
-      const homeIdx = home === 0 ? totalPlayers - 1 : home - 1;
-      const awayIdx = away === 0 ? totalPlayers - 1 : away - 1;
-      
-      const player1 = players[homeIdx];
-      const player2 = players[awayIdx];
-      
-      // Skip matches with dummy player
-      if (player1.memberId !== -1 && player2.memberId !== -1) {
-        roundMatches.push({
-          matchNumber: matchNumber++,
-          round: round + 1,
-          member1Id: player1.memberId,
-          member1Name: `${player1.member.firstName} ${player1.member.lastName}`,
-          member1StoredRating: player1.playerRatingAtTime,
-          member1CurrentRating: player1.member.rating,
-          member2Id: player2.memberId,
-          member2Name: `${player2.member.firstName} ${player2.member.lastName}`,
-          member2StoredRating: player2.playerRatingAtTime,
-          member2CurrentRating: player2.member.rating,
-        });
+    const playersInRound = new Set<number>();
+
+    const matchCounts = Array.from(playerMatchCounts.values());
+    const minCount = Math.min(...matchCounts);
+    const maxCount = Math.max(...matchCounts);
+
+    const availablePairs: Array<{
+      key: string;
+      pair: { player1Index: number; player2Index: number };
+      priority: number;
+    }> = [];
+
+    for (const [key, pair] of allPairs.entries()) {
+      if (usedPairs.has(key)) continue;
+      if (playersInRound.has(pair.player1Index) || playersInRound.has(pair.player2Index)) continue;
+
+      const count1 = playerMatchCounts.get(pair.player1Index) || 0;
+      const count2 = playerMatchCounts.get(pair.player2Index) || 0;
+
+      let priority = count1 + count2;
+      if (count1 === minCount && count2 === minCount) {
+        priority -= 1000;
       }
+      if (count1 === maxCount || count2 === maxCount) {
+        if (maxCount - minCount >= 1) {
+          priority += 1000;
+        }
+      }
+
+      availablePairs.push({ key, pair, priority });
     }
-    
+
+    availablePairs.sort((a, b) => a.priority - b.priority);
+
+    for (const { key, pair } of availablePairs) {
+      if (playersInRound.has(pair.player1Index) || playersInRound.has(pair.player2Index)) {
+        continue;
+      }
+
+      const participant1 = participants[pair.player1Index];
+      const participant2 = participants[pair.player2Index];
+      const member1 = participant1.member;
+      const member2 = participant2.member;
+
+      roundMatches.push({
+        matchNumber: matchNumber++,
+        round: roundNumber,
+        member1Id: member1.id,
+        member1Name: formatPlayerName(member1.firstName, member1.lastName, getNameDisplayOrder()),
+        member1StoredRating: participant1.playerRatingAtTime,
+        member1CurrentRating: member1.rating,
+        member2Id: member2.id,
+        member2Name: formatPlayerName(member2.firstName, member2.lastName, getNameDisplayOrder()),
+        member2StoredRating: participant2.playerRatingAtTime,
+        member2CurrentRating: member2.rating,
+      });
+
+      usedPairs.add(key);
+      playersInRound.add(pair.player1Index);
+      playersInRound.add(pair.player2Index);
+      playerMatchCounts.set(pair.player1Index, (playerMatchCounts.get(pair.player1Index) || 0) + 1);
+      playerMatchCounts.set(pair.player2Index, (playerMatchCounts.get(pair.player2Index) || 0) + 1);
+    }
+
     if (roundMatches.length > 0) {
       rounds.push({
-        round: round + 1,
+        round: roundNumber,
         matches: roundMatches,
       });
+      roundNumber++;
+    } else {
+      break;
     }
   }
 
