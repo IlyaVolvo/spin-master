@@ -7,6 +7,11 @@ import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
 import { canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { sortParticipantsByRating } from '../utils/participantSort';
+import {
+  emptyScoreEntryButtonStyle,
+  emptyScoreEntryCellStyle,
+  emptyScoreEntryLeftCellStyle,
+} from '../../emptyScoreEntryStyles';
 import './RoundRobinActivePanel.css';
 
 interface PlayerStats {
@@ -412,52 +417,15 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                             height: '20px',
                           }}>
                             <button
-                              style={{
-                                padding: '0',
-                                border: '1px solid #90EE90',
-                                borderRadius: '4px',
-                                backgroundColor: 'transparent',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'stretch',
-                                width: '45px',
-                                height: '18px',
-                                overflow: 'hidden',
-                                opacity: 0.7,
-                              }}
+                              style={emptyScoreEntryButtonStyle}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleCellClick(participant1.member.id, participant2.member.id);
                               }}
                               title="Enter score"
                             >
-                              {/* Left section */}
-                              <div style={{
-                                flex: 1,
-                                backgroundColor: '#ADD8E6',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#228B22',
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                                borderRight: '1px solid #90EE90',
-                              }}>
-                                ?
-                              </div>
-                              {/* Right section */}
-                              <div style={{
-                                flex: 1,
-                                backgroundColor: '#ADD8E6',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#228B22',
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                              }}>
-                                ?
-                              </div>
+                              <div style={emptyScoreEntryLeftCellStyle} aria-hidden="true" />
+                              <div style={emptyScoreEntryCellStyle} aria-hidden="true" />
                             </button>
                           </div>
                         )}

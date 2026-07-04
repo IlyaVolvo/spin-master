@@ -63,6 +63,13 @@ function renderPopup(overrides: Partial<React.ComponentProps<typeof MatchEntryPo
   return props;
 }
 
+function getScoreInputs() {
+  return [
+    screen.getByLabelText('Player 1 score'),
+    screen.getByLabelText('Player 2 score'),
+  ] as HTMLInputElement[];
+}
+
 describe('MatchEntryPopup modification confirmations', () => {
   it('saves an existing result without confirmation when the winner does not change', () => {
     const props = renderPopup();
@@ -76,9 +83,9 @@ describe('MatchEntryPopup modification confirmations', () => {
   it('uses an in-app confirmation before saving an existing result when the winner changes', () => {
     const props = renderPopup();
 
-    const inputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(inputs[0], { target: { value: '1' } });
-    fireEvent.change(inputs[1], { target: { value: '3' } });
+    const [player1Input, player2Input] = getScoreInputs();
+    fireEvent.keyDown(player1Input, { key: '1' });
+    fireEvent.keyDown(player2Input, { key: '3' });
     fireEvent.click(screen.getByTitle('Save Changes'));
 
     expect(screen.getByRole('dialog', { name: 'Modify Match Result' })).toBeInTheDocument();
@@ -93,9 +100,9 @@ describe('MatchEntryPopup modification confirmations', () => {
   it('can show rating-impact wording for playoff and swiss callers', () => {
     renderPopup({ modifyConfirmationMessage: RATING_IMPACT_MODIFY_MESSAGE });
 
-    const inputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(inputs[0], { target: { value: '1' } });
-    fireEvent.change(inputs[1], { target: { value: '3' } });
+    const [player1Input, player2Input] = getScoreInputs();
+    fireEvent.keyDown(player1Input, { key: '1' });
+    fireEvent.keyDown(player2Input, { key: '3' });
     fireEvent.click(screen.getByTitle('Save Changes'));
 
     expect(screen.getByText(RATING_IMPACT_MODIFY_MESSAGE)).toBeInTheDocument();
@@ -119,16 +126,6 @@ describe('MatchEntryPopup modification confirmations', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(props.onSave).toHaveBeenCalled();
-  });
-
-  it('uses configured match score bounds for score inputs', () => {
-    renderPopup();
-
-    const inputs = screen.getAllByRole('spinbutton');
-    expect(inputs[0]).toHaveAttribute('min', '1');
-    expect(inputs[0]).toHaveAttribute('max', '7');
-    expect(inputs[1]).toHaveAttribute('min', '1');
-    expect(inputs[1]).toHaveAttribute('max', '7');
   });
 
   it('treats an unplayed generated match row as first result entry', () => {
@@ -162,5 +159,171 @@ describe('MatchEntryPopup modification confirmations', () => {
 
     fireEvent.click(screen.getByText('Remove Result'));
     expect(props.onClear).toHaveBeenCalled();
+  });
+});
+
+describe('MatchEntryPopup keyboard entry', () => {
+  it('focuses player 1 score on open', () => {
+    renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '0',
+        player2Sets: '0',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+
+    expect(getScoreInputs()[0]).toHaveFocus();
+  });
+
+  it('typing in player 1 clears player 2 and sets player 1', () => {
+    renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '3',
+        player2Sets: '1',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+
+    const [player1Input, player2Input] = getScoreInputs();
+    fireEvent.keyDown(player1Input, { key: '2' });
+
+    expect(player1Input).toHaveValue('2');
+    expect(player2Input).toHaveValue('0');
+  });
+
+  it('typing in player 2 only replaces player 2', () => {
+    renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '3',
+        player2Sets: '1',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+
+    const [player1Input, player2Input] = getScoreInputs();
+    fireEvent.keyDown(player2Input, { key: '2' });
+
+    expect(player1Input).toHaveValue('3');
+    expect(player2Input).toHaveValue('2');
+  });
+
+  it('tab moves focus from player 1 to player 2', () => {
+    renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '0',
+        player2Sets: '0',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+
+    const [player1Input, player2Input] = getScoreInputs();
+    fireEvent.keyDown(player1Input, { key: 'Tab' });
+
+    expect(player2Input).toHaveFocus();
+  });
+
+  it('enter saves and escape cancels', () => {
+    const props = renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '3',
+        player2Sets: '1',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+      showClearButton: false,
+    });
+
+    const [player1Input] = getScoreInputs();
+    fireEvent.keyDown(player1Input, { key: 'Enter' });
+    expect(props.onSave).toHaveBeenCalled();
+
+    fireEvent.keyDown(player1Input, { key: 'Escape' });
+    expect(props.onCancel).toHaveBeenCalled();
+  });
+
+  it('arrow keys increment and decrement the focused score within bounds', () => {
+    renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '2',
+        player2Sets: '0',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+
+    const [player1Input] = getScoreInputs();
+    fireEvent.keyDown(player1Input, { key: 'ArrowUp' });
+    expect(player1Input).toHaveValue('3');
+
+    fireEvent.keyDown(player1Input, { key: 'ArrowDown' });
+    fireEvent.keyDown(player1Input, { key: 'ArrowDown' });
+    expect(player1Input).toHaveValue('1');
+
+    fireEvent.keyDown(player1Input, { key: 'ArrowDown' });
+    fireEvent.keyDown(player1Input, { key: 'ArrowDown' });
+    expect(player1Input).toHaveValue('0');
+
+    fireEvent.keyDown(player1Input, { key: 'ArrowUp' });
+    fireEvent.keyDown(player1Input, { key: 'ArrowUp' });
+    fireEvent.keyDown(player1Input, { key: 'ArrowUp' });
+    fireEvent.keyDown(player1Input, { key: 'ArrowUp' });
+    fireEvent.keyDown(player1Input, { key: 'ArrowUp' });
+    fireEvent.keyDown(player1Input, { key: 'ArrowUp' });
+    fireEvent.keyDown(player1Input, { key: 'ArrowUp' });
+    expect(player1Input).toHaveValue('7');
+  });
+
+  it('stepper buttons increment and decrement within bounds', () => {
+    renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '2',
+        player2Sets: '0',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+
+    const [player1Input] = getScoreInputs();
+    fireEvent.click(screen.getByRole('button', { name: 'Increase player 1 score' }));
+    expect(player1Input).toHaveValue('3');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease player 1 score' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease player 1 score' }));
+    expect(player1Input).toHaveValue('1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease player 1 score' }));
+    expect(player1Input).toHaveValue('0');
+    expect(screen.getByRole('button', { name: 'Decrease player 1 score' })).toBeDisabled();
+
+    for (let i = 0; i < 7; i += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Increase player 1 score' }));
+    }
+    expect(player1Input).toHaveValue('7');
+    expect(screen.getByRole('button', { name: 'Increase player 1 score' })).toBeDisabled();
   });
 });

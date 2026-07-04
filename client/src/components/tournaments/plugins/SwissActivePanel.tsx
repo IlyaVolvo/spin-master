@@ -8,6 +8,11 @@ import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldSho
 import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { saveScrollPosition, withWindowScrollPreserved } from '../../../utils/scrollPosition';
 import './SwissActivePanel.css';
+import {
+  emptyScoreEntryButtonStyle,
+  emptyScoreEntryCellStyle,
+  emptyScoreEntryLeftCellStyle,
+} from '../../emptyScoreEntryStyles';
 
 interface EditingMatch {
   matchId: number;
@@ -588,28 +593,15 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
                       </span>
                     ) : (
                       <button
-                        style={{
-                          padding: '0', border: '1px solid #90EE90', borderRadius: '4px',
-                          backgroundColor: 'transparent', cursor: 'pointer', display: 'flex',
-                          alignItems: 'stretch', width: '45px', height: '18px', overflow: 'hidden',
-                          opacity: 0.7,
-                        }}
+                        style={emptyScoreEntryButtonStyle}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id);
                         }}
                         title="Enter score"
                       >
-                        <div style={{
-                          flex: 1, backgroundColor: '#ADD8E6', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center', color: '#228B22',
-                          fontSize: '10px', fontWeight: 'bold', borderRight: '1px solid #90EE90',
-                        }}>?</div>
-                        <div style={{
-                          flex: 1, backgroundColor: '#ADD8E6', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center', color: '#228B22',
-                          fontSize: '10px', fontWeight: 'bold',
-                        }}>?</div>
+                        <div style={emptyScoreEntryLeftCellStyle} aria-hidden="true" />
+                        <div style={emptyScoreEntryCellStyle} aria-hidden="true" />
                       </button>
                     )}
                   </div>
