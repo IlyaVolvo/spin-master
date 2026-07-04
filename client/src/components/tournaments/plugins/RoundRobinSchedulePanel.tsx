@@ -1,6 +1,7 @@
 import React from 'react';
 import { TournamentScheduleProps } from '../../../types/tournament';
 import { generateRoundRobinSchedule } from './roundRobinUtils';
+import { SchedulePanelHeaderActions } from '../SchedulePanelHeaderActions';
 
 const formatActiveTournamentRating = (storedRating: number | null | undefined, currentRating: number | null | undefined) => {
   if (storedRating === null || storedRating === undefined || currentRating === null || currentRating === undefined) return '';
@@ -12,6 +13,7 @@ export const RoundRobinSchedulePanel: React.FC<TournamentScheduleProps> = ({
   tournament,
   isExpanded,
   onToggleExpand,
+  onPrintSchedule,
 }) => {
   const scheduleRounds = React.useMemo(() => {
     return generateRoundRobinSchedule(tournament);
@@ -47,9 +49,10 @@ export const RoundRobinSchedulePanel: React.FC<TournamentScheduleProps> = ({
         <p style={{ fontSize: '12px', color: '#666', marginBottom: '15px', fontStyle: 'italic' }}>
           All pairs ready to play, organized by round.
         </p>
-        <button onClick={onToggleExpand} className="schedule-toggle">
-          ▼ Hide Schedule
-        </button>
+        <SchedulePanelHeaderActions
+          onToggleExpand={onToggleExpand}
+          onPrintSchedule={onPrintSchedule}
+        />
       </div>
 
       <div className="schedule-content">

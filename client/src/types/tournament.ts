@@ -299,6 +299,7 @@ export interface TournamentActiveProps extends PanelProps {
 export interface TournamentScheduleProps extends PanelProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
+  onPrintSchedule?: () => void;
 }
 
 export interface TournamentCompletedProps extends PanelProps {

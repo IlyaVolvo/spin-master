@@ -45,6 +45,14 @@ import { Tournament, TournamentType } from '../types/tournament';
 import './tournaments/plugins'; // This will auto-register all plugins
 import { calculateStandings, buildResultsMatrix, generateRoundRobinSchedule } from './tournaments/plugins/roundRobinUtils';
 import { formatParticipantsWithRating } from './tournaments/utils/participantSort';
+import {
+  childHasPrintableSchedule,
+  compoundSchedulePrintButtonText,
+  compoundSchedulePrintLabel,
+  getCompoundSchedulePrintChildren,
+  printCompoundSchedules,
+  printTournamentSchedule,
+} from './tournaments/utils/schedulePrintUtils';
 import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
 
 // Module-level cache to persist across component mounts/unmounts
@@ -1499,201 +1507,8 @@ const Tournaments: React.FC = () => {
     });
   };
 
-  const handlePrintSchedule = (tournament: Tournament) => {
-    // Use plugin to generate schedule
-    const plugin = tournamentPluginRegistry.get(tournament.type);
-    if (!plugin || !plugin.generateSchedule) {
-      console.error('No schedule generation available for tournament type:', tournament.type);
-      return;
-    }
-    
-    const scheduleRounds = plugin.generateSchedule(tournament);
-    
-    if (scheduleRounds.length === 0) return;
-
-    // Calculate total matches
-    const totalMatches = scheduleRounds.reduce((sum, round) => sum + round.matches.length, 0);
-
-    // Create a set of played matches for quick lookup
-    const playedMatches = new Set<string>();
-    const hasBracketStructure = tournament.bracketMatches && tournament.bracketMatches.length > 0;
-    
-    if (!hasBracketStructure) {
-      // For non-bracket tournaments, track played matches
-      tournament.matches.forEach(match => {
-        if (match.member2Id !== null && match.member2Id !== 0) {
-          const key1 = `${match.member1Id}-${match.member2Id}`;
-          const key2 = `${match.member2Id}-${match.member1Id}`;
-          playedMatches.add(key1);
-          playedMatches.add(key2);
-        }
-      });
-    }
-
-    // Format ratings for each match in each round before generating HTML
-    // hasBracketStructure already declared above
-    const roundsWithRatings = scheduleRounds.map((round) => ({
-      ...round,
-      matches: round.matches.map((match: any, matchIdx: number) => {
-        if (hasBracketStructure) {
-          // Bracket-based tournament (playoff style)
-          return {
-            ...match,
-            player1Name: match.player1Name,
-            player2Name: match.player2Name,
-            player1RatingDisplay: match.player1Rating,
-            player2RatingDisplay: match.player2Rating,
-            isPlayed: false, // Bracket schedule only shows ready matches
-            matchNumber: matchIdx + 1,
-            roundLabel: match.roundLabel,
-          };
-        } else {
-          // Round-robin style tournament
-          const p1Rating = formatActiveTournamentRating(match.member1StoredRating, match.member1CurrentRating);
-          const p2Rating = formatActiveTournamentRating(match.member2StoredRating, match.member2CurrentRating);
-          const matchKey = `${match.member1Id}-${match.member2Id}`;
-          const isPlayed = playedMatches.has(matchKey);
-          return {
-            ...match,
-            player1Name: match.member1Name,
-            player2Name: match.member2Name,
-            player1RatingDisplay: p1Rating,
-            player2RatingDisplay: p2Rating,
-            isPlayed,
-            matchNumber: match.matchNumber,
-          };
-        }
-      }),
-    }));
-
-    // Create a new window for printing
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    const tournamentName = tournament.name || `Tournament ${new Date(tournament.createdAt).toLocaleDateString()}`;
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Schedule - ${tournamentName}</title>
-          <style>
-            @media print {
-              @page {
-                margin: 1cm;
-              }
-              body {
-                margin: 0;
-                padding: 0;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-            body {
-              font-family: Arial, sans-serif;
-              padding: 20px;
-            }
-            h1 {
-              margin: 0 0 10px 0;
-              font-size: 24px;
-              color: #2c3e50;
-            }
-            .tournament-info {
-              margin-bottom: 20px;
-              font-size: 14px;
-              color: #666;
-            }
-            table {
-              border-collapse: collapse;
-              width: 100%;
-              margin-top: 10px;
-              page-break-inside: auto;
-            }
-            thead {
-              display: table-header-group;
-            }
-            tbody {
-              display: table-row-group;
-            }
-            tr {
-              page-break-inside: avoid;
-              page-break-after: auto;
-            }
-            .separator-row {
-              height: 3px;
-              background-color: #333;
-            }
-            .separator-row td {
-              padding: 0;
-              border: none;
-              height: 3px;
-            }
-            th, td {
-              padding: 10px;
-              border: 1px solid #333;
-              text-align: left;
-            }
-            th {
-              background-color: #f0f0f0;
-              font-weight: bold;
-              text-align: center;
-            }
-            td:first-child {
-              text-align: center;
-              font-weight: bold;
-            }
-            .rating {
-              font-size: 12px;
-              color: #666;
-              margin-left: 8px;
-            }
-            .played {
-              text-decoration: line-through;
-              opacity: 0.6;
-            }
-          </style>
-        </head>
-        <body>
-          <h1>Match Schedule</h1>
-          <div class="tournament-info">
-            <strong>Tournament:</strong> ${tournamentName}<br>
-            <strong>Date:</strong> ${new Date(tournament.createdAt).toLocaleDateString()}<br>
-            <strong>Participants:</strong> ${tournament.participants.length}<br>
-            <strong>Total Matches:</strong> ${totalMatches}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                ${hasBracketStructure ? '<th>Round</th>' : '<th>Match #</th>'}
-                <th>Player 1</th>
-                <th>Player 2</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${roundsWithRatings.map((round, roundIndex) => `
-                ${roundIndex > 0 ? `<tr class="separator-row"><td colspan="3"></td></tr>` : ''}
-                ${round.matches.map((match: any) => `
-                  <tr class="${match.isPlayed ? 'played' : ''}">
-                    <td>${hasBracketStructure ? (match.roundLabel || `Round ${match.round}`) : match.matchNumber}</td>
-                    <td>${match.player1Name}${match.player1RatingDisplay ? `<span class="rating">(${match.player1RatingDisplay})</span>` : ''}</td>
-                    <td>${match.player2Name}${match.player2RatingDisplay ? `<span class="rating">(${match.player2RatingDisplay})</span>` : ''}</td>
-                  </tr>
-                `).join('')}
-              `).join('')}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    
-    // Wait for content to load, then print
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+  const handlePrintSchedule = (tournament: Tournament, parentName?: string | null) => {
+    printTournamentSchedule(tournament, parentName);
   };
 
   const handlePrintResults = (tournament: Tournament) => {
@@ -2131,109 +1946,7 @@ const Tournaments: React.FC = () => {
   };
 
   const handlePrintCompoundSchedule = (tournament: Tournament) => {
-    const children = (tournament.childTournaments || [])
-      .slice()
-      .sort((a: any, b: any) => (a.groupNumber ?? 999) - (b.groupNumber ?? 999));
-
-    if (children.length === 0) return;
-
-    const tournamentName = tournament.name || `Tournament ${new Date(tournament.createdAt).toLocaleDateString()}`;
-
-    let allSchedulesHtml = '';
-    for (const child of children) {
-      const childPlugin = tournamentPluginRegistry.get(child.type as TournamentType);
-      if (!childPlugin || !childPlugin.generateSchedule) continue;
-
-      const scheduleRounds = childPlugin.generateSchedule(child as any);
-      if (scheduleRounds.length === 0) continue;
-
-      const totalMatches = scheduleRounds.reduce((sum: number, round: any) => sum + round.matches.length, 0);
-      const hasBracketStructure = child.bracketMatches && child.bracketMatches.length > 0;
-
-      const playedMatches = new Set<string>();
-      if (!hasBracketStructure) {
-        (child.matches || []).forEach((match: any) => {
-          if (match.member2Id !== null && match.member2Id !== 0) {
-            playedMatches.add(`${match.member1Id}-${match.member2Id}`);
-            playedMatches.add(`${match.member2Id}-${match.member1Id}`);
-          }
-        });
-      }
-
-      const roundsWithRatings = scheduleRounds.map((round: any) => ({
-        ...round,
-        matches: round.matches.map((match: any, matchIdx: number) => {
-          if (hasBracketStructure) {
-            return { ...match, p1Name: match.player1Name, p2Name: match.player2Name, p1Rating: match.player1Rating, p2Rating: match.player2Rating, isPlayed: false, matchNumber: matchIdx + 1, roundLabel: match.roundLabel };
-          } else {
-            const p1Rating = formatActiveTournamentRating(match.member1StoredRating, match.member1CurrentRating);
-            const p2Rating = formatActiveTournamentRating(match.member2StoredRating, match.member2CurrentRating);
-            return { ...match, p1Name: match.member1Name, p2Name: match.member2Name, p1Rating, p2Rating, isPlayed: playedMatches.has(`${match.member1Id}-${match.member2Id}`), matchNumber: match.matchNumber };
-          }
-        }),
-      }));
-
-      allSchedulesHtml += `
-        <div style="margin-bottom: 30px; page-break-inside: avoid;">
-          <h3 style="margin: 0 0 5px 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">
-            ${child.name || `Sub-tournament ${child.id}`}
-            <span style="font-size: 12px; color: #666; font-weight: normal; margin-left: 10px;">${totalMatches} matches | ${child.participants?.length || 0} players</span>
-          </h3>
-          <table style="border-collapse: collapse; width: 100%; margin-top: 5px;">
-            <thead>
-              <tr>
-                ${hasBracketStructure ? '<th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: center;">Round</th>' : '<th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: center;">Match #</th>'}
-                <th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: left;">Player 1</th>
-                <th style="padding: 8px; border: 1px solid #333; background-color: #f0f0f0; text-align: left;">Player 2</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${roundsWithRatings.map((round: any, roundIndex: number) => `
-                ${roundIndex > 0 ? '<tr style="height: 3px; background-color: #333;"><td colspan="3" style="padding: 0; border: none; height: 3px;"></td></tr>' : ''}
-                ${round.matches.map((match: any) => `
-                  <tr style="${match.isPlayed ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
-                    <td style="padding: 8px; border: 1px solid #333; text-align: center; font-weight: bold;">${hasBracketStructure ? (match.roundLabel || `Round ${match.round}`) : match.matchNumber}</td>
-                    <td style="padding: 8px; border: 1px solid #333;">${match.p1Name}${match.p1Rating ? ` <span style="font-size: 12px; color: #666;">(${match.p1Rating})</span>` : ''}</td>
-                    <td style="padding: 8px; border: 1px solid #333;">${match.p2Name}${match.p2Rating ? ` <span style="font-size: 12px; color: #666;">(${match.p2Rating})</span>` : ''}</td>
-                  </tr>
-                `).join('')}
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
-
-    if (!allSchedulesHtml) return;
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Schedule - ${tournamentName}</title>
-          <style>
-            @media print { @page { margin: 1cm; } body { margin: 0; padding: 0; } }
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { margin: 0 0 10px 0; font-size: 24px; color: #2c3e50; }
-            .tournament-info { margin-bottom: 20px; font-size: 14px; color: #666; }
-          </style>
-        </head>
-        <body>
-          <h1>Match Schedule</h1>
-          <div class="tournament-info">
-            <strong>Tournament:</strong> ${tournamentName}<br>
-            <strong>Date:</strong> ${new Date(tournament.createdAt).toLocaleDateString()}<br>
-            <strong>Sub-tournaments:</strong> ${children.length}
-          </div>
-          ${allSchedulesHtml}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+    printCompoundSchedules(tournament);
   };
 
   const handlePrintCompoundResults = (tournament: Tournament) => {
@@ -2785,13 +2498,15 @@ const Tournaments: React.FC = () => {
                               ✏️ Modify
                             </button>
                           )}
+                          {getCompoundSchedulePrintChildren(tournament).length > 0 && (
                           <button
                             onClick={() => handlePrintCompoundSchedule(tournament)}
-                            title="Print all sub-tournament schedules"
+                            title={compoundSchedulePrintLabel(tournament)}
                             style={{ padding: '6px 12px', border: '1px solid #7b1fa2', borderRadius: '4px', backgroundColor: '#fff', color: '#7b1fa2', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                           >
-                            🖨️ Print Schedule
+                            🖨️ {compoundSchedulePrintButtonText(tournament)}
                           </button>
+                          )}
                           <button
                             onClick={() => handleShowCancelConfirmation(tournament.id)}
                             disabled={!isUserOrganizer}
@@ -2960,6 +2675,9 @@ const Tournaments: React.FC = () => {
                                         tournament: child as any,
                                         isExpanded: true,
                                         onToggleExpand: () => toggleSchedule(child.id),
+                                        onPrintSchedule: childHasPrintableSchedule(child)
+                                          ? () => handlePrintSchedule(child, tournament.name)
+                                          : undefined,
                                         onTournamentUpdate: (updated) => { fetchData(); },
                                         onError: (err) => handleTournamentError(err),
                                         onSuccess: (msg) => { console.log(msg); },
@@ -3366,6 +3084,9 @@ const Tournaments: React.FC = () => {
                           });
                           toggleSchedule(tournament.id);
                         },
+                        onPrintSchedule: childHasPrintableSchedule(tournament)
+                          ? () => handlePrintSchedule(tournament)
+                          : undefined,
                         onTournamentUpdate: (updatedTournament) => {
                           console.log(`🔄 Tournament Update from Schedule Plugin:`, {
                             tournamentId: updatedTournament.id,
@@ -3908,6 +3629,15 @@ const Tournaments: React.FC = () => {
                                   🔄 Repeat
                                 </button>
                               )}
+                              {getCompoundSchedulePrintChildren(tournament).length > 0 && (
+                              <button
+                                onClick={() => handlePrintCompoundSchedule(tournament)}
+                                title={compoundSchedulePrintLabel(tournament)}
+                                style={{ padding: '6px 12px', border: '1px solid #7b1fa2', borderRadius: '4px', backgroundColor: '#fff', color: '#7b1fa2', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                🖨️ {compoundSchedulePrintButtonText(tournament)}
+                              </button>
+                              )}
                               <button
                                 onClick={() => handlePrintCompoundResults(tournament)}
                                 title="Print all sub-tournament results"
@@ -4018,6 +3748,14 @@ const Tournaments: React.FC = () => {
                                           expandedText="▲ Hide Participants"
                                           collapsedText="▼ Show Participants"
                                         />
+                                        {childPlugin?.createSchedulePanel && (
+                                          <ExpandCollapseButton
+                                            isExpanded={expandedSchedules.has(child.id)}
+                                            onToggle={() => toggleSchedule(child.id)}
+                                            expandedText="▲ Hide Schedule"
+                                            collapsedText="▼ Show Schedule"
+                                          />
+                                        )}
                                       </div>
 
                                       {/* Child participants */}
@@ -4037,6 +3775,23 @@ const Tournaments: React.FC = () => {
                                             onSuccess: (msg) => { console.log(msg); },
                                             isExpanded: true,
                                             onToggleExpand: () => {},
+                                          })}
+                                        </div>
+                                      )}
+
+                                      {/* Child schedule */}
+                                      {expandedSchedules.has(child.id) && childPlugin && childPlugin.createSchedulePanel && (
+                                        <div style={{ marginTop: '5px' }}>
+                                          {childPlugin.createSchedulePanel!({
+                                            tournament: child as any,
+                                            isExpanded: true,
+                                            onToggleExpand: () => toggleSchedule(child.id),
+                                            onPrintSchedule: childHasPrintableSchedule(child)
+                                              ? () => handlePrintSchedule(child, tournament.name)
+                                              : undefined,
+                                            onTournamentUpdate: (updated) => { fetchData(); },
+                                            onError: (err) => handleTournamentError(err),
+                                            onSuccess: (msg) => { console.log(msg); },
                                           })}
                                         </div>
                                       )}

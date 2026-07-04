@@ -1,11 +1,13 @@
 import React from 'react';
 import { TournamentScheduleProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { SchedulePanelHeaderActions } from '../SchedulePanelHeaderActions';
 
 export const PlayoffSchedulePanel: React.FC<TournamentScheduleProps> = ({
   tournament,
   isExpanded,
   onToggleExpand,
+  onPrintSchedule,
 }) => {
   const getPlayerName = (memberId: number) => {
     const participant = tournament.participants.find(p => p.memberId === memberId);
@@ -113,9 +115,10 @@ export const PlayoffSchedulePanel: React.FC<TournamentScheduleProps> = ({
         <p style={{ fontSize: '12px', color: '#666', marginBottom: '15px', fontStyle: 'italic' }}>
           All bracket matches organized by round.
         </p>
-        <button onClick={onToggleExpand} className="schedule-toggle">
-          ▼ Hide Schedule
-        </button>
+        <SchedulePanelHeaderActions
+          onToggleExpand={onToggleExpand}
+          onPrintSchedule={onPrintSchedule}
+        />
       </div>
 
       <div className="schedule-content">
