@@ -20,6 +20,7 @@
     "test-email": "tsx scripts/testEmail.ts",
     "hash-password": "tsx scripts/generatePasswordHash.ts",
     "seed:role-tutorials": "tsx scripts/seedRoleTutorialUsers.ts",
+    "seed:random-players": "tsx scripts/seedRandomPlayers.ts",
     "capture:role-tutorials": "tsx scripts/captureRoleTutorialScreenshots.ts",
     "test": "jest --runInBand",
     "test:functional:basic": "jest --runInBand --testPathPatterns=functionalTournamentsBasic",
