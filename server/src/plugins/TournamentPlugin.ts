@@ -63,6 +63,12 @@ export interface TournamentStateChangeResult {
   message?: string;
 }
 
+export interface CorrectionEligibility {
+  allowed: boolean;
+  reason?: string;
+  correctableMatchIds: number[];
+}
+
 export interface TournamentPlugin {
   type: string;
   isBasic: boolean;
@@ -88,6 +94,19 @@ export interface TournamentPlugin {
   isComplete(tournament: any): boolean;
   canCancel(tournament: any): boolean;
   canModify(tournament: any): boolean;
+
+  /** Post-completion score correction eligibility for organizers */
+  getCorrectionEligibility?(context: {
+    tournament: any;
+    prisma: any;
+  }): Promise<CorrectionEligibility>;
+
+  /** Throws if a completed-tournament match cannot be corrected */
+  assertMatchCorrectable?(context: {
+    tournament: any;
+    match: any;
+    prisma: any;
+  }): Promise<void>;
   
   // Returns the number of matches remaining before the tournament is complete
   // When this reaches 0, the tournament should be marked as complete

@@ -1,10 +1,13 @@
-import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext, CorrectionEligibility } from './TournamentPlugin';
 import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 import {
   recordPlayoffBracketMatchResult,
   PlayoffBracketResultError,
 } from '../services/playoffBracketService';
 import { getTournamentRulesConfig } from '../services/systemConfigService';
+import { buildActiveModificationEligibility, blockedCorrectionEligibility, buildBasicCorrectionEligibility } from './scoreCorrectionHelpers';
+import { matchHasResult } from '../utils/scoreCorrectionMatchUtils';
+import { ClientHttpError } from '../http/clientHttpError';
 
 /** Shown on bracket API next to slot names: live `member.rating` during ACTIVE; `postRatingAtTime` when enriched for COMPLETED. */
 function participantBracketDisplayRating(participant: any | undefined): number | null {
@@ -785,5 +788,51 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     // Playoff tournaments don't have additional specific data to update
     // The bracket structure is handled separately
     return {};
+  }
+
+  private async getChampionshipBracketMatch(prisma: any, tournamentId: number): Promise<any | null> {
+    const finalRound = await prisma.bracketMatch.findFirst({
+      where: { tournamentId, nextMatchId: null },
+      include: { match: true },
+      orderBy: [{ round: 'desc' }, { position: 'desc' }],
+    });
+    return finalRound;
+  }
+
+  async getCorrectionEligibility(context: { tournament: any; prisma: any }): Promise<CorrectionEligibility> {
+    const { tournament, prisma } = context;
+    if (tournament.cancelled) {
+      return blockedCorrectionEligibility('Tournament was cancelled');
+    }
+
+    if (tournament.status === 'ACTIVE') {
+      const ids: number[] = [];
+      for (const bm of tournament.bracketMatches ?? []) {
+        const m = bm.match;
+        if (m?.id && matchHasResult(m)) {
+          ids.push(m.id);
+        }
+      }
+      return buildActiveModificationEligibility(ids);
+    }
+
+    const championship = await this.getChampionshipBracketMatch(prisma, tournament.id);
+    const matchId = championship?.match?.id;
+    const ids = matchId && matchHasResult(championship.match) ? [matchId] : [];
+    return buildBasicCorrectionEligibility(prisma, tournament, ids);
+  }
+
+  async assertMatchCorrectable(context: { tournament: any; match: any; prisma: any }): Promise<void> {
+    const { tournament, match, prisma } = context;
+    if (tournament.status !== 'COMPLETED' || tournament.cancelled) {
+      throw new ClientHttpError('Tournament is not eligible for score correction', 400);
+    }
+    const championship = await this.getChampionshipBracketMatch(prisma, tournament.id);
+    if (!championship?.match || championship.match.id !== match.id) {
+      throw new ClientHttpError('Only the championship match can be corrected after completion', 400);
+    }
+    if (!matchHasResult(match)) {
+      throw new ClientHttpError('Match has no result to correct', 400);
+    }
   }
 }

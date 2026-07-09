@@ -125,6 +125,12 @@ export interface PreliminaryConfig {
   autoQualifiedMemberIds: number[];
 }
 
+export interface CorrectionEligibility {
+  allowed: boolean;
+  reason?: string;
+  correctableMatchIds: number[];
+}
+
 // Tournament Interface
 // Main tournament entity supporting both basic and compound tournament types
 // Basic tournaments have participants and matches directly
@@ -153,6 +159,7 @@ export interface Tournament {
   // Compound tournament specific
   groupNumber?: number | null; // For round-robin groups in compound tournaments
   childTournaments?: Tournament[]; // Child tournaments for compound types
+  correctionEligibility?: CorrectionEligibility;
   // Preliminary tournament configuration (both RR final and Playoff final)
   preliminaryConfig?: PreliminaryConfig | null;
 }

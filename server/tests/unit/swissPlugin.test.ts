@@ -955,4 +955,33 @@ describe('SwissPlugin', () => {
       expect(createCall.data.swissData.create.numberOfRounds).toBe(3);
     });
   });
+
+  describe('getCorrectionEligibility', () => {
+    it('includes only last round scored matches', async () => {
+      const recordedAt = new Date('2026-01-01T12:00:00Z');
+      const tournament = makeSwissTournament({
+        status: 'COMPLETED',
+        participantCount: 4,
+        numberOfRounds: 3,
+        currentRound: 3,
+        matches: [
+          makeMatch({ id: 1, member1Id: 1, member2Id: 2, round: 2, player1Sets: 3, player2Sets: 1 }),
+          makeMatch({ id: 2, member1Id: 3, member2Id: 4, round: 3, player1Sets: 3, player2Sets: 0 }),
+        ],
+      });
+      (tournament as any).recordedAt = recordedAt;
+
+      const prisma = {
+        ratingHistory: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({ timestamp: recordedAt, id: 1 })
+            .mockResolvedValue(null),
+        },
+      };
+
+      const result = await plugin.getCorrectionEligibility!({ tournament, prisma });
+      expect(result.correctableMatchIds).toEqual([2]);
+    });
+  });
 });

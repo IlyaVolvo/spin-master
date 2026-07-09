@@ -37,6 +37,11 @@ import {
   getPreregistrationConfig,
   getTournamentRulesConfig,
 } from '../services/systemConfigService';
+import {
+  attachCorrectionEligibility,
+  correctCompletedMatchScore,
+  enrichTournamentForApi,
+} from '../services/scoreCorrectionService';
 
 const router = express.Router();
 
@@ -669,7 +674,7 @@ router.get('/', async (req, res) => {
       const tournamentsWithPostRatings = await Promise.all(tournaments.map(async (tournament) => {
         const plugin = tournamentPluginRegistry.get(tournament.type);
 
-        return tournament.status !== 'COMPLETED'
+        const enriched = tournament.status !== 'COMPLETED'
           ? await plugin.enrichActiveTournament({
               tournament,
               prisma,
@@ -679,6 +684,7 @@ router.get('/', async (req, res) => {
               postRatingMap,
               prisma,
             });
+        return attachCorrectionEligibility(enriched, prisma);
       }));
 
       res.json(tournamentsWithPostRatings);
@@ -686,11 +692,12 @@ router.get('/', async (req, res) => {
       // No completed tournaments - use plugin enrichment for active tournaments
       const enrichedTournaments = await Promise.all(tournaments.map(async (tournament) => {
         const plugin = tournamentPluginRegistry.get(tournament.type);
-        
-        return await plugin.enrichActiveTournament({
+
+        const enriched = await plugin.enrichActiveTournament({
           tournament,
           prisma,
         });
+        return attachCorrectionEligibility(enriched, prisma);
       }));
       res.json(enrichedTournaments);
     }
@@ -713,10 +720,11 @@ router.get('/active', async (req, res) => {
     const enrichedTournaments = await Promise.all(tournaments.map(async (tournament) => {
       const plugin = tournamentPluginRegistry.get(tournament.type);
       
-      return await plugin.enrichActiveTournament({
+      const enriched = await plugin.enrichActiveTournament({
         tournament,
         prisma,
       });
+      return attachCorrectionEligibility(enriched, prisma);
     }));
 
     res.json(enrichedTournaments);
@@ -743,9 +751,8 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Tournament not found' });
     }
 
-    // Use plugin-based enrichment
-    const plugin = tournamentPluginRegistry.get(tournament.type);
-    const enrichedTournament = await plugin.enrichActiveTournament({ tournament, prisma });
+    // Use plugin-based enrichment with correction eligibility
+    const enrichedTournament = await enrichTournamentForApi(prisma, tournament);
 
     res.json(enrichedTournament);
   } catch (error) {
@@ -2110,6 +2117,96 @@ router.patch('/:tournamentId/matches/:matchId', [
   }
 });
 
+// Correct a match score on a completed tournament (organizer-only)
+router.patch('/:tournamentId/matches/:matchId/correct', [
+  body('player1Sets').isInt({ min: 0 }),
+  body('player2Sets').isInt({ min: 0 }),
+  body('player1Forfeit').optional().isBoolean(),
+  body('player2Forfeit').optional().isBoolean(),
+  body('expectedMatchUpdatedAt').optional().isISO8601(),
+], async (req: AuthRequest, res: Response) => {
+  try {
+    const hasOrganizerAccess = await isOrganizer(req);
+    if (!hasOrganizerAccess) {
+      return res.status(403).json({ error: 'Only Organizers can correct tournament scores' });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const tournamentId = parseInt(req.params.tournamentId, 10);
+    const matchId = parseInt(req.params.matchId, 10);
+    if (Number.isNaN(tournamentId) || Number.isNaN(matchId)) {
+      return res.status(400).json({ error: 'Invalid tournament or match ID' });
+    }
+
+    const player1Forfeit = req.body.player1Forfeit === true;
+    const player2Forfeit = req.body.player2Forfeit === true;
+    if (player1Forfeit && player2Forfeit) {
+      return res.status(400).json({ error: 'Only one player can forfeit' });
+    }
+
+    let finalPlayer1Sets = req.body.player1Sets ?? 0;
+    let finalPlayer2Sets = req.body.player2Sets ?? 0;
+    if (player1Forfeit) {
+      finalPlayer1Sets = 0;
+      finalPlayer2Sets = 1;
+    } else if (player2Forfeit) {
+      finalPlayer1Sets = 1;
+      finalPlayer2Sets = 0;
+    }
+
+    const scoreError = validateConfiguredMatchScore(finalPlayer1Sets, finalPlayer2Sets, player1Forfeit, player2Forfeit);
+    if (scoreError) {
+      return res.status(400).json({ error: scoreError });
+    }
+
+    const result = await correctCompletedMatchScore(prisma, {
+        tournamentId,
+        matchId,
+        player1Sets: finalPlayer1Sets,
+        player2Sets: finalPlayer2Sets,
+        player1Forfeit,
+        player2Forfeit,
+        expectedMatchUpdatedAt: req.body.expectedMatchUpdatedAt,
+      });
+
+    const { recalculateRankings } = await import('../services/rankingService');
+    await recalculateRankings(tournamentId);
+    if (result.parentTournamentId) {
+      await recalculateRankings(result.parentTournamentId);
+    }
+
+    await invalidateCacheAfterTournament(tournamentId);
+    emitMatchUpdate(result.match, tournamentId);
+    emitCacheInvalidation(tournamentId);
+    if (result.parentTournamentId) {
+      emitCacheInvalidation(result.parentTournamentId);
+      const parentTournament = await prisma.tournament.findUnique({
+        where: { id: result.parentTournamentId },
+        include: tournamentListInclude(),
+      });
+      if (parentTournament) {
+        emitTournamentUpdate(parentTournament);
+      }
+    }
+
+    res.json(result.match);
+  } catch (error) {
+    if (isClientHttpError(error)) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    logger.error('Error correcting match score', {
+      error: error instanceof Error ? error.message : String(error),
+      tournamentId: req.params.tournamentId,
+      matchId: req.params.matchId,
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Update tournament name and creation date
 // Only Organizers can modify tournaments
 router.patch('/:id/name', [
@@ -2341,7 +2438,13 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(tournamentId);
 
-    res.json(updatedTournament);
+    const enriched = await enrichTournamentForApi(prisma, {
+      ...updatedTournament,
+      status: 'COMPLETED',
+      recordedAt: updatedTournament.recordedAt,
+    });
+
+    res.json(enriched);
   } catch (error) {
     logger.error('Error completing tournament', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
     res.status(500).json({ error: 'Internal server error' });

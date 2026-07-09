@@ -40,6 +40,7 @@ import {
   isDuplicateScoreMessage,
   normalizeDuplicateScoreMessage,
 } from '../utils/duplicateScoreError';
+import { ScoreCorrectionModeProvider } from '../contexts/ScoreCorrectionModeContext';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import { Tournament, TournamentType } from '../types/tournament';
 import './tournaments/plugins'; // This will auto-register all plugins
@@ -123,6 +124,58 @@ function findAncestorCompoundIdsForTarget(targetId: number, roots: Tournament[])
     return null;
   }
   return walk(roots, []);
+}
+
+function ScoreCorrectionModeRadio({
+  name,
+  checked,
+  onChange,
+  accentColor,
+  title,
+}: {
+  name: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  accentColor: string;
+  title: string;
+}) {
+  return (
+    <>
+      <input
+        type="radio"
+        name={name}
+        checked={!checked}
+        onChange={() => onChange(false)}
+        style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+        tabIndex={-1}
+        aria-hidden
+      />
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          cursor: 'pointer',
+          fontSize: '11px',
+          fontWeight: 'normal',
+          color: accentColor,
+        }}
+        title={title}
+      >
+        <input
+          type="radio"
+          name={name}
+          checked={checked}
+          onChange={() => onChange(true)}
+          onClick={() => {
+            if (checked) onChange(false);
+          }}
+          style={{ cursor: 'pointer' }}
+        />
+        <span>Correct scores</span>
+      </label>
+    </>
+  );
 }
 
 interface Member {
@@ -227,6 +280,8 @@ const Tournaments: React.FC = () => {
     const stored = localStorage.getItem('tournaments_showCompletedMatches');
     return stored !== null ? stored === 'true' : true;
   });
+  const [activeScoreCorrectionChecked, setActiveScoreCorrectionChecked] = useState(false);
+  const [completedScoreCorrectionChecked, setCompletedScoreCorrectionChecked] = useState(false);
   const [cancelledFilter, setCancelledFilter] = useState<CancelledFilterMode>(() => loadCancelledFilterMode());
   const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
   const [expandedParticipants, setExpandedParticipants] = useState<Set<number>>(new Set());
@@ -1060,9 +1115,15 @@ const Tournaments: React.FC = () => {
     setSuccess('');
 
     try {
-      await api.patch(`/tournaments/${tournamentId}/complete`);
+      const response = await api.patch(`/tournaments/${tournamentId}/complete`);
+      const enriched = response.data;
       setSuccess('Tournament completed and rankings updated');
-      fetchData();
+      setActiveTournaments(prev => prev.filter(t => t.id !== tournamentId));
+      setTournaments(prev => {
+        const without = prev.filter(t => t.id !== tournamentId);
+        return [enriched as Tournament, ...without];
+      });
+      void fetchData({ silent: true });
       setSelectedTournament(null);
     } catch (err: unknown) {
       const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -2150,6 +2211,10 @@ const Tournaments: React.FC = () => {
   }
 
   return (
+    <ScoreCorrectionModeProvider
+      activeChecked={activeScoreCorrectionChecked}
+      completedChecked={completedScoreCorrectionChecked}
+    >
     <div>
       <div className="card">
         {error && <div className="error-message">{error}</div>}
@@ -2379,7 +2444,8 @@ const Tournaments: React.FC = () => {
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
-          gap: '15px', 
+          gap: '15px',
+          flexWrap: 'wrap',
           marginTop: '0', 
           marginBottom: '20px',
           padding: '16px 20px',
@@ -2411,6 +2477,15 @@ const Tournaments: React.FC = () => {
             {activeSectionCollapsed ? '▼' : '▲'}
           </button>
           <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 'bold', color: '#7b1fa2' }}>Active</h2>
+          {isUserOrganizer && (
+            <ScoreCorrectionModeRadio
+              name="activeScoreCorrectionMode"
+              checked={activeScoreCorrectionChecked}
+              onChange={setActiveScoreCorrectionChecked}
+              accentColor="#7b1fa2"
+              title="Highlight scored results for modification (same as holding Ctrl)"
+            />
+          )}
         </div>
         {!activeSectionCollapsed ? (
           filteredActiveEvents.length === 0 ? (
@@ -2954,6 +3029,40 @@ const Tournaments: React.FC = () => {
                           isBasic: plugin?.isBasic || false
                         });
                         
+                        if (plugin && tournament.status === 'COMPLETED') {
+                          console.log(`✅ Rendering Completed Panel (active section):`, {
+                            pluginName: plugin.name,
+                            tournamentStatus: tournament.status,
+                          });
+
+                          const result = plugin.createCompletedPanel({
+                            tournament: tournament as any,
+                            onTournamentUpdate: (updatedTournament) => {
+                              setTournaments(prev =>
+                                prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
+                              );
+                              if (updatedTournament.status === 'COMPLETED') {
+                                setActiveTournaments(prev => prev.filter(t => t.id !== updatedTournament.id));
+                                setTournaments(prev => {
+                                  const without = prev.filter(t => t.id !== updatedTournament.id);
+                                  return [updatedTournament as Tournament, ...without];
+                                });
+                              } else {
+                                setActiveTournaments(prev =>
+                                  prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
+                                );
+                              }
+                            },
+                            onError: (error) => handleTournamentError(error),
+                            onSuccess: (message) => console.log('Success:', message),
+                            isExpanded: true,
+                            onToggleExpand: () => {},
+                          });
+
+                          console.groupEnd();
+                          return result;
+                        }
+
                         if (plugin && tournament.status === 'ACTIVE') {
                           console.log(`✅ Rendering Active Panel:`, {
                             pluginName: plugin.name,
@@ -2974,13 +3083,20 @@ const Tournaments: React.FC = () => {
                                 }
                               });
                               
-                              // Update tournament in state
-                              setTournaments(prev => 
-                                prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
-                              );
-                              setActiveTournaments(prev => 
-                                prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
-                              );
+                              if (updatedTournament.status === 'COMPLETED') {
+                                setActiveTournaments(prev => prev.filter(t => t.id !== updatedTournament.id));
+                                setTournaments(prev => {
+                                  const without = prev.filter(t => t.id !== updatedTournament.id);
+                                  return [updatedTournament as Tournament, ...without];
+                                });
+                              } else {
+                                setTournaments(prev =>
+                                  prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
+                                );
+                                setActiveTournaments(prev =>
+                                  prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
+                                );
+                              }
                             },
                             onError: (error) => {
                               console.error(`❌ Plugin Error:`, {
@@ -3208,6 +3324,15 @@ const Tournaments: React.FC = () => {
             {completedSectionCollapsed ? '▼' : '▲'}
           </button>
           <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 'bold', color: '#1976d2' }}>Completed</h2>
+          {isUserOrganizer && (
+            <ScoreCorrectionModeRadio
+              name="completedScoreCorrectionMode"
+              checked={completedScoreCorrectionChecked}
+              onChange={setCompletedScoreCorrectionChecked}
+              accentColor="#1976d2"
+              title="Highlight scored results for correction (same as holding Ctrl)"
+            />
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}>
             <input
               type="checkbox"
@@ -4308,6 +4433,7 @@ const Tournaments: React.FC = () => {
         </div>
       )}
     </div>
+    </ScoreCorrectionModeProvider>
   );
 };
 

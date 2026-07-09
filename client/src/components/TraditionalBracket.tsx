@@ -13,6 +13,11 @@ import {
   emptyScoreEntryCellStyle,
   emptyScoreEntryLeftCellStyle,
 } from './emptyScoreEntryStyles';
+import {
+  correctableCellOutlineStyle,
+  correctionPencilStyle,
+} from './scoreCorrectionStyles';
+import { getScoreModificationClickHint } from '../utils/scoreCorrectionUtils';
 
 interface Member {
   id: number;
@@ -77,6 +82,9 @@ interface TraditionalBracketProps {
   onError?: (message: string) => void;
   suppressScoreEntry?: boolean;
   tournamentStatus?: 'ACTIVE' | 'COMPLETED'; // Tournament status to determine rating format
+  scoreCorrectionActive?: boolean;
+  correctableMatchIds?: number[];
+  onCorrectionMatchSelect?: (match: EditingMatch) => void;
 }
 
 interface MatchNode {
@@ -117,6 +125,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
   onError,
   suppressScoreEntry,
   tournamentStatus = 'ACTIVE',
+  scoreCorrectionActive = false,
+  correctableMatchIds,
+  onCorrectionMatchSelect,
 }) => {
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -1344,7 +1355,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       !player2IsBye &&
       !firstResultBlocked &&
       !resultChangeBlocked;
-    
+
+    const resolvedDbMatchId = match.matchId ?? null;
+
     // Get scores
     const player1Sets = match.player1Sets ?? 0;
     const player2Sets = match.player2Sets ?? 0;
@@ -1352,6 +1365,13 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     const hasScore = (player1Sets > 0 || player2Sets > 0) && !(player1Sets === 0 && player2Sets === 0);
     const isForfeit = match.player1Forfeit || match.player2Forfeit;
     const hasResult = hasScore || isForfeit || (match.winnerId !== null && match.winnerId !== undefined);
+
+    const isModificationTarget =
+      resolvedDbMatchId != null &&
+      Boolean(correctableMatchIds?.includes(resolvedDbMatchId)) &&
+      hasResult;
+    const isCorrectable = scoreCorrectionActive && isModificationTarget;
+    const canLegacyEditResult = canEditMatch && hasResult && !isModificationTarget;
     const player1Won = hasResult && (match.winnerId === player1?.member.id || (hasScore && !isForfeit && player1Sets > player2Sets) || (isForfeit && match.player2Forfeit));
     const player2Won = hasResult && (match.winnerId === player2?.member.id || (hasScore && !isForfeit && player2Sets > player1Sets) || (isForfeit && match.player1Forfeit));
     
@@ -1518,8 +1538,48 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
           </div>
         ) : hasResult ? (
           <div
+            onMouseDown={(e) => {
+              if (!isCorrectable || !onCorrectionMatchSelect || !player1 || !player2 || !resolvedDbMatchId) {
+                return;
+              }
+              e.preventDefault();
+              e.stopPropagation();
+              onCorrectionMatchSelect({
+                matchId: resolvedDbMatchId,
+                member1Id: player1.member.id,
+                member2Id: player2.member.id,
+                player1Sets: (match.player1Sets || 0).toString(),
+                player2Sets: (match.player2Sets || 0).toString(),
+                player1Forfeit: match.player1Forfeit || false,
+                player2Forfeit: match.player2Forfeit || false,
+                opponentPassword: '',
+                expectedHadResult: true,
+              });
+            }}
+            onClick={(e) => {
+              if (!isCorrectable || !onCorrectionMatchSelect || !player1 || !player2 || !resolvedDbMatchId) {
+                return;
+              }
+              e.preventDefault();
+              e.stopPropagation();
+              onCorrectionMatchSelect({
+                matchId: resolvedDbMatchId,
+                member1Id: player1.member.id,
+                member2Id: player2.member.id,
+                player1Sets: (match.player1Sets || 0).toString(),
+                player2Sets: (match.player2Sets || 0).toString(),
+                player1Forfeit: match.player1Forfeit || false,
+                player2Forfeit: match.player2Forfeit || false,
+                opponentPassword: '',
+                expectedHadResult: true,
+              });
+            }}
             onContextMenu={(e) => {
-              if (canEditMatch) {
+              if (isCorrectable || isModificationTarget) {
+                e.preventDefault();
+                return;
+              }
+              if (canLegacyEditResult) {
                 e.preventDefault();
                 setEditingMatch({
                   matchId: match.bracketMatchId || match.matchId || 0,
@@ -1535,7 +1595,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               }
             }}
             onTouchStart={() => {
-              if (canEditMatch) {
+              if (canLegacyEditResult) {
                 startLongPress(() => setEditingMatch({
                   matchId: match.bracketMatchId || match.matchId || 0,
                   member1Id: player1!.member.id,
@@ -1552,15 +1612,23 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             onTouchEnd={clearLongPressTimer}
             onTouchMove={clearLongPressTimer}
             onTouchCancel={clearLongPressTimer}
-            title={canEditMatch ? 'Right-click or long-press to modify/remove result' : undefined}
+            title={
+              isCorrectable
+                ? getScoreModificationClickHint(tournamentStatus)
+                : canLegacyEditResult
+                  ? 'Right-click or long-press to modify/remove result'
+                  : undefined
+            }
             style={{
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'center',
             minWidth: '60px', // Same as entry button container
             height: '20px', // Same as entry button container
-            cursor: canEditMatch ? 'context-menu' : 'default',
+            cursor: isCorrectable ? 'pointer' : canLegacyEditResult ? 'context-menu' : 'default',
+            ...(isCorrectable ? correctableCellOutlineStyle : {}),
           }}>
+            {isCorrectable && <span style={correctionPencilStyle} aria-hidden="true">✏️</span>}
             <span style={{ fontSize: '14px', color: '#666', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
               {isForfeit ? 'FF' : `${player1Sets} - ${player2Sets}`}
             </span>

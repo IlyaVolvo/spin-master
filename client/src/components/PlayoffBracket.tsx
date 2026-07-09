@@ -56,6 +56,12 @@ interface PlayoffBracketProps {
   isReadOnly?: boolean; // When true, disable all editing (for completed tournaments)
   tournamentStatus?: 'ACTIVE' | 'COMPLETED'; // Tournament status to determine rating format
   cancelled?: boolean; // True if tournament was cancelled (moved to COMPLETED but not finished)
+  scoreCorrectionActive?: boolean;
+  correctionEligibility?: { allowed: boolean; reason?: string; correctableMatchIds: number[] };
+  onCorrectionMatchSelect?: (match: EditingMatch) => void;
+  onTournamentRefresh?: () => void;
+  onCorrectionError?: (message: string) => void;
+  onCorrectionSuccess?: (message: string) => void;
 }
 
 interface EditingMatch {
@@ -77,6 +83,9 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
   isReadOnly = false,
   tournamentStatus = 'ACTIVE',
   cancelled = false,
+  scoreCorrectionActive = false,
+  correctionEligibility,
+  onCorrectionMatchSelect,
 }) => {
   const navigate = useNavigate();
   const [editingFinalMatch, setEditingFinalMatch] = useState<EditingMatch | null>(null);
@@ -369,6 +378,9 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
         isReadOnly={isReadOnly}
         onHistoryClick={handleViewHistory}
         tournamentStatus={tournamentStatus}
+        scoreCorrectionActive={scoreCorrectionActive}
+        correctableMatchIds={correctionEligibility?.correctableMatchIds}
+        onCorrectionMatchSelect={onCorrectionMatchSelect}
       />
 
       {/* Match Entry Popup for Final Match */}

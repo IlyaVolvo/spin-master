@@ -295,6 +295,66 @@ describe('MatchEntryPopup keyboard entry', () => {
     expect(player1Input).toHaveValue('7');
   });
 
+  it('tab cycles only between score inputs', () => {
+    renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '0',
+        player2Sets: '0',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+
+    const [player1Input, player2Input] = getScoreInputs();
+    fireEvent.keyDown(player1Input, { key: 'Tab' });
+    expect(player2Input).toHaveFocus();
+
+    fireEvent.keyDown(player2Input, { key: 'Tab' });
+    expect(player1Input).toHaveFocus();
+
+    fireEvent.keyDown(player1Input, { key: 'Tab', shiftKey: true });
+    expect(player2Input).toHaveFocus();
+  });
+
+  it('enter on either score field completes the match', () => {
+    const props = renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '3',
+        player2Sets: '1',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+      showClearButton: false,
+    });
+
+    const [, player2Input] = getScoreInputs();
+    fireEvent.keyDown(player2Input, { key: 'Enter' });
+    expect(props.onSave).toHaveBeenCalled();
+  });
+
+  it('stepper buttons are not in the tab order', () => {
+    renderPopup({
+      editingMatch: {
+        matchId: 0,
+        member1Id: 1,
+        member2Id: 2,
+        player1Sets: '0',
+        player2Sets: '0',
+        player1Forfeit: false,
+        player2Forfeit: false,
+      },
+    });
+
+    expect(screen.getByRole('button', { name: 'Increase player 1 score' })).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByRole('button', { name: 'Decrease player 2 score' })).toHaveAttribute('tabindex', '-1');
+  });
+
   it('stepper buttons increment and decrement within bounds', () => {
     renderPopup({
       editingMatch: {

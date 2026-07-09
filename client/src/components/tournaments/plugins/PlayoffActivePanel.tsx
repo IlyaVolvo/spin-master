@@ -3,6 +3,8 @@ import { flushSync } from 'react-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { TraditionalBracket } from '../../TraditionalBracket';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
+import { ScoreCorrectionBanner } from '../../ScoreCorrectionBanner';
+import { useScoreCorrectionPanel } from '../../../hooks/useScoreCorrectionPanel';
 import { createPlayoffMatchUpdater } from '../utils/playoffMatchUpdater';
 import { shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
@@ -18,6 +20,11 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
 }) => {
   const [editingMatch, setEditingMatch] = useState<any>(null);
   const [editingBracketMatchId, setEditingBracketMatchId] = useState<number | null>(null);
+  const {
+    eligibility,
+    correctionModeActive,
+    bannerText,
+  } = useScoreCorrectionPanel(tournament, { onTournamentUpdate, onError, onSuccess });
 
   const playoffUpdater = createPlayoffMatchUpdater(tournament.id);
 
@@ -165,6 +172,10 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
 
   return (
     <div className="playoff-active">
+      <ScoreCorrectionBanner
+        message={bannerText}
+        allowed={Boolean(eligibility?.allowed)}
+      />
       <TraditionalBracket
         tournamentId={tournament.id}
         participants={tournament.participants.map(p => ({
@@ -209,6 +220,11 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
         suppressScoreEntry={suppressScoreEntry}
         isReadOnly={tournament.status === 'COMPLETED'}
         tournamentStatus={tournament.status as 'ACTIVE' | 'COMPLETED'}
+        scoreCorrectionActive={correctionModeActive}
+        correctableMatchIds={eligibility?.correctableMatchIds}
+        onCorrectionMatchSelect={(payload) =>
+          handleSetEditingMatch(payload, findBracketMatchId(payload.matchId))
+        }
       />
       
       {!suppressScoreEntry && editingMatch && (

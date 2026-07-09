@@ -218,15 +218,16 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       const enrichedChildren = await Promise.all(
         children.map(async (child: any) => {
           const childPlugin = tournamentPluginRegistry.get(child.type);
-          if (child.status === 'COMPLETED') {
-            return await childPlugin.enrichCompletedTournament({
-              tournament: child,
-              postRatingMap,
-              prisma,
-            });
-          }
-          return await childPlugin.enrichActiveTournament({ tournament: child, prisma });
-        })
+          let enrichedChild = child.status === 'COMPLETED'
+            ? await childPlugin.enrichCompletedTournament({
+                tournament: child,
+                postRatingMap,
+                prisma,
+              })
+            : await childPlugin.enrichActiveTournament({ tournament: child, prisma });
+
+          return enrichedChild;
+        }),
       );
       
       return {
@@ -423,6 +424,22 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     // Compound tournaments don't own matches directly
     // Matches belong to child tournaments and are updated through their own plugins
     throw new Error('Compound tournaments do not handle matches directly. Update the child tournament match instead.');
+  }
+
+  async getCorrectionEligibility(_context: { tournament: any; prisma: any }): Promise<import('./TournamentPlugin').CorrectionEligibility> {
+    return {
+      allowed: false,
+      reason: 'Correct scores on individual group or final child tournaments',
+      correctableMatchIds: [],
+    };
+  }
+
+  async assertMatchCorrectable(_context: { tournament: any; match: any; prisma: any }): Promise<void> {
+    const { ClientHttpError } = await import('../http/clientHttpError');
+    throw new ClientHttpError(
+      'Compound tournaments do not handle matches directly. Correct the child tournament match instead.',
+      400,
+    );
   }
 
   // Hook for subclasses to enrich tournament with type-specific config

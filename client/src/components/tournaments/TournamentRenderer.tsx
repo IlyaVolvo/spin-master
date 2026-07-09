@@ -18,6 +18,17 @@ export function TournamentActiveRenderer({ tournament, ...props }: TournamentRen
     return React.createElement('div', {}, `No plugin found for tournament type: ${tournament.type}`);
   }
 
+  if (tournament.status === 'COMPLETED') {
+    return plugin.createCompletedPanel({
+      tournament,
+      onTournamentUpdate: props.onTournamentUpdate || (() => {}),
+      onError: props.onError || (() => {}),
+      onSuccess: props.onSuccess || (() => {}),
+      isExpanded: true,
+      onToggleExpand: () => {},
+    });
+  }
+
   return plugin.createActivePanel({
     tournament,
     onTournamentUpdate: props.onTournamentUpdate || (() => {}),

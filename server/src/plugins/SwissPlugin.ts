@@ -1,8 +1,11 @@
-import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext, CorrectionEligibility } from './TournamentPlugin';
 import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 import { logger } from '../utils/logger';
 import { adjustRatingsForSingleMatch } from '../services/usattRatingService';
 import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
+import { buildActiveModificationEligibility, blockedCorrectionEligibility, buildBasicCorrectionEligibility, scoredMatchIds } from './scoreCorrectionHelpers';
+import { matchHasResult } from '../utils/scoreCorrectionMatchUtils';
+import { ClientHttpError } from '../http/clientHttpError';
 
 interface PlayerStanding {
   memberId: number;
@@ -614,5 +617,40 @@ export class SwissPlugin extends BaseTournamentPlugin {
       const hasForfeit = m.player1Forfeit || m.player2Forfeit;
       return hasScore || hasForfeit;
     });
+  }
+
+  async getCorrectionEligibility(context: { tournament: any; prisma: any }): Promise<CorrectionEligibility> {
+    const { tournament, prisma } = context;
+    if (tournament.cancelled) {
+      return blockedCorrectionEligibility('Tournament was cancelled');
+    }
+
+    if (tournament.status === 'ACTIVE') {
+      return buildActiveModificationEligibility(scoredMatchIds(tournament));
+    }
+
+    const lastRound = tournament.swissData?.numberOfRounds;
+    if (!lastRound) {
+      return { allowed: false, reason: 'Swiss configuration not found', correctableMatchIds: [] };
+    }
+    const lastRoundMatches = (tournament.matches ?? []).filter(
+      (m: any) => m.round === lastRound && matchHasResult(m),
+    );
+    const ids = lastRoundMatches.map((m: any) => m.id);
+    return buildBasicCorrectionEligibility(prisma, tournament, ids);
+  }
+
+  async assertMatchCorrectable(context: { tournament: any; match: any; prisma: any }): Promise<void> {
+    const { tournament, match } = context;
+    if (tournament.status !== 'COMPLETED' || tournament.cancelled) {
+      throw new ClientHttpError('Tournament is not eligible for score correction', 400);
+    }
+    const lastRound = tournament.swissData?.numberOfRounds;
+    if (match.round !== lastRound) {
+      throw new ClientHttpError('Only the last Swiss round can be corrected after completion', 400);
+    }
+    if (!matchHasResult(match)) {
+      throw new ClientHttpError('Match has no result to correct', 400);
+    }
   }
 }

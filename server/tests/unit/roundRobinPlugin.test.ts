@@ -842,4 +842,47 @@ describe('RoundRobinPlugin', () => {
       });
     });
   });
+
+  describe('getCorrectionEligibility', () => {
+    it('lists scored matches on active tournaments for Ctrl modification UX', async () => {
+      const tournament = makeTournament({
+        status: 'ACTIVE',
+        participantCount: 2,
+        matches: [
+          { id: 42, member1Id: 1, member2Id: 2, player1Sets: 3, player2Sets: 1 },
+        ],
+      });
+
+      const result = await plugin.getCorrectionEligibility!({ tournament, prisma: {} });
+      expect(result).toEqual({
+        allowed: true,
+        correctableMatchIds: [42],
+      });
+    });
+
+    it('lists all scored matches when no rating drift', async () => {
+      const recordedAt = new Date('2026-01-01T12:00:00Z');
+      const tournament = makeTournament({
+        status: 'COMPLETED',
+        participantCount: 2,
+        matches: [
+          { member1Id: 1, member2Id: 2, player1Sets: 3, player2Sets: 1 },
+        ],
+      });
+      (tournament as any).recordedAt = recordedAt;
+
+      const prisma = {
+        ratingHistory: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({ timestamp: recordedAt, id: 1 })
+            .mockResolvedValue(null),
+        },
+      };
+
+      const result = await plugin.getCorrectionEligibility!({ tournament, prisma });
+      expect(result.allowed).toBe(true);
+      expect(result.correctableMatchIds.length).toBe(1);
+    });
+  });
 });

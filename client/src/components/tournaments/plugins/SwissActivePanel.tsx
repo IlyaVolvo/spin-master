@@ -1,9 +1,20 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
+import { ScoreCorrectionBanner } from '../../ScoreCorrectionBanner';
+import { useScoreCorrectionPanel } from '../../../hooks/useScoreCorrectionPanel';
+import {
+  correctableCellOutlineStyle,
+  correctionPencilStyle,
+} from '../../scoreCorrectionStyles';
+import {
+  getScoreModificationClickHint,
+  isMatchCorrectable,
+  shouldOpenCorrectionEditor,
+} from '../../../utils/scoreCorrectionUtils';
 import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { saveScrollPosition, withWindowScrollPreserved } from '../../../utils/scrollPosition';
@@ -78,22 +89,25 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 }) => {
   const navigate = useNavigate();
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    eligibility,
+    correctionModeActive,
+    bannerText,
+    openModificationEditor,
+  } = useScoreCorrectionPanel(tournament, {
+    onTournamentUpdate,
+    onError,
+    onSuccess,
+    onActiveMatchEdit: (payload) => {
+      setEditingMatch({
+        ...payload,
+        opponentPassword: '',
+        expectedHadResult: true,
+      });
+    },
+  });
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  const startLongPress = (open: () => void) => {
-    clearLongPressTimer();
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = null;
-      open();
-    }, 550);
-  };
+  const modificationClickHint = getScoreModificationClickHint(tournament.status);
 
   const swissData = (tournament as any).swissData;
   const totalRounds = swissData?.numberOfRounds ?? 0;
@@ -450,6 +464,10 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 
   return (
     <div className="swiss-active">
+      <ScoreCorrectionBanner
+        message={bannerText}
+        allowed={Boolean(eligibility?.allowed)}
+      />
       {/* Tournament Header */}
       <div className="swiss-active__header">
         <div className="tournament-info">
@@ -506,6 +524,8 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
               const p2Sets = match.player2Sets;
               const p1Forfeit = match.player1Forfeit;
               const p2Forfeit = match.player2Forfeit;
+              const correctable = correctionModeActive && isMatchCorrectable(match.id, eligibility);
+              const dbMatch = tournament.matches.find(m => m.id === match.id);
 
               return (
                 <React.Fragment key={match.id}>
@@ -557,30 +577,28 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
 
                   {/* Score / Enter score */}
                   <div
-                    onContextMenu={(e) => {
-                      if (isPlayed) {
-                        e.preventDefault();
-                        handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id);
+                    onMouseDown={(event) => {
+                      if (isPlayed && dbMatch) {
+                        openModificationEditor(dbMatch, event);
                       }
                     }}
-                    onTouchStart={() => {
-                      if (isPlayed) {
-                        startLongPress(() => handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id));
+                    onClick={(event) => {
+                      if (isPlayed && dbMatch && shouldOpenCorrectionEditor(correctionModeActive, dbMatch.id, eligibility)) {
+                        openModificationEditor(dbMatch, event);
+                        return;
                       }
-                    }}
-                    onTouchEnd={clearLongPressTimer}
-                    onTouchMove={clearLongPressTimer}
-                    onTouchCancel={clearLongPressTimer}
-                    onClick={() => {
                       if (!isPlayed) {
                         handleMatchClick(match.originalMember1Id, match.originalMember2Id, match.id);
                       }
                     }}
                     style={{
-                      cursor: isPlayed ? 'context-menu' : 'pointer', display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', minWidth: '70px', flexShrink: 0,
+                      cursor: isPlayed ? (correctable ? 'pointer' : 'default') : 'pointer',
+                      display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', minWidth: '70px', flexShrink: 0, position: 'relative',
+                      ...(correctable ? correctableCellOutlineStyle : {}),
                     }}
-                    title={isPlayed ? 'Right-click or long-press to modify/remove result' : 'Click to enter score'}
+                    title={correctable ? modificationClickHint : isPlayed ? undefined : 'Click to enter score'}
+                    aria-label={correctable ? modificationClickHint : undefined}
                   >
                     {isPlayed ? (
                       <span style={{
@@ -588,6 +606,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
                         whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: '4px',
                         backgroundColor: p1Forfeit || p2Forfeit ? '#f8d7da' : '#e8f5e9',
                       }}>
+                        {correctable && <span style={correctionPencilStyle} aria-hidden="true">✏️</span>}
                         {p1Forfeit ? 'FF' : p2Forfeit ? 'W' : `${p1Sets} - ${p2Sets}`}
                         {p1Forfeit ? '' : p2Forfeit ? ' (FF)' : ''}
                       </span>

@@ -3,6 +3,22 @@ import { TournamentCompletedProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { isLikelyRanking } from '../../../utils/ratingFormatter';
 import { sortParticipantsByRating } from '../utils/participantSort';
+import { useScoreCorrectionModeActive } from '../../../contexts/ScoreCorrectionModeContext';
+import { isOrganizer } from '../../../utils/auth';
+import { ScoreCorrectionBanner } from '../../ScoreCorrectionBanner';
+import { MatchEntryPopup, SCORE_CORRECTION_MODIFY_MESSAGE } from '../../MatchEntryPopup';
+import { correctCompletedMatchScore } from '../../../utils/correctMatchScoreApi';
+import {
+  correctableCellOutlineStyle,
+  correctionPencilStyle,
+} from '../../scoreCorrectionStyles';
+import {
+  CORRECTION_CLICK_HINT,
+  getCorrectionBannerText,
+  isMatchCorrectable,
+  shouldOpenCorrectionEditor,
+  tournamentCorrectionEligibility,
+} from '../../../utils/scoreCorrectionUtils';
 
 interface PlayerStats {
   memberId: number;
@@ -140,7 +156,58 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
   tournament,
   isExpanded,
   onToggleExpand,
+  onTournamentUpdate,
+  onError,
+  onSuccess,
 }) => {
+  const organizer = isOrganizer();
+  const eligibility = tournamentCorrectionEligibility(tournament);
+  const correctionModeActive = useScoreCorrectionModeActive(tournament.status);
+  const bannerText = getCorrectionBannerText(correctionModeActive, organizer, eligibility, tournament.status);
+  const [editingMatch, setEditingMatch] = React.useState<{
+    matchId: number;
+    member1Id: number;
+    member2Id: number;
+    player1Sets: string;
+    player2Sets: string;
+    player1Forfeit: boolean;
+    player2Forfeit: boolean;
+    expectedMatchUpdatedAt?: string;
+  } | null>(null);
+
+  const openCorrectionEditor = (match: Match, event?: React.MouseEvent) => {
+    if (!shouldOpenCorrectionEditor(correctionModeActive, match.id, eligibility)) return;
+    event?.preventDefault();
+    event?.stopPropagation();
+    setEditingMatch({
+      matchId: match.id,
+      member1Id: match.member1Id,
+      member2Id: match.member2Id ?? 0,
+      player1Sets: String(match.player1Sets ?? 0),
+      player2Sets: String(match.player2Sets ?? 0),
+      player1Forfeit: match.player1Forfeit || false,
+      player2Forfeit: match.player2Forfeit || false,
+      expectedMatchUpdatedAt: (match as any).updatedAt,
+    });
+  };
+
+  const handleSaveCorrection = async () => {
+    if (!editingMatch) return;
+    try {
+      await correctCompletedMatchScore(tournament.id, editingMatch.matchId, {
+        player1Sets: parseInt(editingMatch.player1Sets, 10) || 0,
+        player2Sets: parseInt(editingMatch.player2Sets, 10) || 0,
+        player1Forfeit: editingMatch.player1Forfeit,
+        player2Forfeit: editingMatch.player2Forfeit,
+        expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
+      });
+      setEditingMatch(null);
+      onSuccess?.('Score corrected successfully');
+      onTournamentUpdate?.(tournament);
+    } catch (err: any) {
+      onError?.(err?.response?.data?.error || err?.message || 'Failed to correct score');
+    }
+  };
   const playerStats = React.useMemo(() => {
     const statsMap = new Map<number, PlayerStats>();
     
@@ -222,7 +289,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
   };
 
   // Generate results matrix for display
-  const { participants, participantData, matrix } = React.useMemo(() => {
+  const { participants, participantData, matrix, matchMap } = React.useMemo(() => {
     return buildResultsMatrix(tournament);
   }, [tournament]);
 
@@ -233,6 +300,10 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
   return (
     <div className="round-robin-completed expanded">
       <div className="results-content">
+        <ScoreCorrectionBanner
+          message={bannerText}
+          allowed={Boolean(eligibility?.allowed)}
+        />
         {/* Final standings table */}
         <div className="final-standings">
           <h5>Final Standings</h5>
@@ -355,6 +426,9 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                       const cellValue = matrix[p1.member.id][p2.member.id];
                       const isDraw = cellValue === '-';
                       const isEmpty = cellValue === '';
+                      const matchKey = `${p1.member.id}-${p2.member.id}`;
+                      const cellMatch = matchMap[matchKey];
+                      const correctable = correctionModeActive && isMatchCorrectable(cellMatch?.id, eligibility);
                       // Detect win/loss: forfeit 'W'/'L' or numeric score where left > right
                       let isWin = false;
                       let isLoss = false;
@@ -382,9 +456,26 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                             backgroundColor: isWin ? '#d4edda' : isLoss ? '#f8d7da' : isDraw ? '#e9ecef' : 'white',
                             fontWeight: isWin || isLoss ? 'bold' : 'normal',
                             color: isWin ? '#155724' : isLoss ? '#721c24' : '#333',
-                            minWidth: '80px'
+                            minWidth: '80px',
+                            ...(correctable ? correctableCellOutlineStyle : {}),
                           }}
+                          onMouseDown={(event) => {
+                            if (cellMatch && !isEmpty && !isDraw) openCorrectionEditor(cellMatch, event);
+                          }}
+                          onClick={(event) => {
+                            if (cellMatch && !isEmpty && !isDraw && shouldOpenCorrectionEditor(correctionModeActive, cellMatch.id, eligibility)) {
+                              openCorrectionEditor(cellMatch, event);
+                            }
+                          }}
+                          onContextMenu={(event) => {
+                            if (cellMatch && correctable) {
+                              event.preventDefault();
+                            }
+                          }}
+                          title={correctable ? CORRECTION_CLICK_HINT : undefined}
+                          aria-label={correctable ? CORRECTION_CLICK_HINT : undefined}
                         >
+                          {correctable && <span style={correctionPencilStyle} aria-hidden="true">✏️</span>}
                           {cellValue}
                         </td>
                       );
@@ -400,6 +491,24 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
         </div>
 
       </div>
+      {editingMatch && (() => {
+        const p1 = tournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member;
+        const p2 = tournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member;
+        if (!p1 || !p2) return null;
+        return (
+          <MatchEntryPopup
+            editingMatch={editingMatch}
+            player1={p1}
+            player2={p2}
+            showForfeitOptions
+            requireOpponentPassword={false}
+            onSetEditingMatch={setEditingMatch}
+            onSave={handleSaveCorrection}
+            onCancel={() => setEditingMatch(null)}
+            modifyConfirmationMessage={SCORE_CORRECTION_MODIFY_MESSAGE}
+          />
+        );
+      })()}
     </div>
   );
 };

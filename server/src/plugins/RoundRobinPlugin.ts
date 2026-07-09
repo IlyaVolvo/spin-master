@@ -1,7 +1,18 @@
 import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
 import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 import { createRatingHistoryForRoundRobinTournament } from '../services/usattRatingService';
+import { CorrectionEligibility } from './TournamentPlugin';
+import {
+  blockedCorrectionEligibility,
+  buildActiveModificationEligibility,
+  getCompoundPreliminaryCorrectionBlockReason,
+  getSiblingTournamentIds,
+  scoredMatchIds,
+  filterCorrectableMatchIdsByMemberDrift,
+} from './scoreCorrectionHelpers';
+import { findRatingDriftReason, matchHasResult } from '../utils/scoreCorrectionMatchUtils';
 import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
+import { ClientHttpError } from '../http/clientHttpError';
 
 export class RoundRobinPlugin extends BaseTournamentPlugin {
   type = 'ROUND_ROBIN';
@@ -139,16 +150,13 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
   }
 
   isComplete(tournament: any): boolean {
-    // Round robin is complete when all matches are played
     if (!tournament.participants || tournament.participants.length < 2) {
       return false;
     }
-    
+
     const expectedMatches = (tournament.participants.length * (tournament.participants.length - 1)) / 2;
-    const playedMatches = tournament.matches?.filter((m: any) => 
-      m.player1Sets !== null && m.player2Sets !== null
-    ).length || 0;
-    
+    const playedMatches = tournament.matches?.filter((m: any) => matchHasResult(m)).length || 0;
+
     return playedMatches >= expectedMatches;
   }
 
@@ -325,5 +333,50 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
   ): Promise<Record<string, any>> {
     // Round Robin tournaments don't have additional specific data to update
     return {};
+  }
+
+  async getCorrectionEligibility(context: { tournament: any; prisma: any }): Promise<CorrectionEligibility> {
+    const { tournament, prisma } = context;
+    if (tournament.cancelled) {
+      return blockedCorrectionEligibility('Tournament was cancelled');
+    }
+
+    if (tournament.status === 'ACTIVE') {
+      return buildActiveModificationEligibility(scoredMatchIds(tournament));
+    }
+
+    const compoundBlock = await getCompoundPreliminaryCorrectionBlockReason(prisma, tournament);
+    if (compoundBlock) {
+      return { allowed: false, reason: compoundBlock, correctableMatchIds: [] };
+    }
+
+    const ignoreTournamentIds = await getSiblingTournamentIds(prisma, tournament);
+    const scoredIds = scoredMatchIds(tournament);
+    const correctableMatchIds = await filterCorrectableMatchIdsByMemberDrift(
+      prisma,
+      tournament,
+      scoredIds,
+      ignoreTournamentIds,
+    );
+
+    if (correctableMatchIds.length === 0) {
+      const driftReason = await findRatingDriftReason(prisma, tournament, { ignoreTournamentIds });
+      if (driftReason) {
+        return { allowed: false, reason: driftReason, correctableMatchIds: [] };
+      }
+      return { allowed: false, reason: 'No correctable matches in this tournament', correctableMatchIds: [] };
+    }
+
+    return { allowed: true, correctableMatchIds };
+  }
+
+  async assertMatchCorrectable(context: { tournament: any; match: any; prisma: any }): Promise<void> {
+    const { tournament, match } = context;
+    if (tournament.status !== 'COMPLETED' || tournament.cancelled) {
+      throw new ClientHttpError('Tournament is not eligible for score correction', 400);
+    }
+    if (!matchHasResult(match)) {
+      throw new ClientHttpError('Match has no result to correct', 400);
+    }
   }
 }

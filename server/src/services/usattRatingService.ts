@@ -919,7 +919,11 @@ export async function calculateRatingsForRoundRobinTournament(tournament: any): 
  * Calculate ratings and create rating history for a ROUND_ROBIN tournament after completion
  * This should be called once when a ROUND_ROBIN tournament is marked as COMPLETED
  */
-export async function createRatingHistoryForRoundRobinTournament(tournamentId: number): Promise<void> {
+export async function createRatingHistoryForRoundRobinTournament(
+  tournamentId: number,
+  options?: { ratingReason?: 'TOURNAMENT_COMPLETED' | 'RESULT_CORRECTED' },
+): Promise<void> {
+  const historyReason = options?.ratingReason ?? 'TOURNAMENT_COMPLETED';
   // Get the tournament with participants and matches
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
@@ -949,7 +953,7 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
     (await (prisma as any).ratingHistory.findMany({
       where: {
         tournamentId: tournament.id,
-        reason: 'TOURNAMENT_COMPLETED',
+        reason: { in: ['TOURNAMENT_COMPLETED', 'RESULT_CORRECTED'] },
         matchId: null,
       },
       select: { memberId: true },
@@ -995,7 +999,7 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
         where: {
           memberId: participant.memberId,
           tournamentId: tournament.id,
-          reason: 'TOURNAMENT_COMPLETED',
+          reason: { in: ['TOURNAMENT_COMPLETED', 'RESULT_CORRECTED'] },
           matchId: null,
         },
       });
@@ -1007,7 +1011,7 @@ export async function createRatingHistoryForRoundRobinTournament(tournamentId: n
             memberId: participant.memberId,
             rating: ratingAfter,
             ratingChange: ratingChange,
-            reason: 'TOURNAMENT_COMPLETED',
+            reason: historyReason,
             tournamentId: tournament.id,
             matchId: null, // ROUND_ROBIN changes are tournament-level, not per-match
             timestamp: tournamentTimestamp, // Use tournament recordedAt time
@@ -1041,6 +1045,7 @@ export type AdjustRatingsForSingleMatchOptions = {
   rating1BeforeOverride?: number;
   rating2BeforeOverride?: number;
   timestamp?: Date;
+  ratingReason?: 'MATCH_COMPLETED' | 'RESULT_CORRECTED';
 };
 
 /**
@@ -1151,13 +1156,15 @@ export async function adjustRatingsForSingleMatch(
     }),
   ]);
 
+  const matchHistoryReason = options?.ratingReason ?? 'MATCH_COMPLETED';
+
   // Create rating history entries (playoff / swiss / standalone match path)
   await (prisma as any).ratingHistory.create({
     data: {
       memberId: player1Id,
       rating: newRating1,
       ratingChange: ratingChange1,
-      reason: 'MATCH_COMPLETED',
+      reason: matchHistoryReason,
       tournamentId: tournamentId,
       matchId: matchId,
       ...(options?.timestamp ? { timestamp: options.timestamp } : {}),
@@ -1169,7 +1176,7 @@ export async function adjustRatingsForSingleMatch(
       memberId: player2Id,
       rating: newRating2,
       ratingChange: ratingChange2,
-      reason: 'MATCH_COMPLETED',
+      reason: matchHistoryReason,
       tournamentId: tournamentId,
       matchId: matchId,
       ...(options?.timestamp ? { timestamp: options.timestamp } : {}),

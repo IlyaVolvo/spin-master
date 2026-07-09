@@ -1,6 +1,22 @@
 import React from 'react';
 import { TournamentCompletedProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { useScoreCorrectionModeActive } from '../../../contexts/ScoreCorrectionModeContext';
+import { isOrganizer } from '../../../utils/auth';
+import { ScoreCorrectionBanner } from '../../ScoreCorrectionBanner';
+import { MatchEntryPopup, SCORE_CORRECTION_MODIFY_MESSAGE } from '../../MatchEntryPopup';
+import { correctCompletedMatchScore } from '../../../utils/correctMatchScoreApi';
+import {
+  correctableCellOutlineStyle,
+  correctionPencilStyle,
+} from '../../scoreCorrectionStyles';
+import {
+  CORRECTION_CLICK_HINT,
+  getCorrectionBannerText,
+  isMatchCorrectable,
+  shouldOpenCorrectionEditor,
+  tournamentCorrectionEligibility,
+} from '../../../utils/scoreCorrectionUtils';
 
 interface SwissPlayerResult {
   rank: number;
@@ -18,7 +34,44 @@ export const SwissCompletedPanel: React.FC<TournamentCompletedProps> = ({
   tournament,
   isExpanded,
   onToggleExpand,
+  onTournamentUpdate,
+  onError,
+  onSuccess,
 }) => {
+  const organizer = isOrganizer();
+  const eligibility = tournamentCorrectionEligibility(tournament);
+  const correctionModeActive = useScoreCorrectionModeActive(tournament.status);
+  const bannerText = getCorrectionBannerText(correctionModeActive, organizer, eligibility, tournament.status);
+  const lastRound = tournament.swissData?.numberOfRounds;
+  const [editingMatch, setEditingMatch] = React.useState<{
+    matchId: number;
+    member1Id: number;
+    member2Id: number;
+    player1Sets: string;
+    player2Sets: string;
+    player1Forfeit: boolean;
+    player2Forfeit: boolean;
+    expectedMatchUpdatedAt?: string;
+  } | null>(null);
+
+  const handleSaveCorrection = async () => {
+    if (!editingMatch) return;
+    try {
+      const dbMatch = tournament.matches.find(m => m.id === editingMatch.matchId);
+      await correctCompletedMatchScore(tournament.id, editingMatch.matchId, {
+        player1Sets: parseInt(editingMatch.player1Sets, 10) || 0,
+        player2Sets: parseInt(editingMatch.player2Sets, 10) || 0,
+        player1Forfeit: editingMatch.player1Forfeit,
+        player2Forfeit: editingMatch.player2Forfeit,
+        expectedMatchUpdatedAt: dbMatch?.updatedAt,
+      });
+      setEditingMatch(null);
+      onSuccess?.('Score corrected successfully');
+      onTournamentUpdate?.(tournament);
+    } catch (err: any) {
+      onError?.(err?.response?.data?.error || err?.message || 'Failed to correct score');
+    }
+  };
   const getPlayerName = (memberId: number) => {
     const participant = tournament.participants.find(p => p.memberId === memberId);
     if (!participant) return 'Unknown';
@@ -131,6 +184,10 @@ export const SwissCompletedPanel: React.FC<TournamentCompletedProps> = ({
   return (
     <div className="swiss-completed expanded">
       <div className="results-content">
+        <ScoreCorrectionBanner
+          message={bannerText}
+          allowed={Boolean(eligibility?.allowed)}
+        />
         {/* Podium */}
         <div className="podium">
           {champion && (
@@ -247,7 +304,103 @@ export const SwissCompletedPanel: React.FC<TournamentCompletedProps> = ({
             </div>
           </div>
         </div>
+
+        {lastRound != null && (
+          <div className="last-round-results" style={{ marginTop: '16px' }}>
+            <h5>Final Round Results</h5>
+            <table style={{ borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: '6px 10px', textAlign: 'left' }}>Player 1</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'center' }}>Score</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'left' }}>Player 2</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tournament.matches
+                  .filter(m => m.round === lastRound)
+                  .filter(m => (m.player1Sets || 0) > 0 || (m.player2Sets || 0) > 0 || m.player1Forfeit || m.player2Forfeit)
+                  .map((match) => {
+                    const correctable = correctionModeActive && isMatchCorrectable(match.id, eligibility);
+                    const scoreLabel = match.player1Forfeit || match.player2Forfeit
+                      ? 'FF'
+                      : `${match.player1Sets} - ${match.player2Sets}`;
+                    return (
+                      <tr key={match.id}>
+                        <td style={{ padding: '6px 10px' }}>{getPlayerName(match.member1Id)}</td>
+                        <td
+                          style={{
+                            padding: '6px 10px',
+                            textAlign: 'center',
+                            fontWeight: 'bold',
+                            position: 'relative',
+                            ...(correctable ? correctableCellOutlineStyle : {}),
+                          }}
+                          onMouseDown={(event) => {
+                            if (!shouldOpenCorrectionEditor(correctionModeActive, match.id, eligibility)) return;
+                            event.preventDefault();
+                            setEditingMatch({
+                              matchId: match.id,
+                              member1Id: match.member1Id,
+                              member2Id: match.member2Id ?? 0,
+                              player1Sets: String(match.player1Sets ?? 0),
+                              player2Sets: String(match.player2Sets ?? 0),
+                              player1Forfeit: match.player1Forfeit || false,
+                              player2Forfeit: match.player2Forfeit || false,
+                              expectedMatchUpdatedAt: match.updatedAt,
+                            });
+                          }}
+                          onClick={(event) => {
+                            if (!shouldOpenCorrectionEditor(correctionModeActive, match.id, eligibility)) return;
+                            event.preventDefault();
+                            setEditingMatch({
+                              matchId: match.id,
+                              member1Id: match.member1Id,
+                              member2Id: match.member2Id ?? 0,
+                              player1Sets: String(match.player1Sets ?? 0),
+                              player2Sets: String(match.player2Sets ?? 0),
+                              player1Forfeit: match.player1Forfeit || false,
+                              player2Forfeit: match.player2Forfeit || false,
+                              expectedMatchUpdatedAt: match.updatedAt,
+                            });
+                          }}
+                          onContextMenu={(event) => {
+                            if (correctable) {
+                              event.preventDefault();
+                            }
+                          }}
+                          title={correctable ? CORRECTION_CLICK_HINT : undefined}
+                        >
+                          {correctable && <span style={correctionPencilStyle} aria-hidden="true">✏️</span>}
+                          {scoreLabel}
+                        </td>
+                        <td style={{ padding: '6px 10px' }}>{match.member2Id ? getPlayerName(match.member2Id) : 'BYE'}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
+      {editingMatch && (() => {
+        const p1 = tournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member;
+        const p2 = tournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member;
+        if (!p1 || !p2) return null;
+        return (
+          <MatchEntryPopup
+            editingMatch={editingMatch}
+            player1={p1}
+            player2={p2}
+            showForfeitOptions
+            requireOpponentPassword={false}
+            onSetEditingMatch={setEditingMatch}
+            onSave={handleSaveCorrection}
+            onCancel={() => setEditingMatch(null)}
+            modifyConfirmationMessage={SCORE_CORRECTION_MODIFY_MESSAGE}
+          />
+        );
+      })()}
     </div>
   );
 };

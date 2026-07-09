@@ -41,6 +41,9 @@ interface MatchEntryPopupProps {
 export const RATING_IMPACT_MODIFY_MESSAGE =
   'Modify this match result? If the winner changes, the previous result will be cancelled, ratings may be adjusted, and the corrected result will be recorded.';
 
+export const SCORE_CORRECTION_MODIFY_MESSAGE =
+  'Correct this completed result? Ratings will be recalculated for this tournament. This is only allowed while no later rating events have occurred.';
+
 function getEditingWinnerId(match: MatchEntryEditingState): number | null {
   if (match.player1Forfeit) return match.member2Id;
   if (match.player2Forfeit) return match.member1Id;
@@ -148,9 +151,11 @@ const ScoreFieldWithStepper: React.FC<ScoreFieldWithStepperProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <button
             type="button"
+            tabIndex={-1}
             aria-label={`Increase player ${fieldIndex} score`}
             title="Increase score"
             disabled={isForfeit || atMax}
+            onMouseDown={(event) => event.preventDefault()}
             onClick={onIncrement}
             style={stepperButtonStyle(isForfeit, atMax)}
           >
@@ -158,9 +163,11 @@ const ScoreFieldWithStepper: React.FC<ScoreFieldWithStepperProps> = ({
           </button>
           <button
             type="button"
+            tabIndex={-1}
             aria-label={`Decrease player ${fieldIndex} score`}
             title="Decrease score"
             disabled={isForfeit || atMin}
+            onMouseDown={(event) => event.preventDefault()}
             onClick={onDecrement}
             style={stepperButtonStyle(isForfeit, atMin)}
           >
@@ -281,10 +288,23 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
 
   const handleScoreKeyDown = useCallback(
     (fieldIndex: ScoreFieldIndex) => (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === 'Tab' && !event.shiftKey && fieldIndex === 1) {
+      if (event.key === 'Tab') {
         event.preventDefault();
-        player2InputRef.current?.focus();
-        player2InputRef.current?.select();
+        if (event.shiftKey) {
+          if (fieldIndex === 1) {
+            player2InputRef.current?.focus();
+            player2InputRef.current?.select();
+          } else {
+            player1InputRef.current?.focus();
+            player1InputRef.current?.select();
+          }
+        } else if (fieldIndex === 1) {
+          player2InputRef.current?.focus();
+          player2InputRef.current?.select();
+        } else {
+          player1InputRef.current?.focus();
+          player1InputRef.current?.select();
+        }
         return;
       }
       if (event.key === 'Escape') {
@@ -402,6 +422,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
               <input
                 type="checkbox"
                 id="editPlayer1Forfeit"
+                tabIndex={-1}
                 checked={editingMatch.player1Forfeit}
                 onChange={(e) => {
                   onSetEditingMatch({
@@ -423,6 +444,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
               <input
                 type="checkbox"
                 id="editPlayer2Forfeit"
+                tabIndex={-1}
                 checked={editingMatch.player2Forfeit}
                 onChange={(e) => {
                   onSetEditingMatch({
@@ -464,6 +486,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginLeft: '20px' }}>
           <button
             onClick={onCancel}
+            tabIndex={-1}
             title="Cancel"
             style={{
               padding: '8px 12px',
@@ -481,6 +504,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
           </button>
           <button
             onClick={trySave}
+            tabIndex={-1}
             title={
               missingOpponentPassword
                 ? 'Enter opponent password'
