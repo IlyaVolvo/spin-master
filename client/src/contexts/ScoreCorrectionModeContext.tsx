@@ -28,7 +28,7 @@ export function ScoreCorrectionModeProvider({
   );
 }
 
-/** Ctrl held is equivalent to both section radios being selected. */
+/** Ctrl held is equivalent to both section edit toggles being on. */
 export function useScoreCorrectionModeActive(tournamentStatus?: string): boolean {
   const { activeChecked, completedChecked } = useContext(ScoreCorrectionModeContext);
   const controlKeyHeld = useControlKeyHeld();

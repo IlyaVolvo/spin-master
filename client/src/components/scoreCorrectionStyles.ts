@@ -35,3 +35,32 @@ export const correctionPencilStyle: React.CSSProperties = {
   opacity: 0.85,
   pointerEvents: 'none',
 };
+
+export const sectionCorrectionToggleStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '4px 6px',
+  margin: 0,
+  borderRadius: '4px',
+  cursor: 'pointer',
+  fontSize: '15px',
+  lineHeight: 1,
+  flexShrink: 0,
+};
+
+export const sectionCorrectionToggleInactiveStyle: React.CSSProperties = {
+  backgroundColor: '#ffffff',
+  border: '1px solid #d0d0d0',
+};
+
+export const sectionCorrectionToggleActiveStyle: React.CSSProperties = {
+  backgroundColor: '#2196f3',
+  border: '1px solid #1976d2',
+};
+
+export const sectionCorrectionToggleIconColor = {
+  activeFill: '#ffb300',
+  activeStroke: '#1a1a1a',
+  inactive: '#1a1a1a',
+} as const;

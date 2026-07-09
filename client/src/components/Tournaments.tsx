@@ -54,6 +54,12 @@ import {
   printCompoundSchedules,
   printTournamentSchedule,
 } from './tournaments/utils/schedulePrintUtils';
+import {
+  sectionCorrectionToggleActiveStyle,
+  sectionCorrectionToggleIconColor,
+  sectionCorrectionToggleInactiveStyle,
+  sectionCorrectionToggleStyle,
+} from './scoreCorrectionStyles';
 import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
 
 // Module-level cache to persist across component mounts/unmounts
@@ -126,55 +132,47 @@ function findAncestorCompoundIdsForTarget(targetId: number, roots: Tournament[])
   return walk(roots, []);
 }
 
-function ScoreCorrectionModeRadio({
-  name,
-  checked,
+function ScoreCorrectionModeToggle({
+  active,
   onChange,
-  accentColor,
   title,
 }: {
-  name: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  accentColor: string;
+  active: boolean;
+  onChange: (active: boolean) => void;
   title: string;
 }) {
+  const fill = active
+    ? sectionCorrectionToggleIconColor.activeFill
+    : sectionCorrectionToggleIconColor.inactive;
+  const stroke = active ? sectionCorrectionToggleIconColor.activeStroke : 'none';
   return (
-    <>
-      <input
-        type="radio"
-        name={name}
-        checked={!checked}
-        onChange={() => onChange(false)}
-        style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-        tabIndex={-1}
+    <button
+      type="button"
+      onClick={() => onChange(!active)}
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      style={{
+        ...sectionCorrectionToggleStyle,
+        ...(active ? sectionCorrectionToggleActiveStyle : sectionCorrectionToggleInactiveStyle),
+      }}
+    >
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
         aria-hidden
-      />
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '5px',
-          cursor: 'pointer',
-          fontSize: '11px',
-          fontWeight: 'normal',
-          color: accentColor,
-        }}
-        title={title}
+        style={{ display: 'block' }}
       >
-        <input
-          type="radio"
-          name={name}
-          checked={checked}
-          onChange={() => onChange(true)}
-          onClick={() => {
-            if (checked) onChange(false);
-          }}
-          style={{ cursor: 'pointer' }}
+        <path
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={active ? 1.4 : 0}
+          strokeLinejoin="round"
+          d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.83H5v-.92l9.06-9.06.92.92L5.92 20.08zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
         />
-        <span>Correct scores</span>
-      </label>
-    </>
+      </svg>
+    </button>
   );
 }
 
@@ -2476,16 +2474,14 @@ const Tournaments: React.FC = () => {
           >
             {activeSectionCollapsed ? '▼' : '▲'}
           </button>
-          <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 'bold', color: '#7b1fa2' }}>Active</h2>
           {isUserOrganizer && (
-            <ScoreCorrectionModeRadio
-              name="activeScoreCorrectionMode"
-              checked={activeScoreCorrectionChecked}
+            <ScoreCorrectionModeToggle
+              active={activeScoreCorrectionChecked}
               onChange={setActiveScoreCorrectionChecked}
-              accentColor="#7b1fa2"
-              title="Highlight scored results for modification (same as holding Ctrl)"
+              title="Correct scores"
             />
           )}
+          <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 'bold', color: '#7b1fa2' }}>Active</h2>
         </div>
         {!activeSectionCollapsed ? (
           filteredActiveEvents.length === 0 ? (
@@ -3323,16 +3319,14 @@ const Tournaments: React.FC = () => {
           >
             {completedSectionCollapsed ? '▼' : '▲'}
           </button>
-          <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 'bold', color: '#1976d2' }}>Completed</h2>
           {isUserOrganizer && (
-            <ScoreCorrectionModeRadio
-              name="completedScoreCorrectionMode"
-              checked={completedScoreCorrectionChecked}
+            <ScoreCorrectionModeToggle
+              active={completedScoreCorrectionChecked}
               onChange={setCompletedScoreCorrectionChecked}
-              accentColor="#1976d2"
-              title="Highlight scored results for correction (same as holding Ctrl)"
+              title="Correct scores"
             />
           )}
+          <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 'bold', color: '#1976d2' }}>Completed</h2>
           <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'normal' }}>
             <input
               type="checkbox"
