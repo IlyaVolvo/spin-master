@@ -1,6 +1,8 @@
 import React from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { BoundedNumericInput } from '../BoundedNumericInput';
+import { getSystemConfig } from '../../utils/systemConfig';
 
 export interface AddPlayerModalProps {
   onClose: () => void;
@@ -291,19 +293,18 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
             {addFieldTouched.roles && addFieldErrors.roles && <span className="field-error">{addFieldErrors.roles}</span>}
           </div>
           <div className={`form-group ${addFieldErrors.rating && addFieldTouched.rating ? 'has-error' : ''}`}>
-            <label>Initial Rating (optional)</label>
-            <input
-              type="number"
-              step="1"
-              min="0"
-              max="9999"
-              value={newPlayerRating}
-              onChange={(e) => {
-                setNewPlayerRating(e.target.value);
-                handleAddFieldChange('rating', e.target.value);
+            <BoundedNumericInput
+              label="Initial Rating (optional)"
+              min={getSystemConfig().ratingValidation.ratingInputMin}
+              max={getSystemConfig().ratingValidation.ratingInputMax}
+              value={newPlayerRating === '' ? null : Number(newPlayerRating)}
+              allowEmpty
+              placeholder="Leave empty for unrated"
+              onChange={(value) => {
+                const next = value === null ? '' : String(value);
+                setNewPlayerRating(next);
+                handleAddFieldChange('rating', next);
               }}
-              onBlur={handleAddRatingBlur}
-              placeholder="Leave empty for unrated (0-9999)"
             />
             {addFieldTouched.rating && addFieldErrors.rating && <span className="field-error">{addFieldErrors.rating}</span>}
           </div>

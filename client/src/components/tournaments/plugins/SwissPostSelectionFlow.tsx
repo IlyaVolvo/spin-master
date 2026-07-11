@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { PostSelectionFlowProps } from '../../../types/tournament';
 import api from '../../../utils/api';
 import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
+import { BoundedNumericInput } from '../../BoundedNumericInput';
 
 type Step = 'configure' | 'confirmation';
 
@@ -114,32 +115,17 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
           )}
 
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: '#333' }}>
-              Number of rounds:
-            </label>
-            <input
-              type="number"
+            <BoundedNumericInput
+              label="Number of rounds:"
               min={minRounds}
               max={maxRounds}
               value={numberOfRounds}
-              onChange={(e) => {
-                const value = parseInt(e.target.value);
-                if (!isNaN(value) && value >= minRounds && value <= maxRounds) {
-                  setNumberOfRounds(value);
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '10px',
-                fontSize: '14px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                backgroundColor: 'white'
+              allowEmpty={false}
+              hintExtra={`${Math.round(100 / swissRules.maxRoundsDivisor)}% of players`}
+              onChange={(value) => {
+                if (value !== null) setNumberOfRounds(value);
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-              Min: {minRounds}, Max: {maxRounds} ({Math.round(100 / swissRules.maxRoundsDivisor)}% of players)
-            </div>
           </div>
 
           {/* Summary */}

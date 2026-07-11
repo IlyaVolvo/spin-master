@@ -7,23 +7,27 @@ import {
   SystemConfig,
 } from '../utils/systemConfig';
 import { getErrorMessage } from '../utils/errorHandler';
+import { BoundedNumericInput } from './BoundedNumericInput';
 
 type NumericInputProps = {
   label: string;
   value: number;
   min?: number;
+  max?: number;
   onChange: (value: number) => void;
 };
 
-function NumericInput({ label, value, min = 0, onChange }: NumericInputProps) {
+function NumericInput({ label, value, min = 0, max, onChange }: NumericInputProps) {
   return (
     <FieldRow label={label}>
-      <input
-        type="number"
-        min={min}
+      <BoundedNumericInput
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        style={valueInputStyle}
+        min={min}
+        max={max}
+        allowEmpty={false}
+        aria-label={label}
+        onChange={(next) => onChange(next ?? min)}
+        inputStyle={valueInputStyle}
       />
     </FieldRow>
   );
@@ -292,6 +296,7 @@ export default function SystemSettings() {
         <Subsection title="Multi Round Robins">
           <NumericInput label="Min Players" min={2} value={config.tournamentRules.multiRoundRobins.minPlayers} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.minPlayers = value; })} />
           <NumericInput label="Min Group Size" min={2} value={config.tournamentRules.multiRoundRobins.minGroupSize} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.minGroupSize = value; })} />
+          <NumericInput label="Max Group Size" min={2} value={config.tournamentRules.multiRoundRobins.maxGroupSize} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.maxGroupSize = value; })} />
         </Subsection>
 
         <Subsection title="Preliminary">

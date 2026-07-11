@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { TournamentSetupProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
+import { BoundedNumericInput } from '../../BoundedNumericInput';
 import './SwissSetupPanel.css';
 
 interface SwissSetupData {
@@ -186,18 +187,17 @@ export const SwissSetupPanel: React.FC<TournamentSetupProps> = ({
 
         <div className="swiss-setup__options">
           <div className="form-group">
-            <label htmlFor="number-of-rounds">Number of Rounds</label>
-            <input
+            <BoundedNumericInput
               id="number-of-rounds"
-              type="number"
-              min="3"
+              label="Number of Rounds"
+              min={3}
               max={maxRounds}
               value={setupData.numberOfRounds}
-              onChange={(e) => handleRoundsChange(parseInt(e.target.value) || 3)}
+              allowEmpty={false}
+              onChange={(value) => {
+                if (value !== null) handleRoundsChange(value);
+              }}
             />
-            <small className="form-help">
-              Minimum: 3 rounds, maximum: {maxRounds} rounds
-            </small>
           </div>
 
           <div className="form-group">

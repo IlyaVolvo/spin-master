@@ -110,9 +110,17 @@ function validateTournamentRuleRequest(type: string, participantCount: number, d
       if (numberOfRounds > maxRounds) return `Number of rounds cannot exceed ${maxRounds}`;
       return null;
     }
-    case 'MULTI_ROUND_ROBINS':
+    case 'MULTI_ROUND_ROBINS': {
       if (participantCount < rules.multiRoundRobins.minPlayers) return `Multi Round Robins requires at least ${rules.multiRoundRobins.minPlayers} players`;
+      const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
+      if (
+        Number.isInteger(groupSize) &&
+        (groupSize < rules.multiRoundRobins.minGroupSize || groupSize > rules.multiRoundRobins.maxGroupSize)
+      ) {
+        return `Group size must be between ${rules.multiRoundRobins.minGroupSize} and ${rules.multiRoundRobins.maxGroupSize}`;
+      }
       return null;
+    }
     case 'PRELIMINARY_WITH_FINAL_PLAYOFF':
     case 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN': {
       const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);

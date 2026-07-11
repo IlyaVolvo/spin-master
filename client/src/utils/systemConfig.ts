@@ -37,6 +37,7 @@ export type SystemConfig = {
     multiRoundRobins: {
       minPlayers: number;
       minGroupSize: number;
+      maxGroupSize: number;
       minGroups: number;
     };
     preliminary: {
@@ -106,6 +107,7 @@ const defaultSystemConfig: SystemConfig = {
     multiRoundRobins: {
       minPlayers: 6,
       minGroupSize: 3,
+      maxGroupSize: 12,
       minGroups: 2,
     },
     preliminary: {

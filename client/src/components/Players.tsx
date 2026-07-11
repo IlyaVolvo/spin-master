@@ -17,6 +17,8 @@ import {
   calculateMemberAge,
 } from './players/memberFormUtils.ts';
 import { AddPlayerModal } from './players/AddPlayerModal.tsx';
+import { BoundedNumericInput } from './BoundedNumericInput';
+import { getSystemConfig } from '../utils/systemConfig';
 import { SimilarNamesConfirmationModal } from './players/SimilarNamesConfirmationModal.tsx';
 import { calcAllowBirthDateInput, getEditBirthDateFieldError } from './players/playerEditBirthDateRules.ts';
 import { SuspiciousRatingConfirmModal } from './players/SuspiciousRatingConfirmModal.tsx';
@@ -1320,10 +1322,10 @@ const Players: React.FC = () => {
     }
   };
 
-  const handleEditRatingBlur = async () => {
+  const handleEditRatingBlur = async (ratingOverride?: string) => {
     setEditFieldTouched(prev => ({ ...prev, rating: true }));
 
-    const trimmedRating = editRating.trim();
+    const trimmedRating = (ratingOverride ?? editRating).trim();
     const previousRating = lastConfirmedEditRating;
 
     if (
@@ -1342,10 +1344,10 @@ const Players: React.FC = () => {
     }
 
     if (isValidRatingInput(trimmedRating)) {
-      setLastConfirmedEditRating(editRating);
+      setLastConfirmedEditRating(ratingOverride ?? editRating);
     }
 
-    const error = validateEditField('rating', editRating);
+    const error = validateEditField('rating', ratingOverride ?? editRating);
     setEditFieldErrors(prev => ({ ...prev, rating: error }));
   };
 
@@ -3534,31 +3536,35 @@ const Players: React.FC = () => {
                             />
                           </div>
                           <div className="form-group">
-                            <label>Minimum Rating</label>
-                            <input
-                              type="number"
-                              value={preregistrationMinRating}
-                              onChange={(e) => setPreregistrationMinRating(e.target.value)}
+                            <BoundedNumericInput
+                              label="Minimum Rating"
+                              min={getSystemConfig().ratingValidation.ratingInputMin}
+                              max={getSystemConfig().ratingValidation.ratingInputMax}
+                              value={preregistrationMinRating === '' ? null : Number(preregistrationMinRating)}
+                              allowEmpty
                               placeholder="No minimum"
+                              onChange={(value) => setPreregistrationMinRating(value === null ? '' : String(value))}
                             />
                           </div>
                           <div className="form-group">
-                            <label>Maximum Rating</label>
-                            <input
-                              type="number"
-                              value={preregistrationMaxRating}
-                              onChange={(e) => setPreregistrationMaxRating(e.target.value)}
+                            <BoundedNumericInput
+                              label="Maximum Rating"
+                              min={getSystemConfig().ratingValidation.ratingInputMin}
+                              max={getSystemConfig().ratingValidation.ratingInputMax}
+                              value={preregistrationMaxRating === '' ? null : Number(preregistrationMaxRating)}
+                              allowEmpty
                               placeholder="No maximum"
+                              onChange={(value) => setPreregistrationMaxRating(value === null ? '' : String(value))}
                             />
                           </div>
                           <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                            <label>Max Participants</label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={preregistrationMaxParticipants}
-                              onChange={(e) => setPreregistrationMaxParticipants(e.target.value)}
+                            <BoundedNumericInput
+                              label="Max Participants"
+                              min={1}
+                              value={preregistrationMaxParticipants === '' ? null : Number(preregistrationMaxParticipants)}
+                              allowEmpty
                               placeholder="Unlimited"
+                              onChange={(value) => setPreregistrationMaxParticipants(value === null ? '' : String(value))}
                             />
                           </div>
                         </div>
@@ -3822,7 +3828,7 @@ const Players: React.FC = () => {
                               fontWeight: 'bold',
                             }}
                           >
-                            Cancel
+                            Back
                           </button>
                         </>
                       );
@@ -4726,48 +4732,40 @@ const Players: React.FC = () => {
                 📊 Rating
               </label>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <input
+                <BoundedNumericInput
                   id="minRating"
-                  type="number"
-                  value={minRating}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setMinRating(value);
-                    localStorage.setItem('players_minRating', value);
-                  }}
-                  min="0"
-                  max="9999"
+                  min={getSystemConfig().ratingValidation.ratingInputMin}
+                  max={getSystemConfig().ratingValidation.ratingInputMax}
+                  value={minRating === '' ? null : Number(minRating)}
+                  allowEmpty
                   placeholder="Min"
-                  style={{
-                    flex: '1',
-                    padding: '8px',
-                    fontSize: '13px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxSizing: 'border-box',
+                  showRangeHint={false}
+                  aria-label="Minimum rating filter"
+                  onChange={(value) => {
+                    const next = value === null ? '' : String(value);
+                    setMinRating(next);
+                    localStorage.setItem('players_minRating', next);
                   }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ padding: '8px', fontSize: '13px' }}
                 />
                 <span style={{ fontSize: '12px', color: '#666' }}>to</span>
-                <input
+                <BoundedNumericInput
                   id="maxRating"
-                  type="number"
-                  value={maxRating}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setMaxRating(value);
-                    localStorage.setItem('players_maxRating', value);
-                  }}
-                  min="0"
-                  max="9999"
+                  min={getSystemConfig().ratingValidation.ratingInputMin}
+                  max={getSystemConfig().ratingValidation.ratingInputMax}
+                  value={maxRating === '' ? null : Number(maxRating)}
+                  allowEmpty
                   placeholder="Max"
-                  style={{
-                    flex: '1',
-                    padding: '8px',
-                    fontSize: '13px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxSizing: 'border-box',
+                  showRangeHint={false}
+                  aria-label="Maximum rating filter"
+                  onChange={(value) => {
+                    const next = value === null ? '' : String(value);
+                    setMaxRating(next);
+                    localStorage.setItem('players_maxRating', next);
                   }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ padding: '8px', fontSize: '13px' }}
                 />
               </div>
             </div>
@@ -4777,48 +4775,40 @@ const Players: React.FC = () => {
                 🎂 Age
               </label>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <input
+                <BoundedNumericInput
                   id="minAge"
-                  type="number"
-                  value={minAge}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setMinAge(value);
-                    localStorage.setItem('players_minAge', value);
-                  }}
-                  min="0"
-                  max="150"
+                  min={0}
+                  max={150}
+                  value={minAge === '' ? null : Number(minAge)}
+                  allowEmpty
                   placeholder="Min"
-                  style={{
-                    flex: '1',
-                    padding: '8px',
-                    fontSize: '13px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxSizing: 'border-box',
+                  showRangeHint={false}
+                  aria-label="Minimum age filter"
+                  onChange={(value) => {
+                    const next = value === null ? '' : String(value);
+                    setMinAge(next);
+                    localStorage.setItem('players_minAge', next);
                   }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ padding: '8px', fontSize: '13px' }}
                 />
                 <span style={{ fontSize: '12px', color: '#666' }}>to</span>
-                <input
+                <BoundedNumericInput
                   id="maxAge"
-                  type="number"
-                  value={maxAge}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setMaxAge(value);
-                    localStorage.setItem('players_maxAge', value);
-                  }}
-                  min="0"
-                  max="150"
+                  min={0}
+                  max={150}
+                  value={maxAge === '' ? null : Number(maxAge)}
+                  allowEmpty
                   placeholder="Max"
-                  style={{
-                    flex: '1',
-                    padding: '8px',
-                    fontSize: '13px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxSizing: 'border-box',
+                  showRangeHint={false}
+                  aria-label="Maximum age filter"
+                  onChange={(value) => {
+                    const next = value === null ? '' : String(value);
+                    setMaxAge(next);
+                    localStorage.setItem('players_maxAge', next);
                   }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ padding: '8px', fontSize: '13px' }}
                 />
               </div>
             </div>
@@ -4829,46 +4819,38 @@ const Players: React.FC = () => {
                   🎮 Games
                 </label>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <input
+                  <BoundedNumericInput
                     id="minGames"
-                    type="number"
-                    value={minGames}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setMinGames(value);
-                      localStorage.setItem('players_minGames', value);
-                    }}
-                    min="0"
+                    min={0}
+                    value={minGames === '' ? null : Number(minGames)}
+                    allowEmpty
                     placeholder="Min"
-                    style={{
-                      flex: '1',
-                      padding: '8px',
-                      fontSize: '13px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                      boxSizing: 'border-box',
+                    showRangeHint={false}
+                    aria-label="Minimum games filter"
+                    onChange={(value) => {
+                      const next = value === null ? '' : String(value);
+                      setMinGames(next);
+                      localStorage.setItem('players_minGames', next);
                     }}
+                    style={{ flex: 1 }}
+                    inputStyle={{ padding: '8px', fontSize: '13px' }}
                   />
                   <span style={{ fontSize: '12px', color: '#666' }}>to</span>
-                  <input
+                  <BoundedNumericInput
                     id="maxGames"
-                    type="number"
-                    value={maxGames}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setMaxGames(value);
-                      localStorage.setItem('players_maxGames', value);
-                    }}
-                    min="0"
+                    min={0}
+                    value={maxGames === '' ? null : Number(maxGames)}
+                    allowEmpty
                     placeholder="Max"
-                    style={{
-                      flex: '1',
-                      padding: '8px',
-                      fontSize: '13px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                      boxSizing: 'border-box',
+                    showRangeHint={false}
+                    aria-label="Maximum games filter"
+                    onChange={(value) => {
+                      const next = value === null ? '' : String(value);
+                      setMaxGames(next);
+                      localStorage.setItem('players_maxGames', next);
                     }}
+                    style={{ flex: 1 }}
+                    inputStyle={{ padding: '8px', fontSize: '13px' }}
                   />
                 </div>
               </div>
@@ -6337,25 +6319,30 @@ const Players: React.FC = () => {
                   <div style={{ marginTop: '16px', padding: '12px', background: !canEditRestrictedProfileFields ? '#f5f5f5' : '#e3f2fd', borderRadius: '4px', border: `1px solid ${!canEditRestrictedProfileFields ? '#d9d9d9' : '#2196F3'}` }}>
                     <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>Rating</h5>
                     <div>
-                      <input
-                        type="number"
-                        value={editRating}
-                        onChange={(e) => { setEditRating(e.target.value); handleEditFieldChange('rating', e.target.value); }}
-                        onBlur={handleEditRatingBlur}
+                      <BoundedNumericInput
+                        value={editRating === '' ? null : Number(editRating)}
+                        min={getSystemConfig().ratingValidation.ratingInputMin}
+                        max={getSystemConfig().ratingValidation.ratingInputMax}
+                        allowEmpty
                         disabled={!canEditRestrictedProfileFields}
-                        style={{
-                          width: '100%',
-                          padding: '8px',
+                        placeholder="Rating or leave empty"
+                        aria-label="Player rating"
+                        onChange={(value) => {
+                          const next = value === null ? '' : String(value);
+                          setEditRating(next);
+                          handleEditFieldChange('rating', next);
+                        }}
+                        onBlur={(value) => {
+                          void handleEditRatingBlur(value === null ? '' : String(value));
+                        }}
+                        inputStyle={{
                           border: `1px solid ${editFieldTouched.rating && editFieldErrors.rating ? '#e74c3c' : '#ddd'}`,
-                          borderRadius: '4px',
                           backgroundColor: !canEditRestrictedProfileFields ? '#f5f5f5' : 'white',
                           color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
                           cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text',
                           opacity: !canEditRestrictedProfileFields ? 0.7 : 1,
+                          padding: '8px',
                         }}
-                        placeholder="Rating (0-9999) or leave empty"
-                        min="0"
-                        max="9999"
                       />
                       {editFieldTouched.rating && editFieldErrors.rating && <span className="field-error">{editFieldErrors.rating}</span>}
                       <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#666' }}>

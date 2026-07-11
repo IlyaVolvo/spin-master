@@ -3,6 +3,7 @@ import type { PostSelectionFlowProps } from '../../../types/tournament';
 import api from '../../../utils/api';
 import { getSystemConfig } from '../../../utils/systemConfig';
 import { snakeDraftGroups, computeGroupCapacities } from './roundRobinUtils';
+import { BoundedNumericInput } from '../../BoundedNumericInput';
 
 type Step = 'configure' | 'confirm_groups' | 'confirmation';
 
@@ -185,62 +186,32 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
         }}>
           {/* Auto-qualified count */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: '#333' }}>
-              Auto-qualified players (highest rated, skip preliminary):
-            </label>
-            <input
-              type="number"
-              min="0"
+            <BoundedNumericInput
+              label="Auto-qualified players (highest rated, skip preliminary):"
+              min={0}
               max={Math.max(0, selectedPlayerIds.length - preliminaryRules.reservedFinalSpotsForAutoQualified)}
               value={autoQualifiedCount}
-              onChange={(e) => {
-                const value = parseInt(e.target.value);
-                if (!isNaN(value) && value >= 0) {
-                  setAutoQualifiedCount(value);
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '10px',
-                fontSize: '14px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                backgroundColor: 'white'
+              allowEmpty={false}
+              hintExtra="These players go directly to the playoff bracket."
+              onChange={(value) => {
+                if (value !== null) setAutoQualifiedCount(value);
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-              Default: 0. These players go directly to the playoff bracket.
-            </div>
           </div>
 
           {/* Group size */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: '#333' }}>
-              Players per preliminary group:
-            </label>
-            <input
-              type="number"
+            <BoundedNumericInput
+              label="Players per preliminary group:"
               min={preliminaryRules.groupSizeMin}
               max={preliminaryRules.groupSizeMax}
               value={groupSize}
-              onChange={(e) => {
-                const value = parseInt(e.target.value);
-                if (!isNaN(value) && value >= preliminaryRules.groupSizeMin && value <= preliminaryRules.groupSizeMax) {
-                  setGroupSize(value);
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '10px',
-                fontSize: '14px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                backgroundColor: 'white'
+              allowEmpty={false}
+              hintExtra="Desired group size. Actual size may be 1 less if not evenly divisible."
+              onChange={(value) => {
+                if (value !== null) setGroupSize(value);
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-              Desired group size ({preliminaryRules.groupSizeMin}-{preliminaryRules.groupSizeMax}). Actual size may be 1 less if not evenly divisible.
-            </div>
           </div>
 
           {/* Playoff bracket size */}
