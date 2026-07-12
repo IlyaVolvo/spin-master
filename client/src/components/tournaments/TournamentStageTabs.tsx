@@ -42,7 +42,7 @@ interface TournamentStageTabsProps {
   trailing?: React.ReactNode;
 }
 
-/** Classic tab strip: selected elevated, empty stages muted but still visible. */
+/** Stage tabs styled like the app header Players / Tournaments tabs. */
 export function TournamentStageTabs({
   stage,
   counts,
@@ -57,7 +57,14 @@ export function TournamentStageTabs({
         justifyContent: 'space-between',
         gap: '12px',
         marginBottom: '16px',
-        borderBottom: '2px solid #cfd8dc',
+        marginTop: '-20px',
+        marginLeft: '-20px',
+        marginRight: '-20px',
+        padding: '10px 20px 0',
+        backgroundColor: '#1a5276',
+        borderTopLeftRadius: '8px',
+        borderTopRightRadius: '8px',
+        borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
       }}
     >
       <div
@@ -69,6 +76,7 @@ export function TournamentStageTabs({
           flexWrap: 'wrap',
           flex: 1,
           minWidth: 0,
+          marginBottom: '-1px',
         }}
       >
         {STAGE_TABS.map((tab) => {
@@ -78,6 +86,27 @@ export function TournamentStageTabs({
           const clickable = !empty || selected;
           const label =
             tab === 'MATCHES' ? 'Individual Matches' : stageTabLabel(tab);
+
+          let background: string;
+          let color: string;
+          let border: string;
+          let borderBottom: string;
+          if (selected) {
+            background = 'white';
+            color = '#333';
+            border = '1px solid rgba(0, 0, 0, 0.1)';
+            borderBottom = '1px solid white';
+          } else if (empty) {
+            background = '#154360';
+            color = 'rgba(255, 255, 255, 0.55)';
+            border = '1px solid rgba(255, 255, 255, 0.1)';
+            borderBottom = '1px solid rgba(255, 255, 255, 0.1)';
+          } else {
+            background = '#2980b9';
+            color = '#ffffff';
+            border = '1px solid rgba(255, 255, 255, 0.18)';
+            borderBottom = '1px solid rgba(255, 255, 255, 0.18)';
+          }
 
           return (
             <button
@@ -92,33 +121,44 @@ export function TournamentStageTabs({
               }}
               style={{
                 position: 'relative',
-                top: selected ? '2px' : 0,
+                zIndex: selected ? 10 : 1,
                 padding: '10px 18px 12px',
-                marginBottom: selected ? '-2px' : 0,
-                border: selected ? '2px solid #2980b9' : '1px solid #e0e0e0',
-                borderBottom: selected ? '2px solid #3498db' : '1px solid #cfd8dc',
-                borderRadius: '8px 8px 0 0',
-                backgroundColor: empty && !selected
-                  ? '#f4f4f4'
-                  : selected
-                    ? '#3498db'
-                    : '#eceff1',
-                color: empty && !selected ? '#b0b0b0' : '#111111',
+                marginBottom: selected ? 0 : '1px',
+                border,
+                borderBottom,
+                borderTopLeftRadius: '8px',
+                borderTopRightRadius: '8px',
+                background,
+                color,
                 cursor: clickable ? 'pointer' : 'default',
-                fontWeight: selected ? 700 : 500,
-                fontSize: '14px',
+                fontWeight: selected ? 600 : 500,
+                fontSize: '15px',
                 lineHeight: 1.2,
-                boxShadow: selected ? 'none' : 'none',
+                boxShadow: selected ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+                transition: 'all 0.2s',
               }}
               title={!clickable ? `No ${label.toLowerCase()}` : label}
+              onMouseEnter={(e) => {
+                if (!selected && clickable) {
+                  e.currentTarget.style.color = '#ffffff';
+                  e.currentTarget.style.background = '#3498db';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!selected && clickable) {
+                  e.currentTarget.style.color = '#ffffff';
+                  e.currentTarget.style.background = '#2980b9';
+                }
+              }}
             >
               {label}
               <span
                 style={{
-                  marginLeft: '8px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: empty && !selected ? '#c0c0c0' : '#111111',
+                  marginLeft: '6px',
+                  fontSize: '13px',
+                  fontWeight: selected ? 700 : 600,
+                  color: 'inherit',
+                  opacity: empty && !selected ? 0.85 : 1,
                 }}
               >
                 ({count})
@@ -128,7 +168,7 @@ export function TournamentStageTabs({
         })}
       </div>
       {trailing ? (
-        <div style={{ flexShrink: 0, paddingBottom: '6px' }}>{trailing}</div>
+        <div style={{ flexShrink: 0, paddingBottom: '8px' }}>{trailing}</div>
       ) : null}
     </div>
   );
