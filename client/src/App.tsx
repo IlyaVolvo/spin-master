@@ -1,5 +1,5 @@
 import { useState, useEffect, Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated } from './utils/auth';
@@ -8,14 +8,26 @@ import { connectSocket } from './utils/socket';
 import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig } from './utils/systemConfig';
 import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPosition';
 import { getErrorMessage } from './utils/errorHandler';
+import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail } from './utils/tournamentNavState';
 
 // Lazy load route components for code splitting
 const Players = lazy(() => import('./components/Players'));
 const Tournaments = lazy(() => import('./components/Tournaments'));
+const TournamentDetailPage = lazy(() => import('./components/TournamentDetailPage'));
 const Statistics = lazy(() => import('./components/Statistics'));
 const History = lazy(() => import('./components/History'));
 const TournamentRegistrationLink = lazy(() => import('./components/TournamentRegistrationLink'));
 const SystemSettings = lazy(() => import('./components/SystemSettings'));
+
+/** Only render detail for positive numeric ids; otherwise bounce to the list. */
+function TournamentDetailGate() {
+  const { id } = useParams<{ id: string }>();
+  const parsed = id != null ? parseInt(id, 10) : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0 || String(parsed) !== id) {
+    return <Navigate to="/tournaments" replace />;
+  }
+  return <TournamentDetailPage />;
+}
 
 // Component to prevent default scroll restoration for routes that handle their own scroll
 function ScrollToTop() {
@@ -59,7 +71,12 @@ function AuthRedirect() {
   useEffect(() => {
     if (isRoleTutorialsPath(location.pathname)) return;
     const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings'];
-    if (!validPaths.includes(location.pathname)) {
+    const isTournamentDetail = /^\/tournaments\/\d+$/.test(location.pathname);
+    if (location.pathname.startsWith('/tournaments/') && !isTournamentDetail) {
+      navigate('/tournaments', { replace: true });
+      return;
+    }
+    if (!validPaths.includes(location.pathname) && !isTournamentDetail) {
       navigate('/players', { replace: true });
     }
   }, [location.pathname, navigate]);
@@ -286,6 +303,7 @@ function App() {
                 <Route path="/" element={<Navigate to="/players" replace />} />
                 <Route path="/players" element={<Players />} />
                 <Route path="/tournaments" element={<Tournaments />} />
+                <Route path="/tournaments/:id" element={<TournamentDetailGate />} />
                 <Route path="/statistics" element={<Statistics />} />
                 <Route path="/history" element={<History />} />
                 <Route path="/system-settings" element={<SystemSettings />} />
@@ -475,7 +493,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const changesetId = (import.meta.env.VITE_CHANGESET_ID || 'devbuild').slice(0, 7);
   
   const isPlayersActive = location.pathname === '/players';
-  const isTournamentsActive = location.pathname === '/tournaments';
+  const isTournamentsActive = location.pathname === '/tournaments' || location.pathname.startsWith('/tournaments/');
   const isSettingsActive = location.pathname === '/system-settings';
   
   // Format roles as comma-separated first letters
@@ -576,9 +594,12 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   
   const handleTournamentsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
-    clearAllScrollPositions();
-    clearAllUIStates();
-    window.scrollTo(0, 0);
+    const lastId = loadLastTournamentId();
+    if (loadShouldRestoreDetail() && lastId != null && Number.isFinite(lastId) && lastId > 0) {
+      navigate(`/tournaments/${lastId}`, { replace: true });
+      return;
+    }
+    saveShouldRestoreDetail(false);
     navigate('/tournaments', { replace: true });
   };
 

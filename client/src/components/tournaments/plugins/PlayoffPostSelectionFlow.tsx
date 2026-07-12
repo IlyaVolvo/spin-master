@@ -3,6 +3,7 @@ import type { PostSelectionFlowProps, Member } from '../../../types/tournament';
 import { BracketPreview } from '../../BracketPreview';
 import api from '../../../utils/api';
 import { getSystemConfig } from '../../../utils/systemConfig';
+import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
 
 type Step = 'organize_bracket' | 'completion';
 
@@ -101,21 +102,25 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         tournamentData.name = tournamentName.trim();
       }
 
+      let createdId: number | undefined;
       if (finalizingPreregistrationId) {
-        await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Tournament created from preregistration successfully');
       } else if (editingTournamentId) {
-        await api.patch(`/tournaments/${editingTournamentId}`, {
+        const response = await api.patch(`/tournaments/${editingTournamentId}`, {
           name: tournamentData.name,
           participantIds: selectedPlayerIds,
         });
+        createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
         onSuccess('Tournament modified successfully');
       } else {
-        await api.post('/tournaments', tournamentData);
+        const response = await api.post('/tournaments', tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Tournament created successfully');
       }
 
-      onCreated();
+      onCreated(createdId);
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
     }

@@ -4,6 +4,7 @@ import api from '../../../utils/api';
 import { getSystemConfig } from '../../../utils/systemConfig';
 import { rankBasedGroups, computeGroupCapacities } from './roundRobinUtils';
 import { BoundedNumericInput } from '../../BoundedNumericInput';
+import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
 
 type Step = 'select_group_size' | 'confirm_groups' | 'confirmation';
 
@@ -86,17 +87,21 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
         tournamentData.name = tournamentName.trim();
       }
 
+      let createdId: number | undefined;
       if (finalizingPreregistrationId) {
-        await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Multi Round Robin tournament created from preregistration successfully');
       } else if (editingTournamentId) {
-        await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
         onSuccess('Multi Round Robin tournament modified successfully');
       } else {
-        await api.post('/tournaments', tournamentData);
+        const response = await api.post('/tournaments', tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Multi Round Robin tournament created successfully');
       }
-      onCreated();
+      onCreated(createdId);
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
     }

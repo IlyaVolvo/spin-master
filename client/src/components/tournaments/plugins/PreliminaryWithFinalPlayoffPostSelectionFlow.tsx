@@ -4,6 +4,7 @@ import api from '../../../utils/api';
 import { getSystemConfig } from '../../../utils/systemConfig';
 import { snakeDraftGroups, computeGroupCapacities } from './roundRobinUtils';
 import { BoundedNumericInput } from '../../BoundedNumericInput';
+import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
 
 type Step = 'configure' | 'confirm_groups' | 'confirmation';
 
@@ -142,17 +143,21 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
         tournamentData.name = tournamentName.trim();
       }
 
+      let createdId: number | undefined;
       if (finalizingPreregistrationId) {
-        await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Preliminary + Final Playoff tournament created from preregistration successfully');
       } else if (editingTournamentId) {
-        await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
         onSuccess('Preliminary + Final Playoff tournament modified successfully');
       } else {
-        await api.post('/tournaments', tournamentData);
+        const response = await api.post('/tournaments', tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Preliminary + Final Playoff tournament created successfully');
       }
-      onCreated();
+      onCreated(createdId);
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
     }

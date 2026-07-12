@@ -262,7 +262,7 @@ export interface PostSelectionFlowProps {
   setTournamentName: (name: string) => void;
   editingTournamentId: number | null;
   finalizingPreregistrationId?: number | null;
-  onCreated: () => void;
+  onCreated: (tournamentId?: number) => void;
   onError: (error: string) => void;
   onSuccess: (message: string) => void;
   onCancel: () => void;

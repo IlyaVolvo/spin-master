@@ -27,6 +27,7 @@ import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } fro
 import { useTournamentCreation } from './hooks/useTournamentCreation';
 import { useShiftRangeAnchor } from './hooks/useShiftRangeAnchor';
 import { usePlayerData, membersCache } from './hooks/usePlayerData';
+import { extractCreatedTournamentId } from '../utils/extractCreatedTournamentId';
 import {
   getShiftRangeSlice,
   shiftKeyFromCheckboxChange,
@@ -2682,7 +2683,7 @@ const Players: React.FC = () => {
       return;
     }
     try {
-      await api.post('/tournaments/preregistration', {
+      const response = await api.post('/tournaments/preregistration', {
         name: tournamentName.trim() || undefined,
         type: creationTournamentType,
         tournamentDate: preregistrationTournamentDate || undefined,
@@ -2699,7 +2700,7 @@ const Players: React.FC = () => {
       setPreregistrationMaxRating('');
       setPreregistrationMaxParticipants('');
       window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
-      handleTournamentCreated();
+      handleTournamentCreated(extractCreatedTournamentId(response.data));
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create tournament preregistration');
     }

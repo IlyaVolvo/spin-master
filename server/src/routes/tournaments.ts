@@ -742,6 +742,73 @@ router.get('/active', async (req, res) => {
   }
 });
 
+const TOURNAMENT_INDEX_STATUSES = ['PRE_REGISTRATION', 'ACTIVE', 'COMPLETED'] as const;
+type TournamentIndexStatus = (typeof TOURNAMENT_INDEX_STATUSES)[number];
+
+function isTournamentIndexStatus(value: unknown): value is TournamentIndexStatus {
+  return typeof value === 'string' && (TOURNAMENT_INDEX_STATUSES as readonly string[]).includes(value);
+}
+
+/** Lightweight counts for stage tabs (top-level tournaments only). */
+router.get('/stage-counts', async (_req, res) => {
+  try {
+    const [preRegistration, active, completed, matches] = await Promise.all([
+      prisma.tournament.count({ where: { status: 'PRE_REGISTRATION', parentTournamentId: null } }),
+      prisma.tournament.count({ where: { status: 'ACTIVE', parentTournamentId: null } }),
+      prisma.tournament.count({ where: { status: 'COMPLETED', parentTournamentId: null } }),
+      prisma.match.count({ where: { tournamentId: null } }),
+    ]);
+    res.json({ preRegistration, active, completed, matches });
+  } catch (error) {
+    logger.error('Error fetching tournament stage counts', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** Lightweight tournament index for stage list pages (no matches/standings enrichment). */
+router.get('/index', async (req, res) => {
+  try {
+    const statusParam = req.query.status;
+    if (!isTournamentIndexStatus(statusParam)) {
+      return res.status(400).json({
+        error: `Invalid or missing status. Expected one of: ${TOURNAMENT_INDEX_STATUSES.join(', ')}`,
+      });
+    }
+
+    const tournaments = await prisma.tournament.findMany({
+      where: { status: statusParam, parentTournamentId: null },
+      orderBy: statusParam === 'COMPLETED'
+        ? [{ recordedAt: 'desc' }, { createdAt: 'desc' }]
+        : [{ createdAt: 'desc' }],
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        cancelled: true,
+        createdAt: true,
+        recordedAt: true,
+        tournamentDate: true,
+        registrationDeadline: true,
+        minRating: true,
+        maxRating: true,
+        maxParticipants: true,
+        _count: {
+          select: {
+            participants: true,
+            registrations: true,
+          },
+        },
+      },
+    });
+
+    res.json(tournaments);
+  } catch (error) {
+    logger.error('Error fetching tournament index', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get single tournament
 router.get('/:id', async (req, res) => {
   try {
