@@ -3368,15 +3368,6 @@ const TournamentDetailPage: React.FC = () => {
                                   🔄 Repeat
                                 </button>
                               )}
-                              {getCompoundSchedulePrintChildren(tournament).length > 0 && (
-                              <button
-                                onClick={() => handlePrintCompoundSchedule(tournament)}
-                                title={compoundSchedulePrintLabel(tournament)}
-                                style={{ padding: '6px 12px', border: '1px solid #7b1fa2', borderRadius: '4px', backgroundColor: '#fff', color: '#7b1fa2', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              >
-                                🖨️ {compoundSchedulePrintButtonText(tournament)}
-                              </button>
-                              )}
                               <button
                                 onClick={() => handlePrintCompoundResults(tournament)}
                                 title="Print all sub-tournament results"
@@ -3525,9 +3516,7 @@ const TournamentDetailPage: React.FC = () => {
                                             tournament: child as any,
                                             isExpanded: true,
                                             onToggleExpand: () => toggleSchedule(child.id),
-                                            onPrintSchedule: childHasPrintableSchedule(child)
-                                              ? () => handlePrintSchedule(child, tournament.name)
-                                              : undefined,
+                                            onPrintSchedule: undefined,
                                             onTournamentUpdate: (updated) => { fetchData(); },
                                             onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
