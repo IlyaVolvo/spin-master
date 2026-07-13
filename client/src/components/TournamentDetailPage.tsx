@@ -3478,14 +3478,6 @@ const TournamentDetailPage: React.FC = () => {
                                           expandedText="▲ Hide Participants"
                                           collapsedText="▼ Show Participants"
                                         />
-                                        {childPlugin?.createSchedulePanel && (
-                                          <ExpandCollapseButton
-                                            isExpanded={expandedSchedules.has(child.id)}
-                                            onToggle={() => toggleSchedule(child.id)}
-                                            expandedText="▲ Hide Schedule"
-                                            collapsedText="▼ Show Schedule"
-                                          />
-                                        )}
                                       </div>
 
                                       {/* Child participants */}
@@ -3505,21 +3497,6 @@ const TournamentDetailPage: React.FC = () => {
                                             onSuccess: (msg) => { console.log(msg); },
                                             isExpanded: true,
                                             onToggleExpand: () => {},
-                                          })}
-                                        </div>
-                                      )}
-
-                                      {/* Child schedule */}
-                                      {expandedSchedules.has(child.id) && childPlugin && childPlugin.createSchedulePanel && (
-                                        <div style={{ marginTop: '5px' }}>
-                                          {childPlugin.createSchedulePanel!({
-                                            tournament: child as any,
-                                            isExpanded: true,
-                                            onToggleExpand: () => toggleSchedule(child.id),
-                                            onPrintSchedule: undefined,
-                                            onTournamentUpdate: (updated) => { fetchData(); },
-                                            onError: (err) => handleTournamentError(err),
-                                            onSuccess: (msg) => { console.log(msg); },
                                           })}
                                         </div>
                                       )}
