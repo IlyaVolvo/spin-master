@@ -58,9 +58,3 @@ export const sectionCorrectionToggleActiveStyle: React.CSSProperties = {
   backgroundColor: '#2196f3',
   border: '1px solid #1976d2',
 };
-
-export const sectionCorrectionToggleIconColor = {
-  activeFill: '#ffb300',
-  activeStroke: '#1a1a1a',
-  inactive: '#1a1a1a',
-} as const;

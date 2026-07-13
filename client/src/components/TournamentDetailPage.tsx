@@ -52,7 +52,6 @@ import {
 } from './tournaments/utils/schedulePrintUtils';
 import {
   sectionCorrectionToggleActiveStyle,
-  sectionCorrectionToggleIconColor,
   sectionCorrectionToggleInactiveStyle,
   sectionCorrectionToggleStyle,
 } from './scoreCorrectionStyles';
@@ -110,10 +109,6 @@ function ScoreCorrectionModeToggle({
   onChange: (active: boolean) => void;
   title: string;
 }) {
-  const fill = active
-    ? sectionCorrectionToggleIconColor.activeFill
-    : sectionCorrectionToggleIconColor.inactive;
-  const stroke = active ? sectionCorrectionToggleIconColor.activeStroke : 'none';
   return (
     <button
       type="button"
@@ -126,21 +121,7 @@ function ScoreCorrectionModeToggle({
         ...(active ? sectionCorrectionToggleActiveStyle : sectionCorrectionToggleInactiveStyle),
       }}
     >
-      <svg
-        width="17"
-        height="17"
-        viewBox="0 0 24 24"
-        aria-hidden
-        style={{ display: 'block' }}
-      >
-        <path
-          fill={fill}
-          stroke={stroke}
-          strokeWidth={active ? 1.4 : 0}
-          strokeLinejoin="round"
-          d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.83H5v-.92l9.06-9.06.92.92L5.92 20.08zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
-        />
-      </svg>
+      🔧
     </button>
   );
 }
@@ -2305,15 +2286,6 @@ const TournamentDetailPage: React.FC = () => {
 
         {loadedStatus === 'ACTIVE' && (
         <>
-        {isUserOrganizer && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
-            <ScoreCorrectionModeToggle
-              active={activeScoreCorrectionChecked}
-              onChange={setActiveScoreCorrectionChecked}
-              title="Correct scores"
-            />
-          </div>
-        )}
         {!activeSectionCollapsed ? (
           filteredActiveEvents.length === 0 ? (
             <EmptyState
@@ -2350,17 +2322,35 @@ const TournamentDetailPage: React.FC = () => {
                             {isExpanded ? '▼' : '▶'}
                           </button>
                           {editingTournamentName === tournament.id ? (
-                            <TournamentNameEditor
-                              value={tournamentNameEdit}
-                              onChange={setTournamentNameEdit}
-                              onSave={() => handleSaveTournamentName(tournament.id)}
-                              onCancel={handleCancelEditTournamentName}
-                            />
+                            <>
+                              {isUserOrganizer && (
+                                <ScoreCorrectionModeToggle
+                                  active={activeScoreCorrectionChecked}
+                                  onChange={setActiveScoreCorrectionChecked}
+                                  title="Correct scores"
+                                />
+                              )}
+                              <TournamentNameEditor
+                                value={tournamentNameEdit}
+                                onChange={setTournamentNameEdit}
+                                onSave={() => handleSaveTournamentName(tournament.id)}
+                                onCancel={handleCancelEditTournamentName}
+                              />
+                            </>
                           ) : (
-                            <TournamentHeader
-                              tournament={tournament as any}
-                              onEditClick={() => handleStartEditTournamentName(tournament)}
-                            />
+                            <>
+                              {isUserOrganizer && (
+                                <ScoreCorrectionModeToggle
+                                  active={activeScoreCorrectionChecked}
+                                  onChange={setActiveScoreCorrectionChecked}
+                                  title="Correct scores"
+                                />
+                              )}
+                              <TournamentHeader
+                                tournament={tournament as any}
+                                onEditClick={() => handleStartEditTournamentName(tournament)}
+                              />
+                            </>
                           )}
                           <span style={{ fontSize: '12px', color: '#7b1fa2', fontWeight: 'bold', padding: '2px 8px', backgroundColor: '#e1bee7', borderRadius: '4px' }}>
                             {children.length} sub-tournaments
@@ -2629,14 +2619,30 @@ const TournamentDetailPage: React.FC = () => {
               style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ddd', borderRadius: '4px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 {editingTournamentName === tournament.id ? (
-                  <TournamentNameEditor
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {isUserOrganizer && (
+                      <ScoreCorrectionModeToggle
+                        active={activeScoreCorrectionChecked}
+                        onChange={setActiveScoreCorrectionChecked}
+                        title="Correct scores"
+                      />
+                    )}
+                    <TournamentNameEditor
                       value={tournamentNameEdit}
-                    onChange={setTournamentNameEdit}
-                    onSave={() => handleSaveTournamentName(tournament.id)}
-                    onCancel={handleCancelEditTournamentName}
-                  />
+                      onChange={setTournamentNameEdit}
+                      onSave={() => handleSaveTournamentName(tournament.id)}
+                      onCancel={handleCancelEditTournamentName}
+                    />
+                  </div>
                       ) : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {isUserOrganizer && (
+                      <ScoreCorrectionModeToggle
+                        active={activeScoreCorrectionChecked}
+                        onChange={setActiveScoreCorrectionChecked}
+                        title="Correct scores"
+                      />
+                    )}
                     <TournamentHeader
                       tournament={tournament as any}
                       onEditClick={() => handleStartEditTournamentName(tournament)}
@@ -3119,16 +3125,6 @@ const TournamentDetailPage: React.FC = () => {
 
         {loadedStatus === 'COMPLETED' && (
         <>
-        {isUserOrganizer && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
-            <ScoreCorrectionModeToggle
-              active={completedScoreCorrectionChecked}
-              onChange={setCompletedScoreCorrectionChecked}
-              title="Correct scores"
-            />
-          </div>
-        )}
-
         {!completedSectionCollapsed ? (
           <>
 
@@ -3326,17 +3322,35 @@ const TournamentDetailPage: React.FC = () => {
                                 {isCompoundExpanded ? '▼' : '▶'}
                               </button>
                               {editingTournamentName === tournament.id ? (
-                                <TournamentNameEditor
-                                  value={tournamentNameEdit}
-                                  onChange={setTournamentNameEdit}
-                                  onSave={() => handleSaveTournamentName(tournament.id)}
-                                  onCancel={handleCancelEditTournamentName}
-                                />
+                                <>
+                                  {isUserOrganizer && (
+                                    <ScoreCorrectionModeToggle
+                                      active={completedScoreCorrectionChecked}
+                                      onChange={setCompletedScoreCorrectionChecked}
+                                      title="Correct scores"
+                                    />
+                                  )}
+                                  <TournamentNameEditor
+                                    value={tournamentNameEdit}
+                                    onChange={setTournamentNameEdit}
+                                    onSave={() => handleSaveTournamentName(tournament.id)}
+                                    onCancel={handleCancelEditTournamentName}
+                                  />
+                                </>
                               ) : (
-                                <TournamentHeader
-                                  tournament={tournament as any}
-                                  onEditClick={() => handleStartEditTournamentName(tournament)}
-                                />
+                                <>
+                                  {isUserOrganizer && (
+                                    <ScoreCorrectionModeToggle
+                                      active={completedScoreCorrectionChecked}
+                                      onChange={setCompletedScoreCorrectionChecked}
+                                      title="Correct scores"
+                                    />
+                                  )}
+                                  <TournamentHeader
+                                    tournament={tournament as any}
+                                    onEditClick={() => handleStartEditTournamentName(tournament)}
+                                  />
+                                </>
                               )}
                               <span style={{ fontSize: '12px', color: '#1976d2', fontWeight: 'bold', padding: '2px 8px', backgroundColor: '#bbdefb', borderRadius: '4px' }}>
                                 {children.length} sub-tournaments
@@ -3520,14 +3534,30 @@ const TournamentDetailPage: React.FC = () => {
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                           {editingTournamentName === tournament.id ? (
-                            <TournamentNameEditor
-                              value={tournamentNameEdit}
-                              onChange={setTournamentNameEdit}
-                              onSave={() => handleSaveTournamentName(tournament.id)}
-                              onCancel={handleCancelEditTournamentName}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              {isUserOrganizer && (
+                                <ScoreCorrectionModeToggle
+                                  active={completedScoreCorrectionChecked}
+                                  onChange={setCompletedScoreCorrectionChecked}
+                                  title="Correct scores"
+                                />
+                              )}
+                              <TournamentNameEditor
+                                value={tournamentNameEdit}
+                                onChange={setTournamentNameEdit}
+                                onSave={() => handleSaveTournamentName(tournament.id)}
+                                onCancel={handleCancelEditTournamentName}
+                              />
+                            </div>
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              {isUserOrganizer && (
+                                <ScoreCorrectionModeToggle
+                                  active={completedScoreCorrectionChecked}
+                                  onChange={setCompletedScoreCorrectionChecked}
+                                  title="Correct scores"
+                                />
+                              )}
                               <TournamentHeader
                                 tournament={tournament as any}
                                 onEditClick={() => handleStartEditTournamentName(tournament)}
