@@ -377,6 +377,13 @@ const Tournaments: React.FC = () => {
       {includeCancelled && (
         <label
           style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '14px' }}
+          title={
+            cancelledFilter === 'only'
+              ? 'Showing only cancelled. Click to hide cancelled again.'
+              : cancelledFilter === 'included'
+                ? 'Showing cancelled with completed. Shift+click to show only cancelled; click to hide cancelled.'
+                : 'Cancelled are hidden. Click to include them; Shift+click to show only cancelled.'
+          }
           onClick={(e) => {
             e.preventDefault();
             const next = nextCancelledFilterMode(cancelledFilter, e.shiftKey);
@@ -386,6 +393,25 @@ const Tournaments: React.FC = () => {
         >
           <TriStateCheckbox value={cancelledFilterToTriState(cancelledFilter)} accentColor="#1976d2" />
           <span>Cancelled</span>
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '14px',
+              height: '14px',
+              borderRadius: '50%',
+              border: '1px solid #90a4ae',
+              color: '#607d8b',
+              fontSize: '10px',
+              fontWeight: 700,
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+          >
+            ?
+          </span>
         </label>
       )}
       {(tournamentNameFilter || dateFilterType !== 'all') && (
