@@ -230,7 +230,6 @@ const TournamentDetailPage: React.FC = () => {
   const [cancelledFilter, setCancelledFilter] = useState<CancelledFilterMode>(() => loadCancelledFilterMode());
   const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
   const [expandedParticipants, setExpandedParticipants] = useState<Set<number>>(new Set());
-  const [expandedCompound, setExpandedCompound] = useState<Set<number>>(new Set());
   const [preregistrationSectionCollapsed, setPreregistrationSectionCollapsed] = useState<boolean>(false);
   const [cancelPreregistration, setCancelPreregistration] = useState<Tournament | null>(null);
   const [cancelPreregistrationReason, setCancelPreregistrationReason] = useState('Tournament cancelled by organizer');
@@ -614,11 +613,6 @@ const TournamentDetailPage: React.FC = () => {
         for (const id of idsToExpand) next.add(id);
         return next;
       });
-      setExpandedCompound(prev => {
-        const next = new Set(prev);
-        for (const id of idsToExpand) next.add(id);
-        return next;
-      });
       setSelectedTournament(tournament);
       setPreregistrationSectionCollapsed(false);
       setActiveSectionCollapsed(false);
@@ -818,19 +812,6 @@ const TournamentDetailPage: React.FC = () => {
     });
   };
 
-
-  // Toggle compound tournament expansion
-  const toggleCompound = (tournamentId: number) => {
-    setExpandedCompound(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(tournamentId)) {
-        newSet.delete(tournamentId);
-      } else {
-        newSet.add(tournamentId);
-      }
-      return newSet;
-    });
-  };
 
   // Check if a tournament is compound (has child tournaments)
   const isCompoundTournament = (tournament: Tournament): boolean => {
@@ -1528,13 +1509,13 @@ const TournamentDetailPage: React.FC = () => {
           if (!isDiagonal && score) {
             const isForfeit = score === 'W' || score === 'L';
             if (isForfeit) {
-              cellBgColor = score === 'W' ? '#d4edda' : '#f8d7da';
+              cellBgColor = score === 'W' ? '#a5d6a7' : '#ef9a9a';
             } else {
               const [score1, score2] = score.split(' - ').map(Number);
               if (score1 > score2) {
-                cellBgColor = '#d4edda';
+                cellBgColor = '#a5d6a7';
               } else if (score2 > score1) {
-                cellBgColor = '#f8d7da';
+                cellBgColor = '#ef9a9a';
               }
             }
           }
@@ -1925,11 +1906,11 @@ const TournamentDetailPage: React.FC = () => {
             const isDiagonal = p1.member.id === p2.member.id;
             let cellBg = isDiagonal ? '#e9ecef' : '#fff';
             if (!isDiagonal && score) {
-              if (score === 'W') cellBg = '#d4edda';
-              else if (score === 'L') cellBg = '#f8d7da';
+              if (score === 'W') cellBg = '#a5d6a7';
+              else if (score === 'L') cellBg = '#ef9a9a';
               else if (score !== '') {
                 const [s1, s2] = score.split(' - ').map(Number);
-                cellBg = s1 > s2 ? '#d4edda' : s2 > s1 ? '#f8d7da' : '#fff';
+                cellBg = s1 > s2 ? '#a5d6a7' : s2 > s1 ? '#ef9a9a' : '#fff';
               }
             }
             allResultsHtml += `<td style="padding: 5px; border: 1px solid #333; text-align: center; background-color: ${cellBg}; font-size: 12px; font-weight: ${isDiagonal ? 'normal' : 'bold'};">${score || '-'}</td>`;
@@ -2300,7 +2281,6 @@ const TournamentDetailPage: React.FC = () => {
               {filteredActiveEvents.map((tournament) => {
                 const isCompound = isCompoundTournament(tournament);
                 const children = tournament.childTournaments || [];
-                const isExpanded = expandedCompound.has(tournament.id);
 
                 // ═══════════════════════════════════════════════════════════════
                 // COMPOUND TOURNAMENT CARD
@@ -2315,12 +2295,6 @@ const TournamentDetailPage: React.FC = () => {
                       {/* Parent header */}
                       <div style={{ padding: '12px 15px', backgroundColor: '#f3e5f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <button
-                            onClick={() => toggleCompound(tournament.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px 6px', color: '#7b1fa2' }}
-                          >
-                            {isExpanded ? '▼' : '▶'}
-                          </button>
                           {editingTournamentName === tournament.id ? (
                             <>
                               {isUserOrganizer && (
@@ -2417,14 +2391,8 @@ const TournamentDetailPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Compound expand/collapse buttons (always visible) */}
-                      <div style={{ padding: '8px 15px', display: 'flex', gap: '10px', borderBottom: isExpanded ? '1px solid #e0e0e0' : 'none' }}>
-                        <ExpandCollapseButton
-                          isExpanded={isExpanded}
-                          onToggle={() => toggleCompound(tournament.id)}
-                          expandedText="▲ Hide Sub-Tournaments"
-                          collapsedText="▼ Show Sub-Tournaments / Record Results"
-                        />
+                      {/* Compound participants toggle */}
+                      <div style={{ padding: '8px 15px', display: 'flex', gap: '10px', borderBottom: '1px solid #e0e0e0' }}>
                         <ExpandCollapseButton
                           isExpanded={expandedParticipants.has(tournament.id)}
                           onToggle={() => toggleParticipants(tournament.id)}
@@ -2443,8 +2411,8 @@ const TournamentDetailPage: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Expanded: child tournaments */}
-                      {isExpanded && children.length > 0 && (
+                      {/* Child tournaments (always shown on detail page) */}
+                      {children.length > 0 && (
                         <div style={{ padding: '10px 15px', backgroundColor: '#fafafa' }}>
                           {children
                             .slice()
@@ -3305,7 +3273,6 @@ const TournamentDetailPage: React.FC = () => {
                     // ═══════════════════════════════════════════════════════════════
                     if (isCompoundTournament(tournament)) {
                       const children = tournament.childTournaments || [];
-                      const isCompoundExpanded = expandedCompound.has(tournament.id);
                       return (
                         <div
                           key={tournament.id}
@@ -3315,12 +3282,6 @@ const TournamentDetailPage: React.FC = () => {
                           {/* Parent header */}
                           <div style={{ padding: '12px 15px', backgroundColor: '#e3f2fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <button
-                                onClick={() => toggleCompound(tournament.id)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px 6px', color: '#1976d2' }}
-                              >
-                                {isCompoundExpanded ? '▼' : '▶'}
-                              </button>
                               {editingTournamentName === tournament.id ? (
                                 <>
                                   {isUserOrganizer && (
@@ -3399,14 +3360,8 @@ const TournamentDetailPage: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Compound expand/collapse buttons */}
-                          <div style={{ padding: '8px 15px', display: 'flex', gap: '10px', borderBottom: isCompoundExpanded ? '1px solid #e0e0e0' : 'none' }}>
-                            <ExpandCollapseButton
-                              isExpanded={isCompoundExpanded}
-                              onToggle={() => toggleCompound(tournament.id)}
-                              expandedText="▲ Hide Sub-Tournaments"
-                              collapsedText="▼ Show Sub-Tournament Results"
-                            />
+                          {/* Compound participants toggle */}
+                          <div style={{ padding: '8px 15px', display: 'flex', gap: '10px', borderBottom: '1px solid #e0e0e0' }}>
                             <ExpandCollapseButton
                               isExpanded={expandedParticipants.has(tournament.id)}
                               onToggle={() => toggleParticipants(tournament.id)}
@@ -3425,8 +3380,8 @@ const TournamentDetailPage: React.FC = () => {
                             </div>
                           )}
 
-                          {/* Expanded: child tournaments */}
-                          {isCompoundExpanded && children.length > 0 && (
+                          {/* Child tournaments (always shown on detail page) */}
+                          {children.length > 0 && (
                             <div style={{ padding: '10px 15px', backgroundColor: '#fafafa' }}>
                               {children
                                 .slice()

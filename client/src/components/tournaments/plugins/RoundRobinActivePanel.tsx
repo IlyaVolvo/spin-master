@@ -370,16 +370,16 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                     if (!isDiagonal && hasScore) {
                       if (isForfeit) {
                         if (score === 'W') {
-                          cellStyle.backgroundColor = '#d4edda';
+                          cellStyle.backgroundColor = '#a5d6a7';
                         } else {
-                          cellStyle.backgroundColor = '#f8d7da';
+                          cellStyle.backgroundColor = '#ef9a9a';
                         }
                       } else {
                         const [score1, score2] = score.split(' - ').map(Number);
                         if (score1 > score2) {
-                          cellStyle.backgroundColor = '#d4edda';
+                          cellStyle.backgroundColor = '#a5d6a7';
                         } else if (score2 > score1) {
-                          cellStyle.backgroundColor = '#f8d7da';
+                          cellStyle.backgroundColor = '#ef9a9a';
                         }
                       }
                     }

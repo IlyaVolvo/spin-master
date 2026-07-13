@@ -37,8 +37,25 @@ import {
   type StageCounts,
 } from './tournaments/TournamentStageTabs';
 
-/** Shared list columns so header labels align over Type / Date / open button. */
-const TOURNAMENT_LIST_GRID_COLUMNS = 'minmax(0, 1fr) 11rem 9.5rem 32px';
+/** Shared list columns so header labels align over Type / Date. */
+const TOURNAMENT_LIST_GRID_COLUMNS = 'minmax(0, 1fr) 11rem 9.5rem';
+const TOURNAMENT_LIST_ROW_HOVER_BG = '#bbdefb';
+
+function applyTournamentListRowIdleStyle(el: HTMLElement, rowBg: string) {
+  el.style.backgroundColor = rowBg;
+  el.style.boxShadow = 'none';
+  el.style.transform = 'none';
+  el.style.borderLeft = '3px solid transparent';
+  el.style.zIndex = '0';
+}
+
+function applyTournamentListRowActiveStyle(el: HTMLElement) {
+  el.style.backgroundColor = TOURNAMENT_LIST_ROW_HOVER_BG;
+  el.style.boxShadow = 'inset 0 0 0 1px #64b5f6, 0 2px 8px rgba(33, 150, 243, 0.35)';
+  el.style.transform = 'scale(1.01)';
+  el.style.borderLeft = '3px solid #1976d2';
+  el.style.zIndex = '1';
+}
 
 interface TournamentIndexItem {
   id: number;
@@ -507,7 +524,6 @@ const Tournaments: React.FC = () => {
               <span>Tournament</span>
               <span>Type</span>
               <span>Date</span>
-              <span aria-hidden="true" />
             </div>
             {filteredTournaments.map((tournament, index) => {
               const dateValue = stage === 'COMPLETED'
@@ -515,8 +531,12 @@ const Tournaments: React.FC = () => {
                 : (tournament.tournamentDate || tournament.createdAt);
               const rowBg = index % 2 === 0 ? '#ffffff' : '#e0e0e0';
               return (
-                <div
+                <button
                   key={tournament.id}
+                  type="button"
+                  onClick={() => openTournament(tournament.id)}
+                  title="Open tournament"
+                  aria-label={`Open ${tournament.name || `Tournament ${tournament.id}`}`}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: TOURNAMENT_LIST_GRID_COLUMNS,
@@ -524,10 +544,35 @@ const Tournaments: React.FC = () => {
                     alignItems: 'center',
                     width: '100%',
                     padding: '5px 10px',
+                    paddingLeft: '7px',
+                    border: 'none',
                     borderTop: index === 0 ? 'none' : '1px solid #eee',
+                    borderLeft: '3px solid transparent',
+                    borderRadius: 0,
                     backgroundColor: rowBg,
                     textAlign: 'left',
                     boxSizing: 'border-box',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    color: 'inherit',
+                    boxShadow: 'none',
+                    transform: 'none',
+                    transformOrigin: 'center left',
+                    transition: 'background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, border-left-color 0.15s ease',
+                    position: 'relative',
+                    zIndex: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    applyTournamentListRowActiveStyle(e.currentTarget);
+                  }}
+                  onMouseLeave={(e) => {
+                    applyTournamentListRowIdleStyle(e.currentTarget, rowBg);
+                  }}
+                  onFocus={(e) => {
+                    applyTournamentListRowActiveStyle(e.currentTarget);
+                  }}
+                  onBlur={(e) => {
+                    applyTournamentListRowIdleStyle(e.currentTarget, rowBg);
                   }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
@@ -555,28 +600,7 @@ const Tournaments: React.FC = () => {
                   <span style={{ fontSize: '12px', fontWeight: 600, color: '#455a64', whiteSpace: 'nowrap' }}>
                     {dateValue ? new Date(dateValue).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
                   </span>
-                  <button
-                    type="button"
-                    className="button-3d"
-                    onClick={() => openTournament(tournament.id)}
-                    title="Open tournament"
-                    aria-label={`Open ${tournament.name || `Tournament ${tournament.id}`}`}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      width: '32px',
-                      height: '21px',
-                      padding: 0,
-                      fontSize: '16px',
-                      fontWeight: 900,
-                      lineHeight: 1,
-                    }}
-                  >
-                    →
-                  </button>
-                </div>
+                </button>
               );
             })}
           </div>

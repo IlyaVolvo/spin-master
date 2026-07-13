@@ -453,9 +453,9 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                             padding: '8px 12px', 
                             textAlign: 'center',
                             border: '1px solid #ddd',
-                            backgroundColor: isWin ? '#d4edda' : isLoss ? '#f8d7da' : isDraw ? '#e9ecef' : 'white',
+                            backgroundColor: isWin ? '#a5d6a7' : isLoss ? '#ef9a9a' : isDraw ? '#e9ecef' : 'white',
                             fontWeight: isWin || isLoss ? 'bold' : 'normal',
-                            color: isWin ? '#155724' : isLoss ? '#721c24' : '#333',
+                            color: isWin ? '#1b5e20' : isLoss ? '#b71c1c' : '#333',
                             minWidth: '80px',
                             ...(correctable ? correctableCellOutlineStyle : {}),
                           }}

@@ -920,7 +920,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         style={{
           padding: '8px 12px',
           height: `${MATCH_BOX_HEIGHT}px`,
-          backgroundColor: isWinner ? '#d4edda' : (isClickableForScoreEntry ? '#f8f9fa' : 'white'),
+          backgroundColor: isWinner ? '#a5d6a7' : (isClickableForScoreEntry ? '#f8f9fa' : 'white'),
           border: isWinner ? '2px solid #333' : (isClickableForScoreEntry ? '2px solid #007bff' : '1px solid #333'),
           borderRadius: '4px',
           display: 'flex',
