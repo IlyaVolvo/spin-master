@@ -713,46 +713,63 @@ const TournamentDetailPage: React.FC = () => {
 
     // Set up Socket.io connection for real-time updates
     const socket = connectSocket();
+    const SOCKET_REFRESH_DEBOUNCE_MS = 300;
+    let refreshTimeout: number | null = null;
 
-    // Listen for cache invalidation events
-    const refreshSilentlyPreservingScroll = (logLabel: string) => {
-      void withWindowScrollPreserved(() => fetchData({ silent: true })).catch((err) => {
-        console.error(`Error refreshing data after ${logLabel}`, err);
-      });
+    const eventTouchesOpenTournament = (data: { id?: number; tournamentId?: number | null }) => {
+      const eventTournamentId = data.tournamentId ?? data.id;
+      if (eventTournamentId == null || !Number.isFinite(eventTournamentId)) {
+        return true;
+      }
+      return eventTournamentId === tournamentId;
+    };
+
+    // Coalesce paired emits (e.g. tournament:updated + cache:invalidate) into one silent refresh.
+    const scheduleSocketRefresh = (logLabel: string, data: { id?: number; tournamentId?: number | null }) => {
+      if (!eventTouchesOpenTournament(data)) {
+        return;
+      }
+      console.log(logLabel, data);
+      if (refreshTimeout !== null) {
+        window.clearTimeout(refreshTimeout);
+      }
+      refreshTimeout = window.setTimeout(() => {
+        refreshTimeout = null;
+        void withWindowScrollPreserved(() => fetchData({ silent: true })).catch((err) => {
+          console.error(`Error refreshing data after ${logLabel}`, err);
+        });
+      }, SOCKET_REFRESH_DEBOUNCE_MS);
     };
 
     socket?.on('cache:invalidate', (data: { tournamentId?: number; timestamp: number }) => {
-      console.log('Cache invalidated', data);
-      refreshSilentlyPreservingScroll('cache invalidation');
+      scheduleSocketRefresh('Cache invalidated', data);
     });
 
     socket?.on('tournament:updated', (data: { id: number; name: string; status: string; type: string; timestamp: number }) => {
-      console.log('Tournament updated', data);
-      refreshSilentlyPreservingScroll('tournament update');
+      scheduleSocketRefresh('Tournament updated', data);
     });
 
     socket?.on('tournament:created', (data: { id: number; name: string; status: string; type: string; timestamp: number }) => {
-      console.log('Tournament created', data);
-      refreshSilentlyPreservingScroll('tournament creation');
+      scheduleSocketRefresh('Tournament created', data);
     });
 
     socket?.on('tournament:deleted', (data: { id: number; timestamp: number }) => {
-      console.log('Tournament deleted', data);
-      refreshSilentlyPreservingScroll('tournament deletion');
+      scheduleSocketRefresh('Tournament deleted', data);
     });
 
     socket?.on('tournament:stateChanged', (data: { id: number; previousStatus?: string | null; status: string; timestamp: number }) => {
-      console.log('Tournament state changed', data);
-      refreshSilentlyPreservingScroll('tournament state change');
+      scheduleSocketRefresh('Tournament state changed', data);
     });
 
     socket?.on('match:updated', (data: { id: number; tournamentId: number; member1Id: number; member2Id: number; timestamp: number }) => {
-      console.log('Match updated', data);
-      refreshSilentlyPreservingScroll('match update');
+      scheduleSocketRefresh('Match updated', data);
     });
 
     // Cleanup on unmount
     return () => {
+      if (refreshTimeout !== null) {
+        window.clearTimeout(refreshTimeout);
+      }
       socket?.off('cache:invalidate');
       socket?.off('tournament:updated');
       socket?.off('tournament:created');
@@ -761,7 +778,7 @@ const TournamentDetailPage: React.FC = () => {
       socket?.off('match:updated');
       // Don't disconnect socket - it's shared across components
     };
-  }, [fetchData]);
+  }, [fetchData, tournamentId]);
 
   // ============================================================================
   // PLUGIN-BASED HELPER FUNCTIONS

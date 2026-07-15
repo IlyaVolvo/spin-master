@@ -77,6 +77,17 @@ export function emitTournamentUpdate(tournament: any) {
 }
 
 /**
+ * Notify clients that preregistration eligibility / pending badge may have changed.
+ * Used to refresh nav pending-count without polling.
+ */
+export function emitPreregistrationChanged(tournamentId?: number) {
+  emitToAll('preregistration:changed', {
+    tournamentId,
+    timestamp: Date.now(),
+  });
+}
+
+/**
  * Emit tournament creation event
  */
 export function emitTournamentCreated(tournament: any) {

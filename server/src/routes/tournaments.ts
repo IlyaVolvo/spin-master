@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { invalidateCacheAfterTournament, invalidateTournamentCache } from '../services/cacheService';
 import {
   emitCacheInvalidation,
+  emitPreregistrationChanged,
   emitTournamentCreated,
   emitTournamentDeleted,
   emitTournamentStateChanged,
@@ -442,6 +443,7 @@ router.post('/register/:code/decline', async (req, res) => {
     const updatedTournament = await loadTournamentForResponse(result.tournamentId);
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(result.tournamentId);
+    emitPreregistrationChanged(result.tournamentId);
     res.json({ status: 'DECLINED', message: result.message, tournament: updatedTournament });
   } catch (error) {
     if (isClientHttpError(error)) {
@@ -472,6 +474,7 @@ router.post('/register/:code', async (req, res) => {
     const updatedTournament = await loadTournamentForResponse(registration.tournamentId);
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(registration.tournamentId);
+    emitPreregistrationChanged(registration.tournamentId);
     res.status(200).json({
       status: result.status,
       message: result.message,
@@ -942,6 +945,7 @@ router.post('/preregistration', [
     const createdTournament = await loadTournamentForResponse(tournament.id);
     emitTournamentCreated(createdTournament);
     emitCacheInvalidation(tournament.id);
+    emitPreregistrationChanged(tournament.id);
     res.status(201).json({ tournament: createdTournament, invitationCount, emailFailureCount });
   } catch (error) {
     logger.error('Error creating tournament preregistration', { error: error instanceof Error ? error.message : String(error) });
@@ -1053,6 +1057,7 @@ router.post('/:id/finalize-registration', [
     invalidateTournamentCache(createdTournament.id);
     emitTournamentStateChanged(createdTournament, 'PRE_REGISTRATION');
     emitCacheInvalidation(createdTournament.id);
+    emitPreregistrationChanged(createdTournament.id);
     res.json(createdTournament);
   } catch (error) {
     logger.error('Error finalizing tournament registration', { error: error instanceof Error ? error.message : String(error) });
@@ -1150,6 +1155,7 @@ router.post('/:id/cancel-preregistration', [
       invalidateTournamentCache(tournamentId);
       emitTournamentDeleted(tournamentId);
       emitCacheInvalidation(tournamentId);
+      emitPreregistrationChanged(tournamentId);
     } catch (notificationError) {
       logger.error('Preregistration cancellation succeeded but notification/cache invalidation failed', {
         tournamentId,
@@ -1189,6 +1195,7 @@ router.post('/:id/register', async (req: AuthRequest, res: Response) => {
     const updatedTournament = await loadTournamentForResponse(tournamentId);
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(tournamentId);
+    emitPreregistrationChanged(tournamentId);
     res.status(200).json({
       status: result.status,
       message: result.message,
@@ -1248,6 +1255,7 @@ router.post('/:id/decline', async (req: AuthRequest, res: Response) => {
     const updatedTournament = await loadTournamentForResponse(tournamentId);
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(tournamentId);
+    emitPreregistrationChanged(tournamentId);
     res.json({
       status: 'DECLINED',
       message: 'Invitation declined.',
@@ -1408,6 +1416,9 @@ router.post('/', [
       emitTournamentCreated(createdTournament);
     }
     emitCacheInvalidation(createdTournament.id);
+    if (previousStatus === 'PRE_REGISTRATION') {
+      emitPreregistrationChanged(createdTournament.id);
+    }
 
     res.status(201).json(createdTournament);
   } catch (error) {

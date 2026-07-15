@@ -539,6 +539,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   useEffect(() => {
     let cancelled = false;
     let deadlineTimeout: number | null = null;
+    let hasConnectedOnce = false;
 
     const scheduleDeadlineRefresh = (nextDeadlineAt: unknown) => {
       if (deadlineTimeout !== null) {
@@ -571,16 +572,38 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
       }
     };
 
+    const onSocketConnect = () => {
+      // Skip the first connect — mount fetch covers cold start; refetch only after reconnect.
+      if (hasConnectedOnce) {
+        void fetchPendingPreregistrations();
+      }
+      hasConnectedOnce = true;
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchPendingPreregistrations();
+      }
+    };
+
     void fetchPendingPreregistrations();
-    const interval = window.setInterval(fetchPendingPreregistrations, 30000);
+    const socket = connectSocket();
+    socket?.on('connect', onSocketConnect);
+    if (socket?.connected) {
+      hasConnectedOnce = true;
+    }
+    socket?.on('preregistration:changed', fetchPendingPreregistrations);
     window.addEventListener('tournament-preregistration-count-changed', fetchPendingPreregistrations);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
       if (deadlineTimeout !== null) {
         window.clearTimeout(deadlineTimeout);
       }
+      socket?.off('connect', onSocketConnect);
+      socket?.off('preregistration:changed', fetchPendingPreregistrations);
       window.removeEventListener('tournament-preregistration-count-changed', fetchPendingPreregistrations);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
   
