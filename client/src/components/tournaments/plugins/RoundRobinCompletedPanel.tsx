@@ -1,7 +1,7 @@
 import React from 'react';
 import { TournamentCompletedProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
-import { isLikelyRanking } from '../../../utils/ratingFormatter';
+import { formatRrCompletedRatingLine } from '../../../utils/ratingFormatter';
 import { sortParticipantsByRating } from '../utils/participantSort';
 import { useScoreCorrectionModeActive } from '../../../contexts/ScoreCorrectionModeContext';
 import { isOrganizer } from '../../../utils/auth';
@@ -98,59 +98,6 @@ const buildResultsMatrix = (tournament: any) => {
 
   return { participants, participantData, matrix, matchMap };
 };
-
-/** e.g. +20, -10 */
-function formatSignedDelta(n: number): string {
-  if (n >= 0) return `+${n}`;
-  return `${n}`;
-}
-
-/**
- * (current) (signup/(completion Δ[, during Δ][, after Δ]))
- * - completion Δ: TOURNAMENT_COMPLETED ratingChange (final RR adjustment).
- * - during Δ: optional; rating change from signup to anchor immediately before that completion
- *   (e.g. rated matches during the event). anchor = rrCompletionRating − completion Δ.
- * - after Δ: optional; current − materialized rating after tournament if profile moved later.
- */
-function formatRrCompletedRatingLine(participant: any): string | null {
-  const before = participant?.playerRatingAtTime;
-  const current = participant?.postRatingAtTime ?? participant?.member?.rating ?? null;
-  if (before == null || current == null || isLikelyRanking(before)) {
-    return null;
-  }
-  const cur = Math.round(current);
-  const bef = Math.round(before);
-
-  const tcChange = participant?.rrCompletionRatingChange;
-  const rAfterTournament = participant?.rrCompletionRating;
-
-  if (rAfterTournament != null) {
-    const rEvent = Math.round(rAfterTournament);
-    const completionDelta =
-      tcChange != null ? Math.round(tcChange) : rEvent - bef;
-
-    const parts: string[] = [formatSignedDelta(completionDelta)];
-
-    if (tcChange != null) {
-      const anchorBeforeCompletion = rEvent - Math.round(tcChange);
-      const duringDelta = anchorBeforeCompletion - bef;
-      if (duringDelta !== 0) {
-        parts.push(formatSignedDelta(duringDelta));
-      }
-    }
-
-    const afterDelta = cur - rEvent;
-    if (afterDelta !== 0) {
-      parts.push(formatSignedDelta(afterDelta));
-    }
-
-    const innerDeltas = parts.join(', ');
-    return `(${cur}) (${bef}/(${innerDeltas}))`;
-  }
-
-  const net = cur - bef;
-  return `(${cur}) (${bef}/(${formatSignedDelta(net)}))`;
-}
 
 export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
   tournament,

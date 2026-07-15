@@ -242,6 +242,17 @@ export interface TournamentPlugin {
 
   // Additional features
   canPrintResults?: boolean;
+  /** When true, Abbreviated results print options are offered on completed tournaments. */
+  supportsAbbreviatedResultsPrint?: boolean;
+  /**
+   * Compound parents: true when `child` is the final phase (printed on its own row, etc.).
+   * Omit on basic / flat multi-group types.
+   */
+  isFinalPhaseChild?: (parent: Tournament, child: Tournament) => boolean;
+  /**
+   * Compound prelim+final parents: true when `child` is a preliminary group (not the final).
+   */
+  isPreliminaryGroupChild?: (parent: Tournament, child: Tournament) => boolean;
   createPrintPanel?: (props: TournamentPrintProps) => React.ReactNode;
   renderHeader?: (props: { tournament: Tournament; onEditClick: () => void }) => React.ReactNode;
 }

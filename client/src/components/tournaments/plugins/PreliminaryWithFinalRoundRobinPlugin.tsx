@@ -368,6 +368,14 @@ export const PreliminaryWithFinalRoundRobinPlugin: TournamentPlugin = {
   createCompletedPanel: (props: TournamentCompletedProps) => (
     <PreliminaryWithFinalRoundRobinCompletedPanel {...props} />
   ),
+
+  supportsAbbreviatedResultsPrint: true,
+
+  isFinalPhaseChild: (_parent, child) =>
+    child.groupNumber === null || child.groupNumber === undefined,
+
+  isPreliminaryGroupChild: (_parent, child) =>
+    child.groupNumber !== null && child.groupNumber !== undefined,
 };
 
 export default PreliminaryWithFinalRoundRobinPlugin;

@@ -22,26 +22,23 @@ const PRINT_STYLES = `
   .section h3 { margin: 0 0 5px 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px; }
 `;
 
+/** True when the parent plugin models a prelim+final structure (exposes final-phase helpers). */
 export function isPreliminaryFinalParentType(type: TournamentType): boolean {
-  return type === 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN' || type === 'PRELIMINARY_WITH_FINAL_PLAYOFF';
+  const plugin = tournamentPluginRegistry.get(type);
+  return typeof plugin?.isFinalPhaseChild === 'function';
 }
 
 export function isPreliminaryGroupChild(parent: Tournament, child: Tournament): boolean {
-  if (parent.type === 'PRELIMINARY_WITH_FINAL_PLAYOFF') {
-    return child.type === 'ROUND_ROBIN';
-  }
-  if (parent.type === 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN') {
-    return child.groupNumber !== null && child.groupNumber !== undefined;
+  const plugin = tournamentPluginRegistry.get(parent.type as TournamentType);
+  if (plugin?.isPreliminaryGroupChild) {
+    return plugin.isPreliminaryGroupChild(parent, child);
   }
   return true;
 }
 
 export function isFinalPhaseChild(parent: Tournament, child: Tournament): boolean {
-  if (!isPreliminaryFinalParentType(parent.type)) return false;
-  if (parent.type === 'PRELIMINARY_WITH_FINAL_PLAYOFF') {
-    return child.type === 'PLAYOFF';
-  }
-  return child.groupNumber === null || child.groupNumber === undefined;
+  const plugin = tournamentPluginRegistry.get(parent.type as TournamentType);
+  return Boolean(plugin?.isFinalPhaseChild?.(parent, child));
 }
 
 /** True when this child has participants and a non-empty generated schedule. */

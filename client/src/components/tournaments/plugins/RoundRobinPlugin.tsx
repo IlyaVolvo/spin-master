@@ -119,6 +119,7 @@ export const RoundRobinPlugin: TournamentPlugin = {
   },
 
   canPrintResults: true,
+  supportsAbbreviatedResultsPrint: true,
 };
 
 export default RoundRobinPlugin;

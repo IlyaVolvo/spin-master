@@ -43,6 +43,7 @@ export const PlayoffPlugin: TournamentPlugin = {
   },
   
   canPrintResults: true,
+  supportsAbbreviatedResultsPrint: false,
   
   renderHeader: ({ tournament, onEditClick }) => {
     return React.createElement('div', {}, 

@@ -104,6 +104,7 @@ export const SwissPlugin: TournamentPlugin = {
   generateSchedule: (tournament) => generateSwissSchedule(tournament),
 
   canPrintResults: true,
+  supportsAbbreviatedResultsPrint: false,
 
   calculateExpectedMatches: (tournament) => {
     const swissData = (tournament as any).swissData;

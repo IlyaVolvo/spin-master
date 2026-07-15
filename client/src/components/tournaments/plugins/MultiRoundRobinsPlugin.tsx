@@ -66,6 +66,7 @@ export const MultiRoundRobinsPlugin: TournamentPlugin = {
   createCompletedPanel: (_props: TournamentCompletedProps) => <PlaceholderPanel />,
 
   canPrintResults: false,
+  supportsAbbreviatedResultsPrint: true,
 };
 
 export default MultiRoundRobinsPlugin;

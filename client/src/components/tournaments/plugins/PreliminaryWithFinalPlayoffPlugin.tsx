@@ -372,6 +372,12 @@ export const PreliminaryWithFinalPlayoffPlugin: TournamentPlugin = {
   createCompletedPanel: (props: TournamentCompletedProps) => (
     <PreliminaryWithFinalPlayoffCompletedPanel {...props} />
   ),
+
+  supportsAbbreviatedResultsPrint: true,
+
+  isFinalPhaseChild: (_parent, child) => child.type === 'PLAYOFF',
+
+  isPreliminaryGroupChild: (_parent, child) => child.type === 'ROUND_ROBIN',
 };
 
 export default PreliminaryWithFinalPlayoffPlugin;
