@@ -22,7 +22,7 @@
   font-weight: 500;
 }
 
-.form-group input,
+.form-group input:not([type="checkbox"]):not([type="radio"]),
 .form-group select {
   width: 100%;
   padding: 8px 12px;
@@ -31,10 +31,19 @@
   font-size: 14px;
 }
 
-.form-group input:focus,
+.form-group input:not([type="checkbox"]):not([type="radio"]):focus,
 .form-group select:focus {
   outline: none;
   border-color: #3498db;
+}
+
+.form-group input[type="checkbox"],
+.form-group input[type="radio"] {
+  width: auto;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
 }
 
 /* Badge Components */
@@ -108,12 +117,12 @@ table tr:hover {
 }
 
 /* Field Validation States */
-.form-group.has-error input,
+.form-group.has-error input:not([type="checkbox"]):not([type="radio"]),
 .form-group.has-error select {
   border-color: #e74c3c !important;
 }
 
-.form-group.has-error input:focus,
+.form-group.has-error input:not([type="checkbox"]):not([type="radio"]):focus,
 .form-group.has-error select:focus {
   border-color: #e74c3c !important;
   box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.15);
@@ -135,7 +144,7 @@ table tr:hover {
   display: block;
 }
 
-.form-group.is-valid input,
+.form-group.is-valid input:not([type="checkbox"]):not([type="radio"]),
 .form-group.is-valid select {
   border-color: #27ae60 !important;
 }
@@ -151,7 +160,14 @@ table tr:hover {
   gap: 8px;
 }
 
+.form-group label.checkbox-group {
+  display: flex;
+  margin-bottom: 0;
+  font-weight: 400;
+}
+
 .checkbox-group input[type="checkbox"] {
   width: auto;
+  flex-shrink: 0;
 }
 

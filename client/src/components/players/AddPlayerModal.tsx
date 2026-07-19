@@ -201,10 +201,8 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
           </div>
           <div className="form-group">
             <label
+              className="checkbox-group"
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
                 cursor: hasEmail ? 'pointer' : 'not-allowed',
                 color: hasEmail ? 'inherit' : '#999',
                 fontSize: '13px',
@@ -251,7 +249,7 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                 columnGap: '16px',
                 rowGap: '8px',
                 paddingTop: '4px',
@@ -260,13 +258,12 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
               {['PLAYER', 'COACH', 'ORGANIZER', 'ADMIN'].map((role) => (
                 <label
                   key={role}
+                  className="checkbox-group"
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
                     cursor: 'pointer',
                     fontSize: '13px',
                     margin: 0,
+                    fontWeight: 400,
                     lineHeight: 1.2,
                   }}
                 >
