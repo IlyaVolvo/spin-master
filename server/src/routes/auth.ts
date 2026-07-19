@@ -851,9 +851,16 @@ router.get('/member/me', async (req: Request, res: Response) => {
             memberId = decoded.memberId;
           }
         } catch (jwtError) {
-          // JWT verification failed, continue to return 401
+          const isExpired = jwtError instanceof Error && jwtError.name === 'TokenExpiredError';
           logger.warn('JWT token verification failed in /member/me', {
-            error: jwtError instanceof Error ? jwtError.message : String(jwtError)
+            error: jwtError instanceof Error ? jwtError.message : String(jwtError),
+            errorName: jwtError instanceof Error ? jwtError.name : typeof jwtError,
+          });
+          return res.status(401).json({
+            error: isExpired
+              ? 'Your session has expired. Please log in again.'
+              : 'Invalid token. Please log in again.',
+            code: isExpired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
           });
         }
       }
@@ -906,7 +913,10 @@ router.get('/member/me', async (req: Request, res: Response) => {
       });
     }
 
-    return res.status(401).json({ error: 'Not authenticated' });
+    return res.status(401).json({
+      error: 'Not authenticated. Please log in again.',
+      code: 'AUTHENTICATION_REQUIRED',
+    });
   } catch (error) {
     logger.error('Get current member error', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });

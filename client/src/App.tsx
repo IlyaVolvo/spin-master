@@ -2,7 +2,7 @@ import { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
-import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated } from './utils/auth';
+import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated, subscribeAuthExpired, consumeAuthExpiredMessage } from './utils/auth';
 import api from './utils/api';
 import { connectSocket } from './utils/socket';
 import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig } from './utils/systemConfig';
@@ -90,6 +90,16 @@ function App() {
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [clubName, setClubName] = useState<string | null>(null);
+  const [authExpiredMessage, setAuthExpiredMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    return subscribeAuthExpired((message) => {
+      setIsAuth(false);
+      setShowPasswordReset(false);
+      setIsCheckingAuth(false);
+      setAuthExpiredMessage(message);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,9 +178,14 @@ function App() {
             // Session expired, invalid, or timeout - clear member and token
             if (!isMounted) return;
             console.error('Auth check failed:', err.message || err);
+            const expiredMessage =
+              (typeof err?.response?.data?.error === 'string' && err.response.data.error) ||
+              consumeAuthExpiredMessage() ||
+              'Your session has expired. Please log in again.';
             removeMember();
             removeToken();
             setIsAuth(false);
+            setAuthExpiredMessage(expiredMessage);
             setIsCheckingAuth(false);
             timeoutCleared = true;
             return;
@@ -223,6 +238,7 @@ function App() {
   }, []);
 
   const handleLogin = async () => {
+    setAuthExpiredMessage(null);
     // After successful login, verify the session is properly established
     try {
       const response = await api.get('/auth/member/me');
@@ -286,7 +302,7 @@ function App() {
         </ErrorBoundary>
       ) : !isAuth ? (
         <ErrorBoundary>
-        <Login onLogin={handleLogin} clubName={clubName} />
+        <Login onLogin={handleLogin} clubName={clubName} initialMessage={authExpiredMessage} />
         </ErrorBoundary>
       ) : (
         <>

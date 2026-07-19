@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import api from '../utils/api';
-import { removeMember, removeToken, setMember, setToken } from '../utils/auth';
+import { consumeAuthExpiredMessage, removeMember, removeToken, setMember, setToken } from '../utils/auth';
 import { getErrorMessage } from '../utils/errorHandler';
 
 interface LoginProps {
   onLogin: () => void;
   /** From server CLUB_NAME via GET /api/config; omitted when unset */
   clubName?: string | null;
+  /** Shown when redirected here after session/token expiry */
+  initialMessage?: string | null;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, clubName }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, clubName, initialMessage }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialMessage || consumeAuthExpiredMessage() || '');
   const [loading, setLoading] = useState(false);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -31,6 +33,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, clubName }) => {
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
   const [resetPasswordError, setResetPasswordError] = useState('');
   const [resettingPassword, setResettingPassword] = useState(false);
+
+  useEffect(() => {
+    if (initialMessage) {
+      setError(initialMessage);
+    }
+  }, [initialMessage]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

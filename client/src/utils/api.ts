@@ -1,5 +1,10 @@
 import axios from 'axios';
-import { getAuthHeaders } from './auth';
+import {
+  DEFAULT_AUTH_EXPIRED_MESSAGE,
+  getAuthHeaders,
+  handleAuthExpired,
+  isSessionAuthFailure,
+} from './auth';
 
 // Use relative path to leverage Vite proxy, or absolute URL if VITE_API_URL is set
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -16,7 +21,22 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const data = error?.response?.data;
+    const requestUrl = String(error?.config?.url || error?.config?.baseURL || '');
+
+    if (isSessionAuthFailure(status, data, requestUrl)) {
+      const message =
+        (typeof data?.error === 'string' && data.error.trim()) ||
+        DEFAULT_AUTH_EXPIRED_MESSAGE;
+      handleAuthExpired(message);
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 export default api;
-
-
-
