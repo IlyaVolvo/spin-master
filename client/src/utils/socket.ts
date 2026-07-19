@@ -13,7 +13,12 @@ export function connectSocket(): Socket | null {
     return socket;
   }
 
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  // Prefer explicit API host; otherwise same origin (Vite proxies /socket.io in dev,
+  // which also works when opening the app via LAN IP from an iPad).
+  const configuredApi = import.meta.env.VITE_API_URL;
+  const apiUrl = configuredApi
+    ? configuredApi.replace(/\/api\/?$/, '')
+    : window.location.origin;
   const token = getToken();
   const { clientRuntime } = getSystemConfig();
 

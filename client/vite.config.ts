@@ -19,7 +19,8 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_CHANGESET_ID': JSON.stringify(changesetId),
     },
     server: {
-      host: 'localhost', // Listen on localhost
+      // Listen on all interfaces so LAN devices (e.g. iPad) can connect
+      host: true,
       port: 3000,
       fs: {
         allow: ['..'],
@@ -29,7 +30,13 @@ export default defineConfig(({ mode }) => {
           target: 'http://localhost:3001',
           changeOrigin: true,
           secure: false,
-          ws: true, // Enable WebSocket proxying if needed
+          ws: true,
+        },
+        '/socket.io': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+          secure: false,
+          ws: true,
         },
       },
     },
