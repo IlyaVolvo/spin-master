@@ -1906,12 +1906,14 @@ const Players: React.FC = () => {
       return comparison;
     };
 
-    /** Rows without birth date always sort last (every column / direction). */
+    /** Rows without birth date sort last only when sorting by age. */
     const getComparison = (a: Member, b: Member): number => {
-      const aMiss = !hasBirthDateKey(a);
-      const bMiss = !hasBirthDateKey(b);
-      if (aMiss !== bMiss) {
-        return aMiss ? 1 : -1;
+      if (sortColumn === 'age') {
+        const aMiss = !hasBirthDateKey(a);
+        const bMiss = !hasBirthDateKey(b);
+        if (aMiss !== bMiss) {
+          return aMiss ? 1 : -1;
+        }
       }
       const comparison = compareBySelectedColumn(a, b);
       return sortDirection === 'asc' ? comparison : -comparison;
