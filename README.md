@@ -70,11 +70,11 @@ server/   Express API + Prisma + scripts
 ```
 
 ## Key docs
-- Setup details: `SETUP.md`
-- Architecture: `ARCHITECTURE.md`
-- Database schema: `DATABASE_SCHEMA.md`
-- UI behavior: `UI.md`
-- API maintenance: `API_MAINTENANCE.md`
+- Setup details: `docs/SETUP.md`
+- Architecture: `docs/ARCHITECTURE.md`
+- Database schema: `docs/DATABASE_SCHEMA.md`
+- UI behavior: `docs/UI.md`
+- API maintenance: `docs/API_MAINTENANCE.md`
 
 ## Important behavior notes
 
@@ -96,7 +96,7 @@ npm run build --prefix server
 # Client production build
 npm run build --prefix client
 
-# Server tests (requires DATABASE_URL_TEST in server/.env — separate DB from dev; see SETUP.md)
+# Server tests (requires DATABASE_URL_TEST in server/.env — separate DB from dev; see docs/SETUP.md)
 npm test --prefix server
 ```
 
