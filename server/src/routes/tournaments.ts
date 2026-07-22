@@ -43,6 +43,7 @@ import {
   correctCompletedMatchScore,
   enrichTournamentForApi,
 } from '../services/scoreCorrectionService';
+import { ensureUniqueTournamentNameInDb } from '../utils/tournamentNameUniqueness';
 
 const router = express.Router();
 
@@ -883,7 +884,10 @@ router.post('/preregistration', [
 
     const tournament = await (prisma as any).tournament.create({
       data: {
-        name: (req.body.name || '').trim() || `Tournament ${new Date().toLocaleDateString()}`,
+        name: await ensureUniqueTournamentNameInDb(
+          prisma as any,
+          (req.body.name || '').trim() || `Tournament ${new Date().toLocaleDateString()}`,
+        ),
         type,
         status: 'PRE_REGISTRATION',
         tournamentDate,
@@ -1042,7 +1046,10 @@ router.post('/:id/finalize-registration', [
 
     const plugin = tournamentPluginRegistry.get(type);
     const createdTournament = await plugin.createTournament({
-      name: req.body.name || preregistrationTournament.name || `Tournament ${new Date().toLocaleDateString()}`,
+      name: await ensureUniqueTournamentNameInDb(
+        prisma as any,
+        req.body.name || preregistrationTournament.name || `Tournament ${new Date().toLocaleDateString()}`,
+      ),
       participantIds,
       players,
       bracketPositions: req.body.bracketPositions,
@@ -1355,6 +1362,7 @@ router.post('/', [
     } else if (!tournamentName) {
       tournamentName = `Tournament ${new Date().toLocaleDateString()}`;
     }
+    tournamentName = await ensureUniqueTournamentNameInDb(prisma as any, tournamentName);
 
     let pluginPrisma: any = prisma;
     let previousStatus: string | null = null;
@@ -1573,9 +1581,19 @@ router.post('/bulk', [
       }
     }
 
+    const reservedNames = new Set<string>();
+    const resolvedNames: string[] = [];
+    for (const tournamentData of tournaments as Array<{ name?: string }>) {
+      const proposed =
+        (tournamentData.name || '').trim() || `Tournament ${new Date().toLocaleDateString()}`;
+      resolvedNames.push(
+        await ensureUniqueTournamentNameInDb(prisma as any, proposed, { reserved: reservedNames }),
+      );
+    }
+
     // Create all tournaments in a transaction
     const createdTournaments = await prisma.$transaction(
-      tournaments.map((tournamentData: { name?: string; participantIds: number[]; type: TournamentType }) => {
+      tournaments.map((tournamentData: { name?: string; participantIds: number[]; type: TournamentType }, index: number) => {
         // Validate tournament type using plugin registry
         if (!tournamentPluginRegistry.isRegistered(tournamentData.type)) {
           throw new Error(`Invalid tournament type: ${tournamentData.type}. Only registered types are allowed.`);
@@ -1583,7 +1601,7 @@ router.post('/bulk', [
         
         return prisma.tournament.create({
           data: {
-            name: tournamentData.name || `Tournament ${new Date().toLocaleDateString()}`,
+            name: resolvedNames[index],
             type: tournamentData.type,
             status: 'ACTIVE',
             participants: {
