@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -9,15 +9,16 @@ import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig } from
 import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPosition';
 import { getErrorMessage } from './utils/errorHandler';
 import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail } from './utils/tournamentNavState';
+import { lazyWithReload } from './utils/lazyWithReload';
 
-// Lazy load route components for code splitting
-const Players = lazy(() => import('./components/Players'));
-const Tournaments = lazy(() => import('./components/Tournaments'));
-const TournamentDetailPage = lazy(() => import('./components/TournamentDetailPage'));
-const Statistics = lazy(() => import('./components/Statistics'));
-const History = lazy(() => import('./components/History'));
-const TournamentRegistrationLink = lazy(() => import('./components/TournamentRegistrationLink'));
-const SystemSettings = lazy(() => import('./components/SystemSettings'));
+// Lazy load route components for code splitting (auto-reload once if deploy invalidated chunks)
+const Players = lazyWithReload(() => import('./components/Players'));
+const Tournaments = lazyWithReload(() => import('./components/Tournaments'));
+const TournamentDetailPage = lazyWithReload(() => import('./components/TournamentDetailPage'));
+const Statistics = lazyWithReload(() => import('./components/Statistics'));
+const History = lazyWithReload(() => import('./components/History'));
+const TournamentRegistrationLink = lazyWithReload(() => import('./components/TournamentRegistrationLink'));
+const SystemSettings = lazyWithReload(() => import('./components/SystemSettings'));
 
 /** Only render detail for positive numeric ids; otherwise bounce to the list. */
 function TournamentDetailGate() {
