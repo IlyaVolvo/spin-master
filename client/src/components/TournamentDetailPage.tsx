@@ -55,6 +55,10 @@ import {
   type ResultsPrintMode,
 } from './tournaments/utils/resultsPrintUtils';
 import {
+  getSupportedResultsPrintModes,
+  isResultsPrintMode,
+} from './tournaments/utils/resultsPrintModes';
+import {
   sectionCorrectionToggleActiveStyle,
   sectionCorrectionToggleInactiveStyle,
   sectionCorrectionToggleStyle,
@@ -130,16 +134,16 @@ function ScoreCorrectionModeToggle({
   );
 }
 
-/** Plain Print, or Full / Abbreviated dropdown when abbreviated mode is supported. */
+/** Plain Print, or Standard / Detailed / Abbreviated dropdown when extra modes are supported. */
 function ResultsPrintControl({
   accentColor,
   title,
-  supportsAbbreviated,
+  supportedModes,
   onSelect,
 }: {
   accentColor: string;
   title: string;
-  supportsAbbreviated: boolean;
+  supportedModes: ResultsPrintMode[];
   onSelect: (mode: ResultsPrintMode) => void;
 }) {
   const buttonStyle: React.CSSProperties = {
@@ -159,9 +163,10 @@ function ResultsPrintControl({
     MozAppearance: 'none',
   };
 
-  if (!supportsAbbreviated) {
+  const hasExtraModes = supportedModes.some((mode) => mode !== 'standard');
+  if (!hasExtraModes) {
     return (
-      <button type="button" onClick={() => onSelect('full')} title={title} style={buttonStyle}>
+      <button type="button" onClick={() => onSelect('standard')} title={title} style={buttonStyle}>
         🖨️ Print
       </button>
     );
@@ -171,12 +176,12 @@ function ResultsPrintControl({
   return (
     <select
       aria-label="Print results format"
-      title="Print results — Full or Abbreviated"
+      title="Print results — Standard or Abbreviated"
       defaultValue=""
       onChange={(event) => {
         const value = event.target.value;
         event.target.value = '';
-        if (value === 'full' || value === 'abbreviated') {
+        if (isResultsPrintMode(value) && supportedModes.includes(value)) {
           onSelect(value);
         }
       }}
@@ -185,8 +190,9 @@ function ResultsPrintControl({
       <option value="" disabled>
         🖨️ Print ▾
       </option>
-      <option value="full">Full</option>
-      <option value="abbreviated">Abbreviated</option>
+      {supportedModes.includes('standard') && <option value="standard">Standard</option>}
+      {supportedModes.includes('detailed') && <option value="detailed">Detailed</option>}
+      {supportedModes.includes('abbreviated') && <option value="abbreviated">Abbreviated</option>}
     </select>
   );
 }
@@ -1456,7 +1462,7 @@ const TournamentDetailPage: React.FC = () => {
     printTournamentSchedule(tournament, parentName);
   };
 
-  const handlePrintResults = (tournament: Tournament, mode: ResultsPrintMode = 'full') => {
+  const handlePrintResults = (tournament: Tournament, mode: ResultsPrintMode = 'standard') => {
     printBasicTournamentResults(tournament, {
       typeName: getTournamentTypeName(tournament),
       mode,
@@ -1467,7 +1473,7 @@ const TournamentDetailPage: React.FC = () => {
     printCompoundSchedules(tournament);
   };
 
-  const handlePrintCompoundResults = (tournament: Tournament, mode: ResultsPrintMode = 'full') => {
+  const handlePrintCompoundResults = (tournament: Tournament, mode: ResultsPrintMode = 'standard') => {
     printCompoundTournamentResults(tournament, { mode });
   };
 
@@ -2816,7 +2822,7 @@ const TournamentDetailPage: React.FC = () => {
                               <ResultsPrintControl
                                 accentColor="#1976d2"
                                 title="Print all sub-tournament results"
-                                supportsAbbreviated={Boolean(plugin.supportsAbbreviatedResultsPrint)}
+                                supportedModes={getSupportedResultsPrintModes(tournament)}
                                 onSelect={(mode) => handlePrintCompoundResults(tournament, mode)}
                               />
                             </div>
@@ -3054,7 +3060,7 @@ const TournamentDetailPage: React.FC = () => {
                               <ResultsPrintControl
                                 accentColor="#8e44ad"
                                 title="Print Results"
-                                supportsAbbreviated={Boolean(plugin.supportsAbbreviatedResultsPrint)}
+                                supportedModes={getSupportedResultsPrintModes(tournament)}
                                 onSelect={(mode) => handlePrintResults(tournament, mode)}
                               />
                             )}

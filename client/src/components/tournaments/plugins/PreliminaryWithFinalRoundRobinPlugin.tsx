@@ -369,7 +369,8 @@ export const PreliminaryWithFinalRoundRobinPlugin: TournamentPlugin = {
     <PreliminaryWithFinalRoundRobinCompletedPanel {...props} />
   ),
 
-  supportsAbbreviatedResultsPrint: true,
+  supportsDetailedResultsPrint: false,
+  supportsAbbreviatedResultsPrint: false,
 
   isFinalPhaseChild: (_parent, child) =>
     child.groupNumber === null || child.groupNumber === undefined,

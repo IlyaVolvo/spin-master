@@ -373,7 +373,8 @@ export const PreliminaryWithFinalPlayoffPlugin: TournamentPlugin = {
     <PreliminaryWithFinalPlayoffCompletedPanel {...props} />
   ),
 
-  supportsAbbreviatedResultsPrint: true,
+  supportsDetailedResultsPrint: false,
+  supportsAbbreviatedResultsPrint: false,
 
   isFinalPhaseChild: (_parent, child) => child.type === 'PLAYOFF',
 

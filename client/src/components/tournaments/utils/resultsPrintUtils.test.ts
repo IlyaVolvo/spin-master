@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Tournament } from '../../../types/tournament';
-import '../plugins'; // register plugins for isFinalPhaseChild / abbreviated layout
+import '../plugins'; // register plugins for mode helpers / final-phase layout
+import {
+  getSupportedResultsPrintModes,
+  resolveChildResultsPrintMode,
+} from './resultsPrintModes';
 import {
   buildAbbreviatedStandingsTableHtml,
   buildBasicResultsDocumentHtml,
   buildCompoundResultsDocumentHtml,
   buildFullRoundRobinResultsHtml,
+  buildStandardRoundRobinResultsHtml,
 } from './resultsPrintUtils';
 
 beforeEach(() => {
@@ -95,6 +100,46 @@ function makePlayoffChild(): Tournament {
   } as Tournament;
 }
 
+describe('resultsPrintModes', () => {
+  it('RR supports standard and abbreviated only', () => {
+    expect(getSupportedResultsPrintModes(makeRrTournament())).toEqual([
+      'standard',
+      'abbreviated',
+    ]);
+  });
+
+  it('Playoff supports only standard', () => {
+    expect(getSupportedResultsPrintModes(makePlayoffChild())).toEqual(['standard']);
+  });
+
+  it('Multi RR parent unions child RR modes (standard + abbreviated)', () => {
+    const child = makeRrTournament({ id: 11, name: 'Group A' });
+    const parent = {
+      id: 50,
+      name: 'Multi RR',
+      type: 'MULTI_ROUND_ROBINS',
+      status: 'COMPLETED',
+      createdAt: '2026-01-15T18:00:00.000Z',
+      cancelled: false,
+      participants: child.participants,
+      matches: [],
+      childTournaments: [{ ...child, groupNumber: 1 }],
+    } as Tournament;
+    expect(getSupportedResultsPrintModes(parent)).toEqual([
+      'standard',
+      'abbreviated',
+    ]);
+  });
+
+  it('resolves unsupported child modes to standard', () => {
+    const playoff = makePlayoffChild();
+    expect(resolveChildResultsPrintMode(playoff, 'detailed')).toBe('standard');
+    expect(resolveChildResultsPrintMode(playoff, 'abbreviated')).toBe('standard');
+    expect(resolveChildResultsPrintMode(makeRrTournament(), 'detailed')).toBe('standard');
+    expect(resolveChildResultsPrintMode(makeRrTournament(), 'abbreviated')).toBe('abbreviated');
+  });
+});
+
 describe('resultsPrintUtils', () => {
   it('builds abbreviated results grid with place, rating changes, and match scores', () => {
     const tournament = makeRrTournament({
@@ -131,12 +176,26 @@ describe('resultsPrintUtils', () => {
     expect(html).toContain('3 - 1');
     expect(html).not.toContain('Final Standings');
     expect(html).not.toContain('Sets Won');
+    expect(html).not.toContain('WG');
     expect(html).not.toMatch(/>W</);
-    // Rating line appears in column headers, not in the first-column player cell
     expect(html).not.toMatch(/1\.\s*Alice[\s\S]*?rating-line[\s\S]*?<\/td>/);
   });
 
-  it('full RR results include Final Standings and Results Matrix', () => {
+  it('standard RR results include abbreviated grid plus W/L/WG/LG', () => {
+    const html = buildStandardRoundRobinResultsHtml(makeRrTournament());
+    expect(html).toContain('standard-standings');
+    expect(html).toContain('abbreviated-results-grid');
+    expect(html).toContain('>WG</th>');
+    expect(html).toContain('>LG</th>');
+    expect(html).toContain('3 - 1');
+    expect(html).not.toContain('Final Standings');
+    expect(html).not.toContain('Results Matrix');
+    // Summary headers (not the score cell W forfeit)
+    expect(html).toContain('>W</th>');
+    expect(html).toContain('>L</th>');
+  });
+
+  it('full RR builder still produces Final Standings and Results Matrix', () => {
     const html = buildFullRoundRobinResultsHtml(makeRrTournament());
     expect(html).toContain('Final Standings');
     expect(html).toContain('Results Matrix');
@@ -146,7 +205,7 @@ describe('resultsPrintUtils', () => {
 
   it('abbreviated basic document uses minimal header and standings only', () => {
     const html = buildBasicResultsDocumentHtml(makeRrTournament(), {
-      abbreviated: true,
+      mode: 'abbreviated',
       typeName: 'Round Robin',
     });
     expect(html).toContain('Thursday RR');
@@ -156,7 +215,18 @@ describe('resultsPrintUtils', () => {
     expect(html).toContain('abbreviated-standings');
   });
 
-  it('abbreviated compound uses abbreviated RR child and full playoff child tables', () => {
+  it('standard basic document uses compact header and standard grid', () => {
+    const html = buildBasicResultsDocumentHtml(makeRrTournament(), {
+      mode: 'standard',
+      typeName: 'Round Robin',
+    });
+    expect(html).toContain('standard-standings');
+    expect(html).toContain('>WG</th>');
+    expect(html).not.toContain('Participants:');
+    expect(html).not.toContain('Final Standings');
+  });
+
+  it('abbreviated compound uses abbreviated RR child and playoff standard tables, stacked vertically', () => {
     const rrChild = makeRrTournament({ id: 11, name: 'Group A' });
     const playoffChild = makePlayoffChild();
     const parent = {
@@ -174,15 +244,14 @@ describe('resultsPrintUtils', () => {
       ],
     } as Tournament;
 
-    const html = buildCompoundResultsDocumentHtml(parent, { abbreviated: true });
+    const html = buildCompoundResultsDocumentHtml(parent, { mode: 'abbreviated' });
     expect(html).not.toBeNull();
     expect(html!).toContain('Prelim Event');
     expect(html!).toContain('Group A');
     expect(html!).toContain('Final Playoff');
     expect(html!).toContain('abbreviated-standings');
-    expect(html!).toContain('abbreviated-sections');
-    expect(html!).toContain('abbreviated-section');
-    expect(html!).toContain('abbreviated-section wide');
+    expect(html!).toContain('compound-results-sections');
+    expect(html!).toContain('compound-results-section');
     expect(html!).toContain('final-phase');
     expect(html!).toContain('playoff-round');
     expect(html!).toContain('Cara');
@@ -192,7 +261,33 @@ describe('resultsPrintUtils', () => {
     expect(html!).not.toContain('Sub-tournaments:');
   });
 
-  it('prelim+final abbreviated puts Final RR on its own row, not beside groups', () => {
+  it('standard compound uses standard RR grid and playoff tables', () => {
+    const rrChild = makeRrTournament({ id: 11, name: 'Group A' });
+    const playoffChild = makePlayoffChild();
+    const parent = {
+      id: 99,
+      name: 'Prelim Event',
+      type: 'PRELIMINARY_WITH_FINAL_PLAYOFF',
+      status: 'COMPLETED',
+      createdAt: '2026-01-15T18:00:00.000Z',
+      cancelled: false,
+      participants: [...rrChild.participants, ...playoffChild.participants],
+      matches: [],
+      childTournaments: [
+        { ...rrChild, groupNumber: 1 },
+        { ...playoffChild, groupNumber: null },
+      ],
+    } as Tournament;
+
+    const html = buildCompoundResultsDocumentHtml(parent, { mode: 'standard' });
+    expect(html).not.toBeNull();
+    expect(html!).toContain('standard-standings');
+    expect(html!).toContain('>WG</th>');
+    expect(html!).toContain('playoff-round');
+    expect(html!).not.toContain('Sub-tournaments:');
+  });
+
+  it('prelim+final abbreviated puts Final RR on its own row via final-phase', () => {
     const groupA = makeRrTournament({ id: 11, name: 'Group A', groupNumber: 1 } as any);
     const groupB = makeRrTournament({ id: 12, name: 'Group B', groupNumber: 2 } as any);
     const finalRr = makeRrTournament({ id: 13, name: 'Final Round Robin', groupNumber: null } as any);
@@ -208,13 +303,12 @@ describe('resultsPrintUtils', () => {
       childTournaments: [groupA, groupB, finalRr],
     } as Tournament;
 
-    const html = buildCompoundResultsDocumentHtml(parent, { abbreviated: true });
+    const html = buildCompoundResultsDocumentHtml(parent, { mode: 'abbreviated' });
     expect(html).not.toBeNull();
     expect(html!).toContain('Group A');
     expect(html!).toContain('Group B');
     expect(html!).toContain('Final Round Robin');
     expect(html!).toMatch(/final-phase[\s\S]*Final Round Robin/);
-    // Groups stay packable (no final-phase on group sections)
     expect(html!).not.toMatch(/final-phase[\s\S]*Group A/);
   });
 });

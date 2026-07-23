@@ -242,7 +242,9 @@ export interface TournamentPlugin {
 
   // Additional features
   canPrintResults?: boolean;
-  /** When true, Abbreviated results print options are offered on completed tournaments. */
+  /** When true, Detailed results print is offered (basic types; compounds union children). */
+  supportsDetailedResultsPrint?: boolean;
+  /** When true, Abbreviated results print is offered (basic types; compounds union children). */
   supportsAbbreviatedResultsPrint?: boolean;
   /**
    * Compound parents: true when `child` is the final phase (printed on its own row, etc.).

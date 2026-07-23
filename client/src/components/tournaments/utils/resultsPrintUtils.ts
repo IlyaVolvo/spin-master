@@ -3,6 +3,13 @@ import { formatCompletedTournamentRating, formatRrCompletedRatingLine } from '..
 import type { Tournament, TournamentType } from '../../../types/tournament';
 import { buildResultsMatrix, calculateStandings } from '../plugins/roundRobinUtils';
 import { tournamentPluginRegistry } from '../TournamentPluginRegistry';
+import {
+  getSupportedResultsPrintModes,
+  resolveChildResultsPrintMode,
+  type ResultsPrintMode,
+} from './resultsPrintModes';
+
+export type { ResultsPrintMode } from './resultsPrintModes';
 
 const RESULTS_PRINT_STYLES = `
   @media print {
@@ -10,6 +17,7 @@ const RESULTS_PRINT_STYLES = `
     body { margin: 0; padding: 0; overflow: visible; }
     .bracket-container { page-break-inside: avoid; overflow: visible; width: max-content; }
     .bracket-round { page-break-inside: avoid; }
+    .results-table-block { page-break-inside: avoid; }
   }
   body { font-family: Arial, sans-serif; padding: 20px; }
   h1 { margin: 0 0 10px 0; font-size: 24px; color: #2c3e50; }
@@ -23,6 +31,7 @@ const RESULTS_PRINT_STYLES = `
   th, td { padding: 8px; border: 1px solid #333; text-align: left; }
   th { background-color: #f0f0f0; font-weight: bold; }
   .section { margin-bottom: 30px; page-break-inside: avoid; }
+  .results-table-block { page-break-inside: avoid; margin-bottom: 16px; }
   .abbreviated-results-grid {
     font-size: 10px;
     width: auto !important;
@@ -43,35 +52,25 @@ const RESULTS_PRINT_STYLES = `
   .abbreviated-doc .tournament-info { font-size: 11px; margin-bottom: 10px; }
   .abbreviated-doc .section { margin-bottom: 12px; }
   .abbreviated-doc .section h3 { font-size: 12px; margin: 0 0 4px 0; }
-  .abbreviated-sections {
+  .compound-results-sections {
     display: flex;
-    flex-wrap: wrap;
-    gap: 12px 20px;
-    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
   }
-  .abbreviated-section {
-    flex: 0 1 auto;
-    width: max-content;
+  .compound-results-section {
+    width: 100%;
     max-width: 100%;
     margin: 0;
     page-break-inside: avoid;
   }
-  .abbreviated-section h3 {
+  .compound-results-section h3 {
     margin: 0 0 4px 0;
     font-size: 12px;
     color: #2c3e50;
     padding-bottom: 3px;
   }
-  .abbreviated-section.wide {
-    flex: 1 1 100%;
-    width: 100%;
-    max-width: 100%;
-  }
-  /* Prelim+Final: keep Final on its own row below preliminary groups */
-  .abbreviated-section.final-phase {
-    flex: 1 1 100%;
-    width: 100%;
-    max-width: 100%;
+  .compound-results-section.final-phase {
     margin-top: 10px;
     padding-top: 8px;
     border-top: 1px solid #bbb;
@@ -158,6 +157,7 @@ export function buildAbbreviatedStandingsTableHtml(tournament: Tournament): stri
   };
 
   let html = `
+    <div class="results-table-block">
     <table class="abbreviated-standings abbreviated-results-grid" style="border-collapse: collapse; width: auto; margin-bottom: 10px; font-size: 10px;">
       <thead>
         <tr>
@@ -220,11 +220,120 @@ export function buildAbbreviatedStandingsTableHtml(tournament: Tournament): stri
   html += `
       </tbody>
     </table>
+    </div>
   `;
   return html;
 }
 
-/** Full basic RR standings + results matrix (current print). */
+/**
+ * Standard RR grid: abbreviated place-sorted matrix plus Wins / Losses / WG / LG (games = sets).
+ */
+export function buildStandardRoundRobinResultsHtml(tournament: Tournament): string {
+  const standings = calculateStandings(tournament);
+  const { participants, participantData, scoreMatrix } = buildScoreMatrix(tournament);
+  const nameOrder = getNameDisplayOrder();
+  const positionByMemberId = new Map(standings.map(({ member, position }) => [member.id, position]));
+  const statsByMemberId = new Map(standings.map(({ member, stats }) => [member.id, stats]));
+
+  const ordered = [...participants].sort((a, b) => {
+    const posA = positionByMemberId.get(a.member.id) ?? 999;
+    const posB = positionByMemberId.get(b.member.id) ?? 999;
+    if (posA !== posB) return posA - posB;
+    return a.member.id - b.member.id;
+  });
+
+  const labelFor = (participant: (typeof participants)[number]) => {
+    const position = positionByMemberId.get(participant.member.id) ?? '';
+    const pdata = participantData.find((p) => p.memberId === participant.member.id);
+    const playerName = formatPlayerName(participant.member.firstName, participant.member.lastName, nameOrder);
+    const ratingLine = formatRrCompletedRatingLine(pdata as any);
+    return { position, playerName, ratingLine };
+  };
+
+  const summaryHeader = (label: string) => `
+          <th style="padding: 2px 4px; border: 1px solid #333; background-color: #f0f0f0; text-align: center; font-weight: bold; white-space: nowrap;">${label}</th>
+  `;
+
+  let html = `
+    <div class="results-table-block">
+    <table class="standard-standings abbreviated-results-grid" style="border-collapse: collapse; width: auto; margin-bottom: 10px; font-size: 10px;">
+      <thead>
+        <tr>
+          <th style="padding: 2px 4px; border: 1px solid #333; background-color: #f0f0f0; text-align: left; white-space: nowrap;">Pos / Player</th>
+  `;
+
+  ordered.forEach((participant) => {
+    const { playerName, ratingLine } = labelFor(participant);
+    html += `
+          <th style="padding: 2px 4px; border: 1px solid #333; background-color: #f0f0f0; text-align: center; font-weight: bold; white-space: nowrap;">
+            ${playerName}${ratingLine ? `<br><span class="rating-line">${ratingLine}</span>` : ''}
+          </th>
+    `;
+  });
+
+  html += summaryHeader('W');
+  html += summaryHeader('L');
+  html += summaryHeader('WG');
+  html += summaryHeader('LG');
+
+  html += `
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  ordered.forEach((p1) => {
+    const { position, playerName } = labelFor(p1);
+    const posBg = typeof position === 'number' ? posBgColor(position) : '#fff';
+    const stats = statsByMemberId.get(p1.member.id);
+    html += `
+        <tr>
+          <td style="padding: 2px 4px; border: 1px solid #333; background-color: ${posBg}; font-weight: bold; text-align: left; white-space: nowrap;">
+            ${position}. ${playerName}
+          </td>
+    `;
+
+    ordered.forEach((p2) => {
+      const score = scoreMatrix[p1.member.id][p2.member.id];
+      const isDiagonal = p1.member.id === p2.member.id;
+      const hasScore = Boolean(score && score !== '');
+      let cellBgColor = isDiagonal ? '#e9ecef' : hasScore ? '#fff' : '#f9f9f9';
+
+      if (!isDiagonal && score) {
+        if (score === 'W') cellBgColor = '#a5d6a7';
+        else if (score === 'L') cellBgColor = '#ef9a9a';
+        else if (score.includes(' - ')) {
+          const [score1, score2] = score.split(' - ').map(Number);
+          if (score1 > score2) cellBgColor = '#a5d6a7';
+          else if (score2 > score1) cellBgColor = '#ef9a9a';
+        }
+      }
+
+      html += `
+          <td style="padding: 2px 4px; border: 1px solid #333; text-align: center; background-color: ${cellBgColor}; font-weight: ${isDiagonal ? 'normal' : 'bold'};">
+            ${hasScore ? score : '-'}
+          </td>
+      `;
+    });
+
+    html += `
+          <td style="padding: 2px 4px; border: 1px solid #333; text-align: center; font-weight: bold;">${stats?.wins ?? 0}</td>
+          <td style="padding: 2px 4px; border: 1px solid #333; text-align: center; font-weight: bold;">${stats?.losses ?? 0}</td>
+          <td style="padding: 2px 4px; border: 1px solid #333; text-align: center; font-weight: bold;">${stats?.setsWon ?? 0}</td>
+          <td style="padding: 2px 4px; border: 1px solid #333; text-align: center; font-weight: bold;">${stats?.setsLost ?? 0}</td>
+        </tr>
+    `;
+  });
+
+  html += `
+      </tbody>
+    </table>
+    </div>
+  `;
+  return html;
+}
+
+/** Full / Detailed basic RR standings + results matrix. */
 export function buildFullRoundRobinResultsHtml(tournament: Tournament): string {
   const standings = calculateStandings(tournament);
   const { participants, participantData, scoreMatrix } = buildScoreMatrix(tournament);
@@ -616,7 +725,7 @@ function openResultsPrintDocument(title: string, bodyHtml: string): void {
 
 export function buildBasicResultsDocumentHtml(
   tournament: Tournament,
-  { abbreviated, typeName }: { abbreviated: boolean; typeName: string },
+  { mode, typeName }: { mode: ResultsPrintMode; typeName: string },
 ): string {
   const tournamentName = tournamentDisplayName(tournament);
   const completionDate = tournament.recordedAt
@@ -626,15 +735,20 @@ export function buildBasicResultsDocumentHtml(
 
   let resultsContent = '';
   if (!hasBracketStructure) {
-    resultsContent = abbreviated
-      ? buildAbbreviatedStandingsTableHtml(tournament)
-      : buildFullRoundRobinResultsHtml(tournament);
+    if (mode === 'abbreviated') {
+      resultsContent = buildAbbreviatedStandingsTableHtml(tournament);
+    } else if (mode === 'detailed') {
+      resultsContent = buildFullRoundRobinResultsHtml(tournament);
+    } else {
+      resultsContent = buildStandardRoundRobinResultsHtml(tournament);
+    }
   } else {
-    // Playoff / bracket: abbreviated unavailable — always full bracket
+    // Playoff / bracket: Detailed/Abbreviated unavailable — Standard bracket
     resultsContent = buildBasicPlayoffBracketHtml(tournament);
   }
 
-  if (abbreviated && !hasBracketStructure) {
+  const compactHeader = !hasBracketStructure && (mode === 'abbreviated' || mode === 'standard');
+  if (compactHeader) {
     return `
       <div class="abbreviated-doc">
         <h1>${tournamentName}</h1>
@@ -659,9 +773,15 @@ export function buildBasicResultsDocumentHtml(
   `;
 }
 
+function buildRoundRobinChildHtml(child: Tournament, mode: ResultsPrintMode): string {
+  if (mode === 'abbreviated') return buildAbbreviatedStandingsTableHtml(child);
+  if (mode === 'detailed') return buildFullCompoundRoundRobinChildHtml(child);
+  return buildStandardRoundRobinResultsHtml(child);
+}
+
 export function buildCompoundResultsDocumentHtml(
   tournament: Tournament,
-  { abbreviated }: { abbreviated: boolean },
+  { mode }: { mode: ResultsPrintMode },
 ): string | null {
   const children = (tournament.childTournaments || [])
     .slice()
@@ -674,62 +794,62 @@ export function buildCompoundResultsDocumentHtml(
     ? new Date(tournament.recordedAt).toLocaleDateString()
     : new Date(tournament.createdAt).toLocaleDateString();
 
-  let allResultsHtml = '';
-  let abbreviatedSectionsHtml = '';
+  const parentPlugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+  let sectionsHtml = '';
+  const useCompactHeader = mode === 'abbreviated' || mode === 'standard';
 
   for (const child of children) {
+    const childMode = resolveChildResultsPrintMode(child, mode);
     const hasBracketStructure = Boolean(child.bracketMatches && child.bracketMatches.length > 0);
     const childName = child.name || `Sub-tournament ${child.id}`;
+    const isFinal = Boolean(parentPlugin?.isFinalPhaseChild?.(tournament, child));
+    const sectionClass = [
+      'compound-results-section',
+      'results-table-block',
+      isFinal ? 'final-phase' : '',
+    ].filter(Boolean).join(' ');
 
-    if (abbreviated) {
-      // Compact RR grids sit side-by-side when they fit.
-      // Playoff tables, and plugin-marked final-phase children, take a full row.
-      const parentPlugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
-      const isFinal = Boolean(parentPlugin?.isFinalPhaseChild?.(tournament, child));
-      const sectionClass = [
-        'abbreviated-section',
-        hasBracketStructure || isFinal ? 'wide' : '',
-        isFinal ? 'final-phase' : '',
-      ].filter(Boolean).join(' ');
-      abbreviatedSectionsHtml += `<div class="${sectionClass}">`;
-      abbreviatedSectionsHtml += `<h3 style="border-bottom: 1px solid ${hasBracketStructure || isFinal ? '#27ae60' : '#3498db'};">${childName}</h3>`;
+    const borderColor = hasBracketStructure || isFinal ? '#27ae60' : '#3498db';
+
+    if (useCompactHeader) {
+      sectionsHtml += `<div class="${sectionClass}">`;
+      sectionsHtml += `<h3 style="border-bottom: 1px solid ${borderColor};">${childName}</h3>`;
       if (!hasBracketStructure) {
-        abbreviatedSectionsHtml += buildAbbreviatedStandingsTableHtml(child);
+        sectionsHtml += buildRoundRobinChildHtml(child, childMode);
       } else {
-        abbreviatedSectionsHtml += buildCompoundPlayoffChildHtml(child);
+        sectionsHtml += buildCompoundPlayoffChildHtml(child);
       }
-      abbreviatedSectionsHtml += `</div>`;
+      sectionsHtml += `</div>`;
     } else {
-      allResultsHtml += `<div class="section" style="margin-bottom: 30px; page-break-inside: avoid;">`;
-      allResultsHtml += `<h3 style="margin: 0 0 10px 0; color: #2c3e50; border-bottom: 2px solid ${hasBracketStructure ? '#27ae60' : '#3498db'}; padding-bottom: 5px;">
+      sectionsHtml += `<div class="section ${sectionClass}" style="margin-bottom: 30px; page-break-inside: avoid;">`;
+      sectionsHtml += `<h3 style="margin: 0 0 10px 0; color: #2c3e50; border-bottom: 2px solid ${borderColor}; padding-bottom: 5px;">
         ${childName}
         <span style="font-size: 12px; color: #666; font-weight: normal; margin-left: 10px;">${child.participants?.length || 0} players</span>
       </h3>`;
       if (!hasBracketStructure) {
-        allResultsHtml += buildFullCompoundRoundRobinChildHtml(child);
+        sectionsHtml += buildRoundRobinChildHtml(child, childMode);
       } else {
-        allResultsHtml += buildCompoundPlayoffChildHtml(child);
+        sectionsHtml += buildCompoundPlayoffChildHtml(child);
       }
-      allResultsHtml += `</div>`;
+      sectionsHtml += `</div>`;
     }
   }
 
-  if (abbreviated) {
-    if (!abbreviatedSectionsHtml) return null;
+  if (!sectionsHtml) return null;
+
+  if (useCompactHeader) {
     return `
       <div class="abbreviated-doc">
         <h1>${tournamentName}</h1>
         <div class="tournament-info">
           <strong>Date:</strong> ${new Date(tournament.createdAt).toLocaleDateString()}
         </div>
-        <div class="abbreviated-sections">
-          ${abbreviatedSectionsHtml}
+        <div class="compound-results-sections">
+          ${sectionsHtml}
         </div>
       </div>
     `;
   }
-
-  if (!allResultsHtml) return null;
 
   return `
     <h1>Tournament Results</h1>
@@ -740,11 +860,11 @@ export function buildCompoundResultsDocumentHtml(
       <strong>Participants:</strong> ${tournament.participants.length}<br>
       <strong>Sub-tournaments:</strong> ${children.length}
     </div>
-    ${allResultsHtml}
+    <div class="compound-results-sections">
+      ${sectionsHtml}
+    </div>
   `;
 }
-
-export type ResultsPrintMode = 'full' | 'abbreviated';
 
 export function printBasicTournamentResults(
   tournament: Tournament,
@@ -752,9 +872,11 @@ export function printBasicTournamentResults(
 ): boolean {
   if (tournament.status !== 'COMPLETED') return false;
   const tournamentName = tournamentDisplayName(tournament);
-  const abbreviated = options.mode === 'abbreviated';
+  const requested = options.mode ?? 'standard';
+  const supported = getSupportedResultsPrintModes(tournament);
+  const mode = supported.includes(requested) ? requested : 'standard';
   const bodyHtml = buildBasicResultsDocumentHtml(tournament, {
-    abbreviated,
+    mode,
     typeName: options.typeName,
   });
   openResultsPrintDocument(`Results - ${tournamentName}`, bodyHtml);
@@ -766,9 +888,10 @@ export function printCompoundTournamentResults(
   options: { mode?: ResultsPrintMode } = {},
 ): boolean {
   const tournamentName = tournamentDisplayName(tournament);
-  const bodyHtml = buildCompoundResultsDocumentHtml(tournament, {
-    abbreviated: options.mode === 'abbreviated',
-  });
+  const requested = options.mode ?? 'standard';
+  const supported = getSupportedResultsPrintModes(tournament);
+  const mode = supported.includes(requested) ? requested : 'standard';
+  const bodyHtml = buildCompoundResultsDocumentHtml(tournament, { mode });
   if (!bodyHtml) return false;
   openResultsPrintDocument(`Results - ${tournamentName}`, bodyHtml);
   return true;
