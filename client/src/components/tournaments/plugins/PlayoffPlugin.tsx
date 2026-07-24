@@ -229,6 +229,7 @@ export const PlayoffPlugin: TournamentPlugin = {
   canPrintResults: true,
   supportsDetailedResultsPrint: false,
   supportsAbbreviatedResultsPrint: false,
+  schedulePrintUsesMatchNumberColumn: true,
 };
 
 export default PlayoffPlugin;

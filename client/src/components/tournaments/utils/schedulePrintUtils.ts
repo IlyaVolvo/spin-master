@@ -102,32 +102,39 @@ function buildScheduleTableHtml(tournament: Tournament): string | null {
   if (scheduleRounds.length === 0) return null;
 
   const totalMatches = scheduleRounds.reduce((sum, round) => sum + round.matches.length, 0);
-  const useMatchNumberColumn =
-    tournament.type === 'PLAYOFF' ||
-    tournament.type === 'SWISS' ||
-    tournament.type === 'ROUND_ROBIN';
+  const useMatchNumberColumn = plugin.schedulePrintUsesMatchNumberColumn === true;
 
   const playedMatches = new Set<string>();
-  if (!useMatchNumberColumn) {
-    (tournament.matches || []).forEach((match) => {
-      if (match.member2Id !== null && match.member2Id !== 0) {
-        playedMatches.add(`${match.member1Id}-${match.member2Id}`);
-        playedMatches.add(`${match.member2Id}-${match.member1Id}`);
-      }
-    });
-  }
+  (tournament.matches || []).forEach((match) => {
+    if (match.member2Id !== null && match.member2Id !== 0) {
+      playedMatches.add(`${match.member1Id}-${match.member2Id}`);
+      playedMatches.add(`${match.member2Id}-${match.member1Id}`);
+    }
+  });
 
   const roundsWithRatings = scheduleRounds.map((round) => ({
     ...round,
     matches: round.matches.map((match: any, matchIdx: number) => {
       if (useMatchNumberColumn) {
+        const hasMemberIds =
+          typeof match.member1Id === 'number' &&
+          match.member1Id > 0 &&
+          typeof match.member2Id === 'number' &&
+          match.member2Id > 0;
+        const isPlayedFromSchedule = typeof match.isPlayed === 'boolean' ? match.isPlayed : undefined;
+        const isPlayed =
+          isPlayedFromSchedule !== undefined
+            ? isPlayedFromSchedule
+            : hasMemberIds
+              ? playedMatches.has(`${match.member1Id}-${match.member2Id}`)
+              : false;
         return {
           ...match,
           p1Name: match.member1Name,
           p2Name: match.member2Name,
           p1Rating: match.player1Rating || '',
           p2Rating: match.player2Rating || '',
-          isPlayed: Boolean(match.isPlayed),
+          isPlayed,
           matchNumber: match.matchNumber ?? matchIdx + 1,
         };
       }

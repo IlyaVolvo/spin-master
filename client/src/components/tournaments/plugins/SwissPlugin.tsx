@@ -106,6 +106,7 @@ export const SwissPlugin: TournamentPlugin = {
   canPrintResults: true,
   supportsDetailedResultsPrint: false,
   supportsAbbreviatedResultsPrint: false,
+  schedulePrintUsesMatchNumberColumn: true,
 
   calculateExpectedMatches: (tournament) => {
     const swissData = (tournament as any).swissData;
