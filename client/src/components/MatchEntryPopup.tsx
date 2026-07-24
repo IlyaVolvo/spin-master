@@ -677,7 +677,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                   void trySave();
                 }
               }}
-              placeholder={invalidScorePins.member1 ? 'Enter PIN' : `${player1.firstName}'s PIN`}
+              placeholder={`${player1.firstName}'s PIN`}
               aria-invalid={invalidScorePins.member1}
               style={{
                 flex: '1 1 140px',
@@ -721,7 +721,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                   void trySave();
                 }
               }}
-              placeholder={invalidScorePins.member2 ? 'Enter PIN' : `${player2.firstName}'s PIN`}
+              placeholder={`${player2.firstName}'s PIN`}
               aria-invalid={invalidScorePins.member2}
               style={{
                 flex: '1 1 140px',

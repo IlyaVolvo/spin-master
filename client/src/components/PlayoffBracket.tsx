@@ -3,15 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { TraditionalBracket } from './TraditionalBracket';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
-import { updateMatchCountsCache } from './utils/matchCacheUtils';
-import api from '../utils/api';
+import { shouldShowScorePinsForMatchEdit } from '../utils/matchScorePayload';
 import {
-  attachScorePinsIfNeeded,
-  shouldShowScorePinsForMatchEdit,
-  enrichErrorWithInvalidScorePins,
-  isScorePinAuthErrorMessage,
-  ScorePinAuthError,
-} from '../utils/matchScorePayload';
+  shouldSurfaceMatchScoreError,
+  upsertTournamentMatchScore,
+} from '../utils/matchScoreSubmit';
+import { updateMatchCountsCache } from './utils/matchCacheUtils';
 
 interface Member {
   id: number;
@@ -120,45 +117,28 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
       return;
     }
 
-    if (editingFinalMatch.player1Forfeit && editingFinalMatch.player2Forfeit) {
-      alert('Only one player can forfeit');
-      return;
-    }
-
-    // Validate scores: cannot be equal (including 0:0) unless it's a forfeit
-    if (!editingFinalMatch.player1Forfeit && !editingFinalMatch.player2Forfeit) {
-      const player1Sets = parseInt(editingFinalMatch.player1Sets) || 0;
-      const player2Sets = parseInt(editingFinalMatch.player2Sets) || 0;
-      // Disallow equal scores including 0:0
-      if (player1Sets === player2Sets) {
-        alert('Scores cannot be equal. One player must win.');
-        return;
-      }
-    }
-
-    const matchData: any = {
-      member1Id: editingFinalMatch.member1Id,
-      member2Id: editingFinalMatch.member2Id,
-    };
-
-    // If forfeit, send forfeit flags; otherwise send sets
-    if (editingFinalMatch.player1Forfeit || editingFinalMatch.player2Forfeit) {
-      matchData.player1Forfeit = editingFinalMatch.player1Forfeit;
-      matchData.player2Forfeit = editingFinalMatch.player2Forfeit;
-    } else {
-      matchData.player1Sets = parseInt(editingFinalMatch.player1Sets) || 0;
-      matchData.player2Sets = parseInt(editingFinalMatch.player2Sets) || 0;
-      matchData.player1Forfeit = false;
-      matchData.player2Forfeit = false;
-    }
-
-    attachScorePinsIfNeeded(matchData, { member1Pin: editingFinalMatch.member1Pin, member2Pin: editingFinalMatch.member2Pin });
-
     try {
-      const response = await api.patch(`/tournaments/${tournamentId}/matches/${editingFinalMatch.matchId}`, matchData);
-      const savedMatch = response.data;
-      
-      // Update match counts cache
+      const savedMatch = await upsertTournamentMatchScore({
+        tournamentId,
+        matchId: editingFinalMatch.matchId,
+        matchData: {
+          member1Id: editingFinalMatch.member1Id,
+          member2Id: editingFinalMatch.member2Id,
+          player1Sets: parseInt(editingFinalMatch.player1Sets) || 0,
+          player2Sets: parseInt(editingFinalMatch.player2Sets) || 0,
+          player1Forfeit: editingFinalMatch.player1Forfeit,
+          player2Forfeit: editingFinalMatch.player2Forfeit,
+        },
+        pins: {
+          member1Pin: editingFinalMatch.member1Pin,
+          member2Pin: editingFinalMatch.member2Pin,
+        },
+        refreshTournament: false,
+        callbacks: {
+          onError: (message) => alert(message),
+        },
+      }) as { id: number; member1Id: number; member2Id: number; updatedAt?: string; createdAt?: string } | null;
+
       if (savedMatch) {
         updateMatchCountsCache({
           id: savedMatch.id,
@@ -172,14 +152,10 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
       if (onBracketUpdate) {
         onBracketUpdate();
       }
-    } catch (error: any) {
-      const enriched = enrichErrorWithInvalidScorePins(error, 'Failed to update match');
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(enriched.message)
-      ) {
-        alert(enriched.message);
+    } catch (error: unknown) {
+      const enriched = error instanceof Error ? error : new Error('Failed to update match');
+      if (shouldSurfaceMatchScoreError(enriched)) {
+        // already alerted via callback when from upsert
       }
       throw enriched;
     }

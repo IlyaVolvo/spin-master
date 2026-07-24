@@ -1,17 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { formatActiveTournamentRating } from '../utils/ratingFormatter';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
 import {
-  attachScorePinsIfNeeded,
   canOpenTournamentMatchEditor,
   shouldShowScorePinsForMatchEdit,
-  enrichErrorWithInvalidScorePins,
-  isScorePinAuthErrorMessage,
-  ScorePinAuthError,
 } from '../utils/matchScorePayload';
+import {
+  shouldSurfaceMatchScoreError,
+  upsertTournamentMatchScore,
+} from '../utils/matchScoreSubmit';
 
 interface Member {
   id: number;
@@ -147,54 +146,35 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
   const handleSaveMatch = async () => {
     if (!editingMatch) return;
 
-    if (editingMatch.player1Forfeit && editingMatch.player2Forfeit) {
-      alert('Only one player can forfeit');
-      return;
-    }
-
-    // Validate scores: cannot be equal (including 0:0) unless it's a forfeit
-    if (!editingMatch.player1Forfeit && !editingMatch.player2Forfeit) {
-      const player1Sets = parseInt(editingMatch.player1Sets) || 0;
-      const player2Sets = parseInt(editingMatch.player2Sets) || 0;
-      // Disallow equal scores including 0:0
-      if (player1Sets === player2Sets) {
-        alert('Scores cannot be equal. One player must win.');
-        return;
-      }
-    }
-
-      const matchData: any = {
-        member1Id: editingMatch.member1Id,
-        member2Id: editingMatch.member2Id,
-      };
-
-    // If forfeit, send forfeit flags; otherwise send sets
-    if (editingMatch.player1Forfeit || editingMatch.player2Forfeit) {
-      matchData.player1Forfeit = editingMatch.player1Forfeit;
-      matchData.player2Forfeit = editingMatch.player2Forfeit;
-    } else {
-      matchData.player1Sets = parseInt(editingMatch.player1Sets) || 0;
-      matchData.player2Sets = parseInt(editingMatch.player2Sets) || 0;
-      matchData.player1Forfeit = false;
-      matchData.player2Forfeit = false;
-    }
-
-    attachScorePinsIfNeeded(matchData, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
-
     try {
-      await api.patch(`/tournaments/${tournamentId}/matches/${editingMatch.matchId}`, matchData);
+      await upsertTournamentMatchScore({
+        tournamentId,
+        matchId: editingMatch.matchId,
+        matchData: {
+          member1Id: editingMatch.member1Id,
+          member2Id: editingMatch.member2Id,
+          player1Sets: parseInt(editingMatch.player1Sets) || 0,
+          player2Sets: parseInt(editingMatch.player2Sets) || 0,
+          player1Forfeit: editingMatch.player1Forfeit,
+          player2Forfeit: editingMatch.player2Forfeit,
+        },
+        pins: {
+          member1Pin: editingMatch.member1Pin,
+          member2Pin: editingMatch.member2Pin,
+        },
+        refreshTournament: false,
+        callbacks: {
+          onError: (message) => alert(message),
+        },
+      });
       setEditingMatch(null);
       if (onMatchUpdate) {
         onMatchUpdate();
       }
-    } catch (error: any) {
-      const enriched = enrichErrorWithInvalidScorePins(error, 'Failed to update match');
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(enriched.message)
-      ) {
-        alert(enriched.message);
+    } catch (error: unknown) {
+      const enriched = error instanceof Error ? error : new Error('Failed to update match');
+      if (shouldSurfaceMatchScoreError(enriched)) {
+        // already alerted via callback when from upsert
       }
       throw enriched;
     }

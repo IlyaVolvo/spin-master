@@ -30,7 +30,13 @@ import {
   loadCancelledFilterMode,
   type CancelledFilterMode,
 } from '../utils/cancelledFilterMode';
-import { attachScorePinsIfNeeded, canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../utils/matchScorePayload';
+import { canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, isScorePinAuthErrorMessage } from '../utils/matchScorePayload';
+import {
+  clearTournamentMatchScore,
+  createTournamentMatchScore,
+  shouldSurfaceMatchScoreError,
+  upsertTournamentMatchScore,
+} from '../utils/matchScoreSubmit';
 import {
   MATCH_RESULT_ALREADY_ENTERED_MESSAGE,
   isDuplicateScoreMessage,
@@ -1153,55 +1159,46 @@ const TournamentDetailPage: React.FC = () => {
     setError('');
     setSuccess('');
 
-    // Validate forfeit: only one player can forfeit
-    if (editingMatch.player1Forfeit && editingMatch.player2Forfeit) {
-      setError('Only one player can forfeit');
-      return;
-    }
-
-    // Validate scores: cannot be equal (including 0:0) unless it's a forfeit
-    if (!editingMatch.player1Forfeit && !editingMatch.player2Forfeit) {
-      const player1Sets = parseInt(editingMatch.player1Sets) || 0;
-      const player2Sets = parseInt(editingMatch.player2Sets) || 0;
-      // Disallow equal scores including 0:0
-      if (player1Sets === player2Sets) {
-        setError('Scores cannot be equal. One player must win.');
-        return;
-      }
-    }
+    const matchData = {
+      member1Id: editingMatch.member1Id,
+      member2Id: editingMatch.member2Id,
+      expectedHadResult: editingMatch.expectedHadResult,
+      expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
+      player1Sets: parseInt(editingMatch.player1Sets) || 0,
+      player2Sets: parseInt(editingMatch.player2Sets) || 0,
+      player1Forfeit: editingMatch.player1Forfeit,
+      player2Forfeit: editingMatch.player2Forfeit,
+    };
+    const pins = {
+      member1Pin: editingMatch.member1Pin,
+      member2Pin: editingMatch.member2Pin,
+    };
 
     try {
-      const matchData: any = {
-        member1Id: editingMatch.member1Id,
-        member2Id: editingMatch.member2Id,
-        expectedHadResult: editingMatch.expectedHadResult,
-        expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
-      };
-
-      // If forfeit, send forfeit flags; otherwise send sets
-      if (editingMatch.player1Forfeit || editingMatch.player2Forfeit) {
-        matchData.player1Forfeit = editingMatch.player1Forfeit;
-        matchData.player2Forfeit = editingMatch.player2Forfeit;
-      } else {
-        matchData.player1Sets = parseInt(editingMatch.player1Sets) || 0;
-        matchData.player2Sets = parseInt(editingMatch.player2Sets) || 0;
-        matchData.player1Forfeit = false;
-        matchData.player2Forfeit = false;
-      }
-
-      attachScorePinsIfNeeded(matchData, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
-
       let savedMatch: any;
       if (editingMatch.matchId === 0) {
-        // New match - create it
-        const response = await api.post(`/tournaments/${selectedTournament.id}/matches`, matchData);
-        savedMatch = response.data;
-        setSuccess('Match result added successfully');
+        savedMatch = await createTournamentMatchScore({
+          tournamentId: selectedTournament.id,
+          matchData,
+          pins,
+          refreshTournament: false,
+          callbacks: {
+            onSuccess: (message) => setSuccess(message),
+            onError: (message) => handleTournamentError(message),
+          },
+        });
       } else {
-        // Existing match - update it
-        const response = await api.patch(`/tournaments/${selectedTournament.id}/matches/${editingMatch.matchId}`, matchData);
-        savedMatch = response.data;
-        setSuccess('Match result updated successfully');
+        savedMatch = await upsertTournamentMatchScore({
+          tournamentId: selectedTournament.id,
+          matchId: editingMatch.matchId,
+          matchData,
+          pins,
+          refreshTournament: false,
+          callbacks: {
+            onSuccess: (message) => setSuccess(message),
+            onError: (message) => handleTournamentError(message),
+          },
+        });
       }
       
       // Update match counts cache incrementally
@@ -1228,13 +1225,9 @@ const TournamentDetailPage: React.FC = () => {
         }
       });
     } catch (err: unknown) {
-      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to save match result');
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(enriched.message)
-      ) {
-        handleTournamentError(enriched.message);
+      const enriched = err instanceof Error ? err : new Error('Failed to save match result');
+      if (shouldSurfaceMatchScoreError(enriched)) {
+        // already via handleTournamentError when from submit helpers
       }
       throw enriched;
     }
@@ -1261,12 +1254,20 @@ const TournamentDetailPage: React.FC = () => {
     setSuccess('');
 
     try {
-      await api.delete(`/tournaments/${selectedTournament.id}/matches/${editingMatch.matchId}`);
+      await clearTournamentMatchScore({
+        tournamentId: selectedTournament.id,
+        matchId: editingMatch.matchId,
+        refreshTournament: false,
+        callbacks: {
+          onSuccess: (message) => setSuccess(message),
+          onError: (message) => setError(message),
+        },
+        successMessage: 'Match result deleted successfully',
+      });
       
       // Update match counts cache - remove match and recalculate counts for participants
       removeMatchFromCache(matchToDelete.id, matchToDelete.member1Id, matchToDelete.member2Id ?? null);
       
-      setSuccess('Match result deleted successfully');
       await withWindowScrollPreserved(async () => {
         setEditingMatch(null);
         await fetchData({ silent: true });
@@ -1279,9 +1280,8 @@ const TournamentDetailPage: React.FC = () => {
           }
         }
       });
-    } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(apiError || 'Failed to delete match result');
+    } catch {
+      // Error already reported via callbacks
     }
   };
 

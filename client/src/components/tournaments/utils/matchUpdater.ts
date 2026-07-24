@@ -1,201 +1,72 @@
-import api from '../../../utils/api';
-import { attachScorePinsIfNeeded, enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../../../utils/matchScorePayload';
+/**
+ * Compatibility facade over universal match score writes.
+ * Prefer importing from `utils/matchScoreSubmit` for new code.
+ * Tournament-type behavior belongs in plugins, not here.
+ */
+import {
+  buildMatchScorePayload,
+  clearTournamentMatchScore,
+  createTournamentMatchScore,
+  type MatchScoreData,
+  type MatchScorePins,
+  type MatchScoreWriteCallbacks,
+  upsertTournamentMatchScore,
+  validateMatchScoreData,
+} from '../../../utils/matchScoreSubmit';
 
-export interface MatchData {
-  member1Id: number;
-  member2Id: number | null;
-  player1Sets?: number;
-  player2Sets?: number;
-  player1Forfeit?: boolean;
-  player2Forfeit?: boolean;
-  expectedHadResult?: boolean;
-  expectedMatchUpdatedAt?: string;
-}
-
-export type MatchScorePins = {
-  member1Pin?: string;
-  member2Pin?: string;
-};
-
-export interface MatchUpdateCallbacks {
-  onSuccess?: (message: string) => void;
-  onError?: (error: string) => void;
-  onTournamentUpdate?: (tournament: any) => void;
-  onMatchUpdate?: (match: any) => void;
-}
+export type MatchData = MatchScoreData;
+export type { MatchScorePins };
+export type MatchUpdateCallbacks = MatchScoreWriteCallbacks;
 
 export function buildMatchApiData(matchData: MatchData, pins?: MatchScorePins): Record<string, unknown> {
-  const apiData: Record<string, unknown> = {
-    member1Id: matchData.member1Id,
-    member2Id: matchData.member2Id,
-  };
-
-  if (matchData.player1Forfeit || matchData.player2Forfeit) {
-    apiData.player1Forfeit = matchData.player1Forfeit || false;
-    apiData.player2Forfeit = matchData.player2Forfeit || false;
-  } else {
-    apiData.player1Sets = matchData.player1Sets || 0;
-    apiData.player2Sets = matchData.player2Sets || 0;
-    apiData.player1Forfeit = false;
-    apiData.player2Forfeit = false;
-  }
-
-  if (matchData.expectedHadResult !== undefined) {
-    apiData.expectedHadResult = matchData.expectedHadResult;
-  }
-  if (matchData.expectedMatchUpdatedAt) {
-    apiData.expectedMatchUpdatedAt = matchData.expectedMatchUpdatedAt;
-  }
-
-  attachScorePinsIfNeeded(apiData, pins);
-  return apiData;
+  return buildMatchScorePayload(matchData, pins);
 }
 
 /**
- * Standard match update functionality for all tournament types
+ * Thin wrapper around universal score writes for callers that still use a class API.
  */
 export class MatchUpdater {
   constructor(private tournamentId: number) {}
 
-  /**
-   * Validate match data before saving
-   */
-  private validateMatchData(matchData: MatchData): string | null {
-    // Validate forfeit: only one player can forfeit
-    if (matchData.player1Forfeit && matchData.player2Forfeit) {
-      return 'Only one player can forfeit';
-    }
-
-    // Validate scores: cannot be equal (including 0:0) unless it's a forfeit
-    if (!matchData.player1Forfeit && !matchData.player2Forfeit) {
-      const player1Sets = matchData.player1Sets || 0;
-      const player2Sets = matchData.player2Sets || 0;
-      // Disallow equal scores including 0:0
-      if (player1Sets === player2Sets) {
-        return 'Scores cannot be equal. One player must win.';
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Create a new match
-   */
   async createMatch(
     matchData: MatchData,
     callbacks: MatchUpdateCallbacks = {},
     pins?: MatchScorePins
-  ): Promise<any> {
-    const validationError = this.validateMatchData(matchData);
-    if (validationError) {
-      callbacks.onError?.(validationError);
-      throw new Error(validationError);
-    }
-
-    try {
-      const apiData = buildMatchApiData(matchData, pins);
-      const response = await api.post(`/tournaments/${this.tournamentId}/matches`, apiData);
-      const savedMatch = response.data;
-      
-      callbacks.onSuccess?.('Match result added successfully');
-      callbacks.onMatchUpdate?.(savedMatch);
-      
-      // Update tournament data
-      await this.refreshTournament(callbacks.onTournamentUpdate);
-      
-      return savedMatch;
-    } catch (err: unknown) {
-      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to create match result');
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(enriched.message)
-      ) {
-        callbacks.onError?.(enriched.message);
-      }
-      throw enriched;
-    }
+  ): Promise<unknown> {
+    return createTournamentMatchScore({
+      tournamentId: this.tournamentId,
+      matchData,
+      pins,
+      callbacks,
+    });
   }
 
-  /**
-   * Update an existing match
-   */
   async updateMatch(
     matchId: number,
     matchData: MatchData,
     callbacks: MatchUpdateCallbacks = {},
     pins?: MatchScorePins
-  ): Promise<any> {
-    const validationError = this.validateMatchData(matchData);
-    if (validationError) {
-      callbacks.onError?.(validationError);
-      throw new Error(validationError);
-    }
-
-    try {
-      const apiData = buildMatchApiData(matchData, pins);
-      const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
-      const savedMatch = response.data;
-      
-      callbacks.onSuccess?.('Match result updated successfully');
-      callbacks.onMatchUpdate?.(savedMatch);
-      
-      // Update tournament data
-      await this.refreshTournament(callbacks.onTournamentUpdate);
-      
-      return savedMatch;
-    } catch (err: unknown) {
-      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to update match result');
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(enriched.message)
-      ) {
-        callbacks.onError?.(enriched.message);
-      }
-      throw enriched;
-    }
+  ): Promise<unknown> {
+    return upsertTournamentMatchScore({
+      tournamentId: this.tournamentId,
+      matchId,
+      matchData,
+      pins,
+      callbacks,
+    });
   }
 
-  /**
-   * Delete/clear a match
-   */
   async deleteMatch(matchId: number, callbacks: MatchUpdateCallbacks = {}): Promise<void> {
-    try {
-      await api.delete(`/tournaments/${this.tournamentId}/matches/${matchId}`);
-      
-      callbacks.onSuccess?.('Match result cleared successfully');
-      callbacks.onMatchUpdate?.({ cleared: true, matchId });
-      
-      // Update tournament data
-      await this.refreshTournament(callbacks.onTournamentUpdate);
-    } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const errorMessage = apiError || 'Failed to clear match result';
-      callbacks.onError?.(errorMessage);
-      throw new Error(errorMessage);
-    }
-  }
-
-  /**
-   * Refresh tournament data from server
-   */
-  private async refreshTournament(onTournamentUpdate?: (tournament: any) => void): Promise<void> {
-    if (onTournamentUpdate) {
-      try {
-        const response = await api.get(`/tournaments/${this.tournamentId}`);
-        onTournamentUpdate(response.data);
-      } catch (err) {
-        console.error('Failed to refresh tournament:', err);
-      }
-    }
+    return clearTournamentMatchScore({
+      tournamentId: this.tournamentId,
+      matchId,
+      callbacks,
+    });
   }
 }
 
-/**
- * Create a match updater instance for a tournament
- */
 export function createMatchUpdater(tournamentId: number): MatchUpdater {
   return new MatchUpdater(tournamentId);
 }
+
+export { validateMatchScoreData };

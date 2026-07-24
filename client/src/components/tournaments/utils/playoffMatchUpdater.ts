@@ -1,186 +1,81 @@
-import { buildMatchApiData, MatchData, MatchUpdateCallbacks } from './matchUpdater';
-import api from '../../../utils/api';
+/**
+ * Playoff score writes: universal scoring + playoff bracket preflight / refresh hooks.
+ * Score rules/endpoints live in matchScoreSubmit; bracket rules stay playoff-owned.
+ */
+import {
+  clearTournamentMatchScore,
+  type MatchScoreData,
+  type MatchScorePins,
+  type MatchScoreWriteCallbacks,
+  upsertTournamentMatchScore,
+} from '../../../utils/matchScoreSubmit';
 import {
   getPlayoffFirstResultBlockedReason,
   type PlayoffBracketSlotForGuard,
 } from './playoffBracketPlayability';
-import { enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../../../utils/matchScorePayload';
 
 export type { PlayoffBracketSlotForGuard };
 
-export interface PlayoffMatchUpdateCallbacks extends MatchUpdateCallbacks {
+export interface PlayoffMatchUpdateCallbacks extends MatchScoreWriteCallbacks {
   onBracketUpdate?: () => void;
 }
 
-/**
- * Playoff-specific match updater that handles bracket match creation/updates
- * Uses bracketMatchId as the matchId parameter - server handles the linkage automatically
- */
 export class PlayoffMatchUpdater {
   constructor(private tournamentId: number) {}
 
   /**
-   * Validate match data before saving
-   */
-  private validateMatchData(matchData: MatchData): string | null {
-    // Validate forfeit: only one player can forfeit
-    if (matchData.player1Forfeit && matchData.player2Forfeit) {
-      return 'Only one player can forfeit';
-    }
-
-    // Validate scores: cannot be equal (including 0:0) unless it's a forfeit
-    if (!matchData.player1Forfeit && !matchData.player2Forfeit) {
-      const player1Sets = matchData.player1Sets || 0;
-      const player2Sets = matchData.player2Sets || 0;
-      // Disallow equal scores including 0:0
-      if (player1Sets === player2Sets) {
-        return 'Scores cannot be equal. One player must win.';
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Create a new match for a bracket match
-   * Uses bracketMatchId as the matchId parameter - server handles the linkage
-   * @param bracketSlot — when provided, enforces the same rules as the server before PATCH
+   * First result for a bracket slot (matchId = bracketMatchId; server links the row).
    */
   async createMatch(
-    matchData: MatchData,
+    matchData: MatchScoreData,
     bracketMatchId: number,
     callbacks: PlayoffMatchUpdateCallbacks = {},
     bracketSlot?: PlayoffBracketSlotForGuard | null,
-    pins?: { member1Pin?: string; member2Pin?: string }
-  ): Promise<any> {
-    const validationError = this.validateMatchData(matchData);
-    if (validationError) {
-      callbacks.onError?.(validationError);
-      throw new Error(validationError);
-    }
-
-    if (bracketSlot) {
-      const blocked = getPlayoffFirstResultBlockedReason(bracketSlot);
-      if (blocked) {
-        callbacks.onError?.(blocked);
-        throw new Error(blocked);
-      }
-    }
-
-    try {
-      const apiData = buildMatchApiData(matchData, pins);
-      // Use the generic match update endpoint with bracketMatchId
-      // The server plugin will resolve the bracketMatchId and handle bracket-specific logic
-      const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${bracketMatchId}`, apiData);
-      const savedMatch = response.data;
-      
-      callbacks.onSuccess?.('Match result added successfully');
-      callbacks.onMatchUpdate?.(savedMatch);
-      
-      // Update tournament data
-      await this.refreshTournament(callbacks.onTournamentUpdate);
-      
-      // Trigger bracket update callback
-      callbacks.onBracketUpdate?.();
-      
-      return savedMatch;
-    } catch (err: unknown) {
-      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to create match result');
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(enriched.message)
-      ) {
-        callbacks.onError?.(enriched.message);
-      }
-      throw enriched;
-    }
+    pins?: MatchScorePins
+  ): Promise<unknown> {
+    const saved = await upsertTournamentMatchScore({
+      tournamentId: this.tournamentId,
+      matchId: bracketMatchId,
+      matchData,
+      pins,
+      callbacks,
+      assertCanSubmit: bracketSlot
+        ? () => getPlayoffFirstResultBlockedReason(bracketSlot)
+        : undefined,
+    });
+    callbacks.onBracketUpdate?.();
+    return saved;
   }
 
-  /**
-   * Update an existing match
-   */
   async updateMatch(
     matchId: number,
-    matchData: MatchData,
+    matchData: MatchScoreData,
     callbacks: PlayoffMatchUpdateCallbacks = {},
-    pins?: { member1Pin?: string; member2Pin?: string }
-  ): Promise<any> {
-    const validationError = this.validateMatchData(matchData);
-    if (validationError) {
-      callbacks.onError?.(validationError);
-      throw new Error(validationError);
-    }
-
-    try {
-      const apiData = buildMatchApiData(matchData, pins);
-      const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
-      const savedMatch = response.data;
-      
-      callbacks.onSuccess?.('Match result updated successfully');
-      callbacks.onMatchUpdate?.(savedMatch);
-      
-      // Update tournament data
-      await this.refreshTournament(callbacks.onTournamentUpdate);
-      
-      return savedMatch;
-    } catch (err: unknown) {
-      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to update match result');
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(enriched.message)
-      ) {
-        callbacks.onError?.(enriched.message);
-      }
-      throw enriched;
-    }
+    pins?: MatchScorePins
+  ): Promise<unknown> {
+    const saved = await upsertTournamentMatchScore({
+      tournamentId: this.tournamentId,
+      matchId,
+      matchData,
+      pins,
+      callbacks,
+    });
+    return saved;
   }
 
-  /**
-   * Delete/clear a match
-   */
   async deleteMatch(
-    matchId: number, 
+    matchId: number,
     callbacks: PlayoffMatchUpdateCallbacks = {}
   ): Promise<void> {
-    try {
-      await api.delete(`/tournaments/${this.tournamentId}/matches/${matchId}`);
-      
-      callbacks.onSuccess?.('Match result cleared successfully');
-      callbacks.onMatchUpdate?.({ cleared: true, matchId });
-      
-      // Update tournament data
-      await this.refreshTournament(callbacks.onTournamentUpdate);
-      
-      // Trigger bracket update callback
-      callbacks.onBracketUpdate?.();
-    } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const errorMessage = apiError || 'Failed to clear match result';
-      callbacks.onError?.(errorMessage);
-      throw new Error(errorMessage);
-    }
-  }
-
-  /**
-   * Refresh tournament data from server
-   */
-  private async refreshTournament(onTournamentUpdate?: (tournament: any) => void): Promise<void> {
-    if (onTournamentUpdate) {
-      try {
-        const response = await api.get(`/tournaments/${this.tournamentId}`);
-        onTournamentUpdate(response.data);
-      } catch (err) {
-        console.error('Failed to refresh tournament:', err);
-      }
-    }
+    await clearTournamentMatchScore({
+      tournamentId: this.tournamentId,
+      matchId,
+      callbacks,
+    });
+    callbacks.onBracketUpdate?.();
   }
 }
 
-/**
- * Create a playoff match updater instance for a tournament
- */
 export function createPlayoffMatchUpdater(tournamentId: number): PlayoffMatchUpdater {
   return new PlayoffMatchUpdater(tournamentId);
 }

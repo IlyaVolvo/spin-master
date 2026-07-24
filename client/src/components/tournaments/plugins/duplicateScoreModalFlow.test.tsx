@@ -9,6 +9,7 @@ const duplicateMessage =
 vi.mock('../../../utils/auth', () => ({
   getMember: () => ({ id: 1 }),
   isOrganizer: () => true,
+  isKioskMode: () => false,
 }));
 
 vi.mock('../../../utils/nameFormatter', () => ({
@@ -87,9 +88,8 @@ describe('duplicate score modal flow', () => {
 
     fireEvent.click(screen.getAllByTitle('Enter score')[0]);
     expect(screen.getByTitle('Scores cannot be equal')).toBeInTheDocument();
-    const scoreInputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(scoreInputs[0], { target: { value: '3' } });
-    fireEvent.change(scoreInputs[1], { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Player 1 score'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Player 2 score'), { target: { value: '1' } });
 
     fireEvent.click(screen.getByTitle('Enter Score & Complete Match'));
 

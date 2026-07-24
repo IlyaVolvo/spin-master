@@ -9,6 +9,12 @@ vi.mock('../utils/nameFormatter', () => ({
   getNameDisplayOrder: () => 'firstLast',
 }));
 
+vi.mock('../utils/auth', () => ({
+  getMember: () => ({ id: 1 }),
+  isOrganizer: () => true,
+  isKioskMode: () => false,
+}));
+
 vi.mock('../utils/systemConfig', () => ({
   getSystemConfig: () => ({
     tournamentRules: {

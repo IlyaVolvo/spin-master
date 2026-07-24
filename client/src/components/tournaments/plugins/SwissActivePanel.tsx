@@ -15,7 +15,11 @@ import {
   isMatchCorrectable,
   shouldOpenCorrectionEditor,
 } from '../../../utils/scoreCorrectionUtils';
-import { attachScorePinsIfNeeded, canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../../../utils/matchScorePayload';
+import { canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, isScorePinAuthErrorMessage } from '../../../utils/matchScorePayload';
+import {
+  clearTournamentMatchScore,
+  upsertTournamentMatchScore,
+} from '../../../utils/matchScoreSubmit';
 import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { saveScrollPosition, withWindowScrollPreserved } from '../../../utils/scrollPosition';
 import './SwissActivePanel.css';
@@ -350,32 +354,35 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
     if (!editingMatch) return;
 
     try {
-      const api = (await import('../../../utils/api')).default;
-      const payload: Record<string, unknown> = {
-        player1Sets: parseInt(editingMatch.player1Sets) || 0,
-        player2Sets: parseInt(editingMatch.player2Sets) || 0,
-        player1Forfeit: editingMatch.player1Forfeit,
-        player2Forfeit: editingMatch.player2Forfeit,
-        expectedHadResult: editingMatch.expectedHadResult,
-        expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
-      };
-      attachScorePinsIfNeeded(payload, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       await withWindowScrollPreserved(async () => {
-        const response = await api.patch(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`, payload);
-        onTournamentUpdate(response.data);
+        await upsertTournamentMatchScore({
+          tournamentId: tournament.id,
+          matchId: editingMatch.matchId,
+          matchData: {
+            member1Id: editingMatch.member1Id,
+            member2Id: editingMatch.member2Id,
+            player1Sets: parseInt(editingMatch.player1Sets) || 0,
+            player2Sets: parseInt(editingMatch.player2Sets) || 0,
+            player1Forfeit: editingMatch.player1Forfeit,
+            player2Forfeit: editingMatch.player2Forfeit,
+            expectedHadResult: editingMatch.expectedHadResult,
+            expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
+          },
+          pins: {
+            member1Pin: editingMatch.member1Pin,
+            member2Pin: editingMatch.member2Pin,
+          },
+          callbacks: {
+            onSuccess: (message) => onSuccess?.(message),
+            onError: handleError,
+            onTournamentUpdate,
+          },
+          successMessage: 'Match updated successfully',
+        });
         setEditingMatch(null);
-        onSuccess?.('Match updated successfully');
       });
-    } catch (error: any) {
-      const enriched = enrichErrorWithInvalidScorePins(error, 'Failed to update match');
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(enriched.message)
-      ) {
-        handleError(enriched.message);
-      }
-      throw enriched;
+    } catch (error: unknown) {
+      throw error instanceof Error ? error : new Error('Failed to update match');
     }
   };
 
@@ -387,16 +394,21 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
     if (!editingMatch || !editingMatch.expectedHadResult) return;
 
     try {
-      const api = (await import('../../../utils/api')).default;
       await withWindowScrollPreserved(async () => {
-        await api.delete(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`);
+        await clearTournamentMatchScore({
+          tournamentId: tournament.id,
+          matchId: editingMatch.matchId,
+          callbacks: {
+            onSuccess: (message) => onSuccess?.(message),
+            onError: handleError,
+            onMatchUpdate: (match) => onMatchUpdate?.(match as any),
+            onTournamentUpdate,
+          },
+        });
         setEditingMatch(null);
-        onMatchUpdate?.({ cleared: true, matchId: editingMatch.matchId } as any);
-        onSuccess?.('Match result cleared successfully');
       });
-    } catch (error: any) {
-      const message = error?.response?.data?.error || error?.message || 'Failed to clear match result';
-      handleError(message);
+    } catch {
+      // Error already reported via callbacks
     }
   };
 

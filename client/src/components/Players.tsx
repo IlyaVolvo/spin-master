@@ -7,7 +7,8 @@ import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder, setNameDisplayOrder, NameDisplayOrder } from '../utils/nameFormatter';
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
 import { getMember, setMember, isOrganizer, isAdmin, isKioskMode } from '../utils/auth';
-import { parseInvalidScorePinsFromError, enrichErrorWithInvalidScorePins } from '../utils/matchScorePayload';
+import { parseInvalidScorePinsFromError } from '../utils/matchScorePayload';
+import { createStandaloneMatchScore } from '../utils/matchScoreSubmit';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import type { TournamentType } from '../types/tournament';
 import type { Member, SimilarName, ImportParseReport, PlayerImportResultsPayload, PendingPlayerData } from '../types/member';
@@ -2769,22 +2770,22 @@ const Players: React.FC = () => {
     setMatchError('');
     setMatchInvalidPins({ member1: false, member2: false });
     try {
-      const payload: any = {
-        member1Id,
-        member2Id,
-        player1Sets: p1Sets,
-        player2Sets: p2Sets,
-      };
-      if (isKioskMode()) {
-        payload.member1Pin = matchMember1Pin.trim();
-        payload.member2Pin = matchMember2Pin.trim();
-      }
-      await api.post('/tournaments/matches/create', payload);
+      await createStandaloneMatchScore({
+        matchData: {
+          member1Id,
+          member2Id,
+          player1Sets: p1Sets,
+          player2Sets: p2Sets,
+        },
+        pins: isKioskMode()
+          ? { member1Pin: matchMember1Pin, member2Pin: matchMember2Pin }
+          : undefined,
+      });
       setSuccess('Match recorded successfully');
       handleCancelRecordMatch();
       fetchMembers();
-    } catch (err: any) {
-      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to record match');
+    } catch (err: unknown) {
+      const enriched = err instanceof Error ? err : new Error('Failed to record match');
       const pins = parseInvalidScorePinsFromError(enriched);
       if (pins && (pins.member1 || pins.member2)) {
         setMatchInvalidPins({
@@ -7215,10 +7216,14 @@ const Players: React.FC = () => {
                         opacity: 1;
                       }
                     `}</style>
+                    {(() => {
+                      const p1 = members.find(p => p.id === selectedPlayersForMatch[0]);
+                      const p2 = members.find(p => p.id === selectedPlayersForMatch[1]);
+                      const p1PinLabel = p1 ? `${p1.firstName}'s PIN` : 'PIN';
+                      const p2PinLabel = p2 ? `${p2.firstName}'s PIN` : 'PIN';
+                      return (
+                        <>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: 'bold' }}>
-                        Player 1 PIN
-                      </label>
                       <input
                         type="password"
                         inputMode="numeric"
@@ -7230,6 +7235,7 @@ const Players: React.FC = () => {
                             setMatchInvalidPins((prev) => ({ ...prev, member1: false }));
                           }
                         }}
+                        aria-label={p1PinLabel}
                         aria-invalid={matchInvalidPins.member1}
                         style={{
                           width: '100%',
@@ -7241,13 +7247,10 @@ const Players: React.FC = () => {
                           WebkitTextFillColor:
                             matchInvalidPins.member1 && matchMember1Pin ? '#e74c3c' : undefined,
                         }}
-                        placeholder={matchInvalidPins.member1 ? 'Enter PIN' : 'PIN'}
+                        placeholder={p1PinLabel}
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: 'bold' }}>
-                        Player 2 PIN
-                      </label>
                       <input
                         type="password"
                         inputMode="numeric"
@@ -7259,6 +7262,7 @@ const Players: React.FC = () => {
                             setMatchInvalidPins((prev) => ({ ...prev, member2: false }));
                           }
                         }}
+                        aria-label={p2PinLabel}
                         aria-invalid={matchInvalidPins.member2}
                         style={{
                           width: '100%',
@@ -7270,9 +7274,12 @@ const Players: React.FC = () => {
                           WebkitTextFillColor:
                             matchInvalidPins.member2 && matchMember2Pin ? '#e74c3c' : undefined,
                         }}
-                        placeholder={matchInvalidPins.member2 ? 'Enter PIN' : 'PIN'}
+                        placeholder={p2PinLabel}
                       />
                     </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
 

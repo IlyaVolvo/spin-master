@@ -4,7 +4,11 @@ import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
 import { getMember, isOrganizer } from '../utils/auth';
-import { attachScorePinsIfNeeded, shouldShowScorePinsForMatchEdit, enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../utils/matchScorePayload';
+import { shouldShowScorePinsForMatchEdit } from '../utils/matchScorePayload';
+import {
+  clearTournamentMatchScore,
+  upsertTournamentMatchScore,
+} from '../utils/matchScoreSubmit';
 import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../utils/duplicateScoreError';
 import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
 import { getSystemConfig } from '../utils/systemConfig';
@@ -1784,23 +1788,16 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       }
     }
 
-    const matchData: any = {
+    const matchData = {
       member1Id: editingMatch.member1Id,
       member2Id: editingMatch.member2Id,
       expectedHadResult: editingMatch.expectedHadResult,
       expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
+      player1Forfeit: editingMatch.player1Forfeit,
+      player2Forfeit: editingMatch.player2Forfeit,
+      player1Sets: parseInt(editingMatch.player1Sets) || 0,
+      player2Sets: parseInt(editingMatch.player2Sets) || 0,
     };
-
-    // If forfeit, send forfeit flags; otherwise send sets
-    if (editingMatch.player1Forfeit || editingMatch.player2Forfeit) {
-      matchData.player1Forfeit = editingMatch.player1Forfeit;
-      matchData.player2Forfeit = editingMatch.player2Forfeit;
-    } else {
-      matchData.player1Sets = parseInt(editingMatch.player1Sets) || 0;
-      matchData.player2Sets = parseInt(editingMatch.player2Sets) || 0;
-      matchData.player1Forfeit = false;
-      matchData.player2Forfeit = false;
-    }
 
     // Find the match node being saved
     let matchBeingSaved: MatchNode | undefined;
@@ -1880,15 +1877,36 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         return;
       }
 
-      attachScorePinsIfNeeded(matchData, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
+      await upsertTournamentMatchScore({
+        tournamentId,
+        matchId: matchIdToUse,
+        matchData,
+        pins: {
+          member1Pin: editingMatch.member1Pin,
+          member2Pin: editingMatch.member2Pin,
+        },
+        refreshTournament: false,
+        callbacks: {
+          onError: (message) => {
+            if (isDuplicateScoreMessage(message)) {
+              flushSync(() => {
+                setEditingMatch(null);
+              });
+            }
+            if (onError) {
+              onError(normalizeDuplicateScoreMessage(message));
+            } else {
+              alert(normalizeDuplicateScoreMessage(message));
+            }
+          },
+        },
+      });
       
-      await api.patch(`/tournaments/${tournamentId}/matches/${matchIdToUse}`, matchData);
-      
-      // If this is the final match, auto-complete the tournament
+      // Playoff-owned: completing the final match may auto-complete the tournament
       if (isFinalMatch) {
         try {
           await api.patch(`/tournaments/${tournamentId}/complete`);
-        } catch (completeError: any) {
+        } catch {
           // If auto-complete fails, silently continue (don't block the match save)
         }
       }
@@ -1897,26 +1915,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       if (onMatchUpdate) {
         onMatchUpdate();
       }
-    } catch (error: any) {
-      const enriched = enrichErrorWithInvalidScorePins(error, 'Failed to update match');
-      const errorMessage = enriched.message;
-      if (
-        !(enriched instanceof ScorePinAuthError) &&
-        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
-        !isScorePinAuthErrorMessage(errorMessage)
-      ) {
-        if (isDuplicateScoreMessage(errorMessage)) {
-          flushSync(() => {
-            setEditingMatch(null);
-          });
-        }
-        if (onError) {
-          onError(normalizeDuplicateScoreMessage(errorMessage));
-        } else {
-          alert(normalizeDuplicateScoreMessage(errorMessage));
-        }
-      }
-      throw enriched;
+    } catch (error: unknown) {
+      // PIN field errors rethrown for MatchEntryPopup; page errors already via onError callback
+      throw error instanceof Error ? error : new Error('Failed to update match');
     }
   };
 
@@ -1926,18 +1927,26 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     }
 
     try {
-      await api.delete(`/tournaments/${tournamentId}/matches/${editingMatch.matchId}`);
+      await clearTournamentMatchScore({
+        tournamentId,
+        matchId: editingMatch.matchId,
+        refreshTournament: false,
+        callbacks: {
+          onError: (message) => {
+            if (onError) {
+              onError(message);
+            } else {
+              alert(message);
+            }
+          },
+        },
+      });
       setEditingMatch(null);
       if (onMatchUpdate) {
         onMatchUpdate();
       }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to delete match result';
-      if (onError) {
-        onError(errorMessage);
-      } else {
-        alert(errorMessage);
-      }
+    } catch {
+      // Error already reported via callbacks
     }
   };
   
