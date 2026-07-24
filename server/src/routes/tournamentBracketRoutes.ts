@@ -17,7 +17,7 @@ import {
   PlayoffBracketResultError,
 } from '../services/playoffBracketService';
 import { isOrganizer } from '../utils/organizerAccess';
-import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
+import { authorizeTournamentScoreEntryRequest, matchAuthFailureJson } from '../utils/matchScoreAuthorization';
 import { getTournamentRulesConfig } from '../services/systemConfigService';
 
 const router = express.Router();
@@ -39,7 +39,8 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
-  body('opponentPassword').optional().trim(),
+  body('member1Pin').optional().trim(),
+  body('member2Pin').optional().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -83,10 +84,13 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
     const scoreAuth = await authorizeTournamentScoreEntryRequest(prisma, req, {
       tournamentId,
       matchId: bracketMatchId,
-      opponentPassword: req.body?.opponentPassword,
+      member1Pin: req.body?.member1Pin,
+      member2Pin: req.body?.member2Pin,
+      player1Forfeit: finalPlayer1Forfeit,
+      player2Forfeit: finalPlayer2Forfeit,
     });
     if (!scoreAuth.ok) {
-      return res.status(scoreAuth.status).json({ error: scoreAuth.error });
+      return res.status(scoreAuth.status).json(matchAuthFailureJson(scoreAuth));
     }
 
     let newMatch: { id: number; member1Id: number; member2Id: number | null; tournament?: { type: string } };

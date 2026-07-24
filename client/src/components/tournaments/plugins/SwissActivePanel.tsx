@@ -15,7 +15,7 @@ import {
   isMatchCorrectable,
   shouldOpenCorrectionEditor,
 } from '../../../utils/scoreCorrectionUtils';
-import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
+import { attachScorePinsIfNeeded, canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { saveScrollPosition, withWindowScrollPreserved } from '../../../utils/scrollPosition';
 import './SwissActivePanel.css';
@@ -33,7 +33,8 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  opponentPassword?: string;
+  member1Pin?: string;
+  member2Pin?: string;
   expectedHadResult?: boolean;
   expectedMatchUpdatedAt?: string;
 }
@@ -101,7 +102,8 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
     onActiveMatchEdit: (payload) => {
       setEditingMatch({
         ...payload,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: true,
       });
     },
@@ -305,6 +307,9 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
   };
 
   const handleError = (message: string) => {
+    if (isScorePinAuthErrorMessage(message)) {
+      return;
+    }
     if (isDuplicateScoreMessage(message)) {
       flushSync(() => {
         setEditingMatch(null);
@@ -333,7 +338,8 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: match.player2Sets.toString(),
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: hasResult,
         expectedMatchUpdatedAt: match.updatedAt,
       });
@@ -353,7 +359,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         expectedHadResult: editingMatch.expectedHadResult,
         expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
       };
-      attachOpponentPasswordIfNeeded(payload, editingMatch.opponentPassword);
+      attachScorePinsIfNeeded(payload, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       await withWindowScrollPreserved(async () => {
         const response = await api.patch(`/tournaments/${tournament.id}/matches/${editingMatch.matchId}`, payload);
         onTournamentUpdate(response.data);
@@ -361,8 +367,15 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         onSuccess?.('Match updated successfully');
       });
     } catch (error: any) {
-      const message = error?.response?.data?.error || error?.message || 'Failed to update match';
-      handleError(message);
+      const enriched = enrichErrorWithInvalidScorePins(error, 'Failed to update match');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        handleError(enriched.message);
+      }
+      throw enriched;
     }
   };
 
@@ -735,7 +748,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
           player1={getPlayer(editingMatch.member1Id)!}
           player2={getPlayer(editingMatch.member2Id)!}
           showForfeitOptions={true}
-          requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
+          requireScorePins={shouldShowScorePinsForMatchEdit(editingMatch)}
           onSetEditingMatch={setEditingMatch}
           onSave={handleMatchSave}
           onCancel={handleMatchCancel}

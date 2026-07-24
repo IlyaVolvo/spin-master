@@ -6,8 +6,11 @@ import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup
 import { updateMatchCountsCache } from './utils/matchCacheUtils';
 import api from '../utils/api';
 import {
-  attachOpponentPasswordIfNeeded,
-  shouldShowOpponentPasswordForMatchEdit,
+  attachScorePinsIfNeeded,
+  shouldShowScorePinsForMatchEdit,
+  enrichErrorWithInvalidScorePins,
+  isScorePinAuthErrorMessage,
+  ScorePinAuthError,
 } from '../utils/matchScorePayload';
 
 interface Member {
@@ -72,7 +75,8 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  opponentPassword?: string;
+  member1Pin?: string;
+  member2Pin?: string;
 }
 
 export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
@@ -148,7 +152,7 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
       matchData.player2Forfeit = false;
     }
 
-    attachOpponentPasswordIfNeeded(matchData, editingFinalMatch.opponentPassword);
+    attachScorePinsIfNeeded(matchData, { member1Pin: editingFinalMatch.member1Pin, member2Pin: editingFinalMatch.member2Pin });
 
     try {
       const response = await api.patch(`/tournaments/${tournamentId}/matches/${editingFinalMatch.matchId}`, matchData);
@@ -169,7 +173,15 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
         onBracketUpdate();
       }
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to update match');
+      const enriched = enrichErrorWithInvalidScorePins(error, 'Failed to update match');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        alert(enriched.message);
+      }
+      throw enriched;
     }
   };
 
@@ -395,7 +407,7 @@ export const PlayoffBracket: React.FC<PlayoffBracketProps> = ({
             player1={player1.member}
             player2={player2.member}
             showForfeitOptions={true}
-            requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+            requireScorePins={shouldShowScorePinsForMatchEdit({
               member1Id: editingFinalMatch.member1Id,
               member2Id: editingFinalMatch.member2Id,
             })}

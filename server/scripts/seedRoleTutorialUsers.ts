@@ -72,7 +72,8 @@ async function main() {
       rating: s.rating,
       isActive: true,
       qrTokenHash: qrHash(s.qrSuffix),
-      mustResetPassword: false,
+
+      scorePin: '1234',mustResetPassword: false,
     };
 
     const existing = await prisma.member.findUnique({ where: { email: s.email } });
@@ -82,7 +83,8 @@ async function main() {
         data: {
           ...data,
           qrTokenHash: existing.qrTokenHash,
-        },
+
+        scorePin: '1234',},
       });
       console.log(`Updated member: ${s.email} (${s.roles.join('+')})`);
     } else {

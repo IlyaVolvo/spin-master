@@ -30,7 +30,7 @@ import {
   loadCancelledFilterMode,
   type CancelledFilterMode,
 } from '../utils/cancelledFilterMode';
-import { attachOpponentPasswordIfNeeded, canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
+import { attachScorePinsIfNeeded, canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../utils/matchScorePayload';
 import {
   MATCH_RESULT_ALREADY_ENTERED_MESSAGE,
   isDuplicateScoreMessage,
@@ -275,7 +275,8 @@ const TournamentDetailPage: React.FC = () => {
     player2Sets: string;
     player1Forfeit: boolean;
     player2Forfeit: boolean;
-    opponentPassword?: string;
+    member1Pin?: string;
+  member2Pin?: string;
     expectedHadResult?: boolean;
     expectedMatchUpdatedAt?: string;
   } | null>(null);
@@ -1123,7 +1124,8 @@ const TournamentDetailPage: React.FC = () => {
         player2Sets: match.player2Sets.toString(),
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0 || !!match.player1Forfeit || !!match.player2Forfeit,
         expectedMatchUpdatedAt: match.updatedAt,
       });
@@ -1137,7 +1139,8 @@ const TournamentDetailPage: React.FC = () => {
         player2Sets: '0',
         player1Forfeit: false,
         player2Forfeit: false,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: false,
       });
     }
@@ -1186,7 +1189,7 @@ const TournamentDetailPage: React.FC = () => {
         matchData.player2Forfeit = false;
       }
 
-      attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
+      attachScorePinsIfNeeded(matchData, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
 
       let savedMatch: any;
       if (editingMatch.matchId === 0) {
@@ -1225,8 +1228,15 @@ const TournamentDetailPage: React.FC = () => {
         }
       });
     } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      handleTournamentError(apiError || 'Failed to save match result');
+      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to save match result');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        handleTournamentError(enriched.message);
+      }
+      throw enriched;
     }
   };
 
@@ -1386,6 +1396,9 @@ const TournamentDetailPage: React.FC = () => {
   };
 
   const handleTournamentError = (message: string) => {
+    if (isScorePinAuthErrorMessage(message)) {
+      return;
+    }
     if (message === MATCH_RESULT_ALREADY_ENTERED_MESSAGE || isDuplicateScoreMessage(message)) {
       flushSync(() => {
         setEditingMatch(null);
@@ -2025,7 +2038,7 @@ const TournamentDetailPage: React.FC = () => {
                                         player1={player1}
                                         player2={player2}
                                         showForfeitOptions={true}
-                                        requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+                                        requireScorePins={shouldShowScorePinsForMatchEdit({
                                           member1Id: editingMatch.member1Id,
                                           member2Id: editingMatch.member2Id ?? 0,
                                         })}
@@ -2538,7 +2551,7 @@ const TournamentDetailPage: React.FC = () => {
                         player1={player1}
                         player2={player2}
                         showForfeitOptions={true}
-                        requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+                        requireScorePins={shouldShowScorePinsForMatchEdit({
                           member1Id: editingMatch.member1Id,
                           member2Id: editingMatch.member2Id ?? 0,
                         })}

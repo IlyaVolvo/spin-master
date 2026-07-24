@@ -18,6 +18,8 @@ interface Member {
   phone?: string | null;
   address?: string | null;
   tournamentNotificationsEnabled?: boolean;
+  /** null = inherit club default. */
+  autoRelinquishPrivileges?: boolean | null;
 }
 
 // Module-level cache to persist across component mounts/unmounts

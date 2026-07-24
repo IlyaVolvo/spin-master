@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
+import { parseInvalidScorePinsFromError, type InvalidScorePins } from '../utils/matchScorePayload';
+import { isOrganizer } from '../utils/auth';
 
 interface Player {
   id: number;
@@ -16,8 +18,10 @@ export interface MatchEntryEditingState {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  /** When required for non-organizer players, filled before save */
-  opponentPassword?: string;
+  /** Kiosk mode: PIN for player 1 */
+  member1Pin?: string;
+  /** Kiosk mode: PIN for player 2 */
+  member2Pin?: string;
   /** Existing generated match rows can still be first-time score entry (Swiss). */
   expectedHadResult?: boolean;
   expectedMatchUpdatedAt?: string;
@@ -28,10 +32,10 @@ interface MatchEntryPopupProps {
   player1: Player;
   player2: Player;
   showForfeitOptions?: boolean;
-  /** When true, opponent password is required to enable Save (non-organizer recording for two players). */
-  requireOpponentPassword?: boolean;
+  /** When true, both participant PINs are required (kiosk mode). */
+  requireScorePins?: boolean;
   onSetEditingMatch: (match: MatchEntryEditingState) => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   onCancel: () => void;
   onClear?: () => void;
   showClearButton?: boolean;
@@ -91,7 +95,7 @@ interface ScoreFieldWithStepperProps {
   value: string;
   isForfeit: boolean;
   scoreMax: number;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLInputElement>;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onIncrement: () => void;
   onDecrement: () => void;
@@ -184,7 +188,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
   player1,
   player2,
   showForfeitOptions = true,
-  requireOpponentPassword = false,
+  requireScorePins = false,
   onSetEditingMatch,
   onSave,
   onCancel,
@@ -194,19 +198,34 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
 }) => {
   const [confirmAction, setConfirmAction] = useState<'modify' | 'clear' | null>(null);
   const [systemConfig, setSystemConfig] = useState(() => getSystemConfig());
+  const [invalidScorePins, setInvalidScorePins] = useState<InvalidScorePins>({
+    member1: false,
+    member2: false,
+  });
   const originalWinnerIdRef = useRef(getEditingWinnerId(editingMatch));
   const player1InputRef = useRef<HTMLInputElement>(null);
   const player2InputRef = useRef<HTMLInputElement>(null);
+  const member1PinInputRef = useRef<HTMLInputElement>(null);
+  const member2PinInputRef = useRef<HTMLInputElement>(null);
+  const editingMatchRef = useRef(editingMatch);
+  editingMatchRef.current = editingMatch;
   const isForfeit = editingMatch.player1Forfeit || editingMatch.player2Forfeit;
   const isModification = editingMatch.matchId > 0 && editingMatch.expectedHadResult !== false;
   const winnerChanged = isModification && getEditingWinnerId(editingMatch) !== originalWinnerIdRef.current;
   const scoreRule = systemConfig.tournamentRules.matchScore;
+  const nameOrder = getNameDisplayOrder();
+  const player1DisplayName = formatPlayerName(player1.firstName, player1.lastName, nameOrder);
+  const player2DisplayName = formatPlayerName(player2.firstName, player2.lastName, nameOrder);
+  /** Forfeits: organizers only (kiosk mode makes isOrganizer false). */
+  const allowForfeitOptions = showForfeitOptions && isOrganizer();
 
   const player1Sets = parseInt(editingMatch.player1Sets) || 0;
   const player2Sets = parseInt(editingMatch.player2Sets) || 0;
   const scoresEqual = !scoreRule.allowEqualScores && !isForfeit && player1Sets === player2Sets;
-  const missingOpponentPassword = requireOpponentPassword && !editingMatch.opponentPassword?.trim();
-  const isDisabled = scoresEqual || missingOpponentPassword;
+  const missingScorePins =
+    requireScorePins &&
+    (!editingMatch.member1Pin?.trim() || !editingMatch.member2Pin?.trim());
+  const isDisabled = scoresEqual || missingScorePins;
 
   useEffect(() => subscribeToSystemConfig(setSystemConfig), []);
 
@@ -217,14 +236,45 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
     }
   }, [isForfeit]);
 
-  const trySave = useCallback(() => {
+  const applyInvalidScorePins = useCallback(
+    (err: unknown) => {
+      const pins = parseInvalidScorePinsFromError(err);
+      if (!pins || (!pins.member1 && !pins.member2)) return false;
+      // Only mark/clear sides the server reported as wrong.
+      setInvalidScorePins({
+        member1: pins.member1 === true,
+        member2: pins.member2 === true,
+      });
+      const current = editingMatchRef.current;
+      onSetEditingMatch({
+        ...current,
+        member1Pin: pins.member1 ? '' : (current.member1Pin ?? ''),
+        member2Pin: pins.member2 ? '' : (current.member2Pin ?? ''),
+      });
+      requestAnimationFrame(() => {
+        if (pins.member1) {
+          member1PinInputRef.current?.focus();
+        } else if (pins.member2) {
+          member2PinInputRef.current?.focus();
+        }
+      });
+      return true;
+    },
+    [onSetEditingMatch],
+  );
+
+  const trySave = useCallback(async () => {
     if (isDisabled) return;
     if (winnerChanged) {
       setConfirmAction('modify');
-    } else {
-      onSave();
+      return;
     }
-  }, [isDisabled, winnerChanged, onSave]);
+    try {
+      await Promise.resolve(onSave());
+    } catch (err) {
+      applyInvalidScorePins(err);
+    }
+  }, [isDisabled, winnerChanged, onSave, applyInvalidScorePins]);
 
   const clampScore = useCallback(
     (value: number) => Math.min(scoreRule.max, Math.max(0, value)),
@@ -355,7 +405,13 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             message: modifyConfirmationMessage,
             confirmText: 'Modify Result',
             confirmColor: '#27ae60',
-            onConfirm: onSave,
+            onConfirm: async () => {
+              try {
+                await Promise.resolve(onSave());
+              } catch (err) {
+                applyInvalidScorePins(err);
+              }
+            },
           }
         : null;
 
@@ -415,8 +471,8 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
           />
         </div>
 
-        {/* Forfeit options  for all but non tournament macthes */}
-        {showForfeitOptions && (
+        {/* Forfeit options — organizers only (hidden in kiosk) */}
+        {allowForfeitOptions && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginLeft: '20px', paddingLeft: '20px', borderLeft: '1px solid #ddd' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <input
@@ -437,7 +493,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                 style={{ cursor: editingMatch.player2Forfeit ? 'not-allowed' : 'pointer' }}
               />
               <label htmlFor="editPlayer1Forfeit" style={{ margin: 0, cursor: editingMatch.player2Forfeit ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
-                Player 1 Forfeit
+                {player1DisplayName} Forfeit
               </label>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -459,7 +515,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                 style={{ cursor: editingMatch.player1Forfeit ? 'not-allowed' : 'pointer' }}
               />
               <label htmlFor="editPlayer2Forfeit" style={{ margin: 0, cursor: editingMatch.player1Forfeit ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
-                Player 2 Forfeit
+                {player2DisplayName} Forfeit
               </label>
             </div>
             {showClearButton && onClear && (
@@ -506,8 +562,8 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             onClick={trySave}
             tabIndex={-1}
             title={
-              missingOpponentPassword
-                ? 'Enter opponent password'
+              missingScorePins
+                ? 'Enter both participant PINs'
                 : isDisabled
                   ? 'Scores cannot be equal'
                   : !isModification
@@ -583,41 +639,106 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
         </div>
       </div>
 
-      {requireOpponentPassword && (
+      {requireScorePins && (
         <div style={{ width: '100%', paddingTop: '4px', borderTop: '1px solid #eee' }}>
-          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-            Opponent password (required to confirm this result)
-          </label>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={editingMatch.opponentPassword ?? ''}
-            onChange={(e) =>
-              onSetEditingMatch({
-                ...editingMatch,
-                opponentPassword: e.target.value,
-              })
+          <style>{`
+            .kiosk-score-pin-invalid::placeholder {
+              color: #e74c3c;
+              opacity: 1;
             }
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                onCancel();
-              }
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                trySave();
-              }
-            }}
-            placeholder="Other player signs off"
-            style={{
-              width: '100%',
-              maxWidth: '360px',
-              padding: '8px',
-              fontSize: '14px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-            }}
-          />
+          `}</style>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
+            Participant PINs (required in kiosk mode)
+          </label>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <input
+              ref={member1PinInputRef}
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              className={invalidScorePins.member1 ? 'kiosk-score-pin-invalid' : undefined}
+              value={editingMatch.member1Pin ?? ''}
+              onChange={(e) => {
+                if (invalidScorePins.member1) {
+                  setInvalidScorePins((prev) => ({ ...prev, member1: false }));
+                }
+                onSetEditingMatch({
+                  ...editingMatch,
+                  member1Pin: e.target.value.replace(/\D/g, ''),
+                });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  onCancel();
+                }
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void trySave();
+                }
+              }}
+              placeholder={invalidScorePins.member1 ? 'Enter PIN' : `${player1.firstName}'s PIN`}
+              aria-invalid={invalidScorePins.member1}
+              style={{
+                flex: '1 1 140px',
+                maxWidth: '180px',
+                padding: '8px',
+                fontSize: '14px',
+                border: `2px solid ${invalidScorePins.member1 ? '#e74c3c' : '#ccc'}`,
+                borderRadius: '4px',
+                color: invalidScorePins.member1 ? '#e74c3c' : 'inherit',
+                // Only tint typed digits; leave fill unset when empty so red placeholder shows.
+                WebkitTextFillColor:
+                  invalidScorePins.member1 && (editingMatch.member1Pin ?? '')
+                    ? '#e74c3c'
+                    : undefined,
+                boxSizing: 'border-box',
+              }}
+            />
+            <input
+              ref={member2PinInputRef}
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              className={invalidScorePins.member2 ? 'kiosk-score-pin-invalid' : undefined}
+              value={editingMatch.member2Pin ?? ''}
+              onChange={(e) => {
+                if (invalidScorePins.member2) {
+                  setInvalidScorePins((prev) => ({ ...prev, member2: false }));
+                }
+                onSetEditingMatch({
+                  ...editingMatch,
+                  member2Pin: e.target.value.replace(/\D/g, ''),
+                });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  onCancel();
+                }
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void trySave();
+                }
+              }}
+              placeholder={invalidScorePins.member2 ? 'Enter PIN' : `${player2.firstName}'s PIN`}
+              aria-invalid={invalidScorePins.member2}
+              style={{
+                flex: '1 1 140px',
+                maxWidth: '180px',
+                padding: '8px',
+                border: `2px solid ${invalidScorePins.member2 ? '#e74c3c' : '#ccc'}`,
+                borderRadius: '4px',
+                fontSize: '14px',
+                color: invalidScorePins.member2 ? '#e74c3c' : 'inherit',
+                WebkitTextFillColor:
+                  invalidScorePins.member2 && (editingMatch.member2Pin ?? '')
+                    ? '#e74c3c'
+                    : undefined,
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
         </div>
       )}
       </div>
@@ -666,7 +787,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
               type="button"
               onClick={() => {
                 setConfirmAction(null);
-                confirmConfig.onConfirm?.();
+                void confirmConfig.onConfirm?.();
               }}
               style={{ backgroundColor: confirmConfig.confirmColor, color: 'white' }}
             >

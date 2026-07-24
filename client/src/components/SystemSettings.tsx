@@ -222,6 +222,33 @@ export default function SystemSettings() {
           onChange={(value) => updateConfig(draft => { draft.authPolicy.passwordResetTokenTtlHours = value; })}
         />
         <NumericInput
+          label="Score PIN Length"
+          min={4}
+          value={config.authPolicy.pinLength}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.pinLength = value; })}
+        />
+        <FieldRow label="Auto Relinquish Privileges (club default)">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+            <input
+              type="checkbox"
+              checked={config.authPolicy.autoRelinquishPrivileges}
+              onChange={(event) => updateConfig(draft => {
+                draft.authPolicy.autoRelinquishPrivileges = event.target.checked;
+              })}
+            />
+            Elevated accounts enter kiosk mode on login by default
+          </label>
+        </FieldRow>
+        <NumericInput
+          label="Auto Relinquish Idle (minutes)"
+          min={0}
+          value={config.authPolicy.autoRelinquishIdleMinutes}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.autoRelinquishIdleMinutes = value; })}
+        />
+        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#666' }}>
+          After restoring privileges, return to kiosk after this many idle minutes (0 = only on login).
+        </p>
+        <NumericInput
           label="Preregistration Date Offset (days)"
           value={config.preregistration.defaultTournamentOffsetDays}
           onChange={(value) => updateConfig(draft => { draft.preregistration.defaultTournamentOffsetDays = value; })}

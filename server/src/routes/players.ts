@@ -21,6 +21,10 @@ import {
 } from '../utils/memberValidation';
 import { looksLikePlayersCsvHeaderRow, playersCsvCanonicalHeadersForParse } from '../utils/playersCsvLayout';
 import { stripSensitiveMemberFields } from '../utils/memberSerialization';
+import { generateScorePin, normalizeScorePin, validateScorePinFormat } from '../utils/scorePin';
+import { isKioskMode } from '../utils/kioskMode';
+import { isAdmin as sharedIsAdmin } from '../utils/adminAccess';
+import { isOrganizer as sharedIsOrganizer } from '../utils/organizerAccess';
 
 const router = express.Router();
 const importUpload = multer({ storage: multer.memoryStorage() });
@@ -776,41 +780,13 @@ function generateQrTokenHash(): string {
 // All routes require authentication
 router.use(authenticate);
 
-// Helper function to check if current user is an admin
+// Helper function to check if current user is an admin (respects kiosk mode)
 async function isAdmin(req: AuthRequest): Promise<boolean> {
-  // Check if session has member with ADMIN role
-  if (req.member && req.member.roles.includes('ADMIN')) {
-    return true;
-  }
-  
-  // Check if JWT token has memberId and member is admin
-  if (req.memberId) {
-    const member = await prisma.member.findUnique({
-      where: { id: req.memberId },
-      select: { roles: true },
-    });
-    return member?.roles.includes('ADMIN') || false;
-  }
-  
-  return false;
+  return sharedIsAdmin(req);
 }
 
 async function isOrganizer(req: AuthRequest): Promise<boolean> {
-  // Check if session has member with ORGANIZER role
-  if (req.member && req.member.roles.includes('ORGANIZER')) {
-    return true;
-  }
-  
-  // Check if JWT token has memberId and member is organizer
-  if (req.memberId) {
-    const member = await prisma.member.findUnique({
-      where: { id: req.memberId },
-      select: { roles: true },
-    });
-    return member?.roles.includes('ORGANIZER') || false;
-  }
-  
-  return false;
+  return sharedIsOrganizer(req);
 }
 
 // Legacy function for backward compatibility
@@ -1045,6 +1021,7 @@ router.post('/', [
   body('address').optional().trim(),
   body('picture').optional().trim(),
   body('tournamentNotificationsEnabled').optional().isBoolean(),
+  body('autoRelinquishPrivileges').optional({ nullable: true }).isBoolean(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -1052,7 +1029,7 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck, tournamentNotificationsEnabled } = req.body;
+    const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck, tournamentNotificationsEnabled, autoRelinquishPrivileges } = req.body;
     const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
     const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
     const trimmedEmailInput = typeof email === 'string' ? email.trim() : '';
@@ -1171,6 +1148,11 @@ router.post('/', [
           address: address ? address.trim() : null,
           picture: picture ? picture.trim() : null,
           qrTokenHash: generateQrTokenHash(),
+        scorePin: generateScorePin(),
+          autoRelinquishPrivileges:
+            autoRelinquishPrivileges === null || autoRelinquishPrivileges === undefined
+              ? null
+              : Boolean(autoRelinquishPrivileges),
           isActive: true,
           emailConfirmedAt: null,
           mustResetPassword: false,
@@ -1216,6 +1198,11 @@ router.post('/', [
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
         qrTokenHash: generateQrTokenHash(),
+        scorePin: generateScorePin(),
+        autoRelinquishPrivileges:
+          autoRelinquishPrivileges === null || autoRelinquishPrivileges === undefined
+            ? null
+            : Boolean(autoRelinquishPrivileges),
         isActive: false,
         emailConfirmedAt: null,
         mustResetPassword: true,
@@ -1270,6 +1257,96 @@ router.post('/', [
 });
 
 // Deactivate member
+
+/** Reveal permanent score PIN — self or admin; blocked in kiosk mode. */
+router.get('/:id/score-pin', async (req: AuthRequest, res: Response) => {
+  try {
+    if (isKioskMode(req)) {
+      return res.status(403).json({ error: 'PIN viewing is not available in kiosk mode.' });
+    }
+    const memberId = parseInt(req.params.id, 10);
+    if (isNaN(memberId)) {
+      return res.status(400).json({ error: 'Invalid member ID' });
+    }
+    const isSelf = Number(req.memberId) === memberId;
+    const hasAdminAccess = await isAdmin(req);
+    if (!isSelf && !hasAdminAccess) {
+      return res.status(403).json({ error: 'Only the member or an administrator can view this PIN.' });
+    }
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { id: true, scorePin: true, firstName: true, lastName: true },
+    });
+    if (!member) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+    return res.json({ memberId: member.id, scorePin: member.scorePin });
+  } catch (error) {
+    logger.error('Error fetching score PIN', { error: error instanceof Error ? error.message : String(error) });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** Regenerate permanent score PIN — self or admin; blocked in kiosk mode. */
+router.post('/:id/regenerate-score-pin', async (req: AuthRequest, res: Response) => {
+  try {
+    if (isKioskMode(req)) {
+      return res.status(403).json({ error: 'PIN regeneration is not available in kiosk mode.' });
+    }
+    const memberId = parseInt(req.params.id, 10);
+    if (isNaN(memberId)) {
+      return res.status(400).json({ error: 'Invalid member ID' });
+    }
+    const isSelf = Number(req.memberId) === memberId;
+    const hasAdminAccess = await isAdmin(req);
+    if (!isSelf && !hasAdminAccess) {
+      return res.status(403).json({ error: 'Only the member or an administrator can regenerate this PIN.' });
+    }
+    const newPin = generateScorePin();
+    const member = await prisma.member.update({
+      where: { id: memberId },
+      data: { scorePin: newPin },
+      select: { id: true, scorePin: true },
+    });
+    return res.json({ memberId: member.id, scorePin: member.scorePin });
+  } catch (error) {
+    logger.error('Error regenerating score PIN', { error: error instanceof Error ? error.message : String(error) });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** Set a chosen permanent score PIN — self or admin; blocked in kiosk mode. */
+router.post('/:id/set-score-pin', async (req: AuthRequest, res: Response) => {
+  try {
+    if (isKioskMode(req)) {
+      return res.status(403).json({ error: 'PIN changes are not available in kiosk mode.' });
+    }
+    const memberId = parseInt(req.params.id, 10);
+    if (isNaN(memberId)) {
+      return res.status(400).json({ error: 'Invalid member ID' });
+    }
+    const isSelf = Number(req.memberId) === memberId;
+    const hasAdminAccess = await isAdmin(req);
+    if (!isSelf && !hasAdminAccess) {
+      return res.status(403).json({ error: 'Only the member or an administrator can change this PIN.' });
+    }
+    const formatError = validateScorePinFormat(req.body?.scorePin);
+    if (formatError) {
+      return res.status(400).json({ error: formatError });
+    }
+    const newPin = normalizeScorePin(req.body.scorePin);
+    const member = await prisma.member.update({
+      where: { id: memberId },
+      data: { scorePin: newPin },
+      select: { id: true, scorePin: true },
+    });
+    return res.json({ memberId: member.id, scorePin: member.scorePin });
+  } catch (error) {
+    logger.error('Error updating score PIN', { error: error instanceof Error ? error.message : String(error) });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.patch('/:id/deactivate', async (req: AuthRequest, res) => {
   try {
     const memberId = parseInt(req.params.id);
@@ -1487,8 +1564,15 @@ router.patch('/:id', [
   body('picture').optional().trim(),
   body('roles').optional().isArray(),
   body('tournamentNotificationsEnabled').optional().isBoolean(),
+  body('autoRelinquishPrivileges').optional({ nullable: true }).isBoolean(),
 ], async (req: AuthRequest, res: Response) => {
   try {
+    if (isKioskMode(req)) {
+      return res.status(403).json({
+        error: 'Personal settings cannot be changed in kiosk mode.',
+      });
+    }
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -1531,7 +1615,7 @@ router.patch('/:id', [
       return res.status(403).json({ error: 'Only Administrators can modify other members\' profiles.' });
     }
 
-    const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, tournamentNotificationsEnabled, ...rest } = req.body;
+    const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, tournamentNotificationsEnabled, autoRelinquishPrivileges, ...rest } = req.body;
 
     // Birth date is optional on PATCH (may be omitted, set, or cleared to null); invalid values rejected below.
 
@@ -1645,6 +1729,18 @@ router.patch('/:id', [
         return res.status(403).json({ error: 'Only Admins can change roles' });
       }
       updateData.roles = roles;
+    }
+
+    // Auto-relinquish override: admin only; null clears to club default
+    if (Object.prototype.hasOwnProperty.call(req.body, 'autoRelinquishPrivileges')) {
+      if (!hasAdminAccess) {
+        return res.status(403).json({ error: 'Only Administrators can change auto privilege relinquish settings.' });
+      }
+      if (autoRelinquishPrivileges === null || autoRelinquishPrivileges === undefined) {
+        updateData.autoRelinquishPrivileges = null;
+      } else {
+        updateData.autoRelinquishPrivileges = Boolean(autoRelinquishPrivileges);
+      }
     }
 
     // Check for duplicate name if name is being changed
@@ -2589,6 +2685,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
                   : String(player.address).trim()
                 : null,
               qrTokenHash: generateQrTokenHash(),
+        scorePin: generateScorePin(),
               isActive: true,
               emailConfirmedAt: null,
               mustResetPassword: false,
@@ -2648,6 +2745,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
                 : String(player.address).trim()
               : null,
             qrTokenHash: generateQrTokenHash(),
+        scorePin: generateScorePin(),
             // Active immediately when skipping invitation email (export/re-import without invite).
             isActive: !sendEmail,
             emailConfirmedAt: null,

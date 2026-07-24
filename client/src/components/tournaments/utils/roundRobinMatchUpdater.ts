@@ -1,5 +1,6 @@
 import { buildMatchApiData, MatchData, MatchUpdateCallbacks } from './matchUpdater';
 import api from '../../../utils/api';
+import { enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../../../utils/matchScorePayload';
 
 export interface RoundRobinMatchUpdateCallbacks extends MatchUpdateCallbacks {
   onTournamentComplete?: () => void;
@@ -40,7 +41,7 @@ export class RoundRobinMatchUpdater {
   async createMatch(
     matchData: MatchData,
     callbacks: RoundRobinMatchUpdateCallbacks = {},
-    opponentPassword?: string
+    pins?: { member1Pin?: string; member2Pin?: string }
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -49,7 +50,7 @@ export class RoundRobinMatchUpdater {
     }
 
     try {
-      const apiData = buildMatchApiData(matchData, opponentPassword);
+      const apiData = buildMatchApiData(matchData, pins);
       // Use the generic match update endpoint with matchId=0 for new match creation
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/0`, apiData);
       const savedMatch = response.data;
@@ -67,10 +68,15 @@ export class RoundRobinMatchUpdater {
       
       return savedMatch;
     } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const errorMessage = apiError || 'Failed to create match result';
-      callbacks.onError?.(errorMessage);
-      throw new Error(errorMessage);
+      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to create match result');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        callbacks.onError?.(enriched.message);
+      }
+      throw enriched;
     }
   }
 
@@ -81,7 +87,7 @@ export class RoundRobinMatchUpdater {
     matchId: number,
     matchData: MatchData,
     callbacks: RoundRobinMatchUpdateCallbacks = {},
-    opponentPassword?: string
+    pins?: { member1Pin?: string; member2Pin?: string }
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -90,7 +96,7 @@ export class RoundRobinMatchUpdater {
     }
 
     try {
-      const apiData = buildMatchApiData(matchData, opponentPassword);
+      const apiData = buildMatchApiData(matchData, pins);
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;
       
@@ -107,10 +113,15 @@ export class RoundRobinMatchUpdater {
       
       return savedMatch;
     } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const errorMessage = apiError || 'Failed to update match result';
-      callbacks.onError?.(errorMessage);
-      throw new Error(errorMessage);
+      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to update match result');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        callbacks.onError?.(enriched.message);
+      }
+      throw enriched;
     }
   }
 

@@ -1,8 +1,8 @@
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
-import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated, subscribeAuthExpired, consumeAuthExpiredMessage } from './utils/auth';
+import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated, subscribeAuthExpired, consumeAuthExpiredMessage, isAdmin, isKioskMode, canRelinquishPrivileges } from './utils/auth';
 import api from './utils/api';
 import { connectSocket } from './utils/socket';
 import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig } from './utils/systemConfig';
@@ -506,7 +506,14 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const location = useLocation();
   const [userName, setUserName] = useState<string>('');
   const [userRoles, setUserRoles] = useState<string[]>([]);
+  const [kioskMode, setKioskMode] = useState(() => isKioskMode());
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [restorePassword, setRestorePassword] = useState('');
+  const [restoreError, setRestoreError] = useState('');
+  const [restoreLoading, setRestoreLoading] = useState(false);
   const [pendingPreregistrationCount, setPendingPreregistrationCount] = useState(0);
+  const autoRelinquishIdleTimerRef = useRef<number | null>(null);
+  const autoRelinquishIdleCleanupRef = useRef<(() => void) | null>(null);
   const changesetId = (import.meta.env.VITE_CHANGESET_ID || 'devbuild').slice(0, 7);
   
   const isPlayersActive = location.pathname === '/players';
@@ -529,8 +536,10 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
         const response = await api.get('/auth/member/me');
         if (response.data.member) {
           const member = response.data.member;
+          setMember(member);
           setUserName(`${member.firstName} ${member.lastName}`);
           setUserRoles(member.roles || []);
+          setKioskMode(member.kioskMode === true);
           return;
         }
       } catch (err) {
@@ -539,6 +548,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
         if (member) {
           setUserName(`${member.firstName} ${member.lastName}`);
           setUserRoles(member.roles || []);
+          setKioskMode(member.kioskMode === true);
           return;
         }
       }
@@ -547,11 +557,108 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
       if (getToken()) {
         setUserName('User');
         setUserRoles([]);
+        setKioskMode(false);
       }
     };
     
     fetchUserInfo();
+  }, [location.pathname]);
+
+  const clearAutoRelinquishIdleTimer = () => {
+    if (autoRelinquishIdleTimerRef.current !== null) {
+      window.clearTimeout(autoRelinquishIdleTimerRef.current);
+      autoRelinquishIdleTimerRef.current = null;
+    }
+    if (autoRelinquishIdleCleanupRef.current) {
+      autoRelinquishIdleCleanupRef.current();
+      autoRelinquishIdleCleanupRef.current = null;
+    }
+  };
+
+  const handleRelinquish = async () => {
+    clearAutoRelinquishIdleTimer();
+    try {
+      const response = await api.post('/auth/member/relinquish-privileges');
+      if (response.data.token) {
+        setToken(response.data.token);
+      }
+      const me = await api.get('/auth/member/me');
+      if (me.data.member) {
+        setMember(me.data.member);
+        setKioskMode(me.data.member.kioskMode === true);
+        setUserRoles(me.data.member.roles || []);
+      }
+    } catch (err: any) {
+      window.alert(err.response?.data?.error || 'Failed to enter kiosk mode');
+    }
+  };
+
+  const scheduleAutoRelinquishIdle = (memberPayload?: {
+    autoRelinquishPrivileges?: boolean;
+    autoRelinquishIdleMinutes?: number;
+  }) => {
+    clearAutoRelinquishIdleTimer();
+    const member = memberPayload || getMember();
+    const enabled = member?.autoRelinquishPrivileges === true;
+    const minutes = Number(
+      member?.autoRelinquishIdleMinutes ?? getSystemConfig().authPolicy.autoRelinquishIdleMinutes
+    );
+    if (!enabled || !Number.isFinite(minutes) || minutes <= 0) {
+      return;
+    }
+    const ms = minutes * 60 * 1000;
+    const arm = () => {
+      if (autoRelinquishIdleTimerRef.current !== null) {
+        window.clearTimeout(autoRelinquishIdleTimerRef.current);
+      }
+      autoRelinquishIdleTimerRef.current = window.setTimeout(() => {
+        void handleRelinquish();
+      }, ms);
+    };
+    arm();
+    const onActivity = () => arm();
+    const events: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((eventName) => window.addEventListener(eventName, onActivity, { passive: true }));
+    autoRelinquishIdleCleanupRef.current = () => {
+      events.forEach((eventName) => window.removeEventListener(eventName, onActivity));
+    };
+  };
+
+  useEffect(() => {
+    return () => {
+      clearAutoRelinquishIdleTimer();
+    };
   }, []);
+
+  const handleRestore = async () => {
+    if (!restorePassword.trim()) {
+      setRestoreError('Password is required');
+      return;
+    }
+    setRestoreLoading(true);
+    setRestoreError('');
+    try {
+      const response = await api.post('/auth/member/restore-privileges', {
+        password: restorePassword,
+      });
+      if (response.data.token) {
+        setToken(response.data.token);
+      }
+      const me = await api.get('/auth/member/me');
+      if (me.data.member) {
+        setMember(me.data.member);
+        setKioskMode(false);
+        setUserRoles(me.data.member.roles || []);
+        scheduleAutoRelinquishIdle(me.data.member);
+      }
+      setShowRestoreModal(false);
+      setRestorePassword('');
+    } catch (err: any) {
+      setRestoreError(err.response?.data?.error || 'Failed to restore privileges');
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -652,12 +759,49 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   };
 
   const hasPendingPreregistrations = pendingPreregistrationCount > 0;
-  const isAdminUser = userRoles.some(role => String(role).toUpperCase() === 'ADMIN');
+  const isAdminUser = !kioskMode && isAdmin();
+  const canEnterKiosk = !kioskMode && canRelinquishPrivileges();
   
   return (
+    <>
+    {kioskMode && (
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10001,
+          background: '#c0392b',
+          color: 'white',
+          textAlign: 'center',
+          padding: '10px 16px',
+          fontWeight: 700,
+          fontSize: '16px',
+          letterSpacing: '0.02em',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+        }}
+      >
+        KIOSK MODE — Privileges relinquished. Public terminal: view results and enter scores with participant PINs.
+        <button
+          type="button"
+          onClick={() => { setShowRestoreModal(true); setRestoreError(''); setRestorePassword(''); }}
+          style={{
+            marginLeft: '16px',
+            padding: '6px 12px',
+            border: '1px solid rgba(255,255,255,0.8)',
+            background: 'rgba(255,255,255,0.15)',
+            color: 'white',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontWeight: 600,
+          }}
+        >
+          Restore privileges
+        </button>
+      </div>
+    )}
     <div className="header" style={{
       position: 'sticky',
-      top: 0,
+      top: kioskMode ? 48 : 0,
       zIndex: 10000,
       boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
     }}>
@@ -900,6 +1044,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {userName && (
             <>
+              {!kioskMode && (
               <button
                 onClick={() => {
                   const member = getMember();
@@ -932,6 +1077,26 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
               >
                 ⚙️
               </button>
+              )}
+              {canEnterKiosk && (
+                <button
+                  type="button"
+                  onClick={handleRelinquish}
+                  title="Relinquish privileges for public terminal use"
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: 'white',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                  }}
+                >
+                  Kiosk
+                </button>
+              )}
             <span style={{ 
               color: 'white',
               fontSize: '16px',
@@ -941,7 +1106,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
               borderRadius: '4px'
             }}>
               {userName}
-                {userRoles.length > 0 && (
+                {userRoles.length > 0 && !kioskMode && (
                   <span style={{ 
                     fontSize: '12px',
                     fontWeight: 'normal',
@@ -951,24 +1116,87 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                     ({formatRoles(userRoles)})
                   </span>
                 )}
+                {kioskMode && (
+                  <span style={{ fontSize: '12px', marginLeft: '6px', opacity: 0.95 }}>
+                    (Kiosk)
+                  </span>
+                )}
             </span>
             </>
           )}
-          <button onClick={onLogout} style={{ 
-            padding: '8px 16px',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            transition: 'background-color 0.2s'
-          }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}>
-            Logout
-          </button>
+          {!kioskMode && (
+            <button onClick={onLogout} style={{ 
+              padding: '8px 16px',
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s'
+            }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}>
+              Logout
+            </button>
+          )}
           </div>
         </div>
       </div>
     </div>
+    {showRestoreModal && (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.55)',
+          zIndex: 20000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        onClick={() => !restoreLoading && setShowRestoreModal(false)}
+      >
+        <div
+          style={{
+            background: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            width: '90%',
+            maxWidth: '400px',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 style={{ marginTop: 0 }}>Restore privileges</h3>
+          <p style={{ fontSize: '14px', color: '#555' }}>
+            Enter your password to leave kiosk mode and restore organizer/admin privileges.
+          </p>
+          {restoreError && (
+            <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{restoreError}</div>
+          )}
+          <input
+            type="password"
+            value={restorePassword}
+            onChange={(e) => setRestorePassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleRestore();
+              }
+            }}
+            placeholder="Password"
+            autoFocus
+            style={{ width: '100%', padding: '10px', marginBottom: '16px', boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button type="button" onClick={() => setShowRestoreModal(false)} disabled={restoreLoading}>
+              Cancel
+            </button>
+            <button type="button" onClick={handleRestore} disabled={restoreLoading} className="success">
+              {restoreLoading ? 'Restoring…' : 'Restore'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

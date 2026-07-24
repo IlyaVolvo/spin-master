@@ -7,6 +7,9 @@ export type SystemConfig = {
   authPolicy: {
     minimumPasswordLength: number;
     passwordResetTokenTtlHours: number;
+    pinLength: number;
+    autoRelinquishPrivileges: boolean;
+    autoRelinquishIdleMinutes: number;
   };
   preregistration: {
     defaultTournamentOffsetDays: number;
@@ -71,6 +74,9 @@ const defaultSystemConfig: SystemConfig = {
   authPolicy: {
     minimumPasswordLength: 6,
     passwordResetTokenTtlHours: 1,
+    pinLength: 4,
+    autoRelinquishPrivileges: false,
+    autoRelinquishIdleMinutes: 5,
   },
   preregistration: {
     defaultTournamentOffsetDays: 1,

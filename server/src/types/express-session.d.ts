@@ -9,6 +9,8 @@ declare module 'express-session' {
       lastName: string;
       roles: string[];
     };
+    /** When true, elevated Organizer/Admin privileges are relinquished (public terminal). */
+    kioskMode?: boolean;
   }
 }
 

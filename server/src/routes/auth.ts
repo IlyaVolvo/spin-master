@@ -8,8 +8,42 @@ import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { normalizeMemberEmail } from '../utils/memberValidation';
 import { getAuthPolicyConfig } from '../services/systemConfigService';
+import type { AuthRequest } from '../middleware/auth';
+import { isKioskMode } from '../utils/kioskMode';
+import { isAdmin } from '../utils/adminAccess';
+import { isOrganizer } from '../utils/organizerAccess';
+import {
+  getAutoRelinquishIdleMinutes,
+  resolveAutoRelinquishPrivileges,
+  shouldAutoEnterKioskMode,
+} from '../utils/autoRelinquish';
 
 const router = express.Router();
+
+function getJwtSecret(): string {
+  return process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
+}
+
+function signMemberToken(memberId: number, kioskMode: boolean): string {
+  return jwt.sign(
+    { memberId, type: 'member', ...(kioskMode ? { kioskMode: true } : {}) },
+    getJwtSecret(),
+    { expiresIn: '7d' }
+  );
+}
+
+function saveSessionAsync(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!req.session) {
+      resolve();
+      return;
+    }
+    req.session.save((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
 
 function asBool(value: string | undefined, fallback = false): boolean {
   if (value === undefined) return fallback;
@@ -209,6 +243,12 @@ router.post('/member/login', [
     
     // Store member data in session - ensure it's properly saved before proceeding
     let sessionStored = false;
+    const autoOverrideOnLogin =
+      (member as { autoRelinquishPrivileges?: boolean | null }).autoRelinquishPrivileges ?? null;
+    const loginKioskMode = shouldAutoEnterKioskMode({
+      roles: rolesArray,
+      autoRelinquishPrivileges: autoOverrideOnLogin,
+    });
     try {
       const sessionMemberData: any = {
         id: Number(member.id),
@@ -221,6 +261,7 @@ router.post('/member/login', [
       // Ensure session exists and store data
       if (req.session) {
         req.session.member = sessionMemberData;
+        req.session.kioskMode = loginKioskMode;
         
         // Wait for session to be saved before proceeding
         await new Promise<void>((resolve, reject) => {
@@ -233,7 +274,7 @@ router.post('/member/login', [
               reject(err);
             } else {
               sessionStored = true;
-              logger.debug('Session saved successfully', { memberId: member.id });
+              logger.debug('Session saved successfully', { memberId: member.id, kioskMode: loginKioskMode });
               resolve();
             }
           });
@@ -288,11 +329,7 @@ router.post('/member/login', [
           secretSource: secretSource
         });
       }
-      token = jwt.sign(
-        { memberId: member.id, type: 'member' },
-        jwtSecret,
-        { expiresIn: '7d' }
-      );
+      token = signMemberToken(member.id, loginKioskMode);
       
       logger.info('JWT token created successfully', {
         memberId: member.id,
@@ -311,10 +348,14 @@ router.post('/member/login', [
       token = '';
     }
 
-    // Exclude password from response and ensure all fields are serializable
-    const { password: _, ...memberWithoutPassword } = member;
+    // Exclude password / PIN from response and ensure all fields are serializable
+    const { password: _, scorePin: __pin, ...memberWithoutPassword } = member as typeof member & {
+      scorePin?: string;
+      autoRelinquishPrivileges?: boolean | null;
+    };
     const memberRecord = memberWithoutPassword as typeof memberWithoutPassword & {
       emailConfirmedAt?: Date | null;
+      autoRelinquishPrivileges?: boolean | null;
     };
     
     // Ensure member object is JSON-serializable
@@ -337,6 +378,10 @@ router.post('/member/login', [
       hasPassword: member.password !== '',
       createdAt: memberRecord.createdAt ? new Date(memberRecord.createdAt).toISOString() : null,
       updatedAt: memberRecord.updatedAt ? new Date(memberRecord.updatedAt).toISOString() : null,
+      kioskMode: loginKioskMode,
+      autoRelinquishPrivilegesOverride: autoOverrideOnLogin,
+      autoRelinquishPrivileges: resolveAutoRelinquishPrivileges(autoOverrideOnLogin),
+      autoRelinquishIdleMinutes: getAutoRelinquishIdleMinutes(),
     };
     
     logger.info('Member logged in', { 
@@ -525,6 +570,10 @@ router.post('/member/validate-current-password', [
   body('currentPassword').optional(),
 ], async (req: Request, res: Response) => {
   try {
+    if (isKioskMode(req)) {
+      return res.status(403).json({ error: 'Password changes are not available in kiosk mode. Ask a system administrator to reset the password.' });
+    }
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -593,6 +642,10 @@ router.post('/member/change-password', [
   body('newPassword').custom(passwordMeetsPolicy),
 ], async (req: Request, res: Response) => {
   try {
+    if (isKioskMode(req)) {
+      return res.status(403).json({ error: 'Password changes are not available in kiosk mode. Ask a system administrator to reset the password.' });
+    }
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -833,10 +886,12 @@ router.post('/member/logout', async (req: Request, res: Response) => {
 router.get('/member/me', async (req: Request, res: Response) => {
   try {
     let memberId: number | null = null;
+    let kioskMode = false;
 
     // Check session-based auth first
     if (req.session && req.session.member) {
       memberId = req.session.member.id;
+      kioskMode = req.session.kioskMode === true;
     } else {
       // Fallback to JWT token authentication
       const authHeader = req.headers.authorization;
@@ -845,10 +900,15 @@ router.get('/member/me', async (req: Request, res: Response) => {
           const token = authHeader.split(' ')[1];
           // Use the same secret fallback logic as token creation
           const jwtSecret = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
-          const decoded = jwt.verify(token, jwtSecret) as { memberId?: number; type?: string };
+          const decoded = jwt.verify(token, jwtSecret) as {
+            memberId?: number;
+            type?: string;
+            kioskMode?: boolean;
+          };
           
           if (decoded.type === 'member' && decoded.memberId !== undefined) {
             memberId = decoded.memberId;
+            kioskMode = decoded.kioskMode === true;
           }
         } catch (jwtError) {
           const isExpired = jwtError instanceof Error && jwtError.name === 'TokenExpiredError';
@@ -887,6 +947,7 @@ router.get('/member/me', async (req: Request, res: Response) => {
           tournamentNotificationsEnabled: true,
           emailConfirmedAt: true,
           password: true,
+          autoRelinquishPrivileges: true,
         },
       });
 
@@ -898,7 +959,7 @@ router.get('/member/me', async (req: Request, res: Response) => {
         return res.status(404).json({ error: 'Member not found' });
       }
 
-      const { password, ...memberWithoutPassword } = fullMember;
+      const { password, autoRelinquishPrivileges: autoOverride, ...memberWithoutPassword } = fullMember;
       return res.json({
         member: {
           ...memberWithoutPassword,
@@ -909,6 +970,10 @@ router.get('/member/me', async (req: Request, res: Response) => {
             ? new Date(memberWithoutPassword.emailConfirmedAt).toISOString()
             : null,
           hasPassword: password !== '',
+          kioskMode,
+          autoRelinquishPrivilegesOverride: autoOverride,
+          autoRelinquishPrivileges: resolveAutoRelinquishPrivileges(autoOverride),
+          autoRelinquishIdleMinutes: getAutoRelinquishIdleMinutes(),
         },
       });
     }
@@ -920,6 +985,176 @@ router.get('/member/me', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Get current member error', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Relinquish Organizer/Admin privileges for public-terminal (kiosk) use.
+ * Session stays authenticated as the same member with elevated actions disabled.
+ */
+router.post('/member/relinquish-privileges', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthRequest;
+    let memberId = req.session?.member?.id ?? authReq.memberId;
+
+    if (!memberId) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const decoded = jwt.verify(authHeader.split(' ')[1], getJwtSecret()) as {
+            memberId?: number;
+            type?: string;
+            kioskMode?: boolean;
+          };
+          if (decoded.type === 'member' && decoded.memberId) {
+            memberId = decoded.memberId;
+            authReq.memberId = decoded.memberId;
+            authReq.kioskMode = decoded.kioskMode === true;
+          }
+        } catch {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+      }
+    }
+
+    if (!memberId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    if (isKioskMode(authReq) || req.session?.kioskMode === true) {
+      return res.status(400).json({ error: 'Already in kiosk mode' });
+    }
+
+    // Populate roles for elevated check if needed
+    if (!authReq.member) {
+      const member = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: { id: true, email: true, firstName: true, lastName: true, roles: true },
+      });
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+      authReq.member = {
+        id: member.id,
+        email: member.email,
+        firstName: member.firstName,
+        lastName: member.lastName,
+        roles: member.roles as string[],
+      };
+      authReq.memberId = member.id;
+    }
+
+    const elevated = (await isOrganizer(authReq)) || (await isAdmin(authReq));
+    if (!elevated) {
+      return res.status(403).json({ error: 'Only organizers or administrators can enter kiosk mode' });
+    }
+
+    if (req.session) {
+      if (!req.session.member && authReq.member) {
+        req.session.member = {
+          id: authReq.member.id,
+          email: authReq.member.email,
+          firstName: authReq.member.firstName,
+          lastName: authReq.member.lastName,
+          roles: authReq.member.roles,
+        };
+      }
+      req.session.kioskMode = true;
+      await saveSessionAsync(req);
+    }
+
+    const token = signMemberToken(memberId, true);
+    return res.json({
+      kioskMode: true,
+      token,
+      message: 'Privileges relinquished. Enter your password to restore.',
+    });
+  } catch (error) {
+    logger.error('Relinquish privileges error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Restore elevated privileges after kiosk mode by confirming the member password.
+ */
+router.post('/member/restore-privileges', [
+  body('password').notEmpty(),
+], async (req: Request, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const authReq = req as AuthRequest;
+    let memberId = req.session?.member?.id ?? authReq.memberId;
+    let inKiosk = req.session?.kioskMode === true || authReq.kioskMode === true;
+
+    if (!memberId) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const decoded = jwt.verify(authHeader.split(' ')[1], getJwtSecret()) as {
+            memberId?: number;
+            type?: string;
+            kioskMode?: boolean;
+          };
+          if (decoded.type === 'member' && decoded.memberId) {
+            memberId = decoded.memberId;
+            inKiosk = decoded.kioskMode === true;
+          }
+        } catch {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+      }
+    }
+
+    if (!memberId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    if (!inKiosk) {
+      return res.status(400).json({ error: 'Not in kiosk mode' });
+    }
+
+    const member = await prisma.member.findUnique({ where: { id: memberId } });
+    if (!member || !member.isActive) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    if (member.password === '') {
+      return res.status(403).json({
+        error: 'Password is not set. Ask a system administrator to reset the password.',
+      });
+    }
+
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    const valid = await bcrypt.compare(password, member.password);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    if (req.session) {
+      req.session.kioskMode = false;
+      await saveSessionAsync(req);
+    }
+
+    const token = signMemberToken(memberId, false);
+    return res.json({
+      kioskMode: false,
+      token,
+      message: 'Privileges restored',
+      autoRelinquishPrivileges: resolveAutoRelinquishPrivileges(member.autoRelinquishPrivileges),
+      autoRelinquishIdleMinutes: getAutoRelinquishIdleMinutes(),
+    });
+  } catch (error) {
+    logger.error('Restore privileges error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

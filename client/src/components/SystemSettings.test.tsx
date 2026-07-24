@@ -4,7 +4,7 @@ import SystemSettings from './SystemSettings';
 
 const mockConfig = {
   branding: { clubName: 'Initial Club' },
-  authPolicy: { minimumPasswordLength: 6, passwordResetTokenTtlHours: 1 },
+  authPolicy: { minimumPasswordLength: 6, passwordResetTokenTtlHours: 1, pinLength: 4, autoRelinquishPrivileges: false, autoRelinquishIdleMinutes: 5 },
   preregistration: {
     defaultTournamentOffsetDays: 1,
     defaultTournamentTime: '18:00',

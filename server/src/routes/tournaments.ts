@@ -20,7 +20,7 @@ import bcrypt from 'bcryptjs';
 import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 import { ClientHttpError, isClientHttpError } from '../http/clientHttpError';
 import { isOrganizer } from '../utils/organizerAccess';
-import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
+import { authorizeTournamentScoreEntryRequest, authorizeStandaloneMatchScoreWrite, matchAuthFailureJson } from '../utils/matchScoreAuthorization';
 import {
   duplicateTournamentMatchErrorForMatch,
   duplicateTournamentMatchErrorWithRecordedResult,
@@ -1640,13 +1640,14 @@ router.post('/bulk', [
 
 // Create a standalone match directly with final scores (no tournament, tournamentId = null)
 // Organizers can create matches for any pair of players
-// Non-organizers can create matches for themselves (need opponent's password confirmation)
+// Non-organizers can create matches for themselves; kiosk mode requires both participant PINs
 router.post('/matches/create', [
   body('member1Id').toInt().isInt({ min: 1 }),
   body('member2Id').toInt().isInt({ min: 1 }),
   body('player1Sets').toInt().isInt({ min: 0 }),
   body('player2Sets').toInt().isInt({ min: 0 }),
-  body('opponentPassword').optional().trim(), // Required for non-organizers
+  body('member1Pin').optional().trim(),
+  body('member2Pin').optional().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -1655,52 +1656,28 @@ router.post('/matches/create', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { member1Id, member2Id, player1Sets, player2Sets, opponentPassword } = req.body;
+    const { member1Id, member2Id, player1Sets, player2Sets, member1Pin, member2Pin } = req.body;
     const currentMemberId = req.memberId || req.member?.id;
 
     if (!currentMemberId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // Check if user is organizer
-    const hasOrganizerAccess = await isOrganizer(req);
-
-    // If not organizer, verify they're creating a match for themselves
-    if (!hasOrganizerAccess) {
-      const isPlayer1 = currentMemberId === member1Id;
-      const isPlayer2 = currentMemberId === member2Id;
-      
-      if (!isPlayer1 && !isPlayer2) {
-        return res.status(403).json({ error: 'You can only create matches for yourself' });
-      }
-
-      // Determine opponent ID
-      const opponentId = isPlayer1 ? member2Id : member1Id;
-      
-      // Verify opponent's password
-      if (!opponentPassword) {
-        return res.status(400).json({ error: 'Opponent password confirmation is required' });
-      }
-
-      const opponent = await prisma.member.findUnique({
-        where: { id: opponentId },
-        select: { password: true, isActive: true },
-      });
-
-      if (!opponent || !opponent.isActive) {
-        return res.status(404).json({ error: 'Opponent not found or inactive' });
-      }
-
-      // Verify password
-      const isValidPassword = await bcrypt.compare(opponentPassword, opponent.password);
-      if (!isValidPassword) {
-        return res.status(401).json({ error: 'Invalid opponent password' });
-      }
-    }
-
     // Validate players are different
     if (member1Id === member2Id) {
       return res.status(400).json({ error: 'Players must be different' });
+    }
+
+    const scoreAuth = await authorizeStandaloneMatchScoreWrite(
+      prisma,
+      req,
+      member1Id,
+      member2Id,
+      member1Pin,
+      member2Pin
+    );
+    if (!scoreAuth.ok) {
+      return res.status(scoreAuth.status).json(matchAuthFailureJson(scoreAuth));
     }
 
     const scoreError = validateConfiguredMatchScore(player1Sets, player2Sets);
@@ -1787,7 +1764,8 @@ router.post('/:id/matches', [
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
-  body('opponentPassword').optional().trim(),
+  body('member1Pin').optional().trim(),
+  body('member2Pin').optional().trim(),
   body('expectedHadResult').optional().isBoolean(),
   body('expectedMatchUpdatedAt').optional().isISO8601(),
 ], async (req: AuthRequest, res: Response) => {
@@ -1804,7 +1782,8 @@ router.post('/:id/matches', [
       player2Sets,
       player1Forfeit,
       player2Forfeit,
-      opponentPassword,
+      member1Pin,
+      member2Pin,
       expectedHadResult,
       expectedMatchUpdatedAt,
     } =
@@ -1839,10 +1818,13 @@ router.post('/:id/matches', [
       matchId: 0,
       bodyMember1Id: member1Id,
       bodyMember2Id: member2Id,
-      opponentPassword,
+      member1Pin,
+      member2Pin,
+      player1Forfeit: player1Forfeit === true,
+      player2Forfeit: player2Forfeit === true,
     });
     if (!scoreAuth.ok) {
-      return res.status(scoreAuth.status).json({ error: scoreAuth.error });
+      return res.status(scoreAuth.status).json(matchAuthFailureJson(scoreAuth));
     }
 
     if (member1Id === member2Id) {
@@ -1945,7 +1927,7 @@ router.post('/:id/matches', [
 
 // Generic match update — delegates to tournament plugin (registry key = tournament.type).
 // Bracket-specific URLs live in tournamentBracketRoutes.ts.
-// Authorization: see authorizeTournamentScoreEntryRequest (organizers, or participants with opponent password).
+// Authorization: see authorizeTournamentScoreEntryRequest (organizers, participants, or kiosk with PINs).
 router.patch('/:tournamentId/matches/:matchId', [
   body('member1Id').optional().isInt({ min: 1 }),
   body('member2Id').optional().isInt({ min: 1 }),
@@ -1953,7 +1935,8 @@ router.patch('/:tournamentId/matches/:matchId', [
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
-  body('opponentPassword').optional().trim(),
+  body('member1Pin').optional().trim(),
+  body('member2Pin').optional().trim(),
   body('expectedHadResult').optional().isBoolean(),
   body('expectedMatchUpdatedAt').optional().isISO8601(),
 ], async (req: AuthRequest, res: Response) => {
@@ -1970,7 +1953,8 @@ router.patch('/:tournamentId/matches/:matchId', [
       player2Sets,
       player1Forfeit,
       player2Forfeit,
-      opponentPassword,
+      member1Pin,
+      member2Pin,
       expectedHadResult,
       expectedMatchUpdatedAt,
     } = req.body;
@@ -2005,10 +1989,13 @@ router.patch('/:tournamentId/matches/:matchId', [
       matchId,
       bodyMember1Id: member1Id,
       bodyMember2Id: member2Id,
-      opponentPassword,
+      member1Pin,
+      member2Pin,
+      player1Forfeit: player1Forfeit === true,
+      player2Forfeit: player2Forfeit === true,
     });
     if (!scoreAuth.ok) {
-      return res.status(scoreAuth.status).json({ error: scoreAuth.error });
+      return res.status(scoreAuth.status).json(matchAuthFailureJson(scoreAuth));
     }
 
     const plugin = tournamentPluginRegistry.get(tournament.type);

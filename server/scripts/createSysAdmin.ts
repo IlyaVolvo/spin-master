@@ -83,7 +83,8 @@ async function createSysAdmin() {
         isActive: true,
         gender: 'NOT_SPECIFIED', // Default until set
         qrTokenHash: generateQrTokenHash(),
-      },
+
+      scorePin: '1234',},
     });
 
     console.log('✅ Sys Admin member created successfully!');

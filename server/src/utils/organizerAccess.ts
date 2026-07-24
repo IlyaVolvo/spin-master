@@ -1,9 +1,17 @@
 import { prisma } from '../index';
 import type { AuthRequest } from '../middleware/auth';
+import { isKioskMode } from './kioskMode';
 import { logger } from './logger';
 
-/** True if the request is from a member with ORGANIZER role (session or DB). */
+/** True if the request is from a member with ORGANIZER role (session or DB). False in kiosk mode. */
 export async function isOrganizer(req: AuthRequest): Promise<boolean> {
+  if (isKioskMode(req)) {
+    logger.debug('Organizer access denied - kiosk mode', {
+      memberId: req.member?.id || req.memberId,
+    });
+    return false;
+  }
+
   logger.debug('Checking organizer status', {
     hasMember: !!req.member,
     hasMemberId: !!req.memberId,

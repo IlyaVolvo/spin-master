@@ -6,7 +6,7 @@ import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryP
 import { ScoreCorrectionBanner } from '../../ScoreCorrectionBanner';
 import { useScoreCorrectionPanel } from '../../../hooks/useScoreCorrectionPanel';
 import { createPlayoffMatchUpdater } from '../utils/playoffMatchUpdater';
-import { shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
+import { shouldShowScorePinsForMatchEdit, isScorePinAuthErrorMessage } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import './PlayoffActivePanel.css';
 
@@ -29,6 +29,9 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
   const playoffUpdater = createPlayoffMatchUpdater(tournament.id);
 
   const handleError = (message: string) => {
+    if (isScorePinAuthErrorMessage(message)) {
+      return;
+    }
     if (isDuplicateScoreMessage(message)) {
       flushSync(() => {
         setEditingMatch(null);
@@ -47,7 +50,8 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
   const handleSetEditingMatch = (match: any, bracketMatchId?: number) => {
     setEditingMatch({
       ...match,
-      opponentPassword: match.opponentPassword ?? '',
+      member1Pin: match.member1Pin ?? '',
+      member2Pin: match.member2Pin ?? '',
     });
     setEditingBracketMatchId(bracketMatchId || findBracketMatchId(match.matchId) || null);
   };
@@ -114,9 +118,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
                 member2Id: bm.member2Id,
                 linkedMatch: bm.match ?? null,
               }
-            : null,
-          editingMatch.opponentPassword
-        );
+            : null, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       } else {
         // Update existing match
         await playoffUpdater.updateMatch(editingBracketMatchId || editingMatch.matchId, matchData, {
@@ -124,13 +126,14 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           onError: handleError,
           onTournamentUpdate,
           onMatchUpdate,
-        }, editingMatch.opponentPassword);
+        }, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       }
       
       setEditingMatch(null);
       setEditingBracketMatchId(null);
     } catch (error) {
       // Error is already handled by the PlayoffMatchUpdater callbacks
+      throw error;
     }
   };
 
@@ -223,7 +226,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
         scoreCorrectionActive={correctionModeActive}
         correctableMatchIds={eligibility?.correctableMatchIds}
         onCorrectionMatchSelect={(payload) =>
-          handleSetEditingMatch(payload, findBracketMatchId(payload.matchId))
+          handleSetEditingMatch(payload, findBracketMatchId(payload.matchId) ?? undefined)
         }
       />
       
@@ -233,7 +236,7 @@ export const PlayoffActivePanel: React.FC<TournamentActiveProps> = ({
           player1={tournament.participants.find(p => p.memberId === editingMatch.member1Id)?.member!}
           player2={tournament.participants.find(p => p.memberId === editingMatch.member2Id)?.member!}
           showForfeitOptions={true}
-          requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
+          requireScorePins={shouldShowScorePinsForMatchEdit(editingMatch)}
           onSetEditingMatch={handleSetEditingMatch}
           onSave={handleSaveMatchEdit}
           onCancel={handleCancel}

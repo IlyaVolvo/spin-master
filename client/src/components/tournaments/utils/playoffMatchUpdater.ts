@@ -4,6 +4,7 @@ import {
   getPlayoffFirstResultBlockedReason,
   type PlayoffBracketSlotForGuard,
 } from './playoffBracketPlayability';
+import { enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../../../utils/matchScorePayload';
 
 export type { PlayoffBracketSlotForGuard };
 
@@ -50,7 +51,7 @@ export class PlayoffMatchUpdater {
     bracketMatchId: number,
     callbacks: PlayoffMatchUpdateCallbacks = {},
     bracketSlot?: PlayoffBracketSlotForGuard | null,
-    opponentPassword?: string
+    pins?: { member1Pin?: string; member2Pin?: string }
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -67,7 +68,7 @@ export class PlayoffMatchUpdater {
     }
 
     try {
-      const apiData = buildMatchApiData(matchData, opponentPassword);
+      const apiData = buildMatchApiData(matchData, pins);
       // Use the generic match update endpoint with bracketMatchId
       // The server plugin will resolve the bracketMatchId and handle bracket-specific logic
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${bracketMatchId}`, apiData);
@@ -84,10 +85,15 @@ export class PlayoffMatchUpdater {
       
       return savedMatch;
     } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const errorMessage = apiError || 'Failed to create match result';
-      callbacks.onError?.(errorMessage);
-      throw new Error(errorMessage);
+      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to create match result');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        callbacks.onError?.(enriched.message);
+      }
+      throw enriched;
     }
   }
 
@@ -98,7 +104,7 @@ export class PlayoffMatchUpdater {
     matchId: number,
     matchData: MatchData,
     callbacks: PlayoffMatchUpdateCallbacks = {},
-    opponentPassword?: string
+    pins?: { member1Pin?: string; member2Pin?: string }
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -107,7 +113,7 @@ export class PlayoffMatchUpdater {
     }
 
     try {
-      const apiData = buildMatchApiData(matchData, opponentPassword);
+      const apiData = buildMatchApiData(matchData, pins);
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;
       
@@ -119,10 +125,15 @@ export class PlayoffMatchUpdater {
       
       return savedMatch;
     } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const errorMessage = apiError || 'Failed to update match result';
-      callbacks.onError?.(errorMessage);
-      throw new Error(errorMessage);
+      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to update match result');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        callbacks.onError?.(enriched.message);
+      }
+      throw enriched;
     }
   }
 

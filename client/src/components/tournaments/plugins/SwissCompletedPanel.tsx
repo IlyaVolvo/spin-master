@@ -393,7 +393,7 @@ export const SwissCompletedPanel: React.FC<TournamentCompletedProps> = ({
             player1={p1}
             player2={p2}
             showForfeitOptions
-            requireOpponentPassword={false}
+            requireScorePins={false}
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveCorrection}
             onCancel={() => setEditingMatch(null)}

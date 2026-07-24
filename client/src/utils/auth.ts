@@ -17,6 +17,14 @@ export interface Member {
   tournamentNotificationsEnabled?: boolean;
   /** From API: false when password is unset (admin reset / invite). */
   hasPassword?: boolean;
+  /** Privilege-relinquished public-terminal mode. */
+  kioskMode?: boolean;
+  /** Effective auto-relinquish (override or club default). */
+  autoRelinquishPrivileges?: boolean;
+  /** Per-member override: true/false/null (null = use club default). */
+  autoRelinquishPrivilegesOverride?: boolean | null;
+  /** Idle minutes before re-entering kiosk after restore (from club config). */
+  autoRelinquishIdleMinutes?: number;
 }
 
 type AuthExpiredListener = (message: string) => void;
@@ -129,6 +137,9 @@ const NON_SESSION_401_PATTERNS = [
   /invalid credentials/i,
   /invalid password/i,
   /invalid opponent password/i,
+  /invalid participant pin/i,
+  /invalid player pin/i,
+  /incorrect pin/i,
   /current password is incorrect/i,
   /password confirmation/i,
 ];
@@ -191,11 +202,19 @@ export const hasMemberRole = (role: string): boolean => {
   return memberRolesUpper(getMember()).includes(want);
 };
 
-export const isAdmin = (): boolean => hasMemberRole('ADMIN');
+/** True when privileges are relinquished for public-terminal use. */
+export const isKioskMode = (): boolean => getMember()?.kioskMode === true;
 
-export const isOrganizer = (): boolean => hasMemberRole('ORGANIZER');
+export const isAdmin = (): boolean => !isKioskMode() && hasMemberRole('ADMIN');
+
+export const isOrganizer = (): boolean => !isKioskMode() && hasMemberRole('ORGANIZER');
+
+/** Organizer or admin with elevated privileges (not in kiosk mode). */
+export const canRelinquishPrivileges = (): boolean =>
+  !isKioskMode() && (hasMemberRole('ORGANIZER') || hasMemberRole('ADMIN'));
 
 export const canEditMember = (memberId: number): boolean => {
+  if (isKioskMode()) return false;
   const member = getMember();
   if (!member) return false;
   // Can edit if it's their own profile or if they're an Admin

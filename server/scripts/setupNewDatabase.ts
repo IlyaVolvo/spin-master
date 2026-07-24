@@ -183,7 +183,8 @@ async function createInitialMember(sysAdmin: SysAdminArgs) {
       isActive: true,
       gender: 'NOT_SPECIFIED',
       qrTokenHash: generateQrTokenHash(),
-      mustResetPassword: false,
+
+      scorePin: '1234',mustResetPassword: false,
     },
   });
 

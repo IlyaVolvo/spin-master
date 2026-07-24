@@ -7,6 +7,8 @@ import { prisma } from '../index';
 export interface AuthRequest extends Request {
   memberId?: number;
   userId?: number;
+  /** Privilege-relinquished public-terminal mode (session or JWT). */
+  kioskMode?: boolean;
   member?: {
     id: number;
     email: string | null;
@@ -29,10 +31,12 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
     const member = req.session.member;
     (req as AuthRequest).memberId = member.id;
     (req as AuthRequest).member = member;
+    (req as AuthRequest).kioskMode = req.session.kioskMode === true;
     logger.info('Session authentication successful', { 
       memberId: member.id,
       method: req.method,
       path: req.path,
+      kioskMode: (req as AuthRequest).kioskMode === true,
     });
     return next();
   }
@@ -79,11 +83,16 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
       tokenPrefix: token?.substring(0, 20) + '...'
     });
     
-    const decoded = jwt.verify(token, jwtSecret) as { memberId?: number; type?: string };
+    const decoded = jwt.verify(token, jwtSecret) as {
+      memberId?: number;
+      type?: string;
+      kioskMode?: boolean;
+    };
     
     // Handle member token
     if (decoded.type === 'member' && decoded.memberId) {
       (req as AuthRequest).memberId = decoded.memberId;
+      (req as AuthRequest).kioskMode = decoded.kioskMode === true;
       
       // Try to fetch member data from database to populate req.member
       // This helps with role checks without requiring a database lookup in every route
@@ -112,6 +121,7 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
         method: req.method,
         path: req.path,
         roles: member.roles,
+        kioskMode: (req as AuthRequest).kioskMode === true,
         secretSource: secretSource,
       });
         } else {

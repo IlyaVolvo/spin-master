@@ -1,9 +1,14 @@
 import { Response, NextFunction } from 'express';
 import { prisma } from '../index';
 import type { AuthRequest } from '../middleware/auth';
+import { isKioskMode } from './kioskMode';
 import { logger } from './logger';
 
 export async function isAdmin(req: AuthRequest): Promise<boolean> {
+  if (isKioskMode(req)) {
+    return false;
+  }
+
   if (req.member && Array.isArray(req.member.roles)) {
     const hasAdminRole = req.member.roles.some(role => String(role).toUpperCase() === 'ADMIN');
     if (hasAdminRole) return true;

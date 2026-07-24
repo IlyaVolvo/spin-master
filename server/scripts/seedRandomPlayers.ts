@@ -106,7 +106,8 @@ async function main() {
         address: null,
         picture: null,
         qrTokenHash: qrTokenHash(),
-        isActive: true,
+
+        scorePin: '1234',isActive: true,
         emailConfirmedAt: null,
         mustResetPassword: false,
         passwordResetToken: null,

@@ -4,7 +4,7 @@ import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
 import { getMember, isOrganizer } from '../utils/auth';
-import { attachOpponentPasswordIfNeeded, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
+import { attachScorePinsIfNeeded, shouldShowScorePinsForMatchEdit, enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../utils/matchScorePayload';
 import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../utils/duplicateScoreError';
 import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
 import { getSystemConfig } from '../utils/systemConfig';
@@ -60,7 +60,8 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  opponentPassword?: string;
+  member1Pin?: string;
+  member2Pin?: string;
   expectedHadResult?: boolean;
   expectedMatchUpdatedAt?: string;
 }
@@ -744,7 +745,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: (prevMatch.player2Sets || 0).toString(),
               player1Forfeit: prevMatch.player1Forfeit || false,
               player2Forfeit: prevMatch.player2Forfeit || false,
-              opponentPassword: '',
+              member1Pin: '',
+        member2Pin: '',
               expectedHadResult: matchNodeHasResult(prevMatch),
             });
             
@@ -958,7 +960,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: (prevMatch.player2Sets || 0).toString(),
               player1Forfeit: prevMatch.player1Forfeit || false,
               player2Forfeit: prevMatch.player2Forfeit || false,
-              opponentPassword: '',
+              member1Pin: '',
+        member2Pin: '',
               expectedHadResult: matchNodeHasResult(prevMatch),
             });
           }
@@ -1303,7 +1306,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: (prevMatch.player2Sets || 0).toString() || '0',
                   player1Forfeit: prevMatch.player1Forfeit || false,
                   player2Forfeit: prevMatch.player2Forfeit || false,
-                  opponentPassword: '',
+                  member1Pin: '',
+        member2Pin: '',
                   expectedHadResult: matchNodeHasResult(prevMatch),
                 });
               }
@@ -1434,7 +1438,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: player2Sets.toString(),
               player1Forfeit: match.player1Forfeit || false,
               player2Forfeit: match.player2Forfeit || false,
-              opponentPassword: '',
+              member1Pin: '',
+        member2Pin: '',
               expectedHadResult: matchNodeHasResult(match),
             });
           }
@@ -1526,7 +1531,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: '0',
                   player1Forfeit: false,
                   player2Forfeit: false,
-                  opponentPassword: '',
+                  member1Pin: '',
+        member2Pin: '',
                   expectedHadResult: false,
                 });
               }}
@@ -1552,7 +1558,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                 player2Sets: (match.player2Sets || 0).toString(),
                 player1Forfeit: match.player1Forfeit || false,
                 player2Forfeit: match.player2Forfeit || false,
-                opponentPassword: '',
+                member1Pin: '',
+        member2Pin: '',
                 expectedHadResult: true,
               });
             }}
@@ -1570,7 +1577,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                 player2Sets: (match.player2Sets || 0).toString(),
                 player1Forfeit: match.player1Forfeit || false,
                 player2Forfeit: match.player2Forfeit || false,
-                opponentPassword: '',
+                member1Pin: '',
+        member2Pin: '',
                 expectedHadResult: true,
               });
             }}
@@ -1589,7 +1597,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: (match.player2Sets || 0).toString(),
                   player1Forfeit: match.player1Forfeit || false,
                   player2Forfeit: match.player2Forfeit || false,
-                  opponentPassword: '',
+                  member1Pin: '',
+        member2Pin: '',
                   expectedHadResult: matchNodeHasResult(match),
                 });
               }
@@ -1604,7 +1613,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: (match.player2Sets || 0).toString(),
                   player1Forfeit: match.player1Forfeit || false,
                   player2Forfeit: match.player2Forfeit || false,
-                  opponentPassword: '',
+                  member1Pin: '',
+        member2Pin: '',
                   expectedHadResult: matchNodeHasResult(match),
                 }));
               }
@@ -1870,7 +1880,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         return;
       }
 
-      attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
+      attachScorePinsIfNeeded(matchData, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       
       await api.patch(`/tournaments/${tournamentId}/matches/${matchIdToUse}`, matchData);
       
@@ -1888,17 +1898,25 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         onMatchUpdate();
       }
     } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to update match';
-      if (isDuplicateScoreMessage(errorMessage)) {
-        flushSync(() => {
-          setEditingMatch(null);
-        });
+      const enriched = enrichErrorWithInvalidScorePins(error, 'Failed to update match');
+      const errorMessage = enriched.message;
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(errorMessage)
+      ) {
+        if (isDuplicateScoreMessage(errorMessage)) {
+          flushSync(() => {
+            setEditingMatch(null);
+          });
+        }
+        if (onError) {
+          onError(normalizeDuplicateScoreMessage(errorMessage));
+        } else {
+          alert(normalizeDuplicateScoreMessage(errorMessage));
+        }
       }
-      if (onError) {
-        onError(normalizeDuplicateScoreMessage(errorMessage));
-      } else {
-        alert(normalizeDuplicateScoreMessage(errorMessage));
-      }
+      throw enriched;
     }
   };
 
@@ -2274,7 +2292,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             player1={player1.member}
             player2={player2.member}
             showForfeitOptions={true}
-            requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
+            requireScorePins={shouldShowScorePinsForMatchEdit(editingMatch)}
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}

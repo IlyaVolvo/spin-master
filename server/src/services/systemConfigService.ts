@@ -11,6 +11,18 @@ export type BrandingConfig = {
 export type AuthPolicyConfig = {
   minimumPasswordLength: number;
   passwordResetTokenTtlHours: number;
+  /** Length of permanent digit-only score PINs (4–12). */
+  pinLength: number;
+  /**
+   * Club default: elevated accounts (Organizer/Admin) enter kiosk mode on login.
+   * Per-member override may force on/off.
+   */
+  autoRelinquishPrivileges: boolean;
+  /**
+   * After a password restore, re-enter kiosk after this many idle minutes.
+   * 0 disables idle re-relinquish (login-only auto mode).
+   */
+  autoRelinquishIdleMinutes: number;
 };
 
 export type PreregistrationConfig = {
@@ -103,6 +115,9 @@ export function getDefaultSystemConfig(): SystemConfig {
     authPolicy: {
       minimumPasswordLength: 6,
       passwordResetTokenTtlHours: 1,
+      pinLength: 4,
+      autoRelinquishPrivileges: false,
+      autoRelinquishIdleMinutes: 5,
     },
     preregistration: {
       defaultTournamentOffsetDays: 1,
@@ -218,6 +233,14 @@ function validateAuthPolicy(value: unknown): AuthPolicyConfig {
   return {
     minimumPasswordLength: requireInteger(config.minimumPasswordLength, 'authPolicy.minimumPasswordLength', 6, 128),
     passwordResetTokenTtlHours: requireInteger(config.passwordResetTokenTtlHours, 'authPolicy.passwordResetTokenTtlHours', 1, 168),
+    pinLength: requireInteger(config.pinLength, 'authPolicy.pinLength', 4, 12),
+    autoRelinquishPrivileges: Boolean(config.autoRelinquishPrivileges),
+    autoRelinquishIdleMinutes: requireInteger(
+      config.autoRelinquishIdleMinutes,
+      'authPolicy.autoRelinquishIdleMinutes',
+      0,
+      120
+    ),
   };
 }
 

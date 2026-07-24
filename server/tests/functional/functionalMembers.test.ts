@@ -271,7 +271,8 @@ describe('Functional: members & lists', () => {
         rating: 1400,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
 
@@ -300,7 +301,8 @@ describe('Functional: members & lists', () => {
         rating: 1400,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
 
@@ -330,7 +332,8 @@ describe('Functional: members & lists', () => {
         rating: 1410,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
 
@@ -360,7 +363,8 @@ describe('Functional: members & lists', () => {
         rating: 1600,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
 
@@ -388,7 +392,8 @@ describe('Functional: members & lists', () => {
         rating: 1390,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
     const selfToken = makeMemberJwt(member.id);
@@ -417,7 +422,8 @@ describe('Functional: members & lists', () => {
         rating: 1395,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
     const selfToken = makeMemberJwt(member.id);

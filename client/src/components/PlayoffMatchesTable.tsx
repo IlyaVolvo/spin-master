@@ -5,9 +5,12 @@ import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { formatActiveTournamentRating } from '../utils/ratingFormatter';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
 import {
-  attachOpponentPasswordIfNeeded,
+  attachScorePinsIfNeeded,
   canOpenTournamentMatchEditor,
-  shouldShowOpponentPasswordForMatchEdit,
+  shouldShowScorePinsForMatchEdit,
+  enrichErrorWithInvalidScorePins,
+  isScorePinAuthErrorMessage,
+  ScorePinAuthError,
 } from '../utils/matchScorePayload';
 
 interface Member {
@@ -52,7 +55,8 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  opponentPassword?: string;
+  member1Pin?: string;
+  member2Pin?: string;
 }
 
 export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
@@ -135,7 +139,8 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
       player2Sets: match.player2Sets.toString() || '0',
       player1Forfeit: match.player1Forfeit || false,
       player2Forfeit: match.player2Forfeit || false,
-      opponentPassword: '',
+      member1Pin: '',
+        member2Pin: '',
     });
   };
 
@@ -174,7 +179,7 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
       matchData.player2Forfeit = false;
     }
 
-    attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
+    attachScorePinsIfNeeded(matchData, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
 
     try {
       await api.patch(`/tournaments/${tournamentId}/matches/${editingMatch.matchId}`, matchData);
@@ -183,7 +188,15 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
         onMatchUpdate();
       }
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to update match');
+      const enriched = enrichErrorWithInvalidScorePins(error, 'Failed to update match');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        alert(enriched.message);
+      }
+      throw enriched;
     }
   };
 
@@ -364,7 +377,7 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
             player1={player1.member}
             player2={player2.member}
             showForfeitOptions={true}
-            requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+            requireScorePins={shouldShowScorePinsForMatchEdit({
               member1Id: editingMatch.member1Id,
               member2Id: editingMatch.member2Id,
             })}

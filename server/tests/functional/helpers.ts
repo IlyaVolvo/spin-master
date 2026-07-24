@@ -20,8 +20,16 @@ export function jwtSecret(): string {
   return process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
 }
 
-export function makeMemberJwt(memberId: number): string {
-  return jwt.sign({ memberId, type: 'member' }, jwtSecret(), { expiresIn: '7d' });
+export function makeMemberJwt(memberId: number, options?: { kioskMode?: boolean }): string {
+  return jwt.sign(
+    {
+      memberId,
+      type: 'member',
+      ...(options?.kioskMode ? { kioskMode: true } : {}),
+    },
+    jwtSecret(),
+    { expiresIn: '7d' },
+  );
 }
 
 export function qrTokenHash(): string {
@@ -29,6 +37,9 @@ export function qrTokenHash(): string {
     .update(`${randomBytes(32).toString('hex')}:functional-test`)
     .digest('hex');
 }
+
+/** Default test PIN for members created by seed helpers. */
+export const FUNCTIONAL_TEST_PLAYER_PIN = '1234';
 
 export interface SeedPlayerSpec {
   firstName: string;
@@ -61,6 +72,7 @@ export async function seedOrganizer(
       rating: 1600,
       isActive: true,
       qrTokenHash: qrTokenHash(),
+      scorePin: FUNCTIONAL_TEST_PLAYER_PIN,
       mustResetPassword: false,
     },
   });
@@ -88,6 +100,7 @@ export async function seedAdmin(
       rating: 2000,
       isActive: true,
       qrTokenHash: qrTokenHash(),
+      scorePin: FUNCTIONAL_TEST_PLAYER_PIN,
       mustResetPassword: false,
     },
   });
@@ -98,9 +111,9 @@ export async function seedAdmin(
 export async function seedPlayers(
   prisma: PrismaClient,
   specs: SeedPlayerSpec[],
-): Promise<{ id: number; email: string; rating: number }[]> {
+): Promise<{ id: number; email: string; rating: number; scorePin: string }[]> {
   const passwordHash = await bcrypt.hash(FUNCTIONAL_TEST_PLAYER_PASSWORD, 10);
-  const out: { id: number; email: string; rating: number }[] = [];
+  const out: { id: number; email: string; rating: number; scorePin: string }[] = [];
   for (const s of specs) {
     const m = await prisma.member.create({
       data: {
@@ -114,10 +127,11 @@ export async function seedPlayers(
         rating: s.rating,
         isActive: true,
         qrTokenHash: qrTokenHash(),
+        scorePin: FUNCTIONAL_TEST_PLAYER_PIN,
         mustResetPassword: false,
       },
     });
-    out.push({ id: m.id, email: m.email ?? s.email, rating: s.rating });
+    out.push({ id: m.id, email: m.email ?? s.email, rating: s.rating, scorePin: m.scorePin });
   }
   return out;
 }

@@ -15,7 +15,7 @@ import {
   shouldOpenCorrectionEditor,
 } from '../../../utils/scoreCorrectionUtils';
 import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
-import { canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
+import { canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, isScorePinAuthErrorMessage } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { sortParticipantsByRating } from '../utils/participantSort';
 import {
@@ -42,7 +42,8 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  opponentPassword?: string;
+  member1Pin?: string;
+  member2Pin?: string;
   expectedHadResult?: boolean;
   expectedMatchUpdatedAt?: string;
 }
@@ -68,7 +69,8 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
     onActiveMatchEdit: (payload) => {
       setEditingMatch({
         ...payload,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: true,
       });
     },
@@ -77,6 +79,9 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   const modificationClickHint = getScoreModificationClickHint(tournament.status);
 
   const handleError = (message: string) => {
+    if (isScorePinAuthErrorMessage(message)) {
+      return;
+    }
     if (isDuplicateScoreMessage(message)) {
       flushSync(() => {
         setEditingMatch(null);
@@ -177,7 +182,8 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: match.player2Sets.toString(),
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0 || !!match.player1Forfeit || !!match.player2Forfeit,
         expectedMatchUpdatedAt: match.updatedAt,
       });
@@ -191,7 +197,8 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: '0',
         player1Forfeit: false,
         player2Forfeit: false,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: false,
       });
     }
@@ -227,9 +234,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
             onTournamentComplete: () => {
               onSuccess?.('Tournament completed successfully!');
             },
-          },
-          editingMatch.opponentPassword
-        );
+          }, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       } else {
         // Update existing match
         await roundRobinUpdater.updateMatch(
@@ -243,14 +248,13 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
             onTournamentComplete: () => {
               onSuccess?.('Tournament completed successfully!');
             },
-          },
-          editingMatch.opponentPassword
-        );
+          }, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       }
       
       setEditingMatch(null);
     } catch (error) {
       // Error is already handled by the RoundRobinMatchUpdater callbacks
+      throw error;
     }
   };
 
@@ -276,6 +280,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
       setEditingMatch(null);
     } catch (error) {
       // Error is already handled by the RoundRobinMatchUpdater callbacks
+      throw error;
     }
   };
 
@@ -477,7 +482,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
           player1={getPlayer(editingMatch.member1Id)!}
           player2={getPlayer(editingMatch.member2Id)!}
           showForfeitOptions={true}
-          requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
+          requireScorePins={shouldShowScorePinsForMatchEdit(editingMatch)}
           onSetEditingMatch={setEditingMatch}
           onSave={handleMatchSave}
           onCancel={handleMatchCancel}

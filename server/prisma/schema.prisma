@@ -58,6 +58,15 @@ model Member {
   // QR-based authentication token hash
   qrTokenHash String @unique
 
+  // Permanent digit PIN for kiosk / public-terminal score confirmation (admin-visible)
+  scorePin String
+
+  /**
+   * Auto-enter kiosk mode on login when the member has Organizer/Admin roles.
+   * null = inherit SystemConfig.authPolicy.autoRelinquishPrivileges
+   */
+  autoRelinquishPrivileges Boolean?
+
   // Rating history
   ratingHistory RatingHistory[]
 

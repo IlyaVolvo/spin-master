@@ -1,5 +1,5 @@
 import api from '../../../utils/api';
-import { attachOpponentPasswordIfNeeded } from '../../../utils/matchScorePayload';
+import { attachScorePinsIfNeeded, enrichErrorWithInvalidScorePins, isScorePinAuthErrorMessage, ScorePinAuthError } from '../../../utils/matchScorePayload';
 
 export interface MatchData {
   member1Id: number;
@@ -12,6 +12,11 @@ export interface MatchData {
   expectedMatchUpdatedAt?: string;
 }
 
+export type MatchScorePins = {
+  member1Pin?: string;
+  member2Pin?: string;
+};
+
 export interface MatchUpdateCallbacks {
   onSuccess?: (message: string) => void;
   onError?: (error: string) => void;
@@ -19,7 +24,7 @@ export interface MatchUpdateCallbacks {
   onMatchUpdate?: (match: any) => void;
 }
 
-export function buildMatchApiData(matchData: MatchData, opponentPassword?: string): Record<string, unknown> {
+export function buildMatchApiData(matchData: MatchData, pins?: MatchScorePins): Record<string, unknown> {
   const apiData: Record<string, unknown> = {
     member1Id: matchData.member1Id,
     member2Id: matchData.member2Id,
@@ -42,7 +47,7 @@ export function buildMatchApiData(matchData: MatchData, opponentPassword?: strin
     apiData.expectedMatchUpdatedAt = matchData.expectedMatchUpdatedAt;
   }
 
-  attachOpponentPasswordIfNeeded(apiData, opponentPassword);
+  attachScorePinsIfNeeded(apiData, pins);
   return apiData;
 }
 
@@ -80,7 +85,7 @@ export class MatchUpdater {
   async createMatch(
     matchData: MatchData,
     callbacks: MatchUpdateCallbacks = {},
-    opponentPassword?: string
+    pins?: MatchScorePins
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -89,7 +94,7 @@ export class MatchUpdater {
     }
 
     try {
-      const apiData = buildMatchApiData(matchData, opponentPassword);
+      const apiData = buildMatchApiData(matchData, pins);
       const response = await api.post(`/tournaments/${this.tournamentId}/matches`, apiData);
       const savedMatch = response.data;
       
@@ -101,10 +106,15 @@ export class MatchUpdater {
       
       return savedMatch;
     } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const errorMessage = apiError || 'Failed to create match result';
-      callbacks.onError?.(errorMessage);
-      throw new Error(errorMessage);
+      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to create match result');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        callbacks.onError?.(enriched.message);
+      }
+      throw enriched;
     }
   }
 
@@ -115,7 +125,7 @@ export class MatchUpdater {
     matchId: number,
     matchData: MatchData,
     callbacks: MatchUpdateCallbacks = {},
-    opponentPassword?: string
+    pins?: MatchScorePins
   ): Promise<any> {
     const validationError = this.validateMatchData(matchData);
     if (validationError) {
@@ -124,7 +134,7 @@ export class MatchUpdater {
     }
 
     try {
-      const apiData = buildMatchApiData(matchData, opponentPassword);
+      const apiData = buildMatchApiData(matchData, pins);
       const response = await api.patch(`/tournaments/${this.tournamentId}/matches/${matchId}`, apiData);
       const savedMatch = response.data;
       
@@ -136,10 +146,15 @@ export class MatchUpdater {
       
       return savedMatch;
     } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      const errorMessage = apiError || 'Failed to update match result';
-      callbacks.onError?.(errorMessage);
-      throw new Error(errorMessage);
+      const enriched = enrichErrorWithInvalidScorePins(err, 'Failed to update match result');
+      if (
+        !(enriched instanceof ScorePinAuthError) &&
+        !(enriched as Error & { invalidPins?: unknown }).invalidPins &&
+        !isScorePinAuthErrorMessage(enriched.message)
+      ) {
+        callbacks.onError?.(enriched.message);
+      }
+      throw enriched;
     }
   }
 
