@@ -6,10 +6,28 @@ import type {
   TournamentScheduleProps,
   TournamentCompletedProps,
   TournamentCreationFlow,
+  Tournament,
 } from '../../../types/tournament';
 import { PreliminaryWithFinalRoundRobinPostSelectionFlow } from './PreliminaryWithFinalRoundRobinPostSelectionFlow';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { getSystemConfig } from '../../../utils/systemConfig';
+
+function isFinalPhaseChild(_parent: Tournament, child: Tournament): boolean {
+  return child.groupNumber === null || child.groupNumber === undefined;
+}
+
+function isPreliminaryGroupChild(_parent: Tournament, child: Tournament): boolean {
+  return child.groupNumber !== null && child.groupNumber !== undefined;
+}
+
+function partitionChildren(tournament: Tournament) {
+  const children = tournament.childTournaments || [];
+  const preliminaryGroups = children
+    .filter((c) => isPreliminaryGroupChild(tournament, c))
+    .sort((a, b) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
+  const finalTournament = children.find((c) => isFinalPhaseChild(tournament, c));
+  return { preliminaryGroups, finalTournament };
+}
 
 // ─── Active Panel ────────────────────────────────────────────────────────────
 // Shows child tournaments (preliminary groups + final if created) with their status
@@ -20,11 +38,7 @@ const PreliminaryWithFinalRoundRobinActivePanel: React.FC<TournamentActiveProps>
   onError,
   onSuccess,
 }) => {
-  const children = tournament.childTournaments || [];
-  const preliminaryGroups = children
-    .filter(c => c.groupNumber !== null && c.groupNumber !== undefined)
-    .sort((a, b) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
-  const finalTournament = children.find(c => c.groupNumber === null || c.groupNumber === undefined);
+  const { preliminaryGroups, finalTournament } = partitionChildren(tournament);
 
   const config = tournament.preliminaryConfig;
   const autoQualifiedMemberIds: number[] = config?.autoQualifiedMemberIds || [];
@@ -185,17 +199,13 @@ const PreliminaryWithFinalRoundRobinSchedulePanel: React.FC<TournamentSchedulePr
 }) => {
   if (!isExpanded) return null;
 
-  const children = tournament.childTournaments || [];
-  const preliminaryGroups = children
-    .filter(c => c.groupNumber !== null && c.groupNumber !== undefined)
-    .sort((a, b) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
-  const finalTournament = children.find(c => c.groupNumber === null || c.groupNumber === undefined);
+  const { preliminaryGroups, finalTournament } = partitionChildren(tournament);
 
   return (
     <div style={{ padding: '10px' }}>
       {[...preliminaryGroups, ...(finalTournament ? [finalTournament] : [])].map(child => (
         <div key={child.id} style={{ marginBottom: '15px' }}>
-          <h5 style={{ color: child.groupNumber != null ? '#3498db' : '#27ae60', marginBottom: '8px' }}>
+          <h5 style={{ color: isPreliminaryGroupChild(tournament, child) ? '#3498db' : '#27ae60', marginBottom: '8px' }}>
             {child.name}
           </h5>
           {child.participants && child.participants.length > 0 ? (
@@ -247,11 +257,7 @@ const PreliminaryWithFinalRoundRobinCompletedPanel: React.FC<TournamentCompleted
 }) => {
   if (!isExpanded) return null;
 
-  const children = tournament.childTournaments || [];
-  const preliminaryGroups = children
-    .filter(c => c.groupNumber !== null && c.groupNumber !== undefined)
-    .sort((a, b) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
-  const finalTournament = children.find(c => c.groupNumber === null || c.groupNumber === undefined);
+  const { preliminaryGroups, finalTournament } = partitionChildren(tournament);
 
   return (
     <div style={{ padding: '10px' }}>
@@ -372,11 +378,9 @@ export const PreliminaryWithFinalRoundRobinPlugin: TournamentPlugin = {
   supportsDetailedResultsPrint: false,
   supportsAbbreviatedResultsPrint: false,
 
-  isFinalPhaseChild: (_parent, child) =>
-    child.groupNumber === null || child.groupNumber === undefined,
+  isFinalPhaseChild,
 
-  isPreliminaryGroupChild: (_parent, child) =>
-    child.groupNumber !== null && child.groupNumber !== undefined,
+  isPreliminaryGroupChild,
 };
 
 export default PreliminaryWithFinalRoundRobinPlugin;

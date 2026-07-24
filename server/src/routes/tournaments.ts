@@ -34,7 +34,6 @@ import {
   sendTournamentRegistrationClosedEmail,
 } from '../services/mailService';
 import {
-  calculateSwissDefaultRounds,
   getPreregistrationConfig,
   getTournamentRulesConfig,
 } from '../services/systemConfigService';
@@ -84,56 +83,10 @@ function parseOptionalInteger(value: unknown): number | null {
 }
 
 function validateTournamentRuleRequest(type: string, participantCount: number, data: any): string | null {
-  const rules = getTournamentRulesConfig();
-  switch (type) {
-    case 'ROUND_ROBIN':
-      if (participantCount < rules.roundRobin.minPlayers) return `Round Robin requires at least ${rules.roundRobin.minPlayers} players`;
-      if (participantCount > rules.roundRobin.maxPlayers) return `Round Robin allows at most ${rules.roundRobin.maxPlayers} players`;
-      return null;
-    case 'PLAYOFF': {
-      const bracketSize = Number(data?.bracketSize ?? data?.additionalData?.bracketSize);
-      if (participantCount < rules.playoff.minPlayers) return `Playoff requires at least ${rules.playoff.minPlayers} players`;
-      if (Number.isInteger(bracketSize)) {
-        const isPowerOfTwo = bracketSize >= 2 && (bracketSize & (bracketSize - 1)) === 0;
-        if (!isPowerOfTwo) {
-          return 'Bracket size must be a power of 2';
-        }
-      }
-      return null;
-    }
-    case 'SWISS': {
-      const roundsValue = data?.numberOfRounds ?? data?.additionalData?.numberOfRounds;
-      const numberOfRounds = roundsValue == null
-        ? calculateSwissDefaultRounds(participantCount, rules.swiss.maxRoundsDivisor)
-        : Number(roundsValue);
-      const maxRounds = Math.floor(participantCount / rules.swiss.maxRoundsDivisor);
-      if (participantCount < rules.swiss.minPlayers) return `Swiss requires at least ${rules.swiss.minPlayers} players`;
-      if (!Number.isInteger(numberOfRounds) || numberOfRounds < 3) return 'Number of rounds must be at least 3';
-      if (numberOfRounds > maxRounds) return `Number of rounds cannot exceed ${maxRounds}`;
-      return null;
-    }
-    case 'MULTI_ROUND_ROBINS': {
-      if (participantCount < rules.multiRoundRobins.minPlayers) return `Multi Round Robins requires at least ${rules.multiRoundRobins.minPlayers} players`;
-      const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
-      if (
-        Number.isInteger(groupSize) &&
-        (groupSize < rules.multiRoundRobins.minGroupSize || groupSize > rules.multiRoundRobins.maxGroupSize)
-      ) {
-        return `Group size must be between ${rules.multiRoundRobins.minGroupSize} and ${rules.multiRoundRobins.maxGroupSize}`;
-      }
-      return null;
-    }
-    case 'PRELIMINARY_WITH_FINAL_PLAYOFF':
-    case 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN': {
-      const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
-      if (Number.isInteger(groupSize) && (groupSize < rules.preliminary.groupSizeMin || groupSize > rules.preliminary.groupSizeMax)) {
-        return `Preliminary group size must be between ${rules.preliminary.groupSizeMin} and ${rules.preliminary.groupSizeMax}`;
-      }
-      return null;
-    }
-    default:
-      return null;
+  if (!tournamentPluginRegistry.isRegistered(type)) {
+    return null;
   }
+  return tournamentPluginRegistry.get(type).validateCreateRules?.(participantCount, data) ?? null;
 }
 
 function validateConfiguredMatchScore(player1Sets: number, player2Sets: number, player1Forfeit = false, player2Forfeit = false): string | null {

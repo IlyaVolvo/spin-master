@@ -128,6 +128,23 @@ async function attachRatingHistoryToBracketMatches(
 export class PlayoffPlugin extends BaseTournamentPlugin {
   type = 'PLAYOFF';
   isBasic = true;
+  scoreCorrectionUsesCurrentMemberRatings = true;
+  checksBracketMatchesForStarted = true;
+
+  validateCreateRules(participantCount: number, data: any): string | null {
+    const rules = getTournamentRulesConfig().playoff;
+    const bracketSize = Number(data?.bracketSize ?? data?.additionalData?.bracketSize);
+    if (participantCount < rules.minPlayers) {
+      return `Playoff requires at least ${rules.minPlayers} players`;
+    }
+    if (Number.isInteger(bracketSize)) {
+      const isPowerOfTwo = bracketSize >= 2 && (bracketSize & (bracketSize - 1)) === 0;
+      if (!isPowerOfTwo) {
+        return 'Bracket size must be a power of 2';
+      }
+    }
+    return null;
+  }
 
   async createTournament(context: TournamentCreationContext): Promise<any> {
     const { name, participantIds, players, prisma, additionalData, bracketPositions: bracketPositionsFromBody } = context as any;

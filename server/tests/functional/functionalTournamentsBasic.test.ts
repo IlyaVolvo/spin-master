@@ -220,13 +220,15 @@ describe('Functional: basic tournaments', () => {
   });
 
   describe('SWISS', () => {
-    it('two rounds; higher rating wins each match; Swiss + tournament completed', async () => {
+    it('three rounds; higher rating wins each match; Swiss + tournament completed', async () => {
       const { token } = await seedOrganizer(prisma);
       const p = await seedPlayers(prisma, [
         { firstName: 'S0', lastName: 'A', email: 's0.f@test.local', rating: 1850 },
         { firstName: 'S1', lastName: 'B', email: 's1.f@test.local', rating: 1750 },
         { firstName: 'S2', lastName: 'C', email: 's2.f@test.local', rating: 1650 },
         { firstName: 'S3', lastName: 'D', email: 's3.f@test.local', rating: 1550 },
+        { firstName: 'S4', lastName: 'E', email: 's4.f@test.local', rating: 1450 },
+        { firstName: 'S5', lastName: 'F', email: 's5.f@test.local', rating: 1350 },
       ]);
       const ids = p.map((x) => x.id);
       const byRating = (x: number, y: number) =>
@@ -239,13 +241,13 @@ describe('Functional: basic tournaments', () => {
           name: 'Functional Swiss',
           type: 'SWISS',
           participantIds: ids,
-          additionalData: { numberOfRounds: 2 },
+          additionalData: { numberOfRounds: 3 },
         })
         .expect(201);
 
       const tid = created.body.id as number;
 
-      for (let round = 1; round <= 2; round++) {
+      for (let round = 1; round <= 3; round++) {
         const matches = await prisma.match.findMany({
           where: { tournamentId: tid, round },
         });
@@ -264,11 +266,11 @@ describe('Functional: basic tournaments', () => {
         }
 
         if (round === 1) {
-          // Swiss applies ratings per match via onMatchRatingCalculation — 4 players ⇒ 2 R1 matches × 2 history rows
+          // Swiss applies ratings per match via onMatchRatingCalculation — 6 players ⇒ 3 R1 matches × 2 history rows
           const swissR1History = await prisma.ratingHistory.count({
             where: { tournamentId: tid, reason: 'MATCH_COMPLETED', matchId: { not: null } },
           });
-          expect(swissR1History).toBeGreaterThanOrEqual(4);
+          expect(swissR1History).toBeGreaterThanOrEqual(6);
         }
       }
 

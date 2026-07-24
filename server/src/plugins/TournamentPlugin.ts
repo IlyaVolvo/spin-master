@@ -72,6 +72,42 @@ export interface CorrectionEligibility {
 export interface TournamentPlugin {
   type: string;
   isBasic: boolean;
+
+  /**
+   * Create/modify rule checks (player counts, bracket size, rounds, group size).
+   * Returns an error message or null when valid.
+   */
+  validateCreateRules?(participantCount: number, data: any): string | null;
+
+  /**
+   * Completed score correction: rebuild ratings as one tournament-level batch
+   * (e.g. round robin) instead of replaying each match.
+   */
+  scoreCorrectionUsesBatchTournamentRatings?: boolean;
+
+  /**
+   * When replaying per-match ratings after correction, seed from current member
+   * ratings (playoff) rather than historical enrollment ratings.
+   */
+  scoreCorrectionUsesCurrentMemberRatings?: boolean;
+
+  /**
+   * Prefer TOURNAMENT_COMPLETED rating_history over post-tournament cache when
+   * resolving display ratings after completion.
+   */
+  preferCompletionRatingHistory?: boolean;
+
+  /**
+   * Treat bracketMatch-linked scored matches as evidence the event has started
+   * (used when gating preliminary corrections once a final phase begins).
+   */
+  checksBracketMatchesForStarted?: boolean;
+
+  /** Compound parents: identify the final-phase child among siblings */
+  isFinalPhaseChild?(child: any): boolean;
+
+  /** Compound parents: identify a preliminary-group child among siblings */
+  isPreliminaryGroupChild?(child: any): boolean;
   
   // Data enrichment methods
   enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament>;

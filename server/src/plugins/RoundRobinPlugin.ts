@@ -17,6 +17,21 @@ import { ClientHttpError } from '../http/clientHttpError';
 export class RoundRobinPlugin extends BaseTournamentPlugin {
   type = 'ROUND_ROBIN';
   isBasic = true;
+  scoreCorrectionUsesBatchTournamentRatings = true;
+  preferCompletionRatingHistory = true;
+
+  validateCreateRules(participantCount: number, _data: any): string | null {
+    // Lazy require avoids circular import via systemConfigService → index → registry
+    const { getTournamentRulesConfig } = require('../services/systemConfigService');
+    const rules = getTournamentRulesConfig().roundRobin;
+    if (participantCount < rules.minPlayers) {
+      return `Round Robin requires at least ${rules.minPlayers} players`;
+    }
+    if (participantCount > rules.maxPlayers) {
+      return `Round Robin allows at most ${rules.maxPlayers} players`;
+    }
+    return null;
+  }
 
   async createTournament(context: TournamentCreationContext): Promise<any> {
     const { name, participantIds, players, prisma } = context;

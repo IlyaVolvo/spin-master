@@ -17,10 +17,14 @@ export function childHasPlayedMatches(child: { matches?: any[] }): boolean {
   return (child.matches ?? []).some((m: any) => matchHasResult(m));
 }
 
-export async function finalPhaseChildHasStarted(prisma: any, finalChild: any): Promise<boolean> {
+export async function finalPhaseChildHasStarted(
+  prisma: any,
+  finalChild: any,
+  checkBracketMatches = false,
+): Promise<boolean> {
   if (!finalChild) return false;
   if (childHasPlayedMatches(finalChild)) return true;
-  if (finalChild.type !== 'PLAYOFF') return false;
+  if (!checkBracketMatches) return false;
 
   const playedBracketMatch = await prisma.bracketMatch.findFirst({
     where: {

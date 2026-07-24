@@ -88,9 +88,10 @@ describe('Functional: members & lists', () => {
         roles: ['PLAYER'],
         skipSimilarityCheck: true,
       })
-      .expect(400);
+      .expect(409);
 
-    expect(dup.body.error).toMatch(/email already exists/i);
+    expect(dup.body.error).toMatch(/duplicate member fields/i);
+    expect(dup.body.fieldErrors?.email).toMatch(/email already exists/i);
   });
 
   it('POST /api/players/import returns structured validation on bad CSV', async () => {
@@ -210,6 +211,7 @@ describe('Functional: members & lists', () => {
       { firstName: 'Active', lastName: 'A', email: 'active.f@test.local', rating: 1600 },
       { firstName: 'Inactive', lastName: 'B', email: 'inactive.f@test.local', rating: 1500 },
       { firstName: 'Active', lastName: 'C', email: 'activec.f@test.local', rating: 1550 },
+      { firstName: 'Active', lastName: 'D', email: 'actived.f@test.local', rating: 1520 },
     ]);
 
     await prisma.member.update({
@@ -241,7 +243,7 @@ describe('Functional: members & lists', () => {
       .send({
         name: 'Filter test RR',
         type: 'ROUND_ROBIN',
-        participantIds: [players[0].id, players[2].id],
+        participantIds: [players[0].id, players[2].id, players[3].id],
       })
       .expect(201);
 

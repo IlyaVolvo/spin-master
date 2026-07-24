@@ -6,6 +6,24 @@ import { MATCH_RESULT_ALREADY_ENTERED_MESSAGE } from '../../../utils/duplicateSc
 vi.mock('../../../utils/auth', () => ({
   getMember: () => ({ id: 1 }),
   isOrganizer: () => true,
+  isKioskMode: () => false,
+}));
+
+vi.mock('../../../utils/systemConfig', () => ({
+  getSystemConfig: () => ({
+    tournamentRules: {
+      matchScore: {
+        min: 0,
+        max: 7,
+        allowEqualScores: false,
+      },
+      playoff: {
+        minPlayers: 2,
+        seedDivisor: 4,
+      },
+    },
+  }),
+  subscribeToSystemConfig: () => () => undefined,
 }));
 
 vi.mock('../../../utils/nameFormatter', () => ({
@@ -102,9 +120,10 @@ describe('TraditionalBracket match editing', () => {
     );
 
     fireEvent.click(screen.getAllByTitle('Enter score')[0]);
-    const scoreInputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(scoreInputs[0], { target: { value: '3' } });
-    fireEvent.change(scoreInputs[1], { target: { value: '1' } });
+    const player1Input = screen.getByLabelText('Player 1 score');
+    const player2Input = screen.getByLabelText('Player 2 score');
+    fireEvent.keyDown(player1Input, { key: '3' });
+    fireEvent.keyDown(player2Input, { key: '1' });
 
     rerender(
       <TraditionalBracket

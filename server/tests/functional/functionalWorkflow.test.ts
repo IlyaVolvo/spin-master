@@ -67,9 +67,9 @@ describe('Functional: end-to-end workflows', () => {
       const seeded = await seedPlayers(prisma, [
         { firstName: 'Workflow', lastName: 'Alpha', email: 'workflow.alpha@test.local', rating: 1650 },
         { firstName: 'Workflow', lastName: 'Beta', email: 'workflow.beta@test.local', rating: 1550 },
+        { firstName: 'Workflow', lastName: 'Gamma', email: 'workflow.gamma@test.local', rating: 1450 },
       ]);
-      const id1 = seeded[0].id;
-      const id2 = seeded[1].id;
+      const ids = seeded.map((x) => x.id);
 
       const created = await request(app)
         .post('/api/tournaments')
@@ -77,20 +77,20 @@ describe('Functional: end-to-end workflows', () => {
         .send({
           name: 'Workflow RR Smoke',
           type: 'ROUND_ROBIN',
-          participantIds: [id1, id2],
+          participantIds: ids,
         })
         .expect(201);
 
       const tid = created.body.id as number;
 
-      await completeRoundRobin(tid, token, [id1, id2], (a, b) => (a === id1 ? a : b));
+      await completeRoundRobin(tid, token, ids, (a, b) => (a === ids[0] ? a : b));
 
       const t = await prisma.tournament.findUnique({ where: { id: tid } });
       expect(t?.status).toBe('COMPLETED');
 
       const list = await request(app).get('/api/tournaments').set(authHeader(token)).expect(200);
-      const ids = (list.body as { id: number }[]).map((x) => x.id);
-      expect(ids).toContain(tid);
+      const listIds = (list.body as { id: number }[]).map((x) => x.id);
+      expect(listIds).toContain(tid);
     });
   });
 });

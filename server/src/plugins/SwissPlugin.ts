@@ -18,6 +18,27 @@ export class SwissPlugin extends BaseTournamentPlugin {
   type = 'SWISS';
   isBasic = true;
 
+  validateCreateRules(participantCount: number, data: any): string | null {
+    // Lazy require avoids circular import via systemConfigService → index → registry
+    const { calculateSwissDefaultRounds, getTournamentRulesConfig } = require('../services/systemConfigService');
+    const rules = getTournamentRulesConfig().swiss;
+    const roundsValue = data?.numberOfRounds ?? data?.additionalData?.numberOfRounds;
+    const numberOfRounds = roundsValue == null
+      ? calculateSwissDefaultRounds(participantCount, rules.maxRoundsDivisor)
+      : Number(roundsValue);
+    const maxRounds = Math.floor(participantCount / rules.maxRoundsDivisor);
+    if (participantCount < rules.minPlayers) {
+      return `Swiss requires at least ${rules.minPlayers} players`;
+    }
+    if (!Number.isInteger(numberOfRounds) || numberOfRounds < 3) {
+      return 'Number of rounds must be at least 3';
+    }
+    if (numberOfRounds > maxRounds) {
+      return `Number of rounds cannot exceed ${maxRounds}`;
+    }
+    return null;
+  }
+
   async createTournament(context: TournamentCreationContext): Promise<any> {
     const { name, participantIds, players, prisma, additionalData } = context;
     

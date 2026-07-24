@@ -6,10 +6,28 @@ import type {
   TournamentScheduleProps,
   TournamentCompletedProps,
   TournamentCreationFlow,
+  Tournament,
 } from '../../../types/tournament';
 import { PreliminaryWithFinalPlayoffPostSelectionFlow } from './PreliminaryWithFinalPlayoffPostSelectionFlow';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
 import { getSystemConfig } from '../../../utils/systemConfig';
+
+function isFinalPhaseChild(_parent: Tournament, child: Tournament): boolean {
+  return child.type === 'PLAYOFF';
+}
+
+function isPreliminaryGroupChild(_parent: Tournament, child: Tournament): boolean {
+  return child.type === 'ROUND_ROBIN';
+}
+
+function partitionChildren(tournament: Tournament) {
+  const children = tournament.childTournaments || [];
+  const preliminaryGroups = children
+    .filter((c) => isPreliminaryGroupChild(tournament, c))
+    .sort((a, b) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
+  const finalTournament = children.find((c) => isFinalPhaseChild(tournament, c));
+  return { preliminaryGroups, finalTournament };
+}
 
 // ─── Active Panel ────────────────────────────────────────────────────────────
 // Shows child tournaments (preliminary groups + playoff if created) with their status
@@ -20,11 +38,7 @@ const PreliminaryWithFinalPlayoffActivePanel: React.FC<TournamentActiveProps> = 
   onError,
   onSuccess,
 }) => {
-  const children = tournament.childTournaments || [];
-  const preliminaryGroups = children
-    .filter((c: any) => c.type === 'ROUND_ROBIN')
-    .sort((a: any, b: any) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
-  const finalTournament = children.find((c: any) => c.type === 'PLAYOFF');
+  const { preliminaryGroups, finalTournament } = partitionChildren(tournament);
 
   const config = tournament.preliminaryConfig;
   const autoQualifiedMemberIds: number[] = config?.autoQualifiedMemberIds || [];
@@ -185,20 +199,16 @@ const PreliminaryWithFinalPlayoffSchedulePanel: React.FC<TournamentScheduleProps
 }) => {
   if (!isExpanded) return null;
 
-  const children = tournament.childTournaments || [];
-  const preliminaryGroups = children
-    .filter((c: any) => c.type === 'ROUND_ROBIN')
-    .sort((a: any, b: any) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
-  const finalTournament = children.find((c: any) => c.type === 'PLAYOFF');
+  const { preliminaryGroups, finalTournament } = partitionChildren(tournament);
 
   return (
     <div style={{ padding: '10px' }}>
       {[...preliminaryGroups, ...(finalTournament ? [finalTournament] : [])].map((child: any) => (
         <div key={child.id} style={{ marginBottom: '15px' }}>
-          <h5 style={{ color: child.type === 'ROUND_ROBIN' ? '#3498db' : '#27ae60', marginBottom: '8px' }}>
+          <h5 style={{ color: isPreliminaryGroupChild(tournament, child) ? '#3498db' : '#27ae60', marginBottom: '8px' }}>
             {child.name}
           </h5>
-          {child.type === 'ROUND_ROBIN' && child.participants && child.participants.length > 0 ? (
+          {isPreliminaryGroupChild(tournament, child) && child.participants && child.participants.length > 0 ? (
             <div style={{ fontSize: '13px' }}>
               {child.matches?.map((match: any) => {
                 const p1 = child.participants?.find((p: any) => p.memberId === match.member1Id);
@@ -231,7 +241,7 @@ const PreliminaryWithFinalPlayoffSchedulePanel: React.FC<TournamentScheduleProps
                 <div style={{ color: '#999', fontStyle: 'italic' }}>No matches yet</div>
               )}
             </div>
-          ) : child.type === 'PLAYOFF' ? (
+          ) : isFinalPhaseChild(tournament, child) ? (
             <div style={{ fontSize: '13px', color: '#666' }}>
               Playoff bracket — view in tournament detail
             </div>
@@ -251,12 +261,7 @@ const PreliminaryWithFinalPlayoffCompletedPanel: React.FC<TournamentCompletedPro
 }) => {
   if (!isExpanded) return null;
 
-  const children = tournament.childTournaments || [];
-  const preliminaryGroups = children
-    .filter((c: any) => c.type === 'ROUND_ROBIN')
-    .sort((a: any, b: any) => (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
-  const finalTournament = children.find((c: any) => c.type === 'PLAYOFF');
-
+  const { preliminaryGroups, finalTournament } = partitionChildren(tournament);
   return (
     <div style={{ padding: '10px' }}>
       {/* Final results first */}
@@ -376,9 +381,9 @@ export const PreliminaryWithFinalPlayoffPlugin: TournamentPlugin = {
   supportsDetailedResultsPrint: false,
   supportsAbbreviatedResultsPrint: false,
 
-  isFinalPhaseChild: (_parent, child) => child.type === 'PLAYOFF',
+  isFinalPhaseChild,
 
-  isPreliminaryGroupChild: (_parent, child) => child.type === 'ROUND_ROBIN',
+  isPreliminaryGroupChild,
 };
 
 export default PreliminaryWithFinalPlayoffPlugin;

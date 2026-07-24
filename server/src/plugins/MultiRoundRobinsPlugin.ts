@@ -7,6 +7,23 @@ import { BaseCompoundTournamentPlugin } from './BaseCompoundTournamentPlugin';
 export class MultiRoundRobinsPlugin extends BaseCompoundTournamentPlugin {
   type = 'MULTI_ROUND_ROBINS';
 
+  validateCreateRules(participantCount: number, data: any): string | null {
+    // Lazy require avoids circular import via systemConfigService → index → registry
+    const { getTournamentRulesConfig } = require('../services/systemConfigService');
+    const rules = getTournamentRulesConfig().multiRoundRobins;
+    if (participantCount < rules.minPlayers) {
+      return `Multi Round Robins requires at least ${rules.minPlayers} players`;
+    }
+    const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
+    if (
+      Number.isInteger(groupSize) &&
+      (groupSize < rules.minGroupSize || groupSize > rules.maxGroupSize)
+    ) {
+      return `Group size must be between ${rules.minGroupSize} and ${rules.maxGroupSize}`;
+    }
+    return null;
+  }
+
   async createTournament(context: TournamentCreationContext): Promise<any> {
     const { name, participantIds, players, prisma, additionalData } = context;
     

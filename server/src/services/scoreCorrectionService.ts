@@ -107,7 +107,9 @@ async function replayPerMatchTournamentRatings(
     .filter((m: any) => !m.player1Forfeit && !m.player2Forfeit)
     .sort((a: any, b: any) => (a.id ?? 0) - (b.id ?? 0));
 
-  const useCurrentMemberRatings = tournament.type === 'PLAYOFF';
+  const useCurrentMemberRatings = Boolean(
+    tournamentPluginRegistry.get(tournament.type).scoreCorrectionUsesCurrentMemberRatings,
+  );
   const completionTime = tournament.recordedAt ?? tournament.createdAt;
 
   for (const match of playedMatches) {
@@ -138,7 +140,7 @@ export async function deleteUnplayedFinalChildIfNeeded(prisma: any, preliminaryC
     where: { id: preliminaryChildId },
     select: { parentTournamentId: true, groupNumber: true, type: true },
   });
-  if (!child?.parentTournamentId || child.groupNumber == null) return null;
+  if (!child?.parentTournamentId) return null;
 
   const parent = await prisma.tournament.findUnique({
     where: { id: child.parentTournamentId },
@@ -146,20 +148,20 @@ export async function deleteUnplayedFinalChildIfNeeded(prisma: any, preliminaryC
   });
   if (!parent) return null;
 
+  const parentPlugin = tournamentPluginRegistry.get(parent.type);
+  if (!parentPlugin.isPreliminaryGroupChild?.(child)) return null;
+
   const siblings = await prisma.tournament.findMany({
     where: { parentTournamentId: parent.id },
     include: { matches: true, bracketMatches: true },
   });
 
-  const finalChild = siblings.find((c: any) => {
-    if (parent.type === 'PRELIMINARY_WITH_FINAL_PLAYOFF') return c.type === 'PLAYOFF';
-    if (parent.type === 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN') {
-      return c.type === 'ROUND_ROBIN' && c.groupNumber == null;
-    }
-    return false;
-  });
+  const finalChild = siblings.find((c: any) => parentPlugin.isFinalPhaseChild?.(c));
 
-  if (!finalChild || await finalPhaseChildHasStarted(prisma, finalChild)) return parent.id;
+  const checkBracket = finalChild
+    ? Boolean(tournamentPluginRegistry.get(finalChild.type).checksBracketMatchesForStarted)
+    : false;
+  if (!finalChild || await finalPhaseChildHasStarted(prisma, finalChild, checkBracket)) return parent.id;
 
   await prisma.tournament.delete({ where: { id: finalChild.id } });
 
@@ -231,7 +233,7 @@ export async function correctCompletedMatchScore(
 
   const ratingReason = 'RESULT_CORRECTED' as const;
 
-  if (tournament.type === 'ROUND_ROBIN') {
+  if (plugin.scoreCorrectionUsesBatchTournamentRatings) {
     await rollbackRoundRobinTournamentRatings(prisma, params.tournamentId);
     const updatedMatch = await prisma.match.update({
       where: { id: params.matchId },

@@ -98,13 +98,7 @@ export async function getCompoundPreliminaryCorrectionBlockReason(
 ): Promise<string | null> {
   if (!tournament.parentTournamentId) return null;
 
-  const isPreliminaryRrChild = tournament.type === 'ROUND_ROBIN' && tournament.groupNumber != null;
-  if (!isPreliminaryRrChild) return null;
-
-  const siblings = await prisma.tournament.findMany({
-    where: { parentTournamentId: tournament.parentTournamentId },
-    include: { matches: true },
-  });
+  const { tournamentPluginRegistry } = await import('./TournamentPluginRegistry');
 
   const parent = await prisma.tournament.findUnique({
     where: { id: tournament.parentTournamentId },
@@ -112,15 +106,23 @@ export async function getCompoundPreliminaryCorrectionBlockReason(
   });
   if (!parent) return null;
 
-  const finalChild = siblings.find((c: any) => {
-    if (parent.type === 'PRELIMINARY_WITH_FINAL_PLAYOFF') return c.type === 'PLAYOFF';
-    if (parent.type === 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN') {
-      return c.type === 'ROUND_ROBIN' && c.groupNumber == null;
-    }
-    return false;
+  const parentPlugin = tournamentPluginRegistry.get(parent.type);
+  if (!parentPlugin.isPreliminaryGroupChild?.(tournament)) return null;
+
+  const siblings = await prisma.tournament.findMany({
+    where: { parentTournamentId: tournament.parentTournamentId },
+    include: { matches: true },
   });
 
-  if (finalChild && await finalPhaseChildHasStarted(prisma, finalChild)) {
+  const finalChild = siblings.find((c: any) => parentPlugin.isFinalPhaseChild?.(c));
+  if (!finalChild) return null;
+
+  const childPlugin = tournamentPluginRegistry.get(finalChild.type);
+  if (await finalPhaseChildHasStarted(
+    prisma,
+    finalChild,
+    Boolean(childPlugin.checksBracketMatchesForStarted),
+  )) {
     return 'The final phase has already started';
   }
 

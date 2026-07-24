@@ -153,7 +153,13 @@ describe('getCompoundPreliminaryCorrectionBlockReason', () => {
   });
 
   it('does not block final-phase child tournaments', async () => {
-    const reason = await getCompoundPreliminaryCorrectionBlockReason({} as any, {
+    const prisma = {
+      tournament: {
+        findUnique: jest.fn().mockResolvedValue({ type: 'PRELIMINARY_WITH_FINAL_PLAYOFF' }),
+      },
+    };
+
+    const reason = await getCompoundPreliminaryCorrectionBlockReason(prisma, {
       parentTournamentId: 1,
       type: 'PLAYOFF',
       groupNumber: null,

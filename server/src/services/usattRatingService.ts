@@ -643,13 +643,17 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
   }
 
   /**
-   * ROUND_ROBIN: always resolve from DB (rating_history), not from post-tournament cache.
-   * Cache entries may have been written by recalculateAllRatings() with raw 4-pass outputs,
-   * while completion applies a different formula (anchor + delta vs enrollment) into
-   * TOURNAMENT_COMPLETED — so cache-first produced wrong standings (e.g. showing another
-   * player's scale / algorithm-only numbers).
+   * Some types (e.g. round robin) always resolve from DB (rating_history), not from
+   * post-tournament cache. Cache entries may have been written by recalculateAllRatings()
+   * with raw 4-pass outputs, while completion applies a different formula (anchor + delta
+   * vs enrollment) into TOURNAMENT_COMPLETED — so cache-first produced wrong standings.
    */
-  if (tournamentInfo.type === 'ROUND_ROBIN') {
+  const { tournamentPluginRegistry } = await import('../plugins/TournamentPluginRegistry');
+  const preferCompletionHistory = Boolean(
+    tournamentPluginRegistry.get(tournamentInfo.type).preferCompletionRatingHistory,
+  );
+
+  if (preferCompletionHistory) {
     let lastEntry: { rating: number | null } | null = null;
     lastEntry = await (prisma as any).ratingHistory.findFirst({
       where: {
@@ -688,7 +692,7 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
     return resolved;
   }
 
-  // Non–round-robin: cache-first for performance
+  // Cache-first for types that do not prefer completion-history resolution
   const cached = getCachedPostTournamentRating(tournamentId, memberId);
   if (cached !== undefined) {
     postTournamentRatings.set(`${tournamentId}-${memberId}`, cached);

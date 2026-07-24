@@ -12,6 +12,19 @@ vi.mock('../../../utils/auth', () => ({
   isKioskMode: () => false,
 }));
 
+vi.mock('../../../utils/systemConfig', () => ({
+  getSystemConfig: () => ({
+    tournamentRules: {
+      matchScore: {
+        min: 0,
+        max: 7,
+        allowEqualScores: false,
+      },
+    },
+  }),
+  subscribeToSystemConfig: () => () => undefined,
+}));
+
 vi.mock('../../../utils/nameFormatter', () => ({
   formatPlayerName: (firstName: string, lastName: string) => `${firstName} ${lastName}`,
   getNameDisplayOrder: () => 'firstLast',
@@ -88,8 +101,8 @@ describe('duplicate score modal flow', () => {
 
     fireEvent.click(screen.getAllByTitle('Enter score')[0]);
     expect(screen.getByTitle('Scores cannot be equal')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Player 1 score'), { target: { value: '3' } });
-    fireEvent.change(screen.getByLabelText('Player 2 score'), { target: { value: '1' } });
+    fireEvent.keyDown(screen.getByLabelText('Player 1 score'), { key: '3' });
+    fireEvent.keyDown(screen.getByLabelText('Player 2 score'), { key: '1' });
 
     fireEvent.click(screen.getByTitle('Enter Score & Complete Match'));
 

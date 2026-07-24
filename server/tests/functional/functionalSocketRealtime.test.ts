@@ -62,9 +62,10 @@ describe('Functional: Socket.io (realtime)', () => {
 
   it('client receives match:updated when organizer records a tournament match', async () => {
     const { token } = await seedOrganizer(prisma);
-    const [a, b] = await seedPlayers(prisma, [
+    const [a, b, c] = await seedPlayers(prisma, [
       { firstName: 'Sock', lastName: 'A', email: 'sock.a@test.local', rating: 1700 },
       { firstName: 'Sock', lastName: 'B', email: 'sock.b@test.local', rating: 1600 },
+      { firstName: 'Sock', lastName: 'C', email: 'sock.c@test.local', rating: 1500 },
     ]);
 
     const created = await request(app)
@@ -73,7 +74,7 @@ describe('Functional: Socket.io (realtime)', () => {
       .send({
         name: 'Socket RR',
         type: 'ROUND_ROBIN',
-        participantIds: [a.id, b.id],
+        participantIds: [a.id, b.id, c.id],
       })
       .expect(201);
 
