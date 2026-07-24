@@ -1,7 +1,7 @@
 import React from 'react';
 import { TournamentScheduleProps } from '../../../types/tournament';
 import { SchedulePanelHeaderActions } from '../SchedulePanelHeaderActions';
-import { buildSwissVisibleSchedule } from '../utils/visibleScheduleUtils';
+import { buildSwissVisibleSchedule } from './swissScheduleUtils';
 
 export const SwissSchedulePanel: React.FC<TournamentScheduleProps> = ({
   tournament,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { TournamentScheduleProps } from '../../../types/tournament';
 import { SchedulePanelHeaderActions } from '../SchedulePanelHeaderActions';
-import { buildPlayoffVisibleSchedule } from '../utils/visibleScheduleUtils';
+import { buildPlayoffVisibleSchedule } from './playoffScheduleUtils';
 
 export const PlayoffSchedulePanel: React.FC<TournamentScheduleProps> = ({
   tournament,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { TournamentCompletedProps } from '../../../types/tournament';
-import { PlayoffBracket } from '../../PlayoffBracket';
+import { PlayoffBracket } from './PlayoffBracket';
 import { useScoreCorrectionModeActive } from '../../../contexts/ScoreCorrectionModeContext';
 import { isOrganizer } from '../../../utils/auth';
 import { ScoreCorrectionBanner } from '../../ScoreCorrectionBanner';

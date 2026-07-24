@@ -1,6 +1,5 @@
 /**
- * Round-robin score writes: universal scoring + RR-specific completion hook.
- * Score rules/endpoints live in matchScoreSubmit; this only wires RR callbacks.
+ * Round-robin plugin: score writes via universal matchScoreSubmit + RR completion hook.
  */
 import {
   clearTournamentMatchScore,

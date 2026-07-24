@@ -1,14 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TraditionalBracket } from './TraditionalBracket';
-import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
-import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
-import { shouldShowScorePinsForMatchEdit } from '../utils/matchScorePayload';
+import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
+import { shouldShowScorePinsForMatchEdit } from '../../../utils/matchScorePayload';
 import {
   shouldSurfaceMatchScoreError,
   upsertTournamentMatchScore,
-} from '../utils/matchScoreSubmit';
-import { updateMatchCountsCache } from './utils/matchCacheUtils';
+} from '../../../utils/matchScoreSubmit';
+import { updateMatchCountsCache } from '../../utils/matchCacheUtils';
 
 interface Member {
   id: number;

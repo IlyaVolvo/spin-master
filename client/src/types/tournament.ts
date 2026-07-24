@@ -239,9 +239,21 @@ export interface TournamentPlugin {
 
   // Print/export
   generatePrintContent?: (tournament: Tournament) => string;
+  /** HTML for the results body (basic tournament print). */
+  buildResultsSectionHtml?: (
+    tournament: Tournament,
+    mode: 'standard' | 'detailed' | 'abbreviated',
+  ) => string;
+  /** HTML for a child section inside a compound parent print. */
+  buildChildResultsSectionHtml?: (
+    tournament: Tournament,
+    mode: 'standard' | 'detailed' | 'abbreviated',
+  ) => string;
 
   // Additional features
   canPrintResults?: boolean;
+  /** When true, schedule print includes a Match # column. */
+  schedulePrintUsesMatchNumberColumn?: boolean;
   /** When true, Detailed results print is offered (basic types; compounds union children). */
   supportsDetailedResultsPrint?: boolean;
   /** When true, Abbreviated results print is offered (basic types; compounds union children). */

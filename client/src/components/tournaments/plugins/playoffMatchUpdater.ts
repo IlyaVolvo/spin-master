@@ -1,6 +1,5 @@
 /**
- * Playoff score writes: universal scoring + playoff bracket preflight / refresh hooks.
- * Score rules/endpoints live in matchScoreSubmit; bracket rules stay playoff-owned.
+ * Playoff plugin: score writes via universal matchScoreSubmit + bracket preflight / refresh hooks.
  */
 import {
   clearTournamentMatchScore,

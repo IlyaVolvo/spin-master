@@ -7,7 +7,7 @@ import { PlayoffSchedulePanel } from './PlayoffSchedulePanel';
 import { PlayoffCompletedPanel } from './PlayoffCompletedPanel';
 import { PlayoffPostSelectionFlow } from './PlayoffPostSelectionFlow';
 import { getSystemConfig } from '../../../utils/systemConfig';
-import { generatePlayoffSchedule } from '../utils/visibleScheduleUtils';
+import { generatePlayoffSchedule } from './playoffScheduleUtils';
 
 const PlayoffBracketWizardStep: React.FC<TournamentCreationStepProps> = ({
   selectedPlayerIds,

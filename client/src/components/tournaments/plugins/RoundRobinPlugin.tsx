@@ -6,6 +6,7 @@ import { RoundRobinSchedulePanel } from './RoundRobinSchedulePanel';
 import { RoundRobinCompletedPanel } from './RoundRobinCompletedPanel';
 import { RoundRobinPostSelectionFlow } from './RoundRobinPostSelectionFlow';
 import { generateRoundRobinSchedule, calculateStandings, buildResultsMatrix, calculatePlayerStats } from './roundRobinUtils';
+import { buildRoundRobinChildResultsHtml, buildRoundRobinResultsSectionHtml } from './roundRobinResultsPrint';
 import { getSystemConfig } from '../../../utils/systemConfig';
 
 // Re-export utility functions for use in other components
@@ -121,6 +122,11 @@ export const RoundRobinPlugin: TournamentPlugin = {
   canPrintResults: true,
   supportsDetailedResultsPrint: false,
   supportsAbbreviatedResultsPrint: true,
+  schedulePrintUsesMatchNumberColumn: true,
+  buildResultsSectionHtml: (tournament, mode) =>
+    buildRoundRobinResultsSectionHtml(tournament, mode),
+  buildChildResultsSectionHtml: (tournament, mode) =>
+    buildRoundRobinChildResultsHtml(tournament, mode),
 };
 
 export default RoundRobinPlugin;

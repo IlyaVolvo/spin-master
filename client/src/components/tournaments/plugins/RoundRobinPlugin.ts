@@ -4,7 +4,7 @@ import { TournamentActiveProps, Tournament } from '../../../types/tournament';
 import { RoundRobinActivePanel } from './RoundRobinActivePanel';
 import { RoundRobinCompletedPanel } from './RoundRobinCompletedPanel';
 import { RoundRobinSchedulePanel } from './RoundRobinSchedulePanel';
-import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
+import { createRoundRobinMatchUpdater } from './roundRobinMatchUpdater';
 
 export class RoundRobinPlugin implements TournamentPlugin {
   async createMatch(matchData: any, callbacks?: any): Promise<any> {

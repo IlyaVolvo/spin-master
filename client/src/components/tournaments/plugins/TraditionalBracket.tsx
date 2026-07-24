@@ -1,27 +1,27 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
-import api from '../utils/api';
-import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
-import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
-import { getMember, isOrganizer } from '../utils/auth';
-import { shouldShowScorePinsForMatchEdit } from '../utils/matchScorePayload';
+import api from '../../../utils/api';
+import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
+import { getMember, isOrganizer } from '../../../utils/auth';
+import { shouldShowScorePinsForMatchEdit } from '../../../utils/matchScorePayload';
 import {
   clearTournamentMatchScore,
   upsertTournamentMatchScore,
-} from '../utils/matchScoreSubmit';
-import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../utils/duplicateScoreError';
-import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
-import { getSystemConfig } from '../utils/systemConfig';
+} from '../../../utils/matchScoreSubmit';
+import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
+import { getPlayoffFirstResultBlockedReason } from './playoffBracketPlayability';
+import { getSystemConfig } from '../../../utils/systemConfig';
 import {
   emptyScoreEntryButtonStyle,
   emptyScoreEntryCellStyle,
   emptyScoreEntryLeftCellStyle,
-} from './emptyScoreEntryStyles';
+} from '../../emptyScoreEntryStyles';
 import {
   correctableCellOutlineStyle,
   correctionPencilStyle,
-} from './scoreCorrectionStyles';
-import { getScoreModificationClickHint } from '../utils/scoreCorrectionUtils';
+} from '../../scoreCorrectionStyles';
+import { getScoreModificationClickHint } from '../../../utils/scoreCorrectionUtils';
 
 interface Member {
   id: number;

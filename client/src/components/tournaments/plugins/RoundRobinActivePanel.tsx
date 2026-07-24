@@ -14,7 +14,7 @@ import {
   isMatchCorrectable,
   shouldOpenCorrectionEditor,
 } from '../../../utils/scoreCorrectionUtils';
-import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
+import { createRoundRobinMatchUpdater } from './roundRobinMatchUpdater';
 import { canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, isScorePinAuthErrorMessage } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { sortParticipantsByRating } from '../utils/participantSort';

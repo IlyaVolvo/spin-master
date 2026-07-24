@@ -17,7 +17,7 @@ vi.mock('../../../utils/nameFormatter', () => ({
   getNameDisplayOrder: () => 'firstLast',
 }));
 
-vi.mock('../utils/roundRobinMatchUpdater', () => ({
+vi.mock('./roundRobinMatchUpdater', () => ({
   createRoundRobinMatchUpdater: () => ({
     createMatch: async (_matchData: unknown, callbacks: { onError?: (message: string) => void }) => {
       callbacks.onError?.(duplicateMessage);

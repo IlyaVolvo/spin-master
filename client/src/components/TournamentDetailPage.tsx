@@ -14,7 +14,7 @@ import {
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { isDateInRange } from '../utils/dateFormatter';
 import { formatActiveTournamentRating } from '../utils/ratingFormatter';
-import { PlayoffBracket } from './PlayoffBracket';
+import { PlayoffBracket } from './tournaments/plugins/PlayoffBracket';
 import { MatchEntryPopup } from './MatchEntryPopup';
 import { connectSocket, disconnectSocket, getSocket } from '../utils/socket';
 import { EmptyState } from './EmptyState';

@@ -6,7 +6,7 @@ import { SwissCompletedPanel } from './SwissCompletedPanel';
 import { SwissPostSelectionFlow } from './SwissPostSelectionFlow';
 import { SwissSchedulePanel } from './SwissSchedulePanel';
 import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
-import { generateSwissSchedule } from '../utils/visibleScheduleUtils';
+import { generateSwissSchedule } from './swissScheduleUtils';
 
 // Swiss icon component
 const SwissIcon: React.FC<{ size: number; color: string }> = ({ size, color }) => (

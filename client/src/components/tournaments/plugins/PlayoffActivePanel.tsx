@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
-import { TraditionalBracket } from '../../TraditionalBracket';
+import { TraditionalBracket } from './TraditionalBracket';
 import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
 import { ScoreCorrectionBanner } from '../../ScoreCorrectionBanner';
 import { useScoreCorrectionPanel } from '../../../hooks/useScoreCorrectionPanel';
-import { createPlayoffMatchUpdater } from '../utils/playoffMatchUpdater';
+import { createPlayoffMatchUpdater } from './playoffMatchUpdater';
 import { shouldShowScorePinsForMatchEdit, isScorePinAuthErrorMessage } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import './PlayoffActivePanel.css';

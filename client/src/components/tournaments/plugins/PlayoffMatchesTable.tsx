@@ -1,16 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
-import { formatActiveTournamentRating } from '../utils/ratingFormatter';
-import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
+import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { formatActiveTournamentRating } from '../../../utils/ratingFormatter';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
 import {
   canOpenTournamentMatchEditor,
   shouldShowScorePinsForMatchEdit,
-} from '../utils/matchScorePayload';
+} from '../../../utils/matchScorePayload';
 import {
   shouldSurfaceMatchScoreError,
   upsertTournamentMatchScore,
-} from '../utils/matchScoreSubmit';
+} from '../../../utils/matchScoreSubmit';
 
 interface Member {
   id: number;

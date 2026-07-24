@@ -1,19 +1,19 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TraditionalBracket } from './TraditionalBracket';
-import { MATCH_RESULT_ALREADY_ENTERED_MESSAGE } from '../utils/duplicateScoreError';
+import { MATCH_RESULT_ALREADY_ENTERED_MESSAGE } from '../../../utils/duplicateScoreError';
 
-vi.mock('../utils/auth', () => ({
+vi.mock('../../../utils/auth', () => ({
   getMember: () => ({ id: 1 }),
   isOrganizer: () => true,
 }));
 
-vi.mock('../utils/nameFormatter', () => ({
+vi.mock('../../../utils/nameFormatter', () => ({
   formatPlayerName: (firstName: string, lastName: string) => `${firstName} ${lastName}`,
   getNameDisplayOrder: () => 'firstLast',
 }));
 
-vi.mock('../utils/api', () => ({
+vi.mock('../../../utils/api', () => ({
   default: {
     delete: vi.fn(),
     patch: vi.fn(),
