@@ -332,10 +332,21 @@ export async function enrichTournamentForApi(prisma: any, tournament: any): Prom
   if (tournament.status === 'COMPLETED') {
     const postRatingMap = new Map<string, number | null>();
     const { getPostTournamentRating } = await import('./usattRatingService');
+
+    const ratingTargets: Array<{ tournamentId: number; memberId: number }> = [];
+    for (const p of tournament.participants ?? []) {
+      ratingTargets.push({ tournamentId: tournament.id, memberId: p.memberId });
+    }
+    for (const child of tournament.childTournaments ?? []) {
+      for (const p of child.participants ?? []) {
+        ratingTargets.push({ tournamentId: child.id, memberId: p.memberId });
+      }
+    }
+
     await Promise.all(
-      (tournament.participants ?? []).map(async (p: { memberId: number }) => {
-        const key = `${tournament.id}-${p.memberId}`;
-        const rating = await getPostTournamentRating(tournament.id, p.memberId);
+      ratingTargets.map(async ({ tournamentId, memberId }) => {
+        const key = `${tournamentId}-${memberId}`;
+        const rating = await getPostTournamentRating(tournamentId, memberId);
         postRatingMap.set(key, rating ?? null);
       }),
     );

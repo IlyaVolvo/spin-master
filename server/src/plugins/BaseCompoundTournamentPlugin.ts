@@ -165,16 +165,18 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
   async enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
     const { tournament, prisma } = context;
     
-    // Fetch child tournaments if not already loaded
+    // Fetch child tournaments if not already loaded (treat empty array as unloaded)
     let children = tournament.childTournaments;
-    if (!children) {
+    if (!Array.isArray(children) || children.length === 0) {
       children = await prisma.tournament.findMany({
         where: { parentTournamentId: tournament.id },
         include: {
           participants: { include: { member: true } },
           matches: true,
+          swissData: true,
           bracketMatches: { include: { match: true } },
         },
+        orderBy: [{ groupNumber: 'asc' }, { id: 'asc' }],
       });
     }
 
@@ -252,16 +254,18 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       };
     });
 
-    // Fetch child tournaments if not already loaded
+    // Fetch child tournaments if not already loaded (treat empty array as unloaded)
     let children = tournament.childTournaments;
-    if (!children) {
+    if (!Array.isArray(children) || children.length === 0) {
       children = await prisma.tournament.findMany({
         where: { parentTournamentId: tournament.id },
         include: {
           participants: { include: { member: true } },
           matches: true,
+          swissData: true,
           bracketMatches: { include: { match: true } },
         },
+        orderBy: [{ groupNumber: 'asc' }, { id: 'asc' }],
       });
     }
 
