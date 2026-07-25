@@ -20,6 +20,21 @@ const History = lazyWithReload(() => import('./components/History'));
 const TournamentRegistrationLink = lazyWithReload(() => import('./components/TournamentRegistrationLink'));
 const SystemSettings = lazyWithReload(() => import('./components/SystemSettings'));
 const ClubCheckin = lazyWithReload(() => import('./components/ClubCheckin'));
+const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
+const PublicResultsLatestPage = lazyWithReload(() =>
+  import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsLatestPage })),
+);
+const PublicResultsDetailPage = lazyWithReload(() =>
+  import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsDetailPage })),
+);
+
+function isUnauthenticatedPublicPath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/tournament-registration/') ||
+    pathname.startsWith('/public/results') ||
+    pathname === '/club/checkin'
+  );
+}
 
 /** Only render detail for positive numeric ids; otherwise bounce to the list. */
 function TournamentDetailGate() {
@@ -281,8 +296,50 @@ function App() {
     setIsAuth(false);
   };
 
-  // Show loading state while checking auth
-  if (isCheckingAuth) {
+  return (
+    <Router>
+      <ScrollToTop />
+      <RoleTutorialsSpaRedirect />
+      <AppRoutes
+        isCheckingAuth={isCheckingAuth}
+        isAuth={isAuth}
+        clubName={clubName}
+        authExpiredMessage={authExpiredMessage}
+        handleLogin={handleLogin}
+        handleLogout={handleLogout}
+        showPasswordReset={showPasswordReset}
+        setShowPasswordReset={setShowPasswordReset}
+        setMember={setMember}
+      />
+    </Router>
+  );
+}
+
+function AppRoutes({
+  isCheckingAuth,
+  isAuth,
+  clubName,
+  authExpiredMessage,
+  handleLogin,
+  handleLogout,
+  showPasswordReset,
+  setShowPasswordReset,
+  setMember,
+}: {
+  isCheckingAuth: boolean;
+  isAuth: boolean;
+  clubName: string | null;
+  authExpiredMessage: string | null;
+  handleLogin: () => void | Promise<void>;
+  handleLogout: () => void;
+  showPasswordReset: boolean;
+  setShowPasswordReset: (show: boolean) => void;
+  setMember: (member: any) => void;
+}) {
+  const location = useLocation();
+  const publicPath = isUnauthenticatedPublicPath(location.pathname);
+
+  if (!publicPath && isCheckingAuth) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <div>Loading...</div>
@@ -291,68 +348,149 @@ function App() {
   }
 
   return (
-    <Router>
-      <ScrollToTop />
-      <RoleTutorialsSpaRedirect />
-      {window.location.pathname.startsWith('/tournament-registration/') || (!isAuth && window.location.pathname === '/club/checkin') ? (
-        <ErrorBoundary>
-          <Suspense fallback={<div>Loading...</div>}>
-            <Routes>
-              <Route path="/tournament-registration/:code" element={<TournamentRegistrationLink />} />
-              <Route path="/club/checkin" element={<ClubCheckin />} />
-            </Routes>
-          </Suspense>
-        </ErrorBoundary>
-      ) : !isAuth ? (
-        <ErrorBoundary>
-        <Login onLogin={handleLogin} clubName={clubName} initialMessage={authExpiredMessage} />
-        </ErrorBoundary>
-      ) : (
-        <>
-          <AuthRedirect />
-          <div className="container">
-            <Header onLogout={handleLogout} clubName={clubName} />
-            <ErrorBoundary>
-            <Suspense fallback={
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh', fontSize: '18px' }}>
-                Loading...
-              </div>
-            }>
-              <Routes>
-                <Route path="/" element={<Navigate to="/players" replace />} />
-                <Route path="/players" element={<Players />} />
-                <Route path="/tournaments" element={<Tournaments />} />
-                <Route path="/tournaments/:id" element={<TournamentDetailGate />} />
-                <Route path="/statistics" element={<Statistics />} />
-                <Route path="/history" element={<History />} />
-                <Route path="/system-settings" element={<SystemSettings />} />
-                <Route path="/club/checkin" element={<ClubCheckin />} />
-              </Routes>
+    <Routes>
+      <Route
+        path="/tournament-registration/:code"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <TournamentRegistrationLink />
             </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/club/checkin"
+        element={
+          isAuth ? (
+            <>
+              <AuthRedirect />
+              <div className="container">
+                <Header onLogout={handleLogout} clubName={clubName} />
+                <ErrorBoundary>
+                  <Suspense fallback={<div>Loading...</div>}>
+                    <ClubCheckin />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+              {showPasswordReset && (
+                <PasswordResetModal
+                  onPasswordChanged={async () => {
+                    try {
+                      const response = await api.get('/auth/member/me');
+                      if (response.data.member) {
+                        setMember(response.data.member);
+                        setShowPasswordReset(false);
+                      }
+                    } catch (err) {
+                      setShowPasswordReset(false);
+                    }
+                  }}
+                />
+              )}
+            </>
+          ) : (
+            <ErrorBoundary>
+              <Suspense fallback={<div>Loading...</div>}>
+                <ClubCheckin />
+              </Suspense>
             </ErrorBoundary>
-          </div>
-          
-          {/* Password Reset Modal - shown when mustResetPassword is true */}
-          {showPasswordReset && (
-            <PasswordResetModal
-              onPasswordChanged={async () => {
-                // Refresh member data
-                try {
-                  const response = await api.get('/auth/member/me');
-                  if (response.data.member) {
-                    setMember(response.data.member);
-                    setShowPasswordReset(false);
-                  }
-                } catch (err) {
-                  // Error refreshing, but password was changed
-                  setShowPasswordReset(false);
-                }
-              }}
-            />
-          )}
-        </>
-      )}
-    </Router>
+          )
+        }
+      />
+      <Route
+        path="/public/results/list"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PublicResultsListPage />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route path="/public/results" element={<Navigate to="/public/results/latest" replace />} />
+      <Route
+        path="/public/results/latest"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PublicResultsLatestPage />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/public/results/:id"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PublicResultsDetailPage />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="*"
+        element={
+          !isAuth ? (
+            <ErrorBoundary>
+              <Login onLogin={handleLogin} clubName={clubName} initialMessage={authExpiredMessage} />
+            </ErrorBoundary>
+          ) : (
+            <>
+              <AuthRedirect />
+              <div className="container">
+                <Header onLogout={handleLogout} clubName={clubName} />
+                <ErrorBoundary>
+                  <Suspense
+                    fallback={
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          height: '50vh',
+                          fontSize: '18px',
+                        }}
+                      >
+                        Loading...
+                      </div>
+                    }
+                  >
+                    <Routes>
+                      <Route path="/" element={<Navigate to="/players" replace />} />
+                      <Route path="/players" element={<Players />} />
+                      <Route path="/tournaments" element={<Tournaments />} />
+                      <Route path="/tournaments/:id" element={<TournamentDetailGate />} />
+                      <Route path="/statistics" element={<Statistics />} />
+                      <Route path="/history" element={<History />} />
+                      <Route path="/system-settings" element={<SystemSettings />} />
+                      <Route path="/club/checkin" element={<ClubCheckin />} />
+                    </Routes>
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+
+              {showPasswordReset && (
+                <PasswordResetModal
+                  onPasswordChanged={async () => {
+                    try {
+                      const response = await api.get('/auth/member/me');
+                      if (response.data.member) {
+                        setMember(response.data.member);
+                        setShowPasswordReset(false);
+                      }
+                    } catch (err) {
+                      setShowPasswordReset(false);
+                    }
+                  }}
+                />
+              )}
+            </>
+          )
+        }
+      />
+    </Routes>
   );
 }
 
