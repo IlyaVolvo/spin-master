@@ -7,6 +7,10 @@ import {
   toggleRangeInSelectionWithAddGate,
 } from '../../utils/shiftRangeSelection';
 import { useShiftRangeAnchor } from './useShiftRangeAnchor';
+import {
+  saveLastTournamentId,
+  saveShouldRestoreDetail,
+} from '../../utils/tournamentNavState';
 
 type TournamentCreationStep = 'type_selection' | 'player_selection' | 'plugin_flow';
 
@@ -275,14 +279,23 @@ export function useTournamentCreation({
   };
 
   // Called by plugin post-selection flow when tournament is created successfully
-  const handleTournamentCreated = () => {
+  const handleTournamentCreated = (createdTournamentId?: number) => {
+    const modifiedId = editingTournamentId;
     resetState();
     setTournamentCreationStep('type_selection');
     setCreationTournamentType(null);
     fetchMembersRef.current?.();
 
     setTimeout(() => {
-      navigate('/tournaments');
+      const targetId = createdTournamentId ?? modifiedId ?? undefined;
+      if (typeof targetId === 'number' && Number.isFinite(targetId) && targetId > 0) {
+        saveLastTournamentId(targetId);
+        saveShouldRestoreDetail(true);
+        navigate(`/tournaments/${targetId}`);
+      } else {
+        saveShouldRestoreDetail(false);
+        navigate('/tournaments');
+      }
     }, 1000);
   };
 

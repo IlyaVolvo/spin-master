@@ -4,7 +4,7 @@ import SystemSettings from './SystemSettings';
 
 const mockConfig = {
   branding: { clubName: 'Initial Club' },
-  authPolicy: { minimumPasswordLength: 6, passwordResetTokenTtlHours: 1 },
+  authPolicy: { minimumPasswordLength: 6, passwordResetTokenTtlHours: 1, pinLength: 4, autoRelinquishPrivileges: false, autoRelinquishIdleMinutes: 5 },
   preregistration: {
     defaultTournamentOffsetDays: 1,
     defaultTournamentTime: '18:00',
@@ -21,7 +21,7 @@ const mockConfig = {
     roundRobin: { minPlayers: 3, maxPlayers: 32 },
     playoff: { minPlayers: 2, seedDivisor: 4 },
     swiss: { minPlayers: 6, pairByRating: true, maxRoundsDivisor: 2 },
-    multiRoundRobins: { minPlayers: 6, minGroupSize: 3, minGroups: 2 },
+    multiRoundRobins: { minPlayers: 6, minGroupSize: 3, maxGroupSize: 12, minGroups: 2 },
     preliminary: {
       groupSizeMin: 3,
       groupSizeMax: 12,

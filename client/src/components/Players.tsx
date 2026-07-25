@@ -6,7 +6,9 @@ import 'react-datepicker/dist/react-datepicker.css';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder, setNameDisplayOrder, NameDisplayOrder } from '../utils/nameFormatter';
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
-import { getMember, setMember, isOrganizer, isAdmin } from '../utils/auth';
+import { getMember, setMember, isOrganizer, isAdmin, isKioskMode } from '../utils/auth';
+import { parseInvalidScorePinsFromError } from '../utils/matchScorePayload';
+import { createStandaloneMatchScore } from '../utils/matchScoreSubmit';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
 import type { TournamentType } from '../types/tournament';
 import type { Member, SimilarName, ImportParseReport, PlayerImportResultsPayload, PendingPlayerData } from '../types/member';
@@ -17,6 +19,8 @@ import {
   calculateMemberAge,
 } from './players/memberFormUtils.ts';
 import { AddPlayerModal } from './players/AddPlayerModal.tsx';
+import { BoundedNumericInput } from './BoundedNumericInput';
+import { getSystemConfig } from '../utils/systemConfig';
 import { SimilarNamesConfirmationModal } from './players/SimilarNamesConfirmationModal.tsx';
 import { calcAllowBirthDateInput, getEditBirthDateFieldError } from './players/playerEditBirthDateRules.ts';
 import { SuspiciousRatingConfirmModal } from './players/SuspiciousRatingConfirmModal.tsx';
@@ -25,6 +29,7 @@ import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } fro
 import { useTournamentCreation } from './hooks/useTournamentCreation';
 import { useShiftRangeAnchor } from './hooks/useShiftRangeAnchor';
 import { usePlayerData, membersCache } from './hooks/usePlayerData';
+import { extractCreatedTournamentId } from '../utils/extractCreatedTournamentId';
 import {
   getShiftRangeSlice,
   shiftKeyFromCheckboxChange,
@@ -71,6 +76,7 @@ type PlayerEditBaseline = {
   tournamentNotificationsEnabled: boolean;
   rolesKey: string;
   rating: string;
+  autoRelinquishKey: 'default' | 'always' | 'never';
 };
 
 type AddDuplicateCheckResult = {
@@ -122,6 +128,12 @@ const clampDeadlineToTournamentDate = (deadlineValue: string, tournamentDateValu
   return deadline > tournamentDate ? tournamentDateValue : deadlineValue;
 };
 
+function autoRelinquishKeyFromMember(value: boolean | null | undefined): 'default' | 'always' | 'never' {
+  if (value === true) return 'always';
+  if (value === false) return 'never';
+  return 'default';
+}
+
 function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
   const bd = member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null;
   return {
@@ -138,6 +150,7 @@ function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
     tournamentNotificationsEnabled: Boolean(member.tournamentNotificationsEnabled && member.email),
     rolesKey: [...(member.roles || [])].sort().join(','),
     rating: member.rating !== null && member.rating !== undefined ? String(member.rating) : '',
+    autoRelinquishKey: autoRelinquishKeyFromMember(member.autoRelinquishPrivileges),
   };
 }
 
@@ -297,7 +310,7 @@ const Players: React.FC = () => {
   const [isRecordingMatch, setIsRecordingMatch] = useState(false);
   const [selectedPlayersForMatch, setSelectedPlayersForMatch] = useState<number[]>([]);
   const [showMatchScoreModal, setShowMatchScoreModal] = useState(false);
-  const [matchStep, setMatchStep] = useState<'password' | 'score'>('score');
+  const [matchStep, setMatchStep] = useState<'score'>('score');
   const [matchPlayer1Sets, setMatchPlayer1Sets] = useState('');
   const [matchPlayer2Sets, setMatchPlayer2Sets] = useState('');
 
@@ -323,7 +336,9 @@ const Players: React.FC = () => {
     }
   };
 
-  const [matchOpponentPassword, setMatchOpponentPassword] = useState('');
+  const [matchMember1Pin, setMatchMember1Pin] = useState('');
+  const [matchMember2Pin, setMatchMember2Pin] = useState('');
+  const [matchInvalidPins, setMatchInvalidPins] = useState({ member1: false, member2: false });
   const [matchError, setMatchError] = useState('');
   const [matchLoading, setMatchLoading] = useState(false);
   
@@ -342,6 +357,7 @@ const Players: React.FC = () => {
   const [editTournamentNotificationsEnabled, setEditTournamentNotificationsEnabled] = useState(false);
   const [editRoles, setEditRoles] = useState<string[]>([]);
   const [editRating, setEditRating] = useState('');
+  const [editAutoRelinquishKey, setEditAutoRelinquishKey] = useState<'default' | 'always' | 'never'>('default');
   const [lastConfirmedEditRating, setLastConfirmedEditRating] = useState('');
   
   // Password change state (only visible to the member themselves)
@@ -353,6 +369,13 @@ const Players: React.FC = () => {
   const [isValidatingCurrentPassword, setIsValidatingCurrentPassword] = useState(false);
   const [isCurrentPasswordVerified, setIsCurrentPasswordVerified] = useState(false);
   const [currentPasswordValidationMessage, setCurrentPasswordValidationMessage] = useState('');
+  const [scorePinDisplay, setScorePinDisplay] = useState<string | null>(null);
+  const [scorePinLoading, setScorePinLoading] = useState(false);
+  const [scorePinDraft, setScorePinDraft] = useState('');
+  const [scorePinConfirm, setScorePinConfirm] = useState('');
+  const [showScorePinChange, setShowScorePinChange] = useState(false);
+  const [scorePinError, setScorePinError] = useState('');
+  const [scorePinSuccess, setScorePinSuccess] = useState('');
   
   // Password reset state (only visible to Admins)
   const [isPasswordResetLocked, setIsPasswordResetLocked] = useState(false);
@@ -1324,10 +1347,10 @@ const Players: React.FC = () => {
     }
   };
 
-  const handleEditRatingBlur = async () => {
+  const handleEditRatingBlur = async (ratingOverride?: string) => {
     setEditFieldTouched(prev => ({ ...prev, rating: true }));
 
-    const trimmedRating = editRating.trim();
+    const trimmedRating = (ratingOverride ?? editRating).trim();
     const previousRating = lastConfirmedEditRating;
 
     if (
@@ -1346,10 +1369,10 @@ const Players: React.FC = () => {
     }
 
     if (isValidRatingInput(trimmedRating)) {
-      setLastConfirmedEditRating(editRating);
+      setLastConfirmedEditRating(ratingOverride ?? editRating);
     }
 
-    const error = validateEditField('rating', editRating);
+    const error = validateEditField('rating', ratingOverride ?? editRating);
     setEditFieldErrors(prev => ({ ...prev, rating: error }));
   };
 
@@ -1907,12 +1930,14 @@ const Players: React.FC = () => {
       return comparison;
     };
 
-    /** Rows without birth date always sort last (every column / direction). */
+    /** Rows without birth date sort last only when sorting by age. */
     const getComparison = (a: Member, b: Member): number => {
-      const aMiss = !hasBirthDateKey(a);
-      const bMiss = !hasBirthDateKey(b);
-      if (aMiss !== bMiss) {
-        return aMiss ? 1 : -1;
+      if (sortColumn === 'age') {
+        const aMiss = !hasBirthDateKey(a);
+        const bMiss = !hasBirthDateKey(b);
+        if (aMiss !== bMiss) {
+          return aMiss ? 1 : -1;
+        }
       }
       const comparison = compareBySelectedColumn(a, b);
       return sortDirection === 'asc' ? comparison : -comparison;
@@ -2045,6 +2070,7 @@ const Players: React.FC = () => {
       setEditTournamentNotificationsEnabled(Boolean(member.email && member.tournamentNotificationsEnabled));
       setEditRoles(member.roles || []);
       setEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
+      setEditAutoRelinquishKey(autoRelinquishKeyFromMember(member.autoRelinquishPrivileges));
       setLastConfirmedEditRating(member.rating !== null && member.rating !== undefined ? String(member.rating) : '');
       setIsPasswordResetLocked(false);
       playerEditBaselineRef.current = buildPlayerEditBaseline(member);
@@ -2124,6 +2150,7 @@ const Players: React.FC = () => {
     setEditIsActive(true);
     setEditTournamentNotificationsEnabled(false);
     setEditRoles([]);
+    setEditAutoRelinquishKey('default');
     setEditRating('');
     setLastConfirmedEditRating('');
     setEditFieldErrors({});
@@ -2139,6 +2166,13 @@ const Players: React.FC = () => {
     setIsValidatingCurrentPassword(false);
     setIsCurrentPasswordVerified(false);
     setCurrentPasswordValidationMessage('');
+    setScorePinDisplay(null);
+    setScorePinLoading(false);
+    setScorePinDraft('');
+    setScorePinConfirm('');
+    setShowScorePinChange(false);
+    setScorePinError('');
+    setScorePinSuccess('');
     playerEditBaselineRef.current = null;
     // Clear editOwnProfile state if it exists to prevent re-triggering
     if (location.state?.editOwnProfile) {
@@ -2150,8 +2184,43 @@ const Players: React.FC = () => {
   };
 
   /** True when profile fields differ from snapshot taken when the edit panel opened (password reset / lock state ignored). */
+  const hasPendingScorePinChange = (): boolean =>
+    showScorePinChange && (scorePinDraft.length > 0 || scorePinConfirm.length > 0);
+
+  const validatePendingScorePin = (): string | null => {
+    if (!hasPendingScorePinChange()) return null;
+    const pinLength = getSystemConfig().authPolicy.pinLength;
+    if (!/^\d+$/.test(scorePinDraft) || scorePinDraft.length !== pinLength) {
+      return `PIN must be exactly ${pinLength} digits`;
+    }
+    if (scorePinDraft !== scorePinConfirm) {
+      return 'PIN confirmation does not match';
+    }
+    return null;
+  };
+
+  const saveScorePinIfPending = async (memberId: number): Promise<boolean> => {
+    if (!hasPendingScorePinChange()) return true;
+    const pinError = validatePendingScorePin();
+    if (pinError) {
+      setScorePinError(pinError);
+      return false;
+    }
+    const res = await api.post(`/players/${memberId}/set-score-pin`, {
+      scorePin: scorePinDraft,
+    });
+    setScorePinDisplay(res.data.scorePin);
+    setShowScorePinChange(false);
+    setScorePinDraft('');
+    setScorePinConfirm('');
+    setScorePinError('');
+    setScorePinSuccess('Score PIN updated');
+    return true;
+  };
+
   const hasPlayerEditChanges = (): boolean => {
     if (!editingPlayerId || !playerEditBaselineRef.current) return false;
+    if (hasPendingScorePinChange()) return true;
     const b = playerEditBaselineRef.current;
     const cm = getMember();
     const isAdminUser = isAdmin();
@@ -2174,8 +2243,12 @@ const Players: React.FC = () => {
         editIsActive !== b.isActive ||
         (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
         rolesKey !== b.rolesKey ||
-        editRating.trim() !== b.rating.trim()
+        editRating.trim() !== b.rating.trim() ||
+        editAutoRelinquishKey !== b.autoRelinquishKey
       );
+    }
+    if (isAdminUser && editAutoRelinquishKey !== b.autoRelinquishKey) {
+      return true;
     }
     return (
       editEmail !== b.email ||
@@ -2196,6 +2269,8 @@ const Players: React.FC = () => {
 
     setError('');
     setSuccess('');
+    setScorePinError('');
+    setScorePinSuccess('');
 
     const currentMember = getMember();
     const isAdminUser = isAdmin();
@@ -2205,6 +2280,47 @@ const Players: React.FC = () => {
     // Validate permissions
     if (!isAdminUser && !isEditingSelf) {
       setError('You can only edit your own profile');
+      return;
+    }
+
+    const pinOnlyChange =
+      hasPendingScorePinChange() &&
+      (() => {
+        // Profile unchanged except for PIN drafts
+        const b = playerEditBaselineRef.current;
+        if (!b) return false;
+        const birthMs = editBirthDate ? editBirthDate.getTime() : null;
+        const rolesKey = [...editRoles].sort().join(',');
+        const profileChanged =
+          editFirstName !== b.firstName ||
+          editLastName !== b.lastName ||
+          editEmail !== b.email ||
+          (editGender || '') !== (b.gender || '') ||
+          birthMs !== b.birthDateMs ||
+          editPhone !== b.phone ||
+          editAddress !== b.address ||
+          editPicture !== b.picture ||
+          editIsActive !== b.isActive ||
+          (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
+          rolesKey !== b.rolesKey ||
+          editRating.trim() !== b.rating.trim() ||
+          editAutoRelinquishKey !== b.autoRelinquishKey;
+        return !profileChanged;
+      })();
+
+    if (pinOnlyChange) {
+      try {
+        const ok = await saveScorePinIfPending(editingPlayerId);
+        if (!ok) return;
+        setSuccess('Score PIN updated');
+        // Keep modal open so the user sees the updated PIN; refresh baseline for pin-only
+        playerEditBaselineRef.current = {
+          ...playerEditBaselineRef.current!,
+        };
+        setShowScorePinChange(false);
+      } catch (err: any) {
+        setScorePinError(err.response?.data?.error || 'Failed to update PIN');
+      }
       return;
     }
 
@@ -2267,6 +2383,11 @@ const Players: React.FC = () => {
           updateData.birthDate = null;
         }
       }
+
+      if (isAdminUser) {
+        updateData.autoRelinquishPrivileges =
+          editAutoRelinquishKey === 'always' ? true : editAutoRelinquishKey === 'never' ? false : null;
+      }
       
       // Both admin and regular members can edit these fields
       updateData.email = editEmail.trim() === '' ? null : editEmail.trim();
@@ -2275,8 +2396,14 @@ const Players: React.FC = () => {
       updateData.address = editAddress.trim() || null;
       updateData.picture = editPicture.trim() || null;
 
+      const hadPendingPin = hasPendingScorePinChange();
+      const pinOk = await saveScorePinIfPending(editingPlayerId);
+      if (!pinOk) {
+        return;
+      }
+
       await api.patch(`/players/${editingPlayerId}`, updateData);
-      setSuccess('Member updated successfully');
+      setSuccess(hadPendingPin ? 'Member and score PIN updated successfully' : 'Member updated successfully');
       // Clear editOwnProfile state if it exists before calling handleCancelEdit
       if (location.state?.editOwnProfile) {
         navigate('/players', { 
@@ -2552,7 +2679,9 @@ const Players: React.FC = () => {
     setMatchError('');
     setMatchPlayer1Sets('');
     setMatchPlayer2Sets('');
-    setMatchOpponentPassword('');
+    setMatchMember1Pin('');
+    setMatchMember2Pin('');
+    setMatchInvalidPins({ member1: false, member2: false });
     setMatchLoading(false);
     setShowMatchScoreModal(false);
     if (isUserOrganizer) {
@@ -2571,7 +2700,9 @@ const Players: React.FC = () => {
     setMatchStep('score');
     setMatchPlayer1Sets('');
     setMatchPlayer2Sets('');
-    setMatchOpponentPassword('');
+    setMatchMember1Pin('');
+    setMatchMember2Pin('');
+    setMatchInvalidPins({ member1: false, member2: false });
     setMatchError('');
     setMatchLoading(false);
   };
@@ -2599,12 +2730,9 @@ const Players: React.FC = () => {
         setMatchError('');
         setMatchPlayer1Sets('');
         setMatchPlayer2Sets('');
-        setMatchOpponentPassword('');
-        if (isUserOrganizer) {
-          setMatchStep('score');
-        } else {
-          setMatchStep('password');
-        }
+        setMatchMember1Pin('');
+        setMatchMember2Pin('');
+        setMatchStep('score');
         setShowMatchScoreModal(true);
       }
     }
@@ -2618,22 +2746,10 @@ const Players: React.FC = () => {
     setMatchError('');
     setMatchPlayer1Sets('');
     setMatchPlayer2Sets('');
-    setMatchOpponentPassword('');
-    if (isUserOrganizer) {
-      setMatchStep('score');
-    } else {
-      setMatchStep('password');
-    }
-    setShowMatchScoreModal(true);
-  };
-
-  const handleRecordMatchPasswordConfirm = () => {
-    if (!matchOpponentPassword.trim()) {
-      setMatchError('Please enter opponent password');
-      return;
-    }
+    setMatchMember1Pin('');
+    setMatchMember2Pin('');
     setMatchStep('score');
-    setMatchError('');
+    setShowMatchScoreModal(true);
   };
 
   const handleRecordMatchSubmit = async () => {
@@ -2650,25 +2766,42 @@ const Players: React.FC = () => {
       setMatchError('Please enter match scores');
       return;
     }
+    if (isKioskMode() && (!matchMember1Pin.trim() || !matchMember2Pin.trim())) {
+      setMatchError('Both participant PINs are required in kiosk mode');
+      return;
+    }
     setMatchLoading(true);
     setMatchError('');
+    setMatchInvalidPins({ member1: false, member2: false });
     try {
-      const payload: any = {
-        member1Id,
-        member2Id,
-        player1Sets: p1Sets,
-        player2Sets: p2Sets,
-      };
-      if (!isUserOrganizer && matchOpponentPassword.trim()) {
-        payload.opponentPassword = matchOpponentPassword;
-      }
-      await api.post('/tournaments/matches/create', payload);
+      await createStandaloneMatchScore({
+        matchData: {
+          member1Id,
+          member2Id,
+          player1Sets: p1Sets,
+          player2Sets: p2Sets,
+        },
+        pins: isKioskMode()
+          ? { member1Pin: matchMember1Pin, member2Pin: matchMember2Pin }
+          : undefined,
+      });
       setSuccess('Match recorded successfully');
       handleCancelRecordMatch();
       fetchMembers();
-    } catch (err: any) {
-      const msg = err.response?.data?.error || 'Failed to record match';
-      setMatchError(msg);
+    } catch (err: unknown) {
+      const enriched = err instanceof Error ? err : new Error('Failed to record match');
+      const pins = parseInvalidScorePinsFromError(enriched);
+      if (pins && (pins.member1 || pins.member2)) {
+        setMatchInvalidPins({
+          member1: pins.member1 === true,
+          member2: pins.member2 === true,
+        });
+        if (pins.member1) setMatchMember1Pin('');
+        if (pins.member2) setMatchMember2Pin('');
+        setMatchError('');
+      } else {
+        setMatchError(enriched.message || 'Failed to record match');
+      }
     } finally {
       setMatchLoading(false);
     }
@@ -2684,7 +2817,7 @@ const Players: React.FC = () => {
       return;
     }
     try {
-      await api.post('/tournaments/preregistration', {
+      const response = await api.post('/tournaments/preregistration', {
         name: tournamentName.trim() || undefined,
         type: creationTournamentType,
         tournamentDate: preregistrationTournamentDate || undefined,
@@ -2701,7 +2834,7 @@ const Players: React.FC = () => {
       setPreregistrationMaxRating('');
       setPreregistrationMaxParticipants('');
       window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
-      handleTournamentCreated();
+      handleTournamentCreated(extractCreatedTournamentId(response.data));
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create tournament preregistration');
     }
@@ -3538,31 +3671,35 @@ const Players: React.FC = () => {
                             />
                           </div>
                           <div className="form-group">
-                            <label>Minimum Rating</label>
-                            <input
-                              type="number"
-                              value={preregistrationMinRating}
-                              onChange={(e) => setPreregistrationMinRating(e.target.value)}
+                            <BoundedNumericInput
+                              label="Minimum Rating"
+                              min={getSystemConfig().ratingValidation.ratingInputMin}
+                              max={getSystemConfig().ratingValidation.ratingInputMax}
+                              value={preregistrationMinRating === '' ? null : Number(preregistrationMinRating)}
+                              allowEmpty
                               placeholder="No minimum"
+                              onChange={(value) => setPreregistrationMinRating(value === null ? '' : String(value))}
                             />
                           </div>
                           <div className="form-group">
-                            <label>Maximum Rating</label>
-                            <input
-                              type="number"
-                              value={preregistrationMaxRating}
-                              onChange={(e) => setPreregistrationMaxRating(e.target.value)}
+                            <BoundedNumericInput
+                              label="Maximum Rating"
+                              min={getSystemConfig().ratingValidation.ratingInputMin}
+                              max={getSystemConfig().ratingValidation.ratingInputMax}
+                              value={preregistrationMaxRating === '' ? null : Number(preregistrationMaxRating)}
+                              allowEmpty
                               placeholder="No maximum"
+                              onChange={(value) => setPreregistrationMaxRating(value === null ? '' : String(value))}
                             />
                           </div>
                           <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                            <label>Max Participants</label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={preregistrationMaxParticipants}
-                              onChange={(e) => setPreregistrationMaxParticipants(e.target.value)}
+                            <BoundedNumericInput
+                              label="Max Participants"
+                              min={1}
+                              value={preregistrationMaxParticipants === '' ? null : Number(preregistrationMaxParticipants)}
+                              allowEmpty
                               placeholder="Unlimited"
+                              onChange={(value) => setPreregistrationMaxParticipants(value === null ? '' : String(value))}
                             />
                           </div>
                         </div>
@@ -3826,7 +3963,7 @@ const Players: React.FC = () => {
                               fontWeight: 'bold',
                             }}
                           >
-                            Cancel
+                            Back
                           </button>
                         </>
                       );
@@ -4730,48 +4867,40 @@ const Players: React.FC = () => {
                 📊 Rating
               </label>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <input
+                <BoundedNumericInput
                   id="minRating"
-                  type="number"
-                  value={minRating}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setMinRating(value);
-                    localStorage.setItem('players_minRating', value);
-                  }}
-                  min="0"
-                  max="9999"
+                  min={getSystemConfig().ratingValidation.ratingInputMin}
+                  max={getSystemConfig().ratingValidation.ratingInputMax}
+                  value={minRating === '' ? null : Number(minRating)}
+                  allowEmpty
                   placeholder="Min"
-                  style={{
-                    flex: '1',
-                    padding: '8px',
-                    fontSize: '13px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxSizing: 'border-box',
+                  showRangeHint={false}
+                  aria-label="Minimum rating filter"
+                  onChange={(value) => {
+                    const next = value === null ? '' : String(value);
+                    setMinRating(next);
+                    localStorage.setItem('players_minRating', next);
                   }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ padding: '8px', fontSize: '13px' }}
                 />
                 <span style={{ fontSize: '12px', color: '#666' }}>to</span>
-                <input
+                <BoundedNumericInput
                   id="maxRating"
-                  type="number"
-                  value={maxRating}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setMaxRating(value);
-                    localStorage.setItem('players_maxRating', value);
-                  }}
-                  min="0"
-                  max="9999"
+                  min={getSystemConfig().ratingValidation.ratingInputMin}
+                  max={getSystemConfig().ratingValidation.ratingInputMax}
+                  value={maxRating === '' ? null : Number(maxRating)}
+                  allowEmpty
                   placeholder="Max"
-                  style={{
-                    flex: '1',
-                    padding: '8px',
-                    fontSize: '13px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxSizing: 'border-box',
+                  showRangeHint={false}
+                  aria-label="Maximum rating filter"
+                  onChange={(value) => {
+                    const next = value === null ? '' : String(value);
+                    setMaxRating(next);
+                    localStorage.setItem('players_maxRating', next);
                   }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ padding: '8px', fontSize: '13px' }}
                 />
               </div>
             </div>
@@ -4781,48 +4910,40 @@ const Players: React.FC = () => {
                 🎂 Age
               </label>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <input
+                <BoundedNumericInput
                   id="minAge"
-                  type="number"
-                  value={minAge}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setMinAge(value);
-                    localStorage.setItem('players_minAge', value);
-                  }}
-                  min="0"
-                  max="150"
+                  min={0}
+                  max={150}
+                  value={minAge === '' ? null : Number(minAge)}
+                  allowEmpty
                   placeholder="Min"
-                  style={{
-                    flex: '1',
-                    padding: '8px',
-                    fontSize: '13px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxSizing: 'border-box',
+                  showRangeHint={false}
+                  aria-label="Minimum age filter"
+                  onChange={(value) => {
+                    const next = value === null ? '' : String(value);
+                    setMinAge(next);
+                    localStorage.setItem('players_minAge', next);
                   }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ padding: '8px', fontSize: '13px' }}
                 />
                 <span style={{ fontSize: '12px', color: '#666' }}>to</span>
-                <input
+                <BoundedNumericInput
                   id="maxAge"
-                  type="number"
-                  value={maxAge}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setMaxAge(value);
-                    localStorage.setItem('players_maxAge', value);
-                  }}
-                  min="0"
-                  max="150"
+                  min={0}
+                  max={150}
+                  value={maxAge === '' ? null : Number(maxAge)}
+                  allowEmpty
                   placeholder="Max"
-                  style={{
-                    flex: '1',
-                    padding: '8px',
-                    fontSize: '13px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxSizing: 'border-box',
+                  showRangeHint={false}
+                  aria-label="Maximum age filter"
+                  onChange={(value) => {
+                    const next = value === null ? '' : String(value);
+                    setMaxAge(next);
+                    localStorage.setItem('players_maxAge', next);
                   }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ padding: '8px', fontSize: '13px' }}
                 />
               </div>
             </div>
@@ -4833,46 +4954,38 @@ const Players: React.FC = () => {
                   🎮 Games
                 </label>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <input
+                  <BoundedNumericInput
                     id="minGames"
-                    type="number"
-                    value={minGames}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setMinGames(value);
-                      localStorage.setItem('players_minGames', value);
-                    }}
-                    min="0"
+                    min={0}
+                    value={minGames === '' ? null : Number(minGames)}
+                    allowEmpty
                     placeholder="Min"
-                    style={{
-                      flex: '1',
-                      padding: '8px',
-                      fontSize: '13px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                      boxSizing: 'border-box',
+                    showRangeHint={false}
+                    aria-label="Minimum games filter"
+                    onChange={(value) => {
+                      const next = value === null ? '' : String(value);
+                      setMinGames(next);
+                      localStorage.setItem('players_minGames', next);
                     }}
+                    style={{ flex: 1 }}
+                    inputStyle={{ padding: '8px', fontSize: '13px' }}
                   />
                   <span style={{ fontSize: '12px', color: '#666' }}>to</span>
-                  <input
+                  <BoundedNumericInput
                     id="maxGames"
-                    type="number"
-                    value={maxGames}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setMaxGames(value);
-                      localStorage.setItem('players_maxGames', value);
-                    }}
-                    min="0"
+                    min={0}
+                    value={maxGames === '' ? null : Number(maxGames)}
+                    allowEmpty
                     placeholder="Max"
-                    style={{
-                      flex: '1',
-                      padding: '8px',
-                      fontSize: '13px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                      boxSizing: 'border-box',
+                    showRangeHint={false}
+                    aria-label="Maximum games filter"
+                    onChange={(value) => {
+                      const next = value === null ? '' : String(value);
+                      setMaxGames(next);
+                      localStorage.setItem('players_maxGames', next);
                     }}
+                    style={{ flex: 1 }}
+                    inputStyle={{ padding: '8px', fontSize: '13px' }}
                   />
                 </div>
               </div>
@@ -5280,7 +5393,7 @@ const Players: React.FC = () => {
           }}
           style={{
             maxHeight: filtersCollapsed ? 'calc(100vh - 200px)' : 'calc(100vh - 300px)',
-            overflowY: showSettingsMenu ? 'visible' : 'auto',
+            overflowY: 'auto',
             overflowX: 'auto',
           }}
         >
@@ -6055,6 +6168,7 @@ const Players: React.FC = () => {
         );
         const editCanSave =
           hasPlayerEditChanges() &&
+          validatePendingScorePin() === null &&
           editFieldsSatisfyValidation(canEditRestrictedProfileFields) &&
           !isEditSubmitBlockedByDuplicates();
         
@@ -6099,6 +6213,12 @@ const Players: React.FC = () => {
               <h3 style={{ margin: '0 0 20px 0', flexShrink: 0 }}>
                 Edit Member: {formatPlayerName(editFirstName || playerForEdit.firstName, editLastName || playerForEdit.lastName, nameDisplayOrder)}
               </h3>
+              {error && (
+                <div className="error-message" style={{ marginBottom: '12px', flexShrink: 0 }}>{error}</div>
+              )}
+              {success && (
+                <div className="success-message" style={{ marginBottom: '12px', flexShrink: 0 }}>{success}</div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', flex: 1, minHeight: 0, paddingRight: '10px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                           {/* Name fields */}
@@ -6341,25 +6461,30 @@ const Players: React.FC = () => {
                   <div style={{ marginTop: '16px', padding: '12px', background: !canEditRestrictedProfileFields ? '#f5f5f5' : '#e3f2fd', borderRadius: '4px', border: `1px solid ${!canEditRestrictedProfileFields ? '#d9d9d9' : '#2196F3'}` }}>
                     <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>Rating</h5>
                     <div>
-                      <input
-                        type="number"
-                        value={editRating}
-                        onChange={(e) => { setEditRating(e.target.value); handleEditFieldChange('rating', e.target.value); }}
-                        onBlur={handleEditRatingBlur}
+                      <BoundedNumericInput
+                        value={editRating === '' ? null : Number(editRating)}
+                        min={getSystemConfig().ratingValidation.ratingInputMin}
+                        max={getSystemConfig().ratingValidation.ratingInputMax}
+                        allowEmpty
                         disabled={!canEditRestrictedProfileFields}
-                        style={{
-                          width: '100%',
-                          padding: '8px',
+                        placeholder="Rating or leave empty"
+                        aria-label="Player rating"
+                        onChange={(value) => {
+                          const next = value === null ? '' : String(value);
+                          setEditRating(next);
+                          handleEditFieldChange('rating', next);
+                        }}
+                        onBlur={(value) => {
+                          void handleEditRatingBlur(value === null ? '' : String(value));
+                        }}
+                        inputStyle={{
                           border: `1px solid ${editFieldTouched.rating && editFieldErrors.rating ? '#e74c3c' : '#ddd'}`,
-                          borderRadius: '4px',
                           backgroundColor: !canEditRestrictedProfileFields ? '#f5f5f5' : 'white',
                           color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
                           cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text',
                           opacity: !canEditRestrictedProfileFields ? 0.7 : 1,
+                          padding: '8px',
                         }}
-                        placeholder="Rating (0-9999) or leave empty"
-                        min="0"
-                        max="9999"
                       />
                       {editFieldTouched.rating && editFieldErrors.rating && <span className="field-error">{editFieldErrors.rating}</span>}
                       <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#666' }}>
@@ -6396,8 +6521,152 @@ const Players: React.FC = () => {
                   </div>
                 )}
                 
+                {!isKioskMode() && isAdmin() && editingPlayerId != null && (
+                  <div style={{ marginTop: '16px', padding: '12px', background: '#f5f5f5', borderRadius: '4px', border: '1px solid #ddd' }}>
+                    <h5 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 'bold' }}>Auto Privilege Relinquish</h5>
+                    <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>
+                      For Organizer/Admin accounts used as public terminals. Applies on login; idle return uses club setting.
+                    </p>
+                    <select
+                      value={editAutoRelinquishKey}
+                      onChange={(e) => setEditAutoRelinquishKey(e.target.value as 'default' | 'always' | 'never')}
+                      style={{ width: '100%', padding: '8px', fontSize: '14px' }}
+                    >
+                      <option value="default">
+                        Use club default ({getSystemConfig().authPolicy.autoRelinquishPrivileges ? 'on' : 'off'})
+                      </option>
+                      <option value="always">Always auto-relinquish</option>
+                      <option value="never">Never auto-relinquish</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* Score PIN — self or admin (not in kiosk) */}
+                {!isKioskMode() && (isEditingSelf || isAdmin()) && editingPlayerId != null && (
+                  <div style={{ marginTop: '16px', padding: '12px', background: '#f5f5f5', borderRadius: '4px', border: '1px solid #ddd' }}>
+                    <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>Score PIN</h5>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: showScorePinChange ? '12px' : 0 }}>
+                      <button
+                        type="button"
+                        disabled={scorePinLoading}
+                        onClick={async () => {
+                          setScorePinLoading(true);
+                          setScorePinError('');
+                          setScorePinSuccess('');
+                          try {
+                            const res = await api.get(`/players/${editingPlayerId}/score-pin`);
+                            setScorePinDisplay(res.data.scorePin);
+                          } catch (err: any) {
+                            setScorePinError(err.response?.data?.error || 'Failed to load PIN');
+                          } finally {
+                            setScorePinLoading(false);
+                          }
+                        }}
+                        style={{ fontSize: '13px', padding: '6px 12px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      >
+                        Show PIN
+                      </button>
+                      <button
+                        type="button"
+                        disabled={scorePinLoading}
+                        onClick={() => {
+                          setShowScorePinChange((open) => !open);
+                          setScorePinDraft('');
+                          setScorePinConfirm('');
+                          setScorePinError('');
+                          setScorePinSuccess('');
+                        }}
+                        style={{ fontSize: '13px', padding: '6px 12px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      >
+                        {showScorePinChange ? 'Cancel Change' : 'Change PIN'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={scorePinLoading}
+                        onClick={async () => {
+                          setScorePinLoading(true);
+                          setScorePinError('');
+                          setScorePinSuccess('');
+                          try {
+                            const res = await api.post(`/players/${editingPlayerId}/regenerate-score-pin`);
+                            setScorePinDisplay(res.data.scorePin);
+                            setScorePinSuccess('Score PIN regenerated');
+                            setShowScorePinChange(false);
+                            setScorePinDraft('');
+                            setScorePinConfirm('');
+                          } catch (err: any) {
+                            setScorePinError(err.response?.data?.error || 'Failed to regenerate PIN');
+                          } finally {
+                            setScorePinLoading(false);
+                          }
+                        }}
+                        style={{ fontSize: '13px', padding: '6px 12px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      >
+                        Regenerate PIN
+                      </button>
+                      {scorePinDisplay && (
+                        <span style={{ fontFamily: 'monospace', fontSize: '18px', fontWeight: 700, letterSpacing: '0.15em' }}>
+                          {scorePinDisplay}
+                        </span>
+                      )}
+                    </div>
+                    {showScorePinChange && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '280px' }}>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
+                          Enter a new {getSystemConfig().authPolicy.pinLength}-digit PIN, then click Save
+                        </p>
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={scorePinDraft}
+                          onChange={(e) => {
+                            setScorePinDraft(e.target.value.replace(/\D/g, ''));
+                            setScorePinError('');
+                            setScorePinSuccess('');
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                            }
+                          }}
+                          placeholder="New PIN"
+                          maxLength={getSystemConfig().authPolicy.pinLength}
+                          style={{ padding: '8px', fontSize: '14px', border: '1px solid #ddd', borderRadius: '4px' }}
+                        />
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={scorePinConfirm}
+                          onChange={(e) => {
+                            setScorePinConfirm(e.target.value.replace(/\D/g, ''));
+                            setScorePinError('');
+                            setScorePinSuccess('');
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void handleSaveEdit();
+                            }
+                          }}
+                          placeholder="Confirm PIN"
+                          maxLength={getSystemConfig().authPolicy.pinLength}
+                          style={{ padding: '8px', fontSize: '14px', border: '1px solid #ddd', borderRadius: '4px' }}
+                        />
+                      </div>
+                    )}
+                    {scorePinError && (
+                      <div style={{ marginTop: '8px', color: '#c0392b', fontSize: '13px' }}>{scorePinError}</div>
+                    )}
+                    {scorePinSuccess && (
+                      <div style={{ marginTop: '8px', color: '#1e7e34', fontSize: '13px' }}>{scorePinSuccess}</div>
+                    )}
+                  </div>
+                )}
+
                 {/* Password Change Section - Only visible to the member themselves */}
-                              {isEditingSelf && (
+                              {isEditingSelf && !isKioskMode() && (
                                 <div style={{ marginTop: '16px', padding: '12px', background: '#f5f5f5', borderRadius: '4px', border: '1px solid #ddd' }}>
                                   <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>Change Password</h5>
                                   {!showPasswordChange ? (
@@ -6877,54 +7146,6 @@ const Players: React.FC = () => {
               </div>
             )}
 
-            {/* Password confirmation step (non-organizer only) */}
-            {matchStep === 'password' && (
-              <div>
-                <div style={{ marginBottom: '15px', textAlign: 'center' }}>
-                  <span style={{ fontSize: '14px', color: '#666' }}>Confirm match with </span>
-                  <span style={{ fontWeight: 'bold', fontSize: '16px' }}>
-                    {(() => {
-                      const opponentId = selectedPlayersForMatch.find(id => id !== currentMember?.id);
-                      const opponent = members.find(p => p.id === opponentId);
-                      return opponent ? formatPlayerName(opponent.firstName, opponent.lastName, getNameDisplayOrder()) : '';
-                    })()}
-                  </span>
-                </div>
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
-                    Opponent Password
-                  </label>
-                  <input
-                    type="password"
-                    value={matchOpponentPassword}
-                    onChange={(e) => setMatchOpponentPassword(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && matchOpponentPassword.trim()) {
-                        handleRecordMatchPasswordConfirm();
-                      }
-                    }}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', boxSizing: 'border-box' }}
-                    placeholder="Enter opponent's password"
-                    autoFocus
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                  <button onClick={() => { setShowMatchScoreModal(false); setMatchError(''); setSelectedPlayersForMatch(selectedPlayersForMatch.slice(0, 1)); }}>Cancel</button>
-                  <button 
-                    onClick={handleRecordMatchPasswordConfirm}
-                    className="success"
-                    disabled={!matchOpponentPassword.trim()}
-                    style={{
-                      opacity: !matchOpponentPassword.trim() ? 0.5 : 1,
-                      cursor: !matchOpponentPassword.trim() ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    Continue
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Score entry step */}
             {matchStep === 'score' && (
               <div>
@@ -6990,6 +7211,81 @@ const Players: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {isKioskMode() && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                    <style>{`
+                      .kiosk-score-pin-invalid::placeholder {
+                        color: #e74c3c;
+                        opacity: 1;
+                      }
+                    `}</style>
+                    {(() => {
+                      const p1 = members.find(p => p.id === selectedPlayersForMatch[0]);
+                      const p2 = members.find(p => p.id === selectedPlayersForMatch[1]);
+                      const p1PinLabel = p1 ? `${p1.firstName}'s PIN` : 'PIN';
+                      const p2PinLabel = p2 ? `${p2.firstName}'s PIN` : 'PIN';
+                      return (
+                        <>
+                    <div>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        className={matchInvalidPins.member1 ? 'kiosk-score-pin-invalid' : undefined}
+                        value={matchMember1Pin}
+                        onChange={(e) => {
+                          setMatchMember1Pin(e.target.value.replace(/\D/g, ''));
+                          if (matchInvalidPins.member1) {
+                            setMatchInvalidPins((prev) => ({ ...prev, member1: false }));
+                          }
+                        }}
+                        aria-label={p1PinLabel}
+                        aria-invalid={matchInvalidPins.member1}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: `2px solid ${matchInvalidPins.member1 ? '#e74c3c' : '#ddd'}`,
+                          borderRadius: '4px',
+                          boxSizing: 'border-box',
+                          color: matchInvalidPins.member1 ? '#e74c3c' : 'inherit',
+                          WebkitTextFillColor:
+                            matchInvalidPins.member1 && matchMember1Pin ? '#e74c3c' : undefined,
+                        }}
+                        placeholder={p1PinLabel}
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        className={matchInvalidPins.member2 ? 'kiosk-score-pin-invalid' : undefined}
+                        value={matchMember2Pin}
+                        onChange={(e) => {
+                          setMatchMember2Pin(e.target.value.replace(/\D/g, ''));
+                          if (matchInvalidPins.member2) {
+                            setMatchInvalidPins((prev) => ({ ...prev, member2: false }));
+                          }
+                        }}
+                        aria-label={p2PinLabel}
+                        aria-invalid={matchInvalidPins.member2}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: `2px solid ${matchInvalidPins.member2 ? '#e74c3c' : '#ddd'}`,
+                          borderRadius: '4px',
+                          boxSizing: 'border-box',
+                          color: matchInvalidPins.member2 ? '#e74c3c' : 'inherit',
+                          WebkitTextFillColor:
+                            matchInvalidPins.member2 && matchMember2Pin ? '#e74c3c' : undefined,
+                        }}
+                        placeholder={p2PinLabel}
+                      />
+                    </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowMatchScoreModal(false); setMatchError(''); setSelectedPlayersForMatch(selectedPlayersForMatch.slice(0, 1)); }}>Cancel</button>

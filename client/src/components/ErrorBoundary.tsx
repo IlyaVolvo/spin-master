@@ -1,4 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
+import { isStaleChunkError, reloadForStaleChunk } from '../utils/lazyWithReload';
 
 interface Props {
   children: ReactNode;
@@ -8,6 +9,7 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  reloadingForChunk: boolean;
 }
 
 /**
@@ -21,14 +23,24 @@ class ErrorBoundary extends Component<Props, State> {
       hasError: false,
       error: null,
       errorInfo: null,
+      reloadingForChunk: false,
     };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
+    if (isStaleChunkError(error)) {
+      return {
+        hasError: true,
+        error,
+        errorInfo: null,
+        reloadingForChunk: true,
+      };
+    }
     return {
       hasError: true,
       error,
       errorInfo: null,
+      reloadingForChunk: false,
     };
   }
 
@@ -37,15 +49,29 @@ class ErrorBoundary extends Component<Props, State> {
     console.error('ErrorBoundary caught an error:', error);
     console.error('Error info:', errorInfo);
     console.error('Component stack:', errorInfo.componentStack);
+
+    if (isStaleChunkError(error) && reloadForStaleChunk()) {
+      this.setState({ reloadingForChunk: true });
+      return;
+    }
     
     this.setState({
       error,
       errorInfo,
+      reloadingForChunk: false,
     });
   }
 
   render() {
     if (this.state.hasError) {
+      if (this.state.reloadingForChunk) {
+        return (
+          <div className="card" style={{ padding: '20px', margin: '20px' }}>
+            <p>Updating to the latest version…</p>
+          </div>
+        );
+      }
+
       return (
         <div className="card" style={{ padding: '20px', margin: '20px' }}>
           <h2 style={{ color: '#e74c3c' }}>⚠️ Something went wrong</h2>

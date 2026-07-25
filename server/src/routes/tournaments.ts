@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { invalidateCacheAfterTournament, invalidateTournamentCache } from '../services/cacheService';
 import {
   emitCacheInvalidation,
+  emitPreregistrationChanged,
   emitTournamentCreated,
   emitTournamentDeleted,
   emitTournamentStateChanged,
@@ -19,7 +20,7 @@ import bcrypt from 'bcryptjs';
 import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 import { ClientHttpError, isClientHttpError } from '../http/clientHttpError';
 import { isOrganizer } from '../utils/organizerAccess';
-import { authorizeTournamentScoreEntryRequest } from '../utils/matchScoreAuthorization';
+import { authorizeTournamentScoreEntryRequest, authorizeStandaloneMatchScoreWrite, matchAuthFailureJson } from '../utils/matchScoreAuthorization';
 import {
   duplicateTournamentMatchErrorForMatch,
   duplicateTournamentMatchErrorWithRecordedResult,
@@ -33,10 +34,15 @@ import {
   sendTournamentRegistrationClosedEmail,
 } from '../services/mailService';
 import {
-  calculateSwissDefaultRounds,
   getPreregistrationConfig,
   getTournamentRulesConfig,
 } from '../services/systemConfigService';
+import {
+  attachCorrectionEligibility,
+  correctCompletedMatchScore,
+  enrichTournamentForApi,
+} from '../services/scoreCorrectionService';
+import { ensureUniqueTournamentNameInDb } from '../utils/tournamentNameUniqueness';
 
 const router = express.Router();
 
@@ -77,48 +83,10 @@ function parseOptionalInteger(value: unknown): number | null {
 }
 
 function validateTournamentRuleRequest(type: string, participantCount: number, data: any): string | null {
-  const rules = getTournamentRulesConfig();
-  switch (type) {
-    case 'ROUND_ROBIN':
-      if (participantCount < rules.roundRobin.minPlayers) return `Round Robin requires at least ${rules.roundRobin.minPlayers} players`;
-      if (participantCount > rules.roundRobin.maxPlayers) return `Round Robin allows at most ${rules.roundRobin.maxPlayers} players`;
-      return null;
-    case 'PLAYOFF': {
-      const bracketSize = Number(data?.bracketSize ?? data?.additionalData?.bracketSize);
-      if (participantCount < rules.playoff.minPlayers) return `Playoff requires at least ${rules.playoff.minPlayers} players`;
-      if (Number.isInteger(bracketSize)) {
-        const isPowerOfTwo = bracketSize >= 2 && (bracketSize & (bracketSize - 1)) === 0;
-        if (!isPowerOfTwo) {
-          return 'Bracket size must be a power of 2';
-        }
-      }
-      return null;
-    }
-    case 'SWISS': {
-      const roundsValue = data?.numberOfRounds ?? data?.additionalData?.numberOfRounds;
-      const numberOfRounds = roundsValue == null
-        ? calculateSwissDefaultRounds(participantCount, rules.swiss.maxRoundsDivisor)
-        : Number(roundsValue);
-      const maxRounds = Math.floor(participantCount / rules.swiss.maxRoundsDivisor);
-      if (participantCount < rules.swiss.minPlayers) return `Swiss requires at least ${rules.swiss.minPlayers} players`;
-      if (!Number.isInteger(numberOfRounds) || numberOfRounds < 3) return 'Number of rounds must be at least 3';
-      if (numberOfRounds > maxRounds) return `Number of rounds cannot exceed ${maxRounds}`;
-      return null;
-    }
-    case 'MULTI_ROUND_ROBINS':
-      if (participantCount < rules.multiRoundRobins.minPlayers) return `Multi Round Robins requires at least ${rules.multiRoundRobins.minPlayers} players`;
-      return null;
-    case 'PRELIMINARY_WITH_FINAL_PLAYOFF':
-    case 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN': {
-      const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
-      if (Number.isInteger(groupSize) && (groupSize < rules.preliminary.groupSizeMin || groupSize > rules.preliminary.groupSizeMax)) {
-        return `Preliminary group size must be between ${rules.preliminary.groupSizeMin} and ${rules.preliminary.groupSizeMax}`;
-      }
-      return null;
-    }
-    default:
-      return null;
+  if (!tournamentPluginRegistry.isRegistered(type)) {
+    return null;
   }
+  return tournamentPluginRegistry.get(type).validateCreateRules?.(participantCount, data) ?? null;
 }
 
 function validateConfiguredMatchScore(player1Sets: number, player2Sets: number, player1Forfeit = false, player2Forfeit = false): string | null {
@@ -429,6 +397,7 @@ router.post('/register/:code/decline', async (req, res) => {
     const updatedTournament = await loadTournamentForResponse(result.tournamentId);
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(result.tournamentId);
+    emitPreregistrationChanged(result.tournamentId);
     res.json({ status: 'DECLINED', message: result.message, tournament: updatedTournament });
   } catch (error) {
     if (isClientHttpError(error)) {
@@ -459,6 +428,7 @@ router.post('/register/:code', async (req, res) => {
     const updatedTournament = await loadTournamentForResponse(registration.tournamentId);
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(registration.tournamentId);
+    emitPreregistrationChanged(registration.tournamentId);
     res.status(200).json({
       status: result.status,
       message: result.message,
@@ -669,7 +639,7 @@ router.get('/', async (req, res) => {
       const tournamentsWithPostRatings = await Promise.all(tournaments.map(async (tournament) => {
         const plugin = tournamentPluginRegistry.get(tournament.type);
 
-        return tournament.status !== 'COMPLETED'
+        const enriched = tournament.status !== 'COMPLETED'
           ? await plugin.enrichActiveTournament({
               tournament,
               prisma,
@@ -679,6 +649,7 @@ router.get('/', async (req, res) => {
               postRatingMap,
               prisma,
             });
+        return attachCorrectionEligibility(enriched, prisma);
       }));
 
       res.json(tournamentsWithPostRatings);
@@ -686,11 +657,12 @@ router.get('/', async (req, res) => {
       // No completed tournaments - use plugin enrichment for active tournaments
       const enrichedTournaments = await Promise.all(tournaments.map(async (tournament) => {
         const plugin = tournamentPluginRegistry.get(tournament.type);
-        
-        return await plugin.enrichActiveTournament({
+
+        const enriched = await plugin.enrichActiveTournament({
           tournament,
           prisma,
         });
+        return attachCorrectionEligibility(enriched, prisma);
       }));
       res.json(enrichedTournaments);
     }
@@ -713,15 +685,83 @@ router.get('/active', async (req, res) => {
     const enrichedTournaments = await Promise.all(tournaments.map(async (tournament) => {
       const plugin = tournamentPluginRegistry.get(tournament.type);
       
-      return await plugin.enrichActiveTournament({
+      const enriched = await plugin.enrichActiveTournament({
         tournament,
         prisma,
       });
+      return attachCorrectionEligibility(enriched, prisma);
     }));
 
     res.json(enrichedTournaments);
   } catch (error) {
     logger.error('Error fetching active tournaments', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+const TOURNAMENT_INDEX_STATUSES = ['PRE_REGISTRATION', 'ACTIVE', 'COMPLETED'] as const;
+type TournamentIndexStatus = (typeof TOURNAMENT_INDEX_STATUSES)[number];
+
+function isTournamentIndexStatus(value: unknown): value is TournamentIndexStatus {
+  return typeof value === 'string' && (TOURNAMENT_INDEX_STATUSES as readonly string[]).includes(value);
+}
+
+/** Lightweight counts for stage tabs (top-level tournaments only). */
+router.get('/stage-counts', async (_req, res) => {
+  try {
+    const [preRegistration, active, completed, matches] = await Promise.all([
+      prisma.tournament.count({ where: { status: 'PRE_REGISTRATION', parentTournamentId: null } }),
+      prisma.tournament.count({ where: { status: 'ACTIVE', parentTournamentId: null } }),
+      prisma.tournament.count({ where: { status: 'COMPLETED', parentTournamentId: null } }),
+      prisma.match.count({ where: { tournamentId: null } }),
+    ]);
+    res.json({ preRegistration, active, completed, matches });
+  } catch (error) {
+    logger.error('Error fetching tournament stage counts', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** Lightweight tournament index for stage list pages (no matches/standings enrichment). */
+router.get('/index', async (req, res) => {
+  try {
+    const statusParam = req.query.status;
+    if (!isTournamentIndexStatus(statusParam)) {
+      return res.status(400).json({
+        error: `Invalid or missing status. Expected one of: ${TOURNAMENT_INDEX_STATUSES.join(', ')}`,
+      });
+    }
+
+    const tournaments = await prisma.tournament.findMany({
+      where: { status: statusParam, parentTournamentId: null },
+      orderBy: statusParam === 'COMPLETED'
+        ? [{ recordedAt: 'desc' }, { createdAt: 'desc' }]
+        : [{ createdAt: 'desc' }],
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        cancelled: true,
+        createdAt: true,
+        recordedAt: true,
+        tournamentDate: true,
+        registrationDeadline: true,
+        minRating: true,
+        maxRating: true,
+        maxParticipants: true,
+        _count: {
+          select: {
+            participants: true,
+            registrations: true,
+          },
+        },
+      },
+    });
+
+    res.json(tournaments);
+  } catch (error) {
+    logger.error('Error fetching tournament index', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -743,9 +783,8 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Tournament not found' });
     }
 
-    // Use plugin-based enrichment
-    const plugin = tournamentPluginRegistry.get(tournament.type);
-    const enrichedTournament = await plugin.enrichActiveTournament({ tournament, prisma });
+    // Use plugin-based enrichment with correction eligibility
+    const enrichedTournament = await enrichTournamentForApi(prisma, tournament);
 
     res.json(enrichedTournament);
   } catch (error) {
@@ -798,7 +837,10 @@ router.post('/preregistration', [
 
     const tournament = await (prisma as any).tournament.create({
       data: {
-        name: (req.body.name || '').trim() || `Tournament ${new Date().toLocaleDateString()}`,
+        name: await ensureUniqueTournamentNameInDb(
+          prisma as any,
+          (req.body.name || '').trim() || `Tournament ${new Date().toLocaleDateString()}`,
+        ),
         type,
         status: 'PRE_REGISTRATION',
         tournamentDate,
@@ -860,6 +902,7 @@ router.post('/preregistration', [
     const createdTournament = await loadTournamentForResponse(tournament.id);
     emitTournamentCreated(createdTournament);
     emitCacheInvalidation(tournament.id);
+    emitPreregistrationChanged(tournament.id);
     res.status(201).json({ tournament: createdTournament, invitationCount, emailFailureCount });
   } catch (error) {
     logger.error('Error creating tournament preregistration', { error: error instanceof Error ? error.message : String(error) });
@@ -956,7 +999,10 @@ router.post('/:id/finalize-registration', [
 
     const plugin = tournamentPluginRegistry.get(type);
     const createdTournament = await plugin.createTournament({
-      name: req.body.name || preregistrationTournament.name || `Tournament ${new Date().toLocaleDateString()}`,
+      name: await ensureUniqueTournamentNameInDb(
+        prisma as any,
+        req.body.name || preregistrationTournament.name || `Tournament ${new Date().toLocaleDateString()}`,
+      ),
       participantIds,
       players,
       bracketPositions: req.body.bracketPositions,
@@ -971,6 +1017,7 @@ router.post('/:id/finalize-registration', [
     invalidateTournamentCache(createdTournament.id);
     emitTournamentStateChanged(createdTournament, 'PRE_REGISTRATION');
     emitCacheInvalidation(createdTournament.id);
+    emitPreregistrationChanged(createdTournament.id);
     res.json(createdTournament);
   } catch (error) {
     logger.error('Error finalizing tournament registration', { error: error instanceof Error ? error.message : String(error) });
@@ -1068,6 +1115,7 @@ router.post('/:id/cancel-preregistration', [
       invalidateTournamentCache(tournamentId);
       emitTournamentDeleted(tournamentId);
       emitCacheInvalidation(tournamentId);
+      emitPreregistrationChanged(tournamentId);
     } catch (notificationError) {
       logger.error('Preregistration cancellation succeeded but notification/cache invalidation failed', {
         tournamentId,
@@ -1107,6 +1155,7 @@ router.post('/:id/register', async (req: AuthRequest, res: Response) => {
     const updatedTournament = await loadTournamentForResponse(tournamentId);
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(tournamentId);
+    emitPreregistrationChanged(tournamentId);
     res.status(200).json({
       status: result.status,
       message: result.message,
@@ -1166,6 +1215,7 @@ router.post('/:id/decline', async (req: AuthRequest, res: Response) => {
     const updatedTournament = await loadTournamentForResponse(tournamentId);
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(tournamentId);
+    emitPreregistrationChanged(tournamentId);
     res.json({
       status: 'DECLINED',
       message: 'Invitation declined.',
@@ -1265,6 +1315,7 @@ router.post('/', [
     } else if (!tournamentName) {
       tournamentName = `Tournament ${new Date().toLocaleDateString()}`;
     }
+    tournamentName = await ensureUniqueTournamentNameInDb(prisma as any, tournamentName);
 
     let pluginPrisma: any = prisma;
     let previousStatus: string | null = null;
@@ -1326,6 +1377,9 @@ router.post('/', [
       emitTournamentCreated(createdTournament);
     }
     emitCacheInvalidation(createdTournament.id);
+    if (previousStatus === 'PRE_REGISTRATION') {
+      emitPreregistrationChanged(createdTournament.id);
+    }
 
     res.status(201).json(createdTournament);
   } catch (error) {
@@ -1480,9 +1534,19 @@ router.post('/bulk', [
       }
     }
 
+    const reservedNames = new Set<string>();
+    const resolvedNames: string[] = [];
+    for (const tournamentData of tournaments as Array<{ name?: string }>) {
+      const proposed =
+        (tournamentData.name || '').trim() || `Tournament ${new Date().toLocaleDateString()}`;
+      resolvedNames.push(
+        await ensureUniqueTournamentNameInDb(prisma as any, proposed, { reserved: reservedNames }),
+      );
+    }
+
     // Create all tournaments in a transaction
     const createdTournaments = await prisma.$transaction(
-      tournaments.map((tournamentData: { name?: string; participantIds: number[]; type: TournamentType }) => {
+      tournaments.map((tournamentData: { name?: string; participantIds: number[]; type: TournamentType }, index: number) => {
         // Validate tournament type using plugin registry
         if (!tournamentPluginRegistry.isRegistered(tournamentData.type)) {
           throw new Error(`Invalid tournament type: ${tournamentData.type}. Only registered types are allowed.`);
@@ -1490,7 +1554,7 @@ router.post('/bulk', [
         
         return prisma.tournament.create({
           data: {
-            name: tournamentData.name || `Tournament ${new Date().toLocaleDateString()}`,
+            name: resolvedNames[index],
             type: tournamentData.type,
             status: 'ACTIVE',
             participants: {
@@ -1529,13 +1593,14 @@ router.post('/bulk', [
 
 // Create a standalone match directly with final scores (no tournament, tournamentId = null)
 // Organizers can create matches for any pair of players
-// Non-organizers can create matches for themselves (need opponent's password confirmation)
+// Non-organizers can create matches for themselves; kiosk mode requires both participant PINs
 router.post('/matches/create', [
   body('member1Id').toInt().isInt({ min: 1 }),
   body('member2Id').toInt().isInt({ min: 1 }),
   body('player1Sets').toInt().isInt({ min: 0 }),
   body('player2Sets').toInt().isInt({ min: 0 }),
-  body('opponentPassword').optional().trim(), // Required for non-organizers
+  body('member1Pin').optional().trim(),
+  body('member2Pin').optional().trim(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -1544,52 +1609,28 @@ router.post('/matches/create', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { member1Id, member2Id, player1Sets, player2Sets, opponentPassword } = req.body;
+    const { member1Id, member2Id, player1Sets, player2Sets, member1Pin, member2Pin } = req.body;
     const currentMemberId = req.memberId || req.member?.id;
 
     if (!currentMemberId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // Check if user is organizer
-    const hasOrganizerAccess = await isOrganizer(req);
-
-    // If not organizer, verify they're creating a match for themselves
-    if (!hasOrganizerAccess) {
-      const isPlayer1 = currentMemberId === member1Id;
-      const isPlayer2 = currentMemberId === member2Id;
-      
-      if (!isPlayer1 && !isPlayer2) {
-        return res.status(403).json({ error: 'You can only create matches for yourself' });
-      }
-
-      // Determine opponent ID
-      const opponentId = isPlayer1 ? member2Id : member1Id;
-      
-      // Verify opponent's password
-      if (!opponentPassword) {
-        return res.status(400).json({ error: 'Opponent password confirmation is required' });
-      }
-
-      const opponent = await prisma.member.findUnique({
-        where: { id: opponentId },
-        select: { password: true, isActive: true },
-      });
-
-      if (!opponent || !opponent.isActive) {
-        return res.status(404).json({ error: 'Opponent not found or inactive' });
-      }
-
-      // Verify password
-      const isValidPassword = await bcrypt.compare(opponentPassword, opponent.password);
-      if (!isValidPassword) {
-        return res.status(401).json({ error: 'Invalid opponent password' });
-      }
-    }
-
     // Validate players are different
     if (member1Id === member2Id) {
       return res.status(400).json({ error: 'Players must be different' });
+    }
+
+    const scoreAuth = await authorizeStandaloneMatchScoreWrite(
+      prisma,
+      req,
+      member1Id,
+      member2Id,
+      member1Pin,
+      member2Pin
+    );
+    if (!scoreAuth.ok) {
+      return res.status(scoreAuth.status).json(matchAuthFailureJson(scoreAuth));
     }
 
     const scoreError = validateConfiguredMatchScore(player1Sets, player2Sets);
@@ -1676,7 +1717,8 @@ router.post('/:id/matches', [
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
-  body('opponentPassword').optional().trim(),
+  body('member1Pin').optional().trim(),
+  body('member2Pin').optional().trim(),
   body('expectedHadResult').optional().isBoolean(),
   body('expectedMatchUpdatedAt').optional().isISO8601(),
 ], async (req: AuthRequest, res: Response) => {
@@ -1693,7 +1735,8 @@ router.post('/:id/matches', [
       player2Sets,
       player1Forfeit,
       player2Forfeit,
-      opponentPassword,
+      member1Pin,
+      member2Pin,
       expectedHadResult,
       expectedMatchUpdatedAt,
     } =
@@ -1728,10 +1771,13 @@ router.post('/:id/matches', [
       matchId: 0,
       bodyMember1Id: member1Id,
       bodyMember2Id: member2Id,
-      opponentPassword,
+      member1Pin,
+      member2Pin,
+      player1Forfeit: player1Forfeit === true,
+      player2Forfeit: player2Forfeit === true,
     });
     if (!scoreAuth.ok) {
-      return res.status(scoreAuth.status).json({ error: scoreAuth.error });
+      return res.status(scoreAuth.status).json(matchAuthFailureJson(scoreAuth));
     }
 
     if (member1Id === member2Id) {
@@ -1834,7 +1880,7 @@ router.post('/:id/matches', [
 
 // Generic match update — delegates to tournament plugin (registry key = tournament.type).
 // Bracket-specific URLs live in tournamentBracketRoutes.ts.
-// Authorization: see authorizeTournamentScoreEntryRequest (organizers, or participants with opponent password).
+// Authorization: see authorizeTournamentScoreEntryRequest (organizers, participants, or kiosk with PINs).
 router.patch('/:tournamentId/matches/:matchId', [
   body('member1Id').optional().isInt({ min: 1 }),
   body('member2Id').optional().isInt({ min: 1 }),
@@ -1842,7 +1888,8 @@ router.patch('/:tournamentId/matches/:matchId', [
   body('player2Sets').optional().isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
-  body('opponentPassword').optional().trim(),
+  body('member1Pin').optional().trim(),
+  body('member2Pin').optional().trim(),
   body('expectedHadResult').optional().isBoolean(),
   body('expectedMatchUpdatedAt').optional().isISO8601(),
 ], async (req: AuthRequest, res: Response) => {
@@ -1859,7 +1906,8 @@ router.patch('/:tournamentId/matches/:matchId', [
       player2Sets,
       player1Forfeit,
       player2Forfeit,
-      opponentPassword,
+      member1Pin,
+      member2Pin,
       expectedHadResult,
       expectedMatchUpdatedAt,
     } = req.body;
@@ -1894,10 +1942,13 @@ router.patch('/:tournamentId/matches/:matchId', [
       matchId,
       bodyMember1Id: member1Id,
       bodyMember2Id: member2Id,
-      opponentPassword,
+      member1Pin,
+      member2Pin,
+      player1Forfeit: player1Forfeit === true,
+      player2Forfeit: player2Forfeit === true,
     });
     if (!scoreAuth.ok) {
-      return res.status(scoreAuth.status).json({ error: scoreAuth.error });
+      return res.status(scoreAuth.status).json(matchAuthFailureJson(scoreAuth));
     }
 
     const plugin = tournamentPluginRegistry.get(tournament.type);
@@ -2106,6 +2157,96 @@ router.patch('/:tournamentId/matches/:matchId', [
       return res.status(duplicateError.statusCode).json({ error: duplicateError.message });
     }
     logger.error('Error updating match', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.tournamentId, matchId: req.params.matchId });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Correct a match score on a completed tournament (organizer-only)
+router.patch('/:tournamentId/matches/:matchId/correct', [
+  body('player1Sets').isInt({ min: 0 }),
+  body('player2Sets').isInt({ min: 0 }),
+  body('player1Forfeit').optional().isBoolean(),
+  body('player2Forfeit').optional().isBoolean(),
+  body('expectedMatchUpdatedAt').optional().isISO8601(),
+], async (req: AuthRequest, res: Response) => {
+  try {
+    const hasOrganizerAccess = await isOrganizer(req);
+    if (!hasOrganizerAccess) {
+      return res.status(403).json({ error: 'Only Organizers can correct tournament scores' });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const tournamentId = parseInt(req.params.tournamentId, 10);
+    const matchId = parseInt(req.params.matchId, 10);
+    if (Number.isNaN(tournamentId) || Number.isNaN(matchId)) {
+      return res.status(400).json({ error: 'Invalid tournament or match ID' });
+    }
+
+    const player1Forfeit = req.body.player1Forfeit === true;
+    const player2Forfeit = req.body.player2Forfeit === true;
+    if (player1Forfeit && player2Forfeit) {
+      return res.status(400).json({ error: 'Only one player can forfeit' });
+    }
+
+    let finalPlayer1Sets = req.body.player1Sets ?? 0;
+    let finalPlayer2Sets = req.body.player2Sets ?? 0;
+    if (player1Forfeit) {
+      finalPlayer1Sets = 0;
+      finalPlayer2Sets = 1;
+    } else if (player2Forfeit) {
+      finalPlayer1Sets = 1;
+      finalPlayer2Sets = 0;
+    }
+
+    const scoreError = validateConfiguredMatchScore(finalPlayer1Sets, finalPlayer2Sets, player1Forfeit, player2Forfeit);
+    if (scoreError) {
+      return res.status(400).json({ error: scoreError });
+    }
+
+    const result = await correctCompletedMatchScore(prisma, {
+        tournamentId,
+        matchId,
+        player1Sets: finalPlayer1Sets,
+        player2Sets: finalPlayer2Sets,
+        player1Forfeit,
+        player2Forfeit,
+        expectedMatchUpdatedAt: req.body.expectedMatchUpdatedAt,
+      });
+
+    const { recalculateRankings } = await import('../services/rankingService');
+    await recalculateRankings(tournamentId);
+    if (result.parentTournamentId) {
+      await recalculateRankings(result.parentTournamentId);
+    }
+
+    await invalidateCacheAfterTournament(tournamentId);
+    emitMatchUpdate(result.match, tournamentId);
+    emitCacheInvalidation(tournamentId);
+    if (result.parentTournamentId) {
+      emitCacheInvalidation(result.parentTournamentId);
+      const parentTournament = await prisma.tournament.findUnique({
+        where: { id: result.parentTournamentId },
+        include: tournamentListInclude(),
+      });
+      if (parentTournament) {
+        emitTournamentUpdate(parentTournament);
+      }
+    }
+
+    res.json(result.match);
+  } catch (error) {
+    if (isClientHttpError(error)) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    logger.error('Error correcting match score', {
+      error: error instanceof Error ? error.message : String(error),
+      tournamentId: req.params.tournamentId,
+      matchId: req.params.matchId,
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2341,7 +2482,13 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
     emitTournamentUpdate(updatedTournament);
     emitCacheInvalidation(tournamentId);
 
-    res.json(updatedTournament);
+    const enriched = await enrichTournamentForApi(prisma, {
+      ...updatedTournament,
+      status: 'COMPLETED',
+      recordedAt: updatedTournament.recordedAt,
+    });
+
+    res.json(enriched);
   } catch (error) {
     logger.error('Error completing tournament', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
     res.status(500).json({ error: 'Internal server error' });

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { NameDisplayOrder } from '../../utils/nameFormatter';
 import { setNameDisplayOrder } from '../../utils/nameFormatter';
 
@@ -66,10 +67,39 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   setImportSendEmail,
   tournamentNotificationsEnabled,
   onTournamentNotificationsChange,
-}) => (
+}) => {
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
+
+  // Anchor the dropdown to the button via fixed positioning so it is never clipped
+  // by the scrollable table container (which has overflow set for row scrolling).
+  useLayoutEffect(() => {
+    if (!showSettingsMenu) return;
+
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuPosition({
+        top: rect.bottom + 5,
+        right: Math.max(8, window.innerWidth - rect.right),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    // Capture phase so scrolls inside the table container also reposition the menu.
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [showSettingsMenu]);
+
+  return (
   <div style={{ position: 'relative', display: 'inline-block' }} data-settings-menu>
     <button
       type="button"
+      ref={buttonRef}
       onClick={() => setShowSettingsMenu(!showSettingsMenu)}
       className="button-filter"
       style={{
@@ -81,13 +111,15 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
     >
       ⚙️ Settings
     </button>
-    {showSettingsMenu && (
+    {showSettingsMenu && menuPosition && createPortal(
       <div
+        data-settings-menu
         style={{
-          position: 'absolute',
-          top: '100%',
-          right: 0,
-          marginTop: '5px',
+          position: 'fixed',
+          top: menuPosition.top,
+          right: menuPosition.right,
+          maxHeight: `calc(100vh - ${menuPosition.top + 10}px)`,
+          overflowY: 'auto',
           backgroundColor: '#f5f5f5',
           border: '1px solid #ddd',
           borderRadius: '4px',
@@ -290,7 +322,9 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
             })()}
           </div>
         )}
-      </div>
+      </div>,
+      document.body
     )}
   </div>
-);
+  );
+};

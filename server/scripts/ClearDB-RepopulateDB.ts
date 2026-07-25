@@ -456,6 +456,8 @@ async function createPlayers(): Promise<any[]> {
       birthDate,
       rating,
       qrTokenHash: generateQrTokenHash(),
+
+      scorePin: '1234',
       isActive: true,
       mustResetPassword: false, // Set to false for all users in generation script
       emailConfirmedAt: new Date(), // Mark as confirmed so status shows green
@@ -1831,6 +1833,8 @@ async function main() {
             isActive: true,
             rating: null, // Admin has no rating
             qrTokenHash: generateQrTokenHash(),
+
+            scorePin: '1234',
             mustResetPassword: false, // Set to false for all users in generation script
           },
         });

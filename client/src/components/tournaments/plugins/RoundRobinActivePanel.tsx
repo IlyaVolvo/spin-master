@@ -1,12 +1,28 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { TournamentActiveProps } from '../../../types/tournament';
 import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
-import { MatchEntryPopup } from '../../MatchEntryPopup';
-import { createRoundRobinMatchUpdater } from '../utils/roundRobinMatchUpdater';
-import { canOpenTournamentMatchEditor, shouldShowOpponentPasswordForMatchEdit } from '../../../utils/matchScorePayload';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
+import { ScoreCorrectionBanner } from '../../ScoreCorrectionBanner';
+import { useScoreCorrectionPanel } from '../../../hooks/useScoreCorrectionPanel';
+import {
+  correctableCellOutlineStyle,
+  correctionPencilStyle,
+} from '../../scoreCorrectionStyles';
+import {
+  getScoreModificationClickHint,
+  isMatchCorrectable,
+  shouldOpenCorrectionEditor,
+} from '../../../utils/scoreCorrectionUtils';
+import { createRoundRobinMatchUpdater } from './roundRobinMatchUpdater';
+import { canOpenTournamentMatchEditor, shouldShowScorePinsForMatchEdit, isScorePinAuthErrorMessage } from '../../../utils/matchScorePayload';
 import { isDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
 import { sortParticipantsByRating } from '../utils/participantSort';
+import {
+  emptyScoreEntryButtonStyle,
+  emptyScoreEntryCellStyle,
+  emptyScoreEntryLeftCellStyle,
+} from '../../emptyScoreEntryStyles';
 import './RoundRobinActivePanel.css';
 
 interface PlayerStats {
@@ -26,7 +42,8 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  opponentPassword?: string;
+  member1Pin?: string;
+  member2Pin?: string;
   expectedHadResult?: boolean;
   expectedMatchUpdatedAt?: string;
 }
@@ -40,24 +57,31 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
   suppressScoreEntry,
 }) => {
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    eligibility,
+    correctionModeActive,
+    bannerText,
+    openModificationEditor,
+  } = useScoreCorrectionPanel(tournament, {
+    onTournamentUpdate,
+    onError,
+    onSuccess,
+    onActiveMatchEdit: (payload) => {
+      setEditingMatch({
+        ...payload,
+        member1Pin: '',
+        member2Pin: '',
+        expectedHadResult: true,
+      });
+    },
+  });
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  const startLongPress = (open: () => void) => {
-    clearLongPressTimer();
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = null;
-      open();
-    }, 550);
-  };
+  const modificationClickHint = getScoreModificationClickHint(tournament.status);
 
   const handleError = (message: string) => {
+    if (isScorePinAuthErrorMessage(message)) {
+      return;
+    }
     if (isDuplicateScoreMessage(message)) {
       flushSync(() => {
         setEditingMatch(null);
@@ -158,7 +182,8 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: match.player2Sets.toString(),
         player1Forfeit: match.player1Forfeit || false,
         player2Forfeit: match.player2Forfeit || false,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0 || !!match.player1Forfeit || !!match.player2Forfeit,
         expectedMatchUpdatedAt: match.updatedAt,
       });
@@ -172,7 +197,8 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: '0',
         player1Forfeit: false,
         player2Forfeit: false,
-        opponentPassword: '',
+        member1Pin: '',
+        member2Pin: '',
         expectedHadResult: false,
       });
     }
@@ -208,9 +234,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
             onTournamentComplete: () => {
               onSuccess?.('Tournament completed successfully!');
             },
-          },
-          editingMatch.opponentPassword
-        );
+          }, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       } else {
         // Update existing match
         await roundRobinUpdater.updateMatch(
@@ -224,14 +248,13 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
             onTournamentComplete: () => {
               onSuccess?.('Tournament completed successfully!');
             },
-          },
-          editingMatch.opponentPassword
-        );
+          }, { member1Pin: editingMatch.member1Pin, member2Pin: editingMatch.member2Pin });
       }
       
       setEditingMatch(null);
     } catch (error) {
       // Error is already handled by the RoundRobinMatchUpdater callbacks
+      throw error;
     }
   };
 
@@ -257,11 +280,16 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
       setEditingMatch(null);
     } catch (error) {
       // Error is already handled by the RoundRobinMatchUpdater callbacks
+      throw error;
     }
   };
 
   return (
     <div className="round-robin-active">
+      <ScoreCorrectionBanner
+        message={bannerText}
+        allowed={Boolean(eligibility?.allowed)}
+      />
       <div className="round-robin-active__section">
         <div style={{ marginBottom: '20px', display: 'inline-block' }}>
           <table 
@@ -326,6 +354,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                     const hasScore = score && score !== '';
                     const isForfeit = score === 'W' || score === 'L';
                     const match = matchMap[`${participant1.member.id}-${participant2.member.id}`];
+                    const correctable = correctionModeActive && isMatchCorrectable(match?.id, eligibility);
                     const cellStyle: React.CSSProperties = {
                       padding: '8px',
                       border: '1px solid #ddd',
@@ -335,23 +364,27 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                       opacity: isDiagonal ? 1 : hasScore ? 1 : 0.7,
                       minWidth: '80px',
                       width: '80px',
-                      cursor: !isDiagonal ? (hasScore ? 'context-menu' : 'pointer') : 'default',
+                      cursor: !isDiagonal
+                        ? (correctable ? 'pointer' : hasScore ? 'default' : 'pointer')
+                        : 'default',
+                      position: 'relative',
+                      ...(correctable ? correctableCellOutlineStyle : {}),
                     };
 
                     // Highlight winner (higher score or W) for played matches
                     if (!isDiagonal && hasScore) {
                       if (isForfeit) {
                         if (score === 'W') {
-                          cellStyle.backgroundColor = '#d4edda';
+                          cellStyle.backgroundColor = '#a5d6a7';
                         } else {
-                          cellStyle.backgroundColor = '#f8d7da';
+                          cellStyle.backgroundColor = '#ef9a9a';
                         }
                       } else {
                         const [score1, score2] = score.split(' - ').map(Number);
                         if (score1 > score2) {
-                          cellStyle.backgroundColor = '#d4edda';
+                          cellStyle.backgroundColor = '#a5d6a7';
                         } else if (score2 > score1) {
-                          cellStyle.backgroundColor = '#f8d7da';
+                          cellStyle.backgroundColor = '#ef9a9a';
                         }
                       }
                     }
@@ -360,32 +393,30 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                       <td
                         key={participant2.member.id}
                         style={cellStyle}
-                        onContextMenu={(e) => {
+                        onMouseDown={(event) => {
                           if (!isDiagonal && hasScore && match) {
-                            e.preventDefault();
-                            handleCellClick(participant1.member.id, participant2.member.id);
+                            openModificationEditor(match, event);
                           }
                         }}
-                        onTouchStart={() => {
-                          if (!isDiagonal && hasScore && match) {
-                            startLongPress(() => handleCellClick(participant1.member.id, participant2.member.id));
+                        onClick={(event) => {
+                          if (!isDiagonal && hasScore && match && shouldOpenCorrectionEditor(correctionModeActive, match.id, eligibility)) {
+                            openModificationEditor(match, event);
+                            return;
                           }
-                        }}
-                        onTouchEnd={clearLongPressTimer}
-                        onTouchMove={clearLongPressTimer}
-                        onTouchCancel={clearLongPressTimer}
-                        onClick={() => {
                           if (!isDiagonal && !hasScore) {
                             handleCellClick(participant1.member.id, participant2.member.id);
                           }
                         }}
                         title={
-                          isDiagonal 
-                            ? 'Diagonal cell' 
-                            : hasScore 
-                              ? 'Right-click or long-press to modify/remove result'
-                              : 'Click to add match'
+                          isDiagonal
+                            ? 'Diagonal cell'
+                            : correctable
+                              ? modificationClickHint
+                              : hasScore
+                                ? undefined
+                                : 'Click to add match'
                         }
+                        aria-label={correctable ? modificationClickHint : undefined}
                       >
                         {isDiagonal ? (
                           <span style={{ opacity: 0.5 }}>—</span>
@@ -397,6 +428,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                             minWidth: '60px',
                             height: '20px',
                           }}>
+                            {correctable && <span style={correctionPencilStyle} aria-hidden="true">✏️</span>}
                             <span style={{ fontSize: '14px', color: '#666', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                               {score}
                             </span>
@@ -412,52 +444,15 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                             height: '20px',
                           }}>
                             <button
-                              style={{
-                                padding: '0',
-                                border: '1px solid #90EE90',
-                                borderRadius: '4px',
-                                backgroundColor: 'transparent',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'stretch',
-                                width: '45px',
-                                height: '18px',
-                                overflow: 'hidden',
-                                opacity: 0.7,
-                              }}
+                              style={emptyScoreEntryButtonStyle}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleCellClick(participant1.member.id, participant2.member.id);
                               }}
                               title="Enter score"
                             >
-                              {/* Left section */}
-                              <div style={{
-                                flex: 1,
-                                backgroundColor: '#ADD8E6',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#228B22',
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                                borderRight: '1px solid #90EE90',
-                              }}>
-                                ?
-                              </div>
-                              {/* Right section */}
-                              <div style={{
-                                flex: 1,
-                                backgroundColor: '#ADD8E6',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#228B22',
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                              }}>
-                                ?
-                              </div>
+                              <div style={emptyScoreEntryLeftCellStyle} aria-hidden="true" />
+                              <div style={emptyScoreEntryCellStyle} aria-hidden="true" />
                             </button>
                           </div>
                         )}
@@ -475,7 +470,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
             </span>
           </p>
           <p style={{ fontSize: '12px', color: '#666', marginTop: '10px', fontStyle: 'italic' }}>
-            Green cells indicate wins for the row player, red cells indicate losses. Diagonal shows player names. Click any cell to add or edit a match.
+            Green cells indicate wins for the row player, red cells indicate losses. Click empty cells to enter scores. Hold Ctrl and click a highlighted result to modify it.
           </p>
         </div>
       </div>
@@ -487,12 +482,13 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
           player1={getPlayer(editingMatch.member1Id)!}
           player2={getPlayer(editingMatch.member2Id)!}
           showForfeitOptions={true}
-          requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
+          requireScorePins={shouldShowScorePinsForMatchEdit(editingMatch)}
           onSetEditingMatch={setEditingMatch}
           onSave={handleMatchSave}
           onCancel={handleMatchCancel}
           onClear={handleMatchClear}
           showClearButton={editingMatch.matchId > 0}
+          modifyConfirmationMessage={editingMatch.expectedHadResult ? RATING_IMPACT_MODIFY_MESSAGE : undefined}
         />
       )}
     </div>

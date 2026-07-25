@@ -11,6 +11,18 @@ export type BrandingConfig = {
 export type AuthPolicyConfig = {
   minimumPasswordLength: number;
   passwordResetTokenTtlHours: number;
+  /** Length of permanent digit-only score PINs (4–12). */
+  pinLength: number;
+  /**
+   * Club default: elevated accounts (Organizer/Admin) enter kiosk mode on login.
+   * Per-member override may force on/off.
+   */
+  autoRelinquishPrivileges: boolean;
+  /**
+   * After a password restore, re-enter kiosk after this many idle minutes.
+   * 0 disables idle re-relinquish (login-only auto mode).
+   */
+  autoRelinquishIdleMinutes: number;
 };
 
 export type PreregistrationConfig = {
@@ -44,6 +56,7 @@ export type TournamentRulesConfig = {
   multiRoundRobins: {
     minPlayers: number;
     minGroupSize: number;
+    maxGroupSize: number;
     minGroups: number;
   };
   preliminary: {
@@ -113,6 +126,9 @@ export function getDefaultSystemConfig(): SystemConfig {
     authPolicy: {
       minimumPasswordLength: 6,
       passwordResetTokenTtlHours: 1,
+      pinLength: 4,
+      autoRelinquishPrivileges: false,
+      autoRelinquishIdleMinutes: 5,
     },
     preregistration: {
       defaultTournamentOffsetDays: 1,
@@ -143,6 +159,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       multiRoundRobins: {
         minPlayers: 6,
         minGroupSize: 3,
+        maxGroupSize: 12,
         minGroups: 2,
       },
       preliminary: {
@@ -233,6 +250,14 @@ function validateAuthPolicy(value: unknown): AuthPolicyConfig {
   return {
     minimumPasswordLength: requireInteger(config.minimumPasswordLength, 'authPolicy.minimumPasswordLength', 6, 128),
     passwordResetTokenTtlHours: requireInteger(config.passwordResetTokenTtlHours, 'authPolicy.passwordResetTokenTtlHours', 1, 168),
+    pinLength: requireInteger(config.pinLength, 'authPolicy.pinLength', 4, 12),
+    autoRelinquishPrivileges: Boolean(config.autoRelinquishPrivileges),
+    autoRelinquishIdleMinutes: requireInteger(
+      config.autoRelinquishIdleMinutes,
+      'authPolicy.autoRelinquishIdleMinutes',
+      0,
+      120
+    ),
   };
 }
 
@@ -302,11 +327,15 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
       pairByRating: requireBoolean(config.swiss.pairByRating, 'tournamentRules.swiss.pairByRating'),
       maxRoundsDivisor: requireInteger(config.swiss.maxRoundsDivisor, 'tournamentRules.swiss.maxRoundsDivisor', 1),
     },
-    multiRoundRobins: {
-      minPlayers: requireInteger(config.multiRoundRobins.minPlayers, 'tournamentRules.multiRoundRobins.minPlayers', 2),
-      minGroupSize: requireInteger(config.multiRoundRobins.minGroupSize, 'tournamentRules.multiRoundRobins.minGroupSize', 2),
-      minGroups: requireInteger(config.multiRoundRobins.minGroups, 'tournamentRules.multiRoundRobins.minGroups', 2),
-    },
+    multiRoundRobins: (() => {
+      const minGroupSize = requireInteger(config.multiRoundRobins.minGroupSize, 'tournamentRules.multiRoundRobins.minGroupSize', 2);
+      return {
+        minPlayers: requireInteger(config.multiRoundRobins.minPlayers, 'tournamentRules.multiRoundRobins.minPlayers', 2),
+        minGroupSize,
+        maxGroupSize: requireInteger(config.multiRoundRobins.maxGroupSize, 'tournamentRules.multiRoundRobins.maxGroupSize', minGroupSize),
+        minGroups: requireInteger(config.multiRoundRobins.minGroups, 'tournamentRules.multiRoundRobins.minGroups', 2),
+      };
+    })(),
     preliminary: {
       groupSizeMin,
       groupSizeMax,

@@ -15,7 +15,7 @@ describe('tournament registration mail service', () => {
     process.env.CLIENT_URL = 'https://club.example.com/';
 
     expect(buildTournamentRegistrationLink('abc 123')).toBe(
-      'https://club.example.com/tournament-registration/abc%20123'
+      'https://club.example.com/tournament-registration/abc%20123?action=register'
     );
   });
 });

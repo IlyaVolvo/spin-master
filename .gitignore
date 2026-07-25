@@ -12,3 +12,4 @@ server/.env.render.local
 
 database_dumps/
 server/prisma/prod-drift.sql
+*.pdf

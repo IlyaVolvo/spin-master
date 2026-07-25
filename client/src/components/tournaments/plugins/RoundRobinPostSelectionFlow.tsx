@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { PostSelectionFlowProps, Member } from '../../../types/tournament';
 import api from '../../../utils/api';
 import { snakeDraftGroups } from './roundRobinUtils';
+import { BoundedNumericInput } from '../../BoundedNumericInput';
+import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
 
 type Step = 'multi_toggle' | 'rearrange' | 'confirmation';
 
@@ -98,6 +100,8 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
 
         await api.post('/tournaments/bulk', { tournaments: tournamentsData });
         onSuccess(`Successfully created ${playerGroups.length} tournament${playerGroups.length !== 1 ? 's' : ''}`);
+        onCreated();
+        return;
       } else {
         const tournamentData: any = {
           participantIds: selectedPlayerIds,
@@ -111,22 +115,26 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
           tournamentData.name = tournamentName.trim();
         }
 
+        let createdId: number | undefined;
         if (finalizingPreregistrationId) {
-          await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+          const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+          createdId = extractCreatedTournamentId(response.data);
           onSuccess('Tournament created from preregistration successfully');
         } else if (editingTournamentId) {
-          await api.patch(`/tournaments/${editingTournamentId}`, {
+          const response = await api.patch(`/tournaments/${editingTournamentId}`, {
             name: tournamentData.name,
             participantIds: selectedPlayerIds,
           });
+          createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
           onSuccess('Tournament modified successfully');
         } else {
-          await api.post('/tournaments', tournamentData);
+          const response = await api.post('/tournaments', tournamentData);
+          createdId = extractCreatedTournamentId(response.data);
           onSuccess('Tournament created successfully');
         }
+        onCreated(createdId);
+        return;
       }
-
-      onCreated();
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament(s)');
     }
@@ -324,15 +332,17 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
             <span style={{ fontSize: '14px' }}>Split into multiple tournaments</span>
           </label>
           {isMultiTournamentMode && (
-            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <label style={{ fontSize: '13px' }}>Players per tournament:</label>
-              <input
-                type="number"
-                min="3"
-                max="99"
-                value={playersPerTournament}
-                onChange={(e) => setPlayersPerTournament(e.target.value)}
-                style={{ width: '60px', padding: '4px 8px', border: '1px solid #ddd', borderRadius: '4px' }}
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <BoundedNumericInput
+                label="Players per tournament:"
+                min={3}
+                max={99}
+                value={playersPerTournament === '' ? null : parseInt(playersPerTournament, 10)}
+                allowEmpty
+                placeholder="e.g. 6"
+                onChange={(value) => setPlayersPerTournament(value === null ? '' : String(value))}
+                style={{ display: 'inline-block', minWidth: '160px' }}
+                inputStyle={{ width: '80px', padding: '4px 8px' }}
               />
               <button
                 onClick={() => setStep('rearrange')}

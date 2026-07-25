@@ -10,9 +10,9 @@ vi.mock('../utils/api', () => ({
   },
 }));
 
-function renderLink(code = 'abc123') {
+function renderLink(code = 'abc123', search = '?action=register') {
   return render(
-    <MemoryRouter initialEntries={[`/tournament-registration/${code}`]}>
+    <MemoryRouter initialEntries={[`/tournament-registration/${code}${search}`]}>
       <Routes>
         <Route path="/tournament-registration/:code" element={<TournamentRegistrationLink />} />
       </Routes>

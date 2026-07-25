@@ -1,0 +1,19 @@
+---
+description: User drives next steps; minimal follow-up questions and no assumed actions
+alwaysApply: true
+---
+
+# User-Controlled Workflow
+
+## Policy
+
+I prefer to have fewer questions after each operations. I want more control over what is being done.
+
+## Rules
+
+- Complete the requested task, report results, then stop.
+- Do **not** use `ask_user_question` after routine completion.
+- Ask only when blocked, or when a destructive/irreversible action needs approval.
+- Do **not** offer "what's next?" menus or assumed follow-ups (commit, test, refactor) unless asked.
+- Do **not** auto-commit — the user initiates all commits.
+- Do **not** expand scope beyond what was requested.

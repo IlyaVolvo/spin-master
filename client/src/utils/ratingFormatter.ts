@@ -68,3 +68,58 @@ export function formatActiveTournamentRating(
   return rating !== null ? `${rating}` : null;
 }
 
+/** e.g. +20, -10 */
+function formatSignedDelta(n: number): string {
+  if (n >= 0) return `+${n}`;
+  return `${n}`;
+}
+
+/**
+ * Completed RR rating annotation:
+ * (current) (signup/(completion Δ[, during Δ][, after Δ]))
+ */
+export function formatRrCompletedRatingLine(participant: {
+  playerRatingAtTime?: number | null;
+  postRatingAtTime?: number | null;
+  member?: { rating?: number | null } | null;
+  rrCompletionRatingChange?: number | null;
+  rrCompletionRating?: number | null;
+} | null | undefined): string | null {
+  const before = participant?.playerRatingAtTime;
+  const current = participant?.postRatingAtTime ?? participant?.member?.rating ?? null;
+  if (before == null || current == null || isLikelyRanking(before)) {
+    return null;
+  }
+  const cur = Math.round(current);
+  const bef = Math.round(before);
+
+  const tcChange = participant?.rrCompletionRatingChange;
+  const rAfterTournament = participant?.rrCompletionRating;
+
+  if (rAfterTournament != null) {
+    const rEvent = Math.round(rAfterTournament);
+    const completionDelta =
+      tcChange != null ? Math.round(tcChange) : rEvent - bef;
+
+    const parts: string[] = [formatSignedDelta(completionDelta)];
+
+    if (tcChange != null) {
+      const anchorBeforeCompletion = rEvent - Math.round(tcChange);
+      const duringDelta = anchorBeforeCompletion - bef;
+      if (duringDelta !== 0) {
+        parts.push(formatSignedDelta(duringDelta));
+      }
+    }
+
+    const afterDelta = cur - rEvent;
+    if (afterDelta !== 0) {
+      parts.push(formatSignedDelta(afterDelta));
+    }
+
+    return `(${cur}) (${bef}/(${parts.join(', ')}))`;
+  }
+
+  const net = cur - bef;
+  return `(${cur}) (${bef}/(${formatSignedDelta(net)}))`;
+}
+

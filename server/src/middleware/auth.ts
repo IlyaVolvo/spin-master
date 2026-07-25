@@ -7,6 +7,8 @@ import { prisma } from '../index';
 export interface AuthRequest extends Request {
   memberId?: number;
   userId?: number;
+  /** Privilege-relinquished public-terminal mode (session or JWT). */
+  kioskMode?: boolean;
   member?: {
     id: number;
     email: string | null;
@@ -29,10 +31,12 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
     const member = req.session.member;
     (req as AuthRequest).memberId = member.id;
     (req as AuthRequest).member = member;
+    (req as AuthRequest).kioskMode = req.session.kioskMode === true;
     logger.info('Session authentication successful', { 
       memberId: member.id,
       method: req.method,
       path: req.path,
+      kioskMode: (req as AuthRequest).kioskMode === true,
     });
     return next();
   }
@@ -42,7 +46,10 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
   
   if (!token) {
     logger.warn('No session or token provided', { method: req.method, path: req.path, headers: Object.keys(req.headers) });
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({
+      error: 'Authentication required. Please log in again.',
+      code: 'AUTHENTICATION_REQUIRED',
+    });
   }
 
   try {
@@ -76,11 +83,16 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
       tokenPrefix: token?.substring(0, 20) + '...'
     });
     
-    const decoded = jwt.verify(token, jwtSecret) as { memberId?: number; type?: string };
+    const decoded = jwt.verify(token, jwtSecret) as {
+      memberId?: number;
+      type?: string;
+      kioskMode?: boolean;
+    };
     
     // Handle member token
     if (decoded.type === 'member' && decoded.memberId) {
       (req as AuthRequest).memberId = decoded.memberId;
+      (req as AuthRequest).kioskMode = decoded.kioskMode === true;
       
       // Try to fetch member data from database to populate req.member
       // This helps with role checks without requiring a database lookup in every route
@@ -109,6 +121,7 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
         method: req.method,
         path: req.path,
         roles: member.roles,
+        kioskMode: (req as AuthRequest).kioskMode === true,
         secretSource: secretSource,
       });
         } else {
@@ -135,18 +148,23 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
       return next();
     }
 
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({
+      error: 'Invalid token. Please log in again.',
+      code: 'INVALID_TOKEN',
+    });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorName = error instanceof Error ? error.name : typeof error;
     const jwtSecret = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
     const secretSource = process.env.JWT_SECRET ? 'JWT_SECRET' : (process.env.SESSION_SECRET ? 'SESSION_SECRET' : 'default');
+    const isExpired = errorName === 'TokenExpiredError';
     
     // Create a hash of the secret for verification without exposing it
     const secretHash = crypto.createHash('sha256').update(jwtSecret).digest('hex').substring(0, 16);
     
     logger.warn('JWT token verification failed', {
       error: errorMessage,
-      errorName: error instanceof Error ? error.name : typeof error,
+      errorName,
       method: req.method,
       path: req.path,
       hasToken: !!token,
@@ -158,10 +176,15 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
       secretLength: jwtSecret.length,
       secretHash: secretHash, // Hash to verify same secret is used
       usingDefault: jwtSecret === 'secret',
-      diagnostic: 'Token was signed with a different secret than the one used for verification. Compare secretHash between token creation and verification logs.'
+      diagnostic: isExpired
+        ? 'JWT token expired'
+        : 'Token was signed with a different secret than the one used for verification. Compare secretHash between token creation and verification logs.'
     });
-    return res.status(401).json({ 
-      error: 'Invalid token',
+    return res.status(401).json({
+      error: isExpired
+        ? 'Your session has expired. Please log in again.'
+        : 'Invalid token. Please log in again.',
+      code: isExpired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
       details: process.env.DEBUG === 'true' ? errorMessage : undefined
     });
   }

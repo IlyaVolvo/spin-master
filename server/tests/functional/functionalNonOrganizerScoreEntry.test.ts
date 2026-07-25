@@ -1,6 +1,6 @@
 /**
- * Non-organizer players can record scores when they supply the opponent's password
- * (same rules as product). Covers standalone match + each tournament plugin type.
+ * Non-organizer players can record scores for matches they play in (no PIN).
+ * Kiosk mode requires both participant PINs. Covers standalone + tournament plugins.
  *
  * Requires DATABASE_URL_TEST (see tests/jestSetupEnv.ts).
  */
@@ -20,7 +20,7 @@ import { app, prisma } from '../../src/index';
 import { authHeader } from './httpHelpers';
 import { useFunctionalDbLifecycle } from './lifecycle';
 import {
-  FUNCTIONAL_TEST_PLAYER_PASSWORD,
+  FUNCTIONAL_TEST_PLAYER_PIN,
   makeMemberJwt,
   seedOrganizer,
   seedPlayers,
@@ -35,7 +35,7 @@ function playerToken(memberId: number): string {
   return makeMemberJwt(memberId);
 }
 
-describe('Functional: non-organizer score entry (opponent password)', () => {
+describe('Functional: non-organizer score entry', () => {
   it('standalone match via POST /api/tournaments/matches/create', async () => {
     await seedOrganizer(prisma);
     const [p1, p2] = await seedPlayers(prisma, [
@@ -53,7 +53,6 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
         member2Id: opponent,
         player1Sets: 3,
         player2Sets: 1,
-        opponentPassword: FUNCTIONAL_TEST_PLAYER_PASSWORD,
       })
       .expect(201);
 
@@ -91,7 +90,6 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
         member2Id: b,
         player1Sets: 3,
         player2Sets: 0,
-        opponentPassword: FUNCTIONAL_TEST_PLAYER_PASSWORD,
       })
       .expect(201);
   });
@@ -135,7 +133,6 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
       .send({
         player1Sets: 3,
         player2Sets: 0,
-        opponentPassword: FUNCTIONAL_TEST_PLAYER_PASSWORD,
       })
       .expect(201);
   });
@@ -147,6 +144,8 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
       { firstName: 'W', lastName: 'B', email: 'nosa.wb@test.local', rating: 1750 },
       { firstName: 'W', lastName: 'C', email: 'nosa.wc@test.local', rating: 1650 },
       { firstName: 'W', lastName: 'D', email: 'nosa.wd@test.local', rating: 1550 },
+      { firstName: 'W', lastName: 'E', email: 'nosa.we@test.local', rating: 1450 },
+      { firstName: 'W', lastName: 'F', email: 'nosa.wf@test.local', rating: 1350 },
     ]);
     const ids = players.map((p) => p.id);
 
@@ -157,7 +156,7 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
         name: 'NOSA Swiss',
         type: 'SWISS',
         participantIds: ids,
-        additionalData: { numberOfRounds: 2 },
+        additionalData: { numberOfRounds: 3 },
       })
       .expect(201);
 
@@ -180,7 +179,6 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
         member2Id: m!.member2Id,
         player1Sets: 3,
         player2Sets: 0,
-        opponentPassword: FUNCTIONAL_TEST_PLAYER_PASSWORD,
       })
       .expect(200);
   });
@@ -192,8 +190,10 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
       { firstName: 'M', lastName: 'B', email: 'nosa.mb@test.local', rating: 1600 },
       { firstName: 'M', lastName: 'C', email: 'nosa.mc@test.local', rating: 1500 },
       { firstName: 'M', lastName: 'D', email: 'nosa.md@test.local', rating: 1400 },
+      { firstName: 'M', lastName: 'E', email: 'nosa.me@test.local', rating: 1300 },
+      { firstName: 'M', lastName: 'F', email: 'nosa.mf@test.local', rating: 1200 },
     ]);
-    const [a, b, c, d] = players.map((p) => p.id);
+    const [a, b, c, d, e, f] = players.map((p) => p.id);
 
     const created = await request(app)
       .post('/api/tournaments')
@@ -201,8 +201,8 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
       .send({
         name: 'NOSA Multi RR',
         type: 'MULTI_ROUND_ROBINS',
-        participantIds: [a, b, c, d],
-        additionalData: { groups: [[a, b], [c, d]] },
+        participantIds: [a, b, c, d, e, f],
+        additionalData: { groups: [[a, b, c], [d, e, f]] },
       })
       .expect(201);
 
@@ -222,7 +222,6 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
         member2Id: b,
         player1Sets: 3,
         player2Sets: 1,
-        opponentPassword: FUNCTIONAL_TEST_PLAYER_PASSWORD,
       })
       .expect(201);
   });
@@ -268,7 +267,6 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
         member2Id: b,
         player1Sets: 3,
         player2Sets: 0,
-        opponentPassword: FUNCTIONAL_TEST_PLAYER_PASSWORD,
       })
       .expect(201);
   });
@@ -314,8 +312,43 @@ describe('Functional: non-organizer score entry (opponent password)', () => {
         member2Id: b,
         player1Sets: 3,
         player2Sets: 0,
-        opponentPassword: FUNCTIONAL_TEST_PLAYER_PASSWORD,
       })
       .expect(201);
+  });
+});
+
+
+describe('Functional: kiosk score entry with PINs', () => {
+  it('requires both PINs in kiosk mode for standalone match', async () => {
+    const organizer = await seedOrganizer(prisma);
+    const players = await seedPlayers(prisma, [
+      { firstName: 'A', lastName: 'One', email: 'a.one@test.local', rating: 1400 },
+      { firstName: 'B', lastName: 'Two', email: 'b.two@test.local', rating: 1350 },
+    ]);
+    const kioskToken = makeMemberJwt(organizer.id, { kioskMode: true });
+
+    const denied = await request(app)
+      .post('/api/tournaments/matches/create')
+      .set(authHeader(kioskToken))
+      .send({
+        member1Id: players[0].id,
+        member2Id: players[1].id,
+        player1Sets: 3,
+        player2Sets: 1,
+      });
+    expect(denied.status).toBe(400);
+
+    const ok = await request(app)
+      .post('/api/tournaments/matches/create')
+      .set(authHeader(kioskToken))
+      .send({
+        member1Id: players[0].id,
+        member2Id: players[1].id,
+        player1Sets: 3,
+        player2Sets: 1,
+        member1Pin: FUNCTIONAL_TEST_PLAYER_PIN,
+        member2Pin: FUNCTIONAL_TEST_PLAYER_PIN,
+      });
+    expect(ok.status).toBe(201);
   });
 });

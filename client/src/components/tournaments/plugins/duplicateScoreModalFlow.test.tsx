@@ -9,6 +9,20 @@ const duplicateMessage =
 vi.mock('../../../utils/auth', () => ({
   getMember: () => ({ id: 1 }),
   isOrganizer: () => true,
+  isKioskMode: () => false,
+}));
+
+vi.mock('../../../utils/systemConfig', () => ({
+  getSystemConfig: () => ({
+    tournamentRules: {
+      matchScore: {
+        min: 0,
+        max: 7,
+        allowEqualScores: false,
+      },
+    },
+  }),
+  subscribeToSystemConfig: () => () => undefined,
 }));
 
 vi.mock('../../../utils/nameFormatter', () => ({
@@ -16,7 +30,7 @@ vi.mock('../../../utils/nameFormatter', () => ({
   getNameDisplayOrder: () => 'firstLast',
 }));
 
-vi.mock('../utils/roundRobinMatchUpdater', () => ({
+vi.mock('./roundRobinMatchUpdater', () => ({
   createRoundRobinMatchUpdater: () => ({
     createMatch: async (_matchData: unknown, callbacks: { onError?: (message: string) => void }) => {
       callbacks.onError?.(duplicateMessage);
@@ -87,9 +101,8 @@ describe('duplicate score modal flow', () => {
 
     fireEvent.click(screen.getAllByTitle('Enter score')[0]);
     expect(screen.getByTitle('Scores cannot be equal')).toBeInTheDocument();
-    const scoreInputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(scoreInputs[0], { target: { value: '3' } });
-    fireEvent.change(scoreInputs[1], { target: { value: '1' } });
+    fireEvent.keyDown(screen.getByLabelText('Player 1 score'), { key: '3' });
+    fireEvent.keyDown(screen.getByLabelText('Player 2 score'), { key: '1' });
 
     fireEvent.click(screen.getByTitle('Enter Score & Complete Match'));
 

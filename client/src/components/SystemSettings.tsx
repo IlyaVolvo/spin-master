@@ -8,23 +8,27 @@ import {
 } from '../utils/systemConfig';
 import { getErrorMessage } from '../utils/errorHandler';
 import ClubPlanManager from './ClubPlanManager';
+import { BoundedNumericInput } from './BoundedNumericInput';
 
 type NumericInputProps = {
   label: string;
   value: number;
   min?: number;
+  max?: number;
   onChange: (value: number) => void;
 };
 
-function NumericInput({ label, value, min = 0, onChange }: NumericInputProps) {
+function NumericInput({ label, value, min = 0, max, onChange }: NumericInputProps) {
   return (
     <FieldRow label={label}>
-      <input
-        type="number"
-        min={min}
+      <BoundedNumericInput
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        style={valueInputStyle}
+        min={min}
+        max={max}
+        allowEmpty={false}
+        aria-label={label}
+        onChange={(next) => onChange(next ?? min)}
+        inputStyle={valueInputStyle}
       />
     </FieldRow>
   );
@@ -287,6 +291,33 @@ export default function SystemSettings() {
           onChange={(value) => updateConfig(draft => { draft.authPolicy.passwordResetTokenTtlHours = value; })}
         />
         <NumericInput
+          label="Score PIN Length"
+          min={4}
+          value={config.authPolicy.pinLength}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.pinLength = value; })}
+        />
+        <FieldRow label="Auto Relinquish Privileges (club default)">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+            <input
+              type="checkbox"
+              checked={config.authPolicy.autoRelinquishPrivileges}
+              onChange={(event) => updateConfig(draft => {
+                draft.authPolicy.autoRelinquishPrivileges = event.target.checked;
+              })}
+            />
+            Elevated accounts enter kiosk mode on login by default
+          </label>
+        </FieldRow>
+        <NumericInput
+          label="Auto Relinquish Idle (minutes)"
+          min={0}
+          value={config.authPolicy.autoRelinquishIdleMinutes}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.autoRelinquishIdleMinutes = value; })}
+        />
+        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#666' }}>
+          After restoring privileges, return to kiosk after this many idle minutes (0 = only on login).
+        </p>
+        <NumericInput
           label="Preregistration Date Offset (days)"
           value={config.preregistration.defaultTournamentOffsetDays}
           onChange={(value) => updateConfig(draft => { draft.preregistration.defaultTournamentOffsetDays = value; })}
@@ -361,6 +392,7 @@ export default function SystemSettings() {
         <Subsection title="Multi Round Robins">
           <NumericInput label="Min Players" min={2} value={config.tournamentRules.multiRoundRobins.minPlayers} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.minPlayers = value; })} />
           <NumericInput label="Min Group Size" min={2} value={config.tournamentRules.multiRoundRobins.minGroupSize} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.minGroupSize = value; })} />
+          <NumericInput label="Max Group Size" min={2} value={config.tournamentRules.multiRoundRobins.maxGroupSize} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.maxGroupSize = value; })} />
         </Subsection>
 
         <Subsection title="Preliminary">

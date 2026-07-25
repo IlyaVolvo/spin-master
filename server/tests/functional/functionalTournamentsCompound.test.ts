@@ -35,8 +35,10 @@ describe('Functional: compound tournaments', () => {
       { firstName: 'M1', lastName: 'B', email: 'm1.f@test.local', rating: 1600 },
       { firstName: 'M2', lastName: 'C', email: 'm2.f@test.local', rating: 1500 },
       { firstName: 'M3', lastName: 'D', email: 'm3.f@test.local', rating: 1400 },
+      { firstName: 'M4', lastName: 'E', email: 'm4.f@test.local', rating: 1300 },
+      { firstName: 'M5', lastName: 'F', email: 'm5.f@test.local', rating: 1200 },
     ]);
-    const [a, b, c, d] = p.map((x) => x.id);
+    const [a, b, c, d, e, f] = p.map((x) => x.id);
 
     const created = await request(app)
       .post('/api/tournaments')
@@ -44,8 +46,8 @@ describe('Functional: compound tournaments', () => {
       .send({
         name: 'Functional Multi RR',
         type: 'MULTI_ROUND_ROBINS',
-        participantIds: [a, b, c, d],
-        additionalData: { groups: [[a, b], [c, d]] },
+        participantIds: [a, b, c, d, e, f],
+        additionalData: { groups: [[a, b, c], [d, e, f]] },
       })
       .expect(201);
 

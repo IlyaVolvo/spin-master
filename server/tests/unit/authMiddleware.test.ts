@@ -169,7 +169,12 @@ describe('authenticateSession', () => {
 
       expect(mockNext).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Invalid token' }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'INVALID_TOKEN',
+          error: 'Invalid token. Please log in again.',
+        }),
+      );
     });
 
     it('rejects token without memberId', async () => {
@@ -196,7 +201,12 @@ describe('authenticateSession', () => {
 
       expect(mockNext).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Invalid token' }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'INVALID_TOKEN',
+          error: 'Invalid token. Please log in again.',
+        }),
+      );
     });
 
     it('rejects expired token', async () => {
@@ -239,7 +249,10 @@ describe('authenticateSession', () => {
 
       expect(mockNext).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Authentication required' });
+      expect(res.json).toHaveBeenCalledWith({
+        code: 'AUTHENTICATION_REQUIRED',
+        error: 'Authentication required. Please log in again.',
+      });
     });
 
     it('returns 401 when authorization header has no Bearer prefix', async () => {

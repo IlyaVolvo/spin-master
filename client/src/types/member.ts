@@ -17,6 +17,8 @@ export interface Member {
   tournamentNotificationsEnabled?: boolean;
   /** Present on session/me payloads when returned by API. */
   hasPassword?: boolean;
+  /** null = inherit club default; only meaningful for Organizer/Admin. */
+  autoRelinquishPrivileges?: boolean | null;
 }
 
 export interface SimilarName {

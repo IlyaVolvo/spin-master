@@ -88,9 +88,10 @@ describe('Functional: members & lists', () => {
         roles: ['PLAYER'],
         skipSimilarityCheck: true,
       })
-      .expect(400);
+      .expect(409);
 
-    expect(dup.body.error).toMatch(/email already exists/i);
+    expect(dup.body.error).toMatch(/duplicate member fields/i);
+    expect(dup.body.fieldErrors?.email).toMatch(/email already exists/i);
   });
 
   it('POST /api/players/import returns structured validation on bad CSV', async () => {
@@ -144,6 +145,7 @@ describe('Functional: members & lists', () => {
     expect(dbRows).toHaveLength(2);
     expect(dbRows[0].firstName).toBe('Import');
     expect(dbRows[1].rating).toBe(1480);
+    expect(dbRows.every((row) => row.isActive)).toBe(true);
 
     const exportRes = await request(app).get('/api/players/export').set(authHeader(token)).expect(200);
 
@@ -178,12 +180,38 @@ describe('Functional: members & lists', () => {
     expect(dbRows[1].rating).toBe(1600);
   });
 
+  it('CSV import without email creates active members immediately', async () => {
+    const { token } = await seedOrganizer(prisma);
+    const csv = [
+      'FirstName,LastName,Email,BirthDate,Gender,Roles,Phone,Address,Rating',
+      'Roster,Only,,2000-01-15,MALE,P,,,1500',
+    ].join('\n');
+
+    const importRes = await request(app)
+      .post('/api/players/import')
+      .set(authHeader(token))
+      .field('sendEmail', 'false')
+      .attach('file', Buffer.from(csv, 'utf-8'), 'import.csv')
+      .expect(200);
+
+    expect(importRes.body.successful).toBe(1);
+    expect(importRes.body.addedWithoutEmail).toBe(1);
+
+    const member = await prisma.member.findFirst({
+      where: { firstName: 'Roster', lastName: 'Only' },
+    });
+    expect(member).not.toBeNull();
+    expect(member!.email).toBeNull();
+    expect(member!.isActive).toBe(true);
+  });
+
   it('GET /players vs /active; rating-history & match-history', async () => {
     const { token } = await seedOrganizer(prisma);
     const players = await seedPlayers(prisma, [
       { firstName: 'Active', lastName: 'A', email: 'active.f@test.local', rating: 1600 },
       { firstName: 'Inactive', lastName: 'B', email: 'inactive.f@test.local', rating: 1500 },
       { firstName: 'Active', lastName: 'C', email: 'activec.f@test.local', rating: 1550 },
+      { firstName: 'Active', lastName: 'D', email: 'actived.f@test.local', rating: 1520 },
     ]);
 
     await prisma.member.update({
@@ -215,7 +243,7 @@ describe('Functional: members & lists', () => {
       .send({
         name: 'Filter test RR',
         type: 'ROUND_ROBIN',
-        participantIds: [players[0].id, players[2].id],
+        participantIds: [players[0].id, players[2].id, players[3].id],
       })
       .expect(201);
 
@@ -245,7 +273,8 @@ describe('Functional: members & lists', () => {
         rating: 1400,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
 
@@ -274,7 +303,8 @@ describe('Functional: members & lists', () => {
         rating: 1400,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
 
@@ -304,7 +334,8 @@ describe('Functional: members & lists', () => {
         rating: 1410,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
 
@@ -334,7 +365,8 @@ describe('Functional: members & lists', () => {
         rating: 1600,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
 
@@ -362,7 +394,8 @@ describe('Functional: members & lists', () => {
         rating: 1390,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
     const selfToken = makeMemberJwt(member.id);
@@ -391,7 +424,8 @@ describe('Functional: members & lists', () => {
         rating: 1395,
         isActive: true,
         qrTokenHash: qrTokenHash(),
-        mustResetPassword: false,
+
+        scorePin: '1234',mustResetPassword: false,
       },
     });
     const selfToken = makeMemberJwt(member.id);

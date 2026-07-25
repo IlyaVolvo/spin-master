@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import type { PostSelectionFlowProps } from '../../../types/tournament';
 import api from '../../../utils/api';
 import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
+import { BoundedNumericInput } from '../../BoundedNumericInput';
+import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
 
 type Step = 'configure' | 'confirmation';
 
@@ -66,17 +68,21 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         tournamentData.name = tournamentName.trim();
       }
 
+      let createdId: number | undefined;
       if (finalizingPreregistrationId) {
-        await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Swiss tournament created from preregistration successfully');
       } else if (editingTournamentId) {
-        await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
         onSuccess('Swiss tournament modified successfully');
       } else {
-        await api.post('/tournaments', tournamentData);
+        const response = await api.post('/tournaments', tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Swiss tournament created successfully');
       }
-      onCreated();
+      onCreated(createdId);
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
     }
@@ -114,32 +120,17 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
           )}
 
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: '#333' }}>
-              Number of rounds:
-            </label>
-            <input
-              type="number"
+            <BoundedNumericInput
+              label="Number of rounds:"
               min={minRounds}
               max={maxRounds}
               value={numberOfRounds}
-              onChange={(e) => {
-                const value = parseInt(e.target.value);
-                if (!isNaN(value) && value >= minRounds && value <= maxRounds) {
-                  setNumberOfRounds(value);
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '10px',
-                fontSize: '14px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                backgroundColor: 'white'
+              allowEmpty={false}
+              hintExtra={`${Math.round(100 / swissRules.maxRoundsDivisor)}% of players`}
+              onChange={(value) => {
+                if (value !== null) setNumberOfRounds(value);
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-              Min: {minRounds}, Max: {maxRounds} ({Math.round(100 / swissRules.maxRoundsDivisor)}% of players)
-            </div>
           </div>
 
           {/* Summary */}

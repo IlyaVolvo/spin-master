@@ -252,7 +252,7 @@ const History: React.FC = () => {
                                 href="/tournaments"
                                 onClick={(e) => {
                                   e.preventDefault();
-                                  navigate('/tournaments', {
+                                  navigate(`/tournaments/${point.tournamentId}`, {
                                     state: {
                                       tournamentId: point.tournamentId,
                                       from: 'history',
@@ -420,7 +420,7 @@ const History: React.FC = () => {
                                   href={`/tournaments`}
                                   onClick={(e) => {
                                     e.preventDefault();
-                                    navigate('/tournaments', {
+                                    navigate(`/tournaments/${match.tournamentId}`, {
                                       state: {
                                         tournamentId: match.tournamentId,
                                         from: 'history',

@@ -1,14 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../utils/api';
-import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
-import { formatActiveTournamentRating } from '../utils/ratingFormatter';
-import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
+import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { formatActiveTournamentRating } from '../../../utils/ratingFormatter';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
 import {
-  attachOpponentPasswordIfNeeded,
   canOpenTournamentMatchEditor,
-  shouldShowOpponentPasswordForMatchEdit,
-} from '../utils/matchScorePayload';
+  shouldShowScorePinsForMatchEdit,
+} from '../../../utils/matchScorePayload';
+import {
+  shouldSurfaceMatchScoreError,
+  upsertTournamentMatchScore,
+} from '../../../utils/matchScoreSubmit';
 
 interface Member {
   id: number;
@@ -52,7 +54,8 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  opponentPassword?: string;
+  member1Pin?: string;
+  member2Pin?: string;
 }
 
 export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
@@ -135,55 +138,45 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
       player2Sets: match.player2Sets.toString() || '0',
       player1Forfeit: match.player1Forfeit || false,
       player2Forfeit: match.player2Forfeit || false,
-      opponentPassword: '',
+      member1Pin: '',
+        member2Pin: '',
     });
   };
 
   const handleSaveMatch = async () => {
     if (!editingMatch) return;
 
-    if (editingMatch.player1Forfeit && editingMatch.player2Forfeit) {
-      alert('Only one player can forfeit');
-      return;
-    }
-
-    // Validate scores: cannot be equal (including 0:0) unless it's a forfeit
-    if (!editingMatch.player1Forfeit && !editingMatch.player2Forfeit) {
-      const player1Sets = parseInt(editingMatch.player1Sets) || 0;
-      const player2Sets = parseInt(editingMatch.player2Sets) || 0;
-      // Disallow equal scores including 0:0
-      if (player1Sets === player2Sets) {
-        alert('Scores cannot be equal. One player must win.');
-        return;
-      }
-    }
-
-      const matchData: any = {
-        member1Id: editingMatch.member1Id,
-        member2Id: editingMatch.member2Id,
-      };
-
-    // If forfeit, send forfeit flags; otherwise send sets
-    if (editingMatch.player1Forfeit || editingMatch.player2Forfeit) {
-      matchData.player1Forfeit = editingMatch.player1Forfeit;
-      matchData.player2Forfeit = editingMatch.player2Forfeit;
-    } else {
-      matchData.player1Sets = parseInt(editingMatch.player1Sets) || 0;
-      matchData.player2Sets = parseInt(editingMatch.player2Sets) || 0;
-      matchData.player1Forfeit = false;
-      matchData.player2Forfeit = false;
-    }
-
-    attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
-
     try {
-      await api.patch(`/tournaments/${tournamentId}/matches/${editingMatch.matchId}`, matchData);
+      await upsertTournamentMatchScore({
+        tournamentId,
+        matchId: editingMatch.matchId,
+        matchData: {
+          member1Id: editingMatch.member1Id,
+          member2Id: editingMatch.member2Id,
+          player1Sets: parseInt(editingMatch.player1Sets) || 0,
+          player2Sets: parseInt(editingMatch.player2Sets) || 0,
+          player1Forfeit: editingMatch.player1Forfeit,
+          player2Forfeit: editingMatch.player2Forfeit,
+        },
+        pins: {
+          member1Pin: editingMatch.member1Pin,
+          member2Pin: editingMatch.member2Pin,
+        },
+        refreshTournament: false,
+        callbacks: {
+          onError: (message) => alert(message),
+        },
+      });
       setEditingMatch(null);
       if (onMatchUpdate) {
         onMatchUpdate();
       }
-    } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to update match');
+    } catch (error: unknown) {
+      const enriched = error instanceof Error ? error : new Error('Failed to update match');
+      if (shouldSurfaceMatchScoreError(enriched)) {
+        // already alerted via callback when from upsert
+      }
+      throw enriched;
     }
   };
 
@@ -364,7 +357,7 @@ export const PlayoffMatchesTable: React.FC<PlayoffMatchesTableProps> = ({
             player1={player1.member}
             player2={player2.member}
             showForfeitOptions={true}
-            requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit({
+            requireScorePins={shouldShowScorePinsForMatchEdit({
               member1Id: editingMatch.member1Id,
               member2Id: editingMatch.member2Id,
             })}

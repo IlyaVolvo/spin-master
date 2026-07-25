@@ -1,8 +1,11 @@
-import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext } from './TournamentPlugin';
+import { TournamentEnrichmentContext, EnrichedTournament, TournamentCreationContext, CorrectionEligibility } from './TournamentPlugin';
 import { BaseTournamentPlugin } from './BaseTournamentPlugin';
 import { logger } from '../utils/logger';
 import { adjustRatingsForSingleMatch } from '../services/usattRatingService';
 import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
+import { buildActiveModificationEligibility, blockedCorrectionEligibility, buildBasicCorrectionEligibility, scoredMatchIds } from './scoreCorrectionHelpers';
+import { matchHasResult } from '../utils/scoreCorrectionMatchUtils';
+import { ClientHttpError } from '../http/clientHttpError';
 
 interface PlayerStanding {
   memberId: number;
@@ -14,6 +17,27 @@ interface PlayerStanding {
 export class SwissPlugin extends BaseTournamentPlugin {
   type = 'SWISS';
   isBasic = true;
+
+  validateCreateRules(participantCount: number, data: any): string | null {
+    // Lazy require avoids circular import via systemConfigService → index → registry
+    const { calculateSwissDefaultRounds, getTournamentRulesConfig } = require('../services/systemConfigService');
+    const rules = getTournamentRulesConfig().swiss;
+    const roundsValue = data?.numberOfRounds ?? data?.additionalData?.numberOfRounds;
+    const numberOfRounds = roundsValue == null
+      ? calculateSwissDefaultRounds(participantCount, rules.maxRoundsDivisor)
+      : Number(roundsValue);
+    const maxRounds = Math.floor(participantCount / rules.maxRoundsDivisor);
+    if (participantCount < rules.minPlayers) {
+      return `Swiss requires at least ${rules.minPlayers} players`;
+    }
+    if (!Number.isInteger(numberOfRounds) || numberOfRounds < 3) {
+      return 'Number of rounds must be at least 3';
+    }
+    if (numberOfRounds > maxRounds) {
+      return `Number of rounds cannot exceed ${maxRounds}`;
+    }
+    return null;
+  }
 
   async createTournament(context: TournamentCreationContext): Promise<any> {
     const { name, participantIds, players, prisma, additionalData } = context;
@@ -614,5 +638,40 @@ export class SwissPlugin extends BaseTournamentPlugin {
       const hasForfeit = m.player1Forfeit || m.player2Forfeit;
       return hasScore || hasForfeit;
     });
+  }
+
+  async getCorrectionEligibility(context: { tournament: any; prisma: any }): Promise<CorrectionEligibility> {
+    const { tournament, prisma } = context;
+    if (tournament.cancelled) {
+      return blockedCorrectionEligibility('Tournament was cancelled');
+    }
+
+    if (tournament.status === 'ACTIVE') {
+      return buildActiveModificationEligibility(scoredMatchIds(tournament));
+    }
+
+    const lastRound = tournament.swissData?.numberOfRounds;
+    if (!lastRound) {
+      return { allowed: false, reason: 'Swiss configuration not found', correctableMatchIds: [] };
+    }
+    const lastRoundMatches = (tournament.matches ?? []).filter(
+      (m: any) => m.round === lastRound && matchHasResult(m),
+    );
+    const ids = lastRoundMatches.map((m: any) => m.id);
+    return buildBasicCorrectionEligibility(prisma, tournament, ids);
+  }
+
+  async assertMatchCorrectable(context: { tournament: any; match: any; prisma: any }): Promise<void> {
+    const { tournament, match } = context;
+    if (tournament.status !== 'COMPLETED' || tournament.cancelled) {
+      throw new ClientHttpError('Tournament is not eligible for score correction', 400);
+    }
+    const lastRound = tournament.swissData?.numberOfRounds;
+    if (match.round !== lastRound) {
+      throw new ClientHttpError('Only the last Swiss round can be corrected after completion', 400);
+    }
+    if (!matchHasResult(match)) {
+      throw new ClientHttpError('Match has no result to correct', 400);
+    }
   }
 }

@@ -7,6 +7,9 @@ export type SystemConfig = {
   authPolicy: {
     minimumPasswordLength: number;
     passwordResetTokenTtlHours: number;
+    pinLength: number;
+    autoRelinquishPrivileges: boolean;
+    autoRelinquishIdleMinutes: number;
   };
   preregistration: {
     defaultTournamentOffsetDays: number;
@@ -37,6 +40,7 @@ export type SystemConfig = {
     multiRoundRobins: {
       minPlayers: number;
       minGroupSize: number;
+      maxGroupSize: number;
       minGroups: number;
     };
     preliminary: {
@@ -73,6 +77,9 @@ const defaultSystemConfig: SystemConfig = {
   authPolicy: {
     minimumPasswordLength: 6,
     passwordResetTokenTtlHours: 1,
+    pinLength: 4,
+    autoRelinquishPrivileges: false,
+    autoRelinquishIdleMinutes: 5,
   },
   preregistration: {
     defaultTournamentOffsetDays: 1,
@@ -109,6 +116,7 @@ const defaultSystemConfig: SystemConfig = {
     multiRoundRobins: {
       minPlayers: 6,
       minGroupSize: 3,
+      maxGroupSize: 12,
       minGroups: 2,
     },
     preliminary: {

@@ -63,9 +63,51 @@ export interface TournamentStateChangeResult {
   message?: string;
 }
 
+export interface CorrectionEligibility {
+  allowed: boolean;
+  reason?: string;
+  correctableMatchIds: number[];
+}
+
 export interface TournamentPlugin {
   type: string;
   isBasic: boolean;
+
+  /**
+   * Create/modify rule checks (player counts, bracket size, rounds, group size).
+   * Returns an error message or null when valid.
+   */
+  validateCreateRules?(participantCount: number, data: any): string | null;
+
+  /**
+   * Completed score correction: rebuild ratings as one tournament-level batch
+   * (e.g. round robin) instead of replaying each match.
+   */
+  scoreCorrectionUsesBatchTournamentRatings?: boolean;
+
+  /**
+   * When replaying per-match ratings after correction, seed from current member
+   * ratings (playoff) rather than historical enrollment ratings.
+   */
+  scoreCorrectionUsesCurrentMemberRatings?: boolean;
+
+  /**
+   * Prefer TOURNAMENT_COMPLETED rating_history over post-tournament cache when
+   * resolving display ratings after completion.
+   */
+  preferCompletionRatingHistory?: boolean;
+
+  /**
+   * Treat bracketMatch-linked scored matches as evidence the event has started
+   * (used when gating preliminary corrections once a final phase begins).
+   */
+  checksBracketMatchesForStarted?: boolean;
+
+  /** Compound parents: identify the final-phase child among siblings */
+  isFinalPhaseChild?(child: any): boolean;
+
+  /** Compound parents: identify a preliminary-group child among siblings */
+  isPreliminaryGroupChild?(child: any): boolean;
   
   // Data enrichment methods
   enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament>;
@@ -88,6 +130,19 @@ export interface TournamentPlugin {
   isComplete(tournament: any): boolean;
   canCancel(tournament: any): boolean;
   canModify(tournament: any): boolean;
+
+  /** Post-completion score correction eligibility for organizers */
+  getCorrectionEligibility?(context: {
+    tournament: any;
+    prisma: any;
+  }): Promise<CorrectionEligibility>;
+
+  /** Throws if a completed-tournament match cannot be corrected */
+  assertMatchCorrectable?(context: {
+    tournament: any;
+    match: any;
+    prisma: any;
+  }): Promise<void>;
   
   // Returns the number of matches remaining before the tournament is complete
   // When this reaches 0, the tournament should be marked as complete

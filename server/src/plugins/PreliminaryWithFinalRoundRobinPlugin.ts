@@ -23,6 +23,25 @@ interface GroupResult {
 export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournamentPlugin {
   type = 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN';
 
+  validateCreateRules(_participantCount: number, data: any): string | null {
+    // Lazy require avoids circular import via systemConfigService → index → registry
+    const { getTournamentRulesConfig } = require('../services/systemConfigService');
+    const rules = getTournamentRulesConfig().preliminary;
+    const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
+    if (Number.isInteger(groupSize) && (groupSize < rules.groupSizeMin || groupSize > rules.groupSizeMax)) {
+      return `Preliminary group size must be between ${rules.groupSizeMin} and ${rules.groupSizeMax}`;
+    }
+    return null;
+  }
+
+  isFinalPhaseChild(child: any): boolean {
+    return child.type === 'ROUND_ROBIN' && child.groupNumber == null;
+  }
+
+  isPreliminaryGroupChild(child: any): boolean {
+    return child.type === 'ROUND_ROBIN' && child.groupNumber != null;
+  }
+
   async createTournament(context: TournamentCreationContext): Promise<any> {
     const { name, participantIds, players, prisma, additionalData } = context;
     
@@ -246,8 +265,8 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
     prisma: any
   ): Promise<TournamentStateChangeResult> {
     // Separate preliminary groups (have groupNumber) from the final (no groupNumber)
-    const preliminaryGroups = allChildren.filter((c: any) => c.type === 'ROUND_ROBIN' && c.groupNumber !== null);
-    const finalTournament = allChildren.find((c: any) => c.type === 'ROUND_ROBIN' && c.groupNumber === null);
+    const preliminaryGroups = allChildren.filter((c: any) => this.isPreliminaryGroupChild(c));
+    const finalTournament = allChildren.find((c: any) => this.isFinalPhaseChild(c));
     
     // If final exists and is complete, mark parent as complete
     if (finalTournament && finalTournament.status === 'COMPLETED') {

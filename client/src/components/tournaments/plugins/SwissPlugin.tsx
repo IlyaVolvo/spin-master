@@ -4,7 +4,9 @@ import { SwissSetupPanel } from './SwissSetupPanel.tsx';
 import { SwissActivePanel } from './SwissActivePanel';
 import { SwissCompletedPanel } from './SwissCompletedPanel';
 import { SwissPostSelectionFlow } from './SwissPostSelectionFlow';
+import { SwissSchedulePanel } from './SwissSchedulePanel';
 import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
+import { generateSwissSchedule } from './swissScheduleUtils';
 
 // Swiss icon component
 const SwissIcon: React.FC<{ size: number; color: string }> = ({ size, color }) => (
@@ -91,11 +93,20 @@ export const SwissPlugin: TournamentPlugin = {
     <SwissActivePanel {...props} />
   ),
 
+  createSchedulePanel: (props) => (
+    <SwissSchedulePanel {...props} />
+  ),
+
   createCompletedPanel: (props: TournamentCompletedProps) => (
     <SwissCompletedPanel {...props} />
   ),
 
+  generateSchedule: (tournament) => generateSwissSchedule(tournament),
+
   canPrintResults: true,
+  supportsDetailedResultsPrint: false,
+  supportsAbbreviatedResultsPrint: false,
+  schedulePrintUsesMatchNumberColumn: true,
 
   calculateExpectedMatches: (tournament) => {
     const swissData = (tournament as any).swissData;

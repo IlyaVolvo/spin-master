@@ -5,7 +5,8 @@ import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { processMatchRating } from '../services/matchRatingService';
 import { getTournamentRulesConfig } from '../services/systemConfigService';
-import bcrypt from 'bcryptjs';
+import { authorizeStandaloneMatchScoreWrite, matchAuthFailureJson } from '../utils/matchScoreAuthorization';
+import { isOrganizer } from '../utils/organizerAccess';
 
 const router = express.Router();
 
@@ -48,35 +49,7 @@ router.get('/player-game-rows', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Helper function to check if user has ORGANIZER role
-async function isOrganizer(req: AuthRequest): Promise<boolean> {
-  if (req.member && Array.isArray(req.member.roles)) {
-    const hasOrganizerRole = req.member.roles.some(role => 
-      String(role).toUpperCase() === 'ORGANIZER'
-    );
-    if (hasOrganizerRole) return true;
-  }
-  
-  if (req.memberId) {
-    try {
-      const member = await prisma.member.findUnique({
-        where: { id: req.memberId },
-        select: { roles: true },
-      });
-      
-      if (member && Array.isArray(member.roles)) {
-        const hasOrganizerRole = member.roles.some(role => 
-          String(role).toUpperCase() === 'ORGANIZER'
-        );
-        if (hasOrganizerRole) return true;
-      }
-    } catch (error) {
-      logger.error('Error checking organizer status', { error });
-    }
-  }
-  
-  return false;
-}
+// Helper uses shared isOrganizer (respects kiosk mode)
 
 function validateConfiguredMatchScore(player1Sets: number, player2Sets: number, player1Forfeit = false, player2Forfeit = false): string | null {
   const { matchScore } = getTournamentRulesConfig();
@@ -174,7 +147,8 @@ router.post('/', [
   body('player2Sets').isInt({ min: 0 }),
   body('player1Forfeit').optional().isBoolean(),
   body('player2Forfeit').optional().isBoolean(),
-  body('opponentPassword').optional().isString(),
+  body('member1Pin').optional().isString(),
+  body('member2Pin').optional().isString(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -182,7 +156,7 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit, opponentPassword } = req.body;
+    const { member1Id, member2Id, player1Sets, player2Sets, player1Forfeit, player2Forfeit, member1Pin, member2Pin } = req.body;
 
     // Validate that member1Id and member2Id are different
     if (member1Id === member2Id) {
@@ -199,27 +173,18 @@ router.post('/', [
       return res.status(404).json({ error: 'One or both players not found' });
     }
 
-    const userIsOrganizer = await isOrganizer(req);
-
-    // Authorization check
-    if (!userIsOrganizer) {
-      // Non-organizers can only create matches involving themselves
-      if (req.memberId !== member1Id && req.memberId !== member2Id) {
-        return res.status(403).json({ error: 'You can only create matches for yourself' });
-      }
-
-      // Require opponent's password confirmation
-      if (!opponentPassword) {
-        return res.status(400).json({ error: 'Opponent password confirmation required' });
-      }
-
-      const opponentId = req.memberId === member1Id ? member2Id : member1Id;
-      const opponent = opponentId === member1Id ? member1 : member2;
-
-      const passwordValid = await bcrypt.compare(opponentPassword, opponent.password);
-      if (!passwordValid) {
-        return res.status(401).json({ error: 'Invalid opponent password' });
-      }
+    const scoreAuth = await authorizeStandaloneMatchScoreWrite(
+      prisma,
+      req,
+      member1Id,
+      member2Id,
+      member1Pin,
+      member2Pin,
+      player1Forfeit,
+      player2Forfeit
+    );
+    if (!scoreAuth.ok) {
+      return res.status(scoreAuth.status).json(matchAuthFailureJson(scoreAuth));
     }
 
     const finalPlayer1Forfeit = player1Forfeit || false;

@@ -125,6 +125,12 @@ export interface PreliminaryConfig {
   autoQualifiedMemberIds: number[];
 }
 
+export interface CorrectionEligibility {
+  allowed: boolean;
+  reason?: string;
+  correctableMatchIds: number[];
+}
+
 // Tournament Interface
 // Main tournament entity supporting both basic and compound tournament types
 // Basic tournaments have participants and matches directly
@@ -153,6 +159,7 @@ export interface Tournament {
   // Compound tournament specific
   groupNumber?: number | null; // For round-robin groups in compound tournaments
   childTournaments?: Tournament[]; // Child tournaments for compound types
+  correctionEligibility?: CorrectionEligibility;
   // Preliminary tournament configuration (both RR final and Playoff final)
   preliminaryConfig?: PreliminaryConfig | null;
 }
@@ -232,9 +239,34 @@ export interface TournamentPlugin {
 
   // Print/export
   generatePrintContent?: (tournament: Tournament) => string;
+  /** HTML for the results body (basic tournament print). */
+  buildResultsSectionHtml?: (
+    tournament: Tournament,
+    mode: 'standard' | 'detailed' | 'abbreviated',
+  ) => string;
+  /** HTML for a child section inside a compound parent print. */
+  buildChildResultsSectionHtml?: (
+    tournament: Tournament,
+    mode: 'standard' | 'detailed' | 'abbreviated',
+  ) => string;
 
   // Additional features
   canPrintResults?: boolean;
+  /** When true, schedule print includes a Match # column. */
+  schedulePrintUsesMatchNumberColumn?: boolean;
+  /** When true, Detailed results print is offered (basic types; compounds union children). */
+  supportsDetailedResultsPrint?: boolean;
+  /** When true, Abbreviated results print is offered (basic types; compounds union children). */
+  supportsAbbreviatedResultsPrint?: boolean;
+  /**
+   * Compound parents: true when `child` is the final phase (printed on its own row, etc.).
+   * Omit on basic / flat multi-group types.
+   */
+  isFinalPhaseChild?: (parent: Tournament, child: Tournament) => boolean;
+  /**
+   * Compound prelim+final parents: true when `child` is a preliminary group (not the final).
+   */
+  isPreliminaryGroupChild?: (parent: Tournament, child: Tournament) => boolean;
   createPrintPanel?: (props: TournamentPrintProps) => React.ReactNode;
   renderHeader?: (props: { tournament: Tournament; onEditClick: () => void }) => React.ReactNode;
 }
@@ -255,7 +287,7 @@ export interface PostSelectionFlowProps {
   setTournamentName: (name: string) => void;
   editingTournamentId: number | null;
   finalizingPreregistrationId?: number | null;
-  onCreated: () => void;
+  onCreated: (tournamentId?: number) => void;
   onError: (error: string) => void;
   onSuccess: (message: string) => void;
   onCancel: () => void;
@@ -299,6 +331,7 @@ export interface TournamentActiveProps extends PanelProps {
 export interface TournamentScheduleProps extends PanelProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
+  onPrintSchedule?: () => void;
 }
 
 export interface TournamentCompletedProps extends PanelProps {

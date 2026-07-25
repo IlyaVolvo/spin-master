@@ -17,6 +17,13 @@
  * - Mock Prisma: bracket-specific queries (bracketMatch.findUnique, findFirst, etc.)
  */
 
+jest.mock('../../src/services/systemConfigService', () => ({
+  getTournamentRulesConfig: jest.fn(() => ({
+    matchScore: { min: 0, max: 10, allowEqualScores: false },
+    playoff: { minPlayers: 2 },
+  })),
+}));
+
 import { PlayoffPlugin } from '../../src/plugins/PlayoffPlugin';
 
 // Mock the playoff bracket service (dynamically imported by the plugin)
@@ -818,6 +825,36 @@ describe('PlayoffPlugin', () => {
     it('should return empty array when no bracket matches', async () => {
       const result = await plugin.getPrintableView({ tournament: {}, prisma: {} });
       expect(result.bracket).toEqual([]);
+    });
+  });
+
+  describe('getCorrectionEligibility', () => {
+    it('exposes championship match only', async () => {
+      const recordedAt = new Date('2026-01-01T12:00:00Z');
+      const tournament = {
+        id: 1,
+        status: 'COMPLETED',
+        recordedAt,
+        participants: [{ memberId: 1 }, { memberId: 2 }],
+        matches: [],
+      };
+      const prisma = {
+        bracketMatch: {
+          findFirst: jest.fn().mockResolvedValue({
+            nextMatchId: null,
+            match: { id: 42, player1Sets: 3, player2Sets: 1 },
+          }),
+        },
+        ratingHistory: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({ timestamp: recordedAt, id: 1 })
+            .mockResolvedValue(null),
+        },
+      };
+
+      const result = await plugin.getCorrectionEligibility!({ tournament, prisma });
+      expect(result.correctableMatchIds).toEqual([42]);
     });
   });
 });

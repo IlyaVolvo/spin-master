@@ -3,6 +3,8 @@ import type { PostSelectionFlowProps } from '../../../types/tournament';
 import api from '../../../utils/api';
 import { getSystemConfig } from '../../../utils/systemConfig';
 import { rankBasedGroups, computeGroupCapacities } from './roundRobinUtils';
+import { BoundedNumericInput } from '../../BoundedNumericInput';
+import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
 
 type Step = 'select_group_size' | 'confirm_groups' | 'confirmation';
 
@@ -48,8 +50,8 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
       onError(`Need at least ${multiRoundRobinRules.minPlayers} players for Multi Round Robin`);
       return;
     }
-    if (groupSize < multiRoundRobinRules.minGroupSize) {
-      onError(`Group size must be at least ${multiRoundRobinRules.minGroupSize}`);
+    if (groupSize < multiRoundRobinRules.minGroupSize || groupSize > multiRoundRobinRules.maxGroupSize) {
+      onError(`Group size must be between ${multiRoundRobinRules.minGroupSize} and ${multiRoundRobinRules.maxGroupSize}`);
       return;
     }
     const groups = rankBasedGroups(selectedPlayerIds, groupSize, (id) => members.find(p => p.id === id));
@@ -85,17 +87,21 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
         tournamentData.name = tournamentName.trim();
       }
 
+      let createdId: number | undefined;
       if (finalizingPreregistrationId) {
-        await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Multi Round Robin tournament created from preregistration successfully');
       } else if (editingTournamentId) {
-        await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+        createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
         onSuccess('Multi Round Robin tournament modified successfully');
       } else {
-        await api.post('/tournaments', tournamentData);
+        const response = await api.post('/tournaments', tournamentData);
+        createdId = extractCreatedTournamentId(response.data);
         onSuccess('Multi Round Robin tournament created successfully');
       }
-      onCreated();
+      onCreated(createdId);
     } catch (err: any) {
       onError(err.response?.data?.error || 'Failed to create tournament');
     }
@@ -125,32 +131,17 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
           marginBottom: '15px'
         }}>
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: '#333' }}>
-              Players per group:
-            </label>
-            <input
-              type="number"
+            <BoundedNumericInput
+              label="Players per group:"
               min={multiRoundRobinRules.minGroupSize}
-              max="12"
+              max={multiRoundRobinRules.maxGroupSize}
               value={groupSize}
-              onChange={(e) => {
-                const value = parseInt(e.target.value);
-                if (!isNaN(value) && value >= multiRoundRobinRules.minGroupSize && value <= 12) {
-                  setGroupSize(value);
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '10px',
-                fontSize: '14px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                backgroundColor: 'white'
+              allowEmpty={false}
+              hintExtra="Players are split by rating: highest rated go to Group 1, next to Group 2, etc."
+              onChange={(value) => {
+                if (value !== null) setGroupSize(value);
               }}
             />
-            <div style={{ marginTop: '4px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-              Desired group size (3-12). Players are split by rating: highest rated go to Group 1, next to Group 2, etc.
-            </div>
           </div>
 
           {/* Summary */}

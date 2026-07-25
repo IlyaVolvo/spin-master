@@ -1,13 +1,27 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
-import api from '../utils/api';
-import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
-import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from './MatchEntryPopup';
-import { getMember, isOrganizer } from '../utils/auth';
-import { attachOpponentPasswordIfNeeded, shouldShowOpponentPasswordForMatchEdit } from '../utils/matchScorePayload';
-import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../utils/duplicateScoreError';
-import { getPlayoffFirstResultBlockedReason } from './tournaments/utils/playoffBracketPlayability';
-import { getSystemConfig } from '../utils/systemConfig';
+import api from '../../../utils/api';
+import { formatPlayerName, getNameDisplayOrder } from '../../../utils/nameFormatter';
+import { MatchEntryPopup, RATING_IMPACT_MODIFY_MESSAGE } from '../../MatchEntryPopup';
+import { getMember, isOrganizer } from '../../../utils/auth';
+import { shouldShowScorePinsForMatchEdit } from '../../../utils/matchScorePayload';
+import {
+  clearTournamentMatchScore,
+  upsertTournamentMatchScore,
+} from '../../../utils/matchScoreSubmit';
+import { isDuplicateScoreMessage, normalizeDuplicateScoreMessage } from '../../../utils/duplicateScoreError';
+import { getPlayoffFirstResultBlockedReason } from './playoffBracketPlayability';
+import { getSystemConfig } from '../../../utils/systemConfig';
+import {
+  emptyScoreEntryButtonStyle,
+  emptyScoreEntryCellStyle,
+  emptyScoreEntryLeftCellStyle,
+} from '../../emptyScoreEntryStyles';
+import {
+  correctableCellOutlineStyle,
+  correctionPencilStyle,
+} from '../../scoreCorrectionStyles';
+import { getScoreModificationClickHint } from '../../../utils/scoreCorrectionUtils';
 
 interface Member {
   id: number;
@@ -50,7 +64,8 @@ interface EditingMatch {
   player2Sets: string;
   player1Forfeit: boolean;
   player2Forfeit: boolean;
-  opponentPassword?: string;
+  member1Pin?: string;
+  member2Pin?: string;
   expectedHadResult?: boolean;
   expectedMatchUpdatedAt?: string;
 }
@@ -72,6 +87,9 @@ interface TraditionalBracketProps {
   onError?: (message: string) => void;
   suppressScoreEntry?: boolean;
   tournamentStatus?: 'ACTIVE' | 'COMPLETED'; // Tournament status to determine rating format
+  scoreCorrectionActive?: boolean;
+  correctableMatchIds?: number[];
+  onCorrectionMatchSelect?: (match: EditingMatch) => void;
 }
 
 interface MatchNode {
@@ -112,6 +130,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
   onError,
   suppressScoreEntry,
   tournamentStatus = 'ACTIVE',
+  scoreCorrectionActive = false,
+  correctableMatchIds,
+  onCorrectionMatchSelect,
 }) => {
   const [editingMatch, setEditingMatch] = useState<EditingMatch | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -728,7 +749,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: (prevMatch.player2Sets || 0).toString(),
               player1Forfeit: prevMatch.player1Forfeit || false,
               player2Forfeit: prevMatch.player2Forfeit || false,
-              opponentPassword: '',
+              member1Pin: '',
+        member2Pin: '',
               expectedHadResult: matchNodeHasResult(prevMatch),
             });
             
@@ -904,7 +926,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         style={{
           padding: '8px 12px',
           height: `${MATCH_BOX_HEIGHT}px`,
-          backgroundColor: isWinner ? '#d4edda' : (isClickableForScoreEntry ? '#f8f9fa' : 'white'),
+          backgroundColor: isWinner ? '#a5d6a7' : (isClickableForScoreEntry ? '#f8f9fa' : 'white'),
           border: isWinner ? '2px solid #333' : (isClickableForScoreEntry ? '2px solid #007bff' : '1px solid #333'),
           borderRadius: '4px',
           display: 'flex',
@@ -942,7 +964,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: (prevMatch.player2Sets || 0).toString(),
               player1Forfeit: prevMatch.player1Forfeit || false,
               player2Forfeit: prevMatch.player2Forfeit || false,
-              opponentPassword: '',
+              member1Pin: '',
+        member2Pin: '',
               expectedHadResult: matchNodeHasResult(prevMatch),
             });
           }
@@ -1287,7 +1310,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: (prevMatch.player2Sets || 0).toString() || '0',
                   player1Forfeit: prevMatch.player1Forfeit || false,
                   player2Forfeit: prevMatch.player2Forfeit || false,
-                  opponentPassword: '',
+                  member1Pin: '',
+        member2Pin: '',
                   expectedHadResult: matchNodeHasResult(prevMatch),
                 });
               }
@@ -1339,7 +1363,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       !player2IsBye &&
       !firstResultBlocked &&
       !resultChangeBlocked;
-    
+
+    const resolvedDbMatchId = match.matchId ?? null;
+
     // Get scores
     const player1Sets = match.player1Sets ?? 0;
     const player2Sets = match.player2Sets ?? 0;
@@ -1347,6 +1373,13 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     const hasScore = (player1Sets > 0 || player2Sets > 0) && !(player1Sets === 0 && player2Sets === 0);
     const isForfeit = match.player1Forfeit || match.player2Forfeit;
     const hasResult = hasScore || isForfeit || (match.winnerId !== null && match.winnerId !== undefined);
+
+    const isModificationTarget =
+      resolvedDbMatchId != null &&
+      Boolean(correctableMatchIds?.includes(resolvedDbMatchId)) &&
+      hasResult;
+    const isCorrectable = scoreCorrectionActive && isModificationTarget;
+    const canLegacyEditResult = canEditMatch && hasResult && !isModificationTarget;
     const player1Won = hasResult && (match.winnerId === player1?.member.id || (hasScore && !isForfeit && player1Sets > player2Sets) || (isForfeit && match.player2Forfeit));
     const player2Won = hasResult && (match.winnerId === player2?.member.id || (hasScore && !isForfeit && player2Sets > player1Sets) || (isForfeit && match.player1Forfeit));
     
@@ -1409,7 +1442,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
               player2Sets: player2Sets.toString(),
               player1Forfeit: match.player1Forfeit || false,
               player2Forfeit: match.player2Forfeit || false,
-              opponentPassword: '',
+              member1Pin: '',
+        member2Pin: '',
               expectedHadResult: matchNodeHasResult(match),
             });
           }
@@ -1490,19 +1524,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             height: '20px', // Match the height of score text
           }}>
             <button
-              style={{
-                padding: '0',
-                border: '1px solid #90EE90',
-                borderRadius: '4px',
-                backgroundColor: 'transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'stretch',
-                width: '45px',
-                height: '18px',
-                overflow: 'hidden',
-                opacity: 0.7, // Make it appear smaller/lighter
-              }}
+              style={emptyScoreEntryButtonStyle}
               onClick={(e) => {
                 e.stopPropagation();
                 setEditingMatch({
@@ -1513,45 +1535,63 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: '0',
                   player1Forfeit: false,
                   player2Forfeit: false,
-                  opponentPassword: '',
+                  member1Pin: '',
+        member2Pin: '',
                   expectedHadResult: false,
                 });
               }}
               title="Enter score"
             >
-              {/* Left section */}
-              <div style={{
-                flex: 1,
-                backgroundColor: '#ADD8E6',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#228B22',
-                fontSize: '10px',
-                fontWeight: 'bold',
-                borderRight: '1px solid #90EE90',
-              }}>
-                ?
-              </div>
-              {/* Right section */}
-              <div style={{
-                flex: 1,
-                backgroundColor: '#ADD8E6',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#228B22',
-                fontSize: '10px',
-                fontWeight: 'bold',
-              }}>
-                ?
-              </div>
+              <div style={emptyScoreEntryLeftCellStyle} aria-hidden="true" />
+              <div style={emptyScoreEntryCellStyle} aria-hidden="true" />
             </button>
           </div>
         ) : hasResult ? (
           <div
+            onMouseDown={(e) => {
+              if (!isCorrectable || !onCorrectionMatchSelect || !player1 || !player2 || !resolvedDbMatchId) {
+                return;
+              }
+              e.preventDefault();
+              e.stopPropagation();
+              onCorrectionMatchSelect({
+                matchId: resolvedDbMatchId,
+                member1Id: player1.member.id,
+                member2Id: player2.member.id,
+                player1Sets: (match.player1Sets || 0).toString(),
+                player2Sets: (match.player2Sets || 0).toString(),
+                player1Forfeit: match.player1Forfeit || false,
+                player2Forfeit: match.player2Forfeit || false,
+                member1Pin: '',
+        member2Pin: '',
+                expectedHadResult: true,
+              });
+            }}
+            onClick={(e) => {
+              if (!isCorrectable || !onCorrectionMatchSelect || !player1 || !player2 || !resolvedDbMatchId) {
+                return;
+              }
+              e.preventDefault();
+              e.stopPropagation();
+              onCorrectionMatchSelect({
+                matchId: resolvedDbMatchId,
+                member1Id: player1.member.id,
+                member2Id: player2.member.id,
+                player1Sets: (match.player1Sets || 0).toString(),
+                player2Sets: (match.player2Sets || 0).toString(),
+                player1Forfeit: match.player1Forfeit || false,
+                player2Forfeit: match.player2Forfeit || false,
+                member1Pin: '',
+        member2Pin: '',
+                expectedHadResult: true,
+              });
+            }}
             onContextMenu={(e) => {
-              if (canEditMatch) {
+              if (isCorrectable || isModificationTarget) {
+                e.preventDefault();
+                return;
+              }
+              if (canLegacyEditResult) {
                 e.preventDefault();
                 setEditingMatch({
                   matchId: match.bracketMatchId || match.matchId || 0,
@@ -1561,13 +1601,14 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: (match.player2Sets || 0).toString(),
                   player1Forfeit: match.player1Forfeit || false,
                   player2Forfeit: match.player2Forfeit || false,
-                  opponentPassword: '',
+                  member1Pin: '',
+        member2Pin: '',
                   expectedHadResult: matchNodeHasResult(match),
                 });
               }
             }}
             onTouchStart={() => {
-              if (canEditMatch) {
+              if (canLegacyEditResult) {
                 startLongPress(() => setEditingMatch({
                   matchId: match.bracketMatchId || match.matchId || 0,
                   member1Id: player1!.member.id,
@@ -1576,7 +1617,8 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                   player2Sets: (match.player2Sets || 0).toString(),
                   player1Forfeit: match.player1Forfeit || false,
                   player2Forfeit: match.player2Forfeit || false,
-                  opponentPassword: '',
+                  member1Pin: '',
+        member2Pin: '',
                   expectedHadResult: matchNodeHasResult(match),
                 }));
               }
@@ -1584,15 +1626,23 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             onTouchEnd={clearLongPressTimer}
             onTouchMove={clearLongPressTimer}
             onTouchCancel={clearLongPressTimer}
-            title={canEditMatch ? 'Right-click or long-press to modify/remove result' : undefined}
+            title={
+              isCorrectable
+                ? getScoreModificationClickHint(tournamentStatus)
+                : canLegacyEditResult
+                  ? 'Right-click or long-press to modify/remove result'
+                  : undefined
+            }
             style={{
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'center',
             minWidth: '60px', // Same as entry button container
             height: '20px', // Same as entry button container
-            cursor: canEditMatch ? 'context-menu' : 'default',
+            cursor: isCorrectable ? 'pointer' : canLegacyEditResult ? 'context-menu' : 'default',
+            ...(isCorrectable ? correctableCellOutlineStyle : {}),
           }}>
+            {isCorrectable && <span style={correctionPencilStyle} aria-hidden="true">✏️</span>}
             <span style={{ fontSize: '14px', color: '#666', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
               {isForfeit ? 'FF' : `${player1Sets} - ${player2Sets}`}
             </span>
@@ -1738,23 +1788,16 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       }
     }
 
-    const matchData: any = {
+    const matchData = {
       member1Id: editingMatch.member1Id,
       member2Id: editingMatch.member2Id,
       expectedHadResult: editingMatch.expectedHadResult,
       expectedMatchUpdatedAt: editingMatch.expectedMatchUpdatedAt,
+      player1Forfeit: editingMatch.player1Forfeit,
+      player2Forfeit: editingMatch.player2Forfeit,
+      player1Sets: parseInt(editingMatch.player1Sets) || 0,
+      player2Sets: parseInt(editingMatch.player2Sets) || 0,
     };
-
-    // If forfeit, send forfeit flags; otherwise send sets
-    if (editingMatch.player1Forfeit || editingMatch.player2Forfeit) {
-      matchData.player1Forfeit = editingMatch.player1Forfeit;
-      matchData.player2Forfeit = editingMatch.player2Forfeit;
-    } else {
-      matchData.player1Sets = parseInt(editingMatch.player1Sets) || 0;
-      matchData.player2Sets = parseInt(editingMatch.player2Sets) || 0;
-      matchData.player1Forfeit = false;
-      matchData.player2Forfeit = false;
-    }
 
     // Find the match node being saved
     let matchBeingSaved: MatchNode | undefined;
@@ -1834,15 +1877,36 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
         return;
       }
 
-      attachOpponentPasswordIfNeeded(matchData, editingMatch.opponentPassword);
+      await upsertTournamentMatchScore({
+        tournamentId,
+        matchId: matchIdToUse,
+        matchData,
+        pins: {
+          member1Pin: editingMatch.member1Pin,
+          member2Pin: editingMatch.member2Pin,
+        },
+        refreshTournament: false,
+        callbacks: {
+          onError: (message) => {
+            if (isDuplicateScoreMessage(message)) {
+              flushSync(() => {
+                setEditingMatch(null);
+              });
+            }
+            if (onError) {
+              onError(normalizeDuplicateScoreMessage(message));
+            } else {
+              alert(normalizeDuplicateScoreMessage(message));
+            }
+          },
+        },
+      });
       
-      await api.patch(`/tournaments/${tournamentId}/matches/${matchIdToUse}`, matchData);
-      
-      // If this is the final match, auto-complete the tournament
+      // Playoff-owned: completing the final match may auto-complete the tournament
       if (isFinalMatch) {
         try {
           await api.patch(`/tournaments/${tournamentId}/complete`);
-        } catch (completeError: any) {
+        } catch {
           // If auto-complete fails, silently continue (don't block the match save)
         }
       }
@@ -1851,18 +1915,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
       if (onMatchUpdate) {
         onMatchUpdate();
       }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to update match';
-      if (isDuplicateScoreMessage(errorMessage)) {
-        flushSync(() => {
-          setEditingMatch(null);
-        });
-      }
-      if (onError) {
-        onError(normalizeDuplicateScoreMessage(errorMessage));
-      } else {
-        alert(normalizeDuplicateScoreMessage(errorMessage));
-      }
+    } catch (error: unknown) {
+      // PIN field errors rethrown for MatchEntryPopup; page errors already via onError callback
+      throw error instanceof Error ? error : new Error('Failed to update match');
     }
   };
 
@@ -1872,18 +1927,26 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
     }
 
     try {
-      await api.delete(`/tournaments/${tournamentId}/matches/${editingMatch.matchId}`);
+      await clearTournamentMatchScore({
+        tournamentId,
+        matchId: editingMatch.matchId,
+        refreshTournament: false,
+        callbacks: {
+          onError: (message) => {
+            if (onError) {
+              onError(message);
+            } else {
+              alert(message);
+            }
+          },
+        },
+      });
       setEditingMatch(null);
       if (onMatchUpdate) {
         onMatchUpdate();
       }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to delete match result';
-      if (onError) {
-        onError(errorMessage);
-      } else {
-        alert(errorMessage);
-      }
+    } catch {
+      // Error already reported via callbacks
     }
   };
   
@@ -2238,7 +2301,7 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
             player1={player1.member}
             player2={player2.member}
             showForfeitOptions={true}
-            requireOpponentPassword={shouldShowOpponentPasswordForMatchEdit(editingMatch)}
+            requireScorePins={shouldShowScorePinsForMatchEdit(editingMatch)}
             onSetEditingMatch={setEditingMatch}
             onSave={handleSaveMatch}
             onCancel={() => setEditingMatch(null)}

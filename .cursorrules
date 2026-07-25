@@ -40,15 +40,17 @@ This is a Table Tennis Tournament Management System. Key features:
 trigger: always_on
 ---
 
-# User Input Method
+# User-Controlled Workflow
 
-## CRITICAL REQUIREMENT
-**ALWAYS use `ask_user_question` tool for follow-up input from user after each response.  Even if it seems like the end of the conversation.**
+## Policy
+I prefer to have fewer questions after each operations. I want more control over what is being done.
 
 ## Rules
-- After completing a task or needing clarification, you **MUST** `ask_user_question` to prompt the user
-- Provide 2-4 relevant options covering likely next steps and free-form response
-- If, and **only if** the user asks to skip `ask_user_question`, you may skip it
+- Complete the requested task, report results, then stop — do not prompt for next steps unless blocked
+- Do **not** use `ask_user_question` after routine task completion
+- Ask only when required input is missing, or a destructive action needs explicit approval
+- Do **not** auto-commit or expand scope (tests, refactors, docs) unless the user asks
+- The user initiates commits and follow-up work
 
 ## Context Snapshotting
 - After a context snapshot is taken you **MUST** read this rule into context fresh
