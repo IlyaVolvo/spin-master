@@ -133,23 +133,28 @@ function PublicResultsView({ tournament }: { tournament: Tournament }) {
 
   return (
     <ScoreCorrectionModeProvider activeChecked={false} completedChecked={false}>
-      <PublicResultsShell title={tournament.name || `Tournament ${tournament.id}`}>
+      <PublicResultsShell>
         <div className="card" style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ fontSize: '14px', color: '#666' }}>
-              <div>{getTournamentTypeName(tournament)}</div>
-              <div>
-                Date:{' '}
-                {formatMatchDateRange(
-                  (tournament as any).matchDateFrom,
-                  (tournament as any).matchDateTo,
+            <div>
+              <h1 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 600, color: '#2c3e50' }}>
+                {tournament.name || `Tournament ${tournament.id}`}
+              </h1>
+              <div style={{ fontSize: '14px', color: '#666' }}>
+                <div>{getTournamentTypeName(tournament)}</div>
+                <div>
+                  Date:{' '}
+                  {formatMatchDateRange(
+                    (tournament as any).matchDateFrom,
+                    (tournament as any).matchDateTo,
+                  )}
+                </div>
+                {!plugin.isBasic && (
+                  <div>
+                    {(tournament.childTournaments || []).length} sub-tournaments
+                  </div>
                 )}
               </div>
-              {!plugin.isBasic && (
-                <div>
-                  {(tournament.childTournaments || []).length} sub-tournaments
-                </div>
-              )}
             </div>
             {canPrint && (
               <ResultsPrintControl

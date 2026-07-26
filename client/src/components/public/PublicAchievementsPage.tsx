@@ -171,14 +171,14 @@ const PublicAchievementsPage: React.FC = () => {
   if (featureEnabled === false) return <PublicAchievementsNotAvailable />;
   if (featureEnabled === null) {
     return (
-      <PublicResultsShell title="Achievements">
+      <PublicResultsShell>
         <div className="card">Loading...</div>
       </PublicResultsShell>
     );
   }
 
   return (
-    <PublicResultsShell title="Achievements">
+    <PublicResultsShell>
       <style>{`
         @media print {
           .no-print { display: none !important; }

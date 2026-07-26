@@ -1,17 +1,83 @@
 import React, { useSyncExternalStore } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   getSystemConfig,
   hasAnyPublicAchievementEnabled,
   subscribeToSystemConfig,
 } from '../../utils/systemConfig';
 
+type PublicNavKey = 'latest' | 'list' | 'achievements';
+
+function resolvePublicNavKey(pathname: string): PublicNavKey | null {
+  if (pathname.startsWith('/public/achievements') || pathname === '/public' || pathname === '/public/') {
+    return 'achievements';
+  }
+  if (pathname === '/public/results/list' || pathname.startsWith('/public/results/list/')) {
+    return 'list';
+  }
+  if (
+    pathname === '/public/results' ||
+    pathname === '/public/results/latest' ||
+    pathname.startsWith('/public/results/latest/')
+  ) {
+    return 'latest';
+  }
+  // /public/results/:id — detail is reached via Latest redirect
+  if (/^\/public\/results\/\d+\/?$/.test(pathname)) {
+    return 'latest';
+  }
+  return null;
+}
+
+function PublicFilterNav({ showAchievements }: { showAchievements: boolean }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const active = resolvePublicNavKey(location.pathname);
+
+  const items: Array<{ key: PublicNavKey; to: string; label: string }> = [
+    { key: 'latest', to: '/public/results/latest', label: 'Latest' },
+    { key: 'list', to: '/public/results/list', label: 'All results' },
+  ];
+  if (showAchievements) {
+    items.push({ key: 'achievements', to: '/public/achievements', label: 'Achievements' });
+  }
+
+  return (
+    <div
+      className="card"
+      style={{ marginBottom: '16px', backgroundColor: '#f5f7fa', border: '1px solid #cfd8dc' }}
+    >
+      <nav
+        aria-label="Public pages"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}
+      >
+        {items.map((item) => {
+          const selected = active === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className={selected ? 'button-3d' : 'button-filter'}
+              aria-current={selected ? 'page' : undefined}
+              onClick={() => navigate(item.to)}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
+
 export function PublicResultsShell({
   children,
-  title,
 }: {
   children: React.ReactNode;
-  title?: string;
 }) {
   const config = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
   const clubName = config.branding?.clubName || 'Spin Master';
@@ -19,15 +85,8 @@ export function PublicResultsShell({
 
   return (
     <div className="container" style={{ maxWidth: '960px', marginTop: '32px', marginBottom: '48px' }}>
-      <header style={{ marginBottom: '24px' }}>
-        <div style={{ fontSize: '28px', fontWeight: 600, color: '#2c3e50', marginBottom: '8px', textAlign: 'center' }}>{clubName}</div>
-        <h1 style={{ margin: '0 0 12px 0', fontSize: '22px', fontWeight: 600 }}>{title || 'Tournament Results'}</h1>
-        <nav style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '14px' }}>
-          <Link to="/public/results/latest">Latest</Link>
-          <Link to="/public/results/list">All results</Link>
-          {showAchievements && <Link to="/public/achievements">Achievements</Link>}
-        </nav>
-      </header>
+      <div style={{ fontSize: '28px', fontWeight: 600, color: '#2c3e50', marginBottom: '16px', textAlign: 'center' }}>{clubName}</div>
+      <PublicFilterNav showAchievements={showAchievements} />
       {children}
     </div>
   );
@@ -35,7 +94,7 @@ export function PublicResultsShell({
 
 export function PublicResultsNotAvailable() {
   return (
-    <PublicResultsShell title="Results not available">
+    <PublicResultsShell>
       <div className="card">
         <p style={{ margin: 0 }}>
           These tournament results are not available for public viewing. The tournament may still be
@@ -53,7 +112,7 @@ export function PublicResultsNotAvailable() {
 
 export function PublicAchievementsNotAvailable() {
   return (
-    <PublicResultsShell title="Achievements not available">
+    <PublicResultsShell>
       <div className="card">
         <p style={{ margin: 0 }}>
           Public achievements are not enabled for this club.
