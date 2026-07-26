@@ -1,6 +1,10 @@
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import { getSystemConfig } from '../../utils/systemConfig';
+import {
+  getSystemConfig,
+  hasAnyPublicAchievementEnabled,
+  subscribeToSystemConfig,
+} from '../../utils/systemConfig';
 
 export function PublicResultsShell({
   children,
@@ -9,7 +13,9 @@ export function PublicResultsShell({
   children: React.ReactNode;
   title?: string;
 }) {
-  const clubName = getSystemConfig().branding?.clubName || 'Spin Master';
+  const config = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
+  const clubName = config.branding?.clubName || 'Spin Master';
+  const showAchievements = hasAnyPublicAchievementEnabled(config);
 
   return (
     <div className="container" style={{ maxWidth: '960px', marginTop: '32px', marginBottom: '48px' }}>
@@ -19,6 +25,7 @@ export function PublicResultsShell({
         <nav style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '14px' }}>
           <Link to="/public/results/latest">Latest</Link>
           <Link to="/public/results/list">All results</Link>
+          {showAchievements && <Link to="/public/achievements">Achievements</Link>}
         </nav>
       </header>
       {children}
@@ -38,6 +45,21 @@ export function PublicResultsNotAvailable() {
           <Link to="/public/results/list">Browse available results</Link>
           {' · '}
           <Link to="/public/results/latest">View latest</Link>
+        </p>
+      </div>
+    </PublicResultsShell>
+  );
+}
+
+export function PublicAchievementsNotAvailable() {
+  return (
+    <PublicResultsShell title="Achievements not available">
+      <div className="card">
+        <p style={{ margin: 0 }}>
+          Public achievements are not enabled for this club.
+        </p>
+        <p style={{ marginTop: '16px' }}>
+          <Link to="/public/results/list">Browse tournament results</Link>
         </p>
       </div>
     </PublicResultsShell>

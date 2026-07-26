@@ -16,6 +16,7 @@ import systemConfigRoutes from './routes/systemConfig';
 import tournamentBracketRoutes from './routes/tournamentBracketRoutes';
 import tournamentRoutes from './routes/tournaments';
 import publicResultsRoutes from './routes/publicResults';
+import publicAchievementsRoutes from './routes/publicAchievements';
 import { initializeCache } from './services/cacheService';
 import { initializeSystemConfig } from './services/systemConfigService';
 import { setIO } from './services/socketService';
@@ -127,6 +128,7 @@ app.use('/api/tournaments', tournamentBracketRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/public/results', publicResultsRoutes);
+app.use('/api/public/achievements', publicAchievementsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

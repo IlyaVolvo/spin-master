@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { isAdmin } from '../utils/auth';
 import {
+  ACHIEVEMENT_CATEGORY_IDS,
+  ACHIEVEMENT_CATEGORY_LABELS,
   loadAdminSystemConfig,
   saveAdminSystemConfig,
   SystemConfig,
@@ -122,6 +124,7 @@ export default function SystemSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [achievementsSetAll, setAchievementsSetAll] = useState(10);
 
   useEffect(() => {
     let cancelled = false;
@@ -346,6 +349,63 @@ export default function SystemSettings() {
             />
           </FieldRow>
         </Subsection>
+      </Section>
+
+      <Section title="Public Achievements">
+        <p style={{ margin: '0 0 12px 0', padding: '0 18px', fontSize: '13px', color: '#666' }}>
+          How many results to show for each board on the public achievements page.
+          Use 0 to hide a board. Positive values include the board and cap the list length.
+        </p>
+        <FieldRow label="Set all to">
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <BoundedNumericInput
+              value={achievementsSetAll}
+              min={0}
+              max={100}
+              allowEmpty={false}
+              aria-label="Set all achievement counts"
+              onChange={(next) => setAchievementsSetAll(next ?? 0)}
+              inputStyle={{ ...valueInputStyle, width: '96px' }}
+            />
+            <button
+              type="button"
+              className="button-filter"
+              onClick={() => updateConfig((draft) => {
+                if (!draft.publicAccess) {
+                  draft.publicAccess = {
+                    achievements: Object.fromEntries(
+                      ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
+                    ) as SystemConfig['publicAccess']['achievements'],
+                  };
+                }
+                for (const id of ACHIEVEMENT_CATEGORY_IDS) {
+                  draft.publicAccess.achievements[id] = achievementsSetAll;
+                }
+              })}
+            >
+              Apply to all
+            </button>
+          </div>
+        </FieldRow>
+        {ACHIEVEMENT_CATEGORY_IDS.map((id) => (
+          <NumericInput
+            key={id}
+            label={ACHIEVEMENT_CATEGORY_LABELS[id]}
+            min={0}
+            max={100}
+            value={config.publicAccess?.achievements?.[id] ?? 0}
+            onChange={(value) => updateConfig((draft) => {
+              if (!draft.publicAccess) {
+                draft.publicAccess = {
+                  achievements: Object.fromEntries(
+                    ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
+                  ) as SystemConfig['publicAccess']['achievements'],
+                };
+              }
+              draft.publicAccess.achievements[id] = value;
+            })}
+          />
+        ))}
       </Section>
 
       <Section title="Operational Settings">
