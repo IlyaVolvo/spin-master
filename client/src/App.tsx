@@ -31,8 +31,8 @@ const PublicAchievementsPage = lazyWithReload(() => import('./components/public/
 function isUnauthenticatedPublicPath(pathname: string): boolean {
   return (
     pathname.startsWith('/tournament-registration/') ||
-    pathname.startsWith('/public/results') ||
-    pathname.startsWith('/public/achievements')
+    pathname === '/public' ||
+    pathname.startsWith('/public/')
   );
 }
 
@@ -359,6 +359,8 @@ function AppRoutes({
           </ErrorBoundary>
         }
       />
+      <Route path="/public" element={<Navigate to="/public/achievements" replace />} />
+      <Route path="/public/" element={<Navigate to="/public/achievements" replace />} />
       <Route
         path="/public/results/list"
         element={
@@ -632,7 +634,10 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const isPlayersActive = location.pathname === '/players';
   const isTournamentsActive = location.pathname === '/tournaments' || location.pathname.startsWith('/tournaments/');
   const isSettingsActive = location.pathname === '/system-settings';
-  const isAchievementsActive = location.pathname.startsWith('/public/achievements');
+  const isAchievementsActive =
+    location.pathname === '/public' ||
+    location.pathname === '/public/' ||
+    location.pathname.startsWith('/public/achievements');
   
   // Format roles as comma-separated first letters
   const formatRoles = (roles: string[]): string => {
@@ -1262,7 +1267,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                   clearAllScrollPositions();
                   clearAllUIStates();
                   window.scrollTo(0, 0);
-                  navigate('/public/achievements');
+                  navigate('/public');
                 }}
                 style={{
                   padding: '2px 8px',
