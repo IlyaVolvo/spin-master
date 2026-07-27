@@ -47,6 +47,7 @@ describe('systemConfigService', () => {
     expect(config.authPolicy.minimumPasswordLength).toBe(10);
     expect(config.authPolicy.passwordResetTokenTtlHours).toBe(1);
     expect(config.tournamentRules.playoff.seedDivisor).toBe(4);
+    expect(config.publicAccess.achievements.most_wins).toBe(0);
   });
 
   it('calculates Swiss default rounds from participant count with a minimum of three', () => {

@@ -1,5 +1,23 @@
 import api from './api';
 
+export const ACHIEVEMENT_CATEGORY_IDS = [
+  'biggest_upset',
+  'most_wins',
+  'most_active',
+  'underdog_champion',
+  'club_ladder_movers',
+] as const;
+
+export type AchievementCategoryId = (typeof ACHIEVEMENT_CATEGORY_IDS)[number];
+
+export const ACHIEVEMENT_CATEGORY_LABELS: Record<AchievementCategoryId, string> = {
+  biggest_upset: 'Biggest upset',
+  most_wins: 'Most wins',
+  most_active: 'Most active',
+  underdog_champion: 'Underdog champion',
+  club_ladder_movers: 'Club ladder movers',
+};
+
 export type SystemConfig = {
   branding: {
     clubName: string | null;
@@ -63,6 +81,9 @@ export type SystemConfig = {
   };
   clubPlans: {
     categories: string[];
+  };
+  publicAccess: {
+    achievements: Record<AchievementCategoryId, number>;
   };
 };
 
@@ -140,6 +161,11 @@ const defaultSystemConfig: SystemConfig = {
   clubPlans: {
     categories: ['Regular'],
   },
+  publicAccess: {
+    achievements: Object.fromEntries(
+      ACHIEVEMENT_CATEGORY_IDS.map((id) => [id, 0]),
+    ) as Record<AchievementCategoryId, number>,
+  },
 };
 
 let cachedSystemConfig: SystemConfig = defaultSystemConfig;
@@ -167,6 +193,10 @@ function setCachedSystemConfig(config: unknown): SystemConfig {
 
 export function getSystemConfig(): SystemConfig {
   return cachedSystemConfig;
+}
+
+export function hasAnyPublicAchievementEnabled(config: SystemConfig = cachedSystemConfig): boolean {
+  return ACHIEVEMENT_CATEGORY_IDS.some((id) => (config.publicAccess?.achievements?.[id] ?? 0) > 0);
 }
 
 export function subscribeToSystemConfig(listener: (config: SystemConfig) => void): () => void {

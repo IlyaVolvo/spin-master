@@ -217,6 +217,15 @@ function getBootstrapSystemConfig() {
       socketReconnectionDelayMs: 1000,
       socketReconnectionAttempts: 5,
     },
+    publicAccess: {
+      achievements: {
+        biggest_upset: 0,
+        most_wins: 0,
+        most_active: 0,
+        underdog_champion: 0,
+        club_ladder_movers: 0,
+      },
+    },
   };
 }
 
@@ -271,6 +280,7 @@ async function ensureSystemConfig() {
       ratingValidation: toPrismaJson(config.ratingValidation),
       tournamentRules: toPrismaJson(config.tournamentRules),
       clientRuntime: toPrismaJson(config.clientRuntime),
+      publicAccess: toPrismaJson(config.publicAccess),
     },
   });
 

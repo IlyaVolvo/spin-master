@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useSyncExternalStore } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated, subscribeAuthExpired, consumeAuthExpiredMessage, isAdmin, isKioskMode, canRelinquishPrivileges } from './utils/auth';
 import api from './utils/api';
 import { connectSocket } from './utils/socket';
-import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig } from './utils/systemConfig';
+import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig, hasAnyPublicAchievementEnabled } from './utils/systemConfig';
 import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPosition';
 import { getErrorMessage } from './utils/errorHandler';
 import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail } from './utils/tournamentNavState';
@@ -27,11 +27,13 @@ const PublicResultsLatestPage = lazyWithReload(() =>
 const PublicResultsDetailPage = lazyWithReload(() =>
   import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsDetailPage })),
 );
+const PublicAchievementsPage = lazyWithReload(() => import('./components/public/PublicAchievementsPage'));
 
 function isUnauthenticatedPublicPath(pathname: string): boolean {
   return (
     pathname.startsWith('/tournament-registration/') ||
-    pathname.startsWith('/public/results') ||
+    pathname === '/public' ||
+    pathname.startsWith('/public/') ||
     pathname === '/club/checkin'
   );
 }
@@ -359,6 +361,8 @@ function AppRoutes({
           </ErrorBoundary>
         }
       />
+      <Route path="/public" element={<Navigate to="/public/achievements" replace />} />
+      <Route path="/public/" element={<Navigate to="/public/achievements" replace />} />
       <Route
         path="/club/checkin"
         element={
@@ -425,6 +429,16 @@ function AppRoutes({
           <ErrorBoundary>
             <Suspense fallback={<div>Loading...</div>}>
               <PublicResultsDetailPage />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/public/achievements"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PublicAchievementsPage />
             </Suspense>
           </ErrorBoundary>
         }
@@ -645,6 +659,8 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
 function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string | null }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const systemConfig = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
+  const showAchievementsLink = hasAnyPublicAchievementEnabled(systemConfig);
   const [userName, setUserName] = useState<string>('');
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [kioskMode, setKioskMode] = useState(() => isKioskMode());
@@ -661,6 +677,10 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const isTournamentsActive = location.pathname === '/tournaments' || location.pathname.startsWith('/tournaments/');
   const isClubActive = location.pathname === '/club/checkin';
   const isSettingsActive = location.pathname === '/system-settings';
+  const isAchievementsActive =
+    location.pathname === '/public' ||
+    location.pathname === '/public/' ||
+    location.pathname.startsWith('/public/achievements');
   
   // Format roles as comma-separated first letters
   const formatRoles = (roles: string[]): string => {
@@ -964,7 +984,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
         width: '100%',
         gap: '15px'
       }}>
-        <div className="app-header-tabs" style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginBottom: '-1px' }}>
+        <div className="app-header-tabs" style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginBottom: '-1px', flexShrink: 0 }}>
           <a 
             className="app-header-tab"
             href="/players" 
@@ -1137,7 +1157,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           gap: '14px',
           flex: 1
         }}>
-          <div className="app-header-logo-wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          <div className="app-header-logo-wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
             <span className="app-header-paddle">🏓</span>
             <span
               className="app-header-logo-box"
@@ -1203,6 +1223,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             <span
               className="app-header-club"
               style={{
+                display: 'block',
                 fontSize: '17px',
                 fontWeight: 600,
                 color: '#B8D9F0',
@@ -1210,6 +1231,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                 letterSpacing: '0.02em',
                 lineHeight: 1.25,
                 maxWidth: '320px',
+                margin: '0 auto',
                 textShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
               }}
             >
@@ -1228,7 +1250,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           }}>
             {changesetId}
           </span>
-          <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
           {userName && (
             <>
               {!kioskMode && (
@@ -1311,19 +1333,47 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             </span>
             </>
           )}
-          {!kioskMode && (
-            <button onClick={onLogout} style={{ 
-              padding: '8px 16px',
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s'
-            }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}>
-              Logout
-            </button>
-          )}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
+            {!kioskMode && (
+              <button onClick={onLogout} style={{ 
+                padding: '8px 16px',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s'
+              }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}>
+                Logout
+              </button>
+            )}
+            {showAchievementsLink ? (
+              <button
+                type="button"
+                className="app-header-public-link"
+                onClick={() => {
+                  clearAllScrollPositions();
+                  clearAllUIStates();
+                  window.scrollTo(0, 0);
+                  navigate('/public');
+                }}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  fontWeight: isAchievementsActive ? 700 : 500,
+                  lineHeight: 1.2,
+                  color: isAchievementsActive ? '#fff' : 'rgba(255, 255, 255, 0.75)',
+                  background: isAchievementsActive ? 'rgba(255, 255, 255, 0.22)' : 'transparent',
+                  border: '1px solid rgba(255, 255, 255, 0.35)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Public
+              </button>
+            ) : null}
+          </div>
           </div>
         </div>
       </div>

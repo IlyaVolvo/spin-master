@@ -72,7 +72,7 @@ const PublicResultsListPage: React.FC = () => {
   };
 
   return (
-    <PublicResultsShell title="All tournament results">
+    <PublicResultsShell>
       <div className="card" style={{ marginBottom: '16px', backgroundColor: '#f5f7fa', border: '1px solid #cfd8dc' }}>
         <div style={{ fontSize: '14px', fontWeight: 600, color: '#37474f', marginBottom: '10px' }}>
           Filter by date

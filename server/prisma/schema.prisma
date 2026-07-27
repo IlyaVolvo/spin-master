@@ -319,6 +319,7 @@ model SystemConfig {
   tournamentRules   Json     @default("{}")
   clientRuntime     Json     @default("{}")
   clubPlans         Json     @default("{}")
+  publicAccess      Json     @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

@@ -3,6 +3,10 @@ import { prisma } from '../index';
 import { emitSystemConfigUpdated } from './socketService';
 import { logger } from '../utils/logger';
 import { setRatingValidationBounds } from '../utils/memberValidation';
+import {
+  ACHIEVEMENT_CATEGORY_IDS,
+  type AchievementCategoryId,
+} from '../achievements/categoryIds';
 
 export type BrandingConfig = {
   clubName: string | null;
@@ -89,6 +93,12 @@ export type ClubPlansConfig = {
   visitPricingFormula: Record<string, VisitPricingFormulaParams>;
 };
 
+export type AchievementsPublicAccessConfig = Record<AchievementCategoryId, number>;
+
+export type PublicAccessConfig = {
+  achievements: AchievementsPublicAccessConfig;
+};
+
 export type SystemConfig = {
   branding: BrandingConfig;
   authPolicy: AuthPolicyConfig;
@@ -97,6 +107,7 @@ export type SystemConfig = {
   tournamentRules: TournamentRulesConfig;
   clientRuntime: ClientRuntimeConfig;
   clubPlans: ClubPlansConfig;
+  publicAccess: PublicAccessConfig;
 };
 
 export type SystemConfigPatch = Partial<{
@@ -185,6 +196,11 @@ export function getDefaultSystemConfig(): SystemConfig {
       visitPricingFormula: {
         Normal: { basePricePerVisitCents: 1000, exponent: 0.08 },
       },
+    },
+    publicAccess: {
+      achievements: Object.fromEntries(
+        ACHIEVEMENT_CATEGORY_IDS.map((id) => [id, 0]),
+      ) as AchievementsPublicAccessConfig,
     },
   };
 }
@@ -393,6 +409,29 @@ function validateClubPlans(value: unknown): ClubPlansConfig {
   return { categories, visitPricingFormula };
 }
 
+function coerceAchievementDisplayCount(value: unknown, path: string): number {
+  // Migrate legacy booleans: true → 10, false → 0
+  if (typeof value === 'boolean') {
+    return value ? 10 : 0;
+  }
+  return requireInteger(value, path, 0, 100);
+}
+
+function validatePublicAccess(value: unknown): PublicAccessConfig {
+  const config = deepMerge(getDefaultSystemConfig().publicAccess, value);
+  const achievementsRaw: Record<string, unknown> = isRecord(config.achievements)
+    ? (config.achievements as Record<string, unknown>)
+    : {};
+  const achievements = {} as AchievementsPublicAccessConfig;
+  for (const id of ACHIEVEMENT_CATEGORY_IDS) {
+    achievements[id] = coerceAchievementDisplayCount(
+      achievementsRaw[id] ?? 0,
+      `publicAccess.achievements.${id}`,
+    );
+  }
+  return { achievements };
+}
+
 export function validateSystemConfig(input: unknown): SystemConfig {
   const merged = deepMerge(getDefaultSystemConfig(), input);
   return {
@@ -403,6 +442,7 @@ export function validateSystemConfig(input: unknown): SystemConfig {
     tournamentRules: validateTournamentRules(merged.tournamentRules),
     clientRuntime: validateClientRuntime(merged.clientRuntime),
     clubPlans: validateClubPlans(merged.clubPlans),
+    publicAccess: validatePublicAccess(merged.publicAccess),
   };
 }
 
@@ -422,6 +462,7 @@ async function persistConfig(config: SystemConfig): Promise<void> {
       tournamentRules: toPrismaJson(config.tournamentRules),
       clientRuntime: toPrismaJson(config.clientRuntime),
       clubPlans: toPrismaJson(config.clubPlans),
+      publicAccess: toPrismaJson(config.publicAccess),
     },
     update: {
       branding: toPrismaJson(config.branding),
@@ -431,6 +472,7 @@ async function persistConfig(config: SystemConfig): Promise<void> {
       tournamentRules: toPrismaJson(config.tournamentRules),
       clientRuntime: toPrismaJson(config.clientRuntime),
       clubPlans: toPrismaJson(config.clubPlans),
+      publicAccess: toPrismaJson(config.publicAccess),
     },
   });
 }
@@ -446,6 +488,7 @@ export async function initializeSystemConfig(): Promise<SystemConfig> {
         tournamentRules: row.tournamentRules,
         clientRuntime: row.clientRuntime,
         clubPlans: row.clubPlans,
+        publicAccess: (row as { publicAccess?: unknown }).publicAccess,
       }
     : undefined;
 
@@ -502,4 +545,17 @@ export function getClientRuntimeConfig(): ClientRuntimeConfig {
 
 export function getClubPlansConfig(): ClubPlansConfig {
   return getSystemConfig().clubPlans;
+}
+
+export function getPublicAccessConfig(): PublicAccessConfig {
+  return getSystemConfig().publicAccess;
+}
+
+export function hasAnyAchievementEnabled(): boolean {
+  const achievements = getSystemConfig().publicAccess.achievements;
+  return ACHIEVEMENT_CATEGORY_IDS.some((id) => achievements[id] > 0);
+}
+
+export function getAchievementDisplayLimit(id: AchievementCategoryId): number {
+  return getSystemConfig().publicAccess.achievements[id] ?? 0;
 }

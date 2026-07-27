@@ -78,7 +78,8 @@ html {
 }
 
 .app-header-logo-wrap {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 
 .app-header-logo-box {

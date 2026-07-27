@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import api from '../../utils/api';
 import { loadPublicSystemConfig } from '../../utils/systemConfig';
 import { Tournament, TournamentType } from '../../types/tournament';
@@ -23,6 +23,12 @@ type LoadState =
   | { status: 'not-available' }
   | { status: 'error'; message: string }
   | { status: 'ready'; tournament: Tournament };
+
+type LatestRedirectState =
+  | { status: 'loading' }
+  | { status: 'not-available' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; tournamentId: number };
 
 function getTournamentTypeName(tournament: Tournament): string {
   if (!tournament.type) return 'Tournament';
@@ -127,23 +133,28 @@ function PublicResultsView({ tournament }: { tournament: Tournament }) {
 
   return (
     <ScoreCorrectionModeProvider activeChecked={false} completedChecked={false}>
-      <PublicResultsShell title={tournament.name || `Tournament ${tournament.id}`}>
+      <PublicResultsShell>
         <div className="card" style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ fontSize: '14px', color: '#666' }}>
-              <div>{getTournamentTypeName(tournament)}</div>
-              <div>
-                Date:{' '}
-                {formatMatchDateRange(
-                  (tournament as any).matchDateFrom,
-                  (tournament as any).matchDateTo,
+            <div>
+              <h1 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 600, color: '#2c3e50' }}>
+                {tournament.name || `Tournament ${tournament.id}`}
+              </h1>
+              <div style={{ fontSize: '14px', color: '#666' }}>
+                <div>{getTournamentTypeName(tournament)}</div>
+                <div>
+                  Date:{' '}
+                  {formatMatchDateRange(
+                    (tournament as any).matchDateFrom,
+                    (tournament as any).matchDateTo,
+                  )}
+                </div>
+                {!plugin.isBasic && (
+                  <div>
+                    {(tournament.childTournaments || []).length} sub-tournaments
+                  </div>
                 )}
               </div>
-              {!plugin.isBasic && (
-                <div>
-                  {(tournament.childTournaments || []).length} sub-tournaments
-                </div>
-              )}
             </div>
             {canPrint && (
               <ResultsPrintControl
@@ -169,16 +180,22 @@ async function fetchPublicResults(path: string): Promise<Tournament> {
   return response.data as Tournament;
 }
 
+/** Resolve latest eligible tournament and jump to its detail URL. */
 const PublicResultsLatestPage: React.FC = () => {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [state, setState] = useState<LatestRedirectState>({ status: 'loading' });
 
   useEffect(() => {
     void loadPublicSystemConfig();
     let cancelled = false;
     const load = async () => {
       try {
-        const tournament = await fetchPublicResults('/public/results/latest');
-        if (!cancelled) setState({ status: 'ready', tournament });
+        const response = await api.get('/public/results/list');
+        const latest = (response.data?.tournaments ?? [])[0] as { id?: number } | undefined;
+        if (!latest?.id) {
+          if (!cancelled) setState({ status: 'not-available' });
+          return;
+        }
+        if (!cancelled) setState({ status: 'ready', tournamentId: latest.id });
       } catch (err: any) {
         if (cancelled) return;
         if (err.response?.status === 404) {
@@ -214,7 +231,7 @@ const PublicResultsLatestPage: React.FC = () => {
       </PublicResultsShell>
     );
   }
-  return <PublicResultsView tournament={state.tournament} />;
+  return <Navigate to={`/public/results/${state.tournamentId}`} replace />;
 };
 
 const PublicResultsDetailPage: React.FC = () => {
