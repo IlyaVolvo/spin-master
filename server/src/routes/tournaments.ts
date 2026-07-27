@@ -43,6 +43,7 @@ import {
   enrichTournamentForApi,
 } from '../services/scoreCorrectionService';
 import { ensureUniqueTournamentNameInDb } from '../utils/tournamentNameUniqueness';
+import { createPreregistrationFinalizePrisma } from '../utils/preregistrationFinalizePrisma';
 
 const router = express.Router();
 
@@ -978,24 +979,7 @@ router.post('/:id/finalize-registration', [
       return res.status(400).json({ error: ruleError });
     }
 
-    let rootCreateUsed = false;
-    const tournamentDelegate = Object.create((prisma as any).tournament);
-    tournamentDelegate.create = async (args: any) => {
-      if (rootCreateUsed) {
-        return (prisma as any).tournament.create(args);
-      }
-      rootCreateUsed = true;
-      return (prisma as any).tournament.update({
-        where: { id: tournamentId },
-        data: {
-          ...args.data,
-          status: 'ACTIVE',
-        },
-        include: args.include,
-      });
-    };
-    const pluginPrisma = Object.create(prisma);
-    pluginPrisma.tournament = tournamentDelegate;
+    const pluginPrisma = createPreregistrationFinalizePrisma(prisma, tournamentId);
 
     const plugin = tournamentPluginRegistry.get(type);
     const createdTournament = await plugin.createTournament({
@@ -1337,25 +1321,7 @@ router.post('/', [
         return res.status(400).json({ error: 'Preregistration tournament has already been finalized' });
       }
       previousStatus = preregistrationTournament.status;
-
-      let rootCreateUsed = false;
-      const tournamentDelegate = Object.create((prisma as any).tournament);
-      tournamentDelegate.create = async (args: any) => {
-        if (rootCreateUsed) {
-          return (prisma as any).tournament.create(args);
-        }
-        rootCreateUsed = true;
-        return (prisma as any).tournament.update({
-          where: { id: preregistrationTournamentId },
-          data: {
-            ...args.data,
-            status: 'ACTIVE',
-          },
-          include: args.include,
-        });
-      };
-      pluginPrisma = Object.create(prisma);
-      pluginPrisma.tournament = tournamentDelegate;
+      pluginPrisma = createPreregistrationFinalizePrisma(prisma, preregistrationTournamentId);
     }
 
     // Delegate tournament creation to plugin
