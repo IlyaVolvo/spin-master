@@ -19,6 +19,10 @@ export interface Member {
   hasPassword?: boolean;
   /** Privilege-relinquished public-terminal mode. */
   kioskMode?: boolean;
+  /** checkin | browse | tournamentScore when in kiosk mode. */
+  kioskKind?: 'checkin' | 'browse' | 'tournamentScore';
+  /** Tournament id when kioskKind is tournamentScore. */
+  kioskTournamentId?: number;
   /** Effective auto-relinquish (override or club default). */
   autoRelinquishPrivileges?: boolean;
   /** Per-member override: true/false/null (null = use club default). */
@@ -205,13 +209,43 @@ export const hasMemberRole = (role: string): boolean => {
 /** True when privileges are relinquished for public-terminal use. */
 export const isKioskMode = (): boolean => getMember()?.kioskMode === true;
 
+export type KioskKind = 'checkin' | 'browse' | 'tournamentScore';
+
+export const getKioskKind = (): KioskKind | undefined => {
+  const kind = getMember()?.kioskKind;
+  if (kind === 'checkin' || kind === 'browse' || kind === 'tournamentScore') return kind;
+  return undefined;
+};
+
+export const getKioskTournamentId = (): number | undefined => {
+  const id = getMember()?.kioskTournamentId;
+  return typeof id === 'number' && Number.isFinite(id) ? id : undefined;
+};
+
+/** Score entry with participant PINs is only allowed in tournament score kiosk. */
+export const isTournamentScoreKiosk = (): boolean =>
+  isKioskMode() && getKioskKind() === 'tournamentScore';
+
 export const isAdmin = (): boolean => !isKioskMode() && hasMemberRole('ADMIN');
 
 export const isOrganizer = (): boolean => !isKioskMode() && hasMemberRole('ORGANIZER');
 
+/** True if member has Admin role (ignores kiosk privilege stripping — for UI option visibility before entering). */
+export const hasAdminRole = (): boolean => hasMemberRole('ADMIN');
+
+/** True if member has Organizer role (ignores kiosk privilege stripping). */
+export const hasOrganizerRole = (): boolean => hasMemberRole('ORGANIZER');
+
 /** Organizer or admin with elevated privileges (not in kiosk mode). */
 export const canRelinquishPrivileges = (): boolean =>
   !isKioskMode() && (hasMemberRole('ORGANIZER') || hasMemberRole('ADMIN'));
+
+export const canEnterCheckinKiosk = (): boolean => !isKioskMode() && hasMemberRole('ADMIN');
+
+export const canEnterBrowseKiosk = (): boolean => !isKioskMode() && hasMemberRole('ORGANIZER');
+
+export const canEnterTournamentScoreKiosk = (): boolean =>
+  !isKioskMode() && hasMemberRole('ORGANIZER');
 
 export const canEditMember = (memberId: number): boolean => {
   if (isKioskMode()) return false;

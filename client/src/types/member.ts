@@ -14,6 +14,7 @@ export interface Member {
   picture?: string | null;
   phone?: string | null;
   address?: string | null;
+  paymentCategory?: string | null;
   tournamentNotificationsEnabled?: boolean;
   /** Present on session/me payloads when returned by API. */
   hasPassword?: boolean;

@@ -20,12 +20,27 @@ export function jwtSecret(): string {
   return process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
 }
 
-export function makeMemberJwt(memberId: number, options?: { kioskMode?: boolean }): string {
+export function makeMemberJwt(
+  memberId: number,
+  options?: {
+    kioskMode?: boolean;
+    kioskKind?: 'checkin' | 'browse' | 'tournamentScore';
+    kioskTournamentId?: number;
+  },
+): string {
   return jwt.sign(
     {
       memberId,
       type: 'member',
-      ...(options?.kioskMode ? { kioskMode: true } : {}),
+      ...(options?.kioskMode
+        ? {
+            kioskMode: true,
+            ...(options.kioskKind ? { kioskKind: options.kioskKind } : {}),
+            ...(typeof options.kioskTournamentId === 'number'
+              ? { kioskTournamentId: options.kioskTournamentId }
+              : {}),
+          }
+        : {}),
     },
     jwtSecret(),
     { expiresIn: '7d' },

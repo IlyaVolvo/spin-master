@@ -9,9 +9,13 @@ import { logger } from '../utils/logger';
 import { normalizeMemberEmail } from '../utils/memberValidation';
 import { getAuthPolicyConfig } from '../services/systemConfigService';
 import type { AuthRequest } from '../middleware/auth';
-import { isKioskMode } from '../utils/kioskMode';
-import { isAdmin } from '../utils/adminAccess';
-import { isOrganizer } from '../utils/organizerAccess';
+import {
+  defaultKioskKindForRoles,
+  isKioskKind,
+  isKioskMode,
+  memberHasRole,
+  type KioskKind,
+} from '../utils/kioskMode';
 import {
   getAutoRelinquishIdleMinutes,
   resolveAutoRelinquishPrivileges,
@@ -24,12 +28,19 @@ function getJwtSecret(): string {
   return process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
 }
 
-function signMemberToken(memberId: number, kioskMode: boolean): string {
-  return jwt.sign(
-    { memberId, type: 'member', ...(kioskMode ? { kioskMode: true } : {}) },
-    getJwtSecret(),
-    { expiresIn: '7d' }
-  );
+function signMemberToken(
+  memberId: number,
+  options: { kioskMode?: boolean; kioskKind?: KioskKind; kioskTournamentId?: number } = {},
+): string {
+  const payload: Record<string, unknown> = { memberId, type: 'member' };
+  if (options.kioskMode) {
+    payload.kioskMode = true;
+    if (options.kioskKind) payload.kioskKind = options.kioskKind;
+    if (typeof options.kioskTournamentId === 'number') {
+      payload.kioskTournamentId = options.kioskTournamentId;
+    }
+  }
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: '7d' });
 }
 
 function saveSessionAsync(req: Request): Promise<void> {
@@ -249,6 +260,7 @@ router.post('/member/login', [
       roles: rolesArray,
       autoRelinquishPrivileges: autoOverrideOnLogin,
     });
+    const loginKioskKind = loginKioskMode ? defaultKioskKindForRoles(rolesArray) : null;
     try {
       const sessionMemberData: any = {
         id: Number(member.id),
@@ -262,6 +274,13 @@ router.post('/member/login', [
       if (req.session) {
         req.session.member = sessionMemberData;
         req.session.kioskMode = loginKioskMode;
+        if (loginKioskMode && loginKioskKind) {
+          req.session.kioskKind = loginKioskKind;
+          delete req.session.kioskTournamentId;
+        } else {
+          delete req.session.kioskKind;
+          delete req.session.kioskTournamentId;
+        }
         
         // Wait for session to be saved before proceeding
         await new Promise<void>((resolve, reject) => {
@@ -329,7 +348,10 @@ router.post('/member/login', [
           secretSource: secretSource
         });
       }
-      token = signMemberToken(member.id, loginKioskMode);
+      token = signMemberToken(member.id, {
+        kioskMode: loginKioskMode,
+        kioskKind: loginKioskKind ?? undefined,
+      });
       
       logger.info('JWT token created successfully', {
         memberId: member.id,
@@ -379,6 +401,9 @@ router.post('/member/login', [
       createdAt: memberRecord.createdAt ? new Date(memberRecord.createdAt).toISOString() : null,
       updatedAt: memberRecord.updatedAt ? new Date(memberRecord.updatedAt).toISOString() : null,
       kioskMode: loginKioskMode,
+      ...(loginKioskMode && loginKioskKind
+        ? { kioskKind: loginKioskKind }
+        : {}),
       autoRelinquishPrivilegesOverride: autoOverrideOnLogin,
       autoRelinquishPrivileges: resolveAutoRelinquishPrivileges(autoOverrideOnLogin),
       autoRelinquishIdleMinutes: getAutoRelinquishIdleMinutes(),
@@ -887,11 +912,19 @@ router.get('/member/me', async (req: Request, res: Response) => {
   try {
     let memberId: number | null = null;
     let kioskMode = false;
+    let kioskKind: KioskKind | undefined;
+    let kioskTournamentId: number | undefined;
 
     // Check session-based auth first
     if (req.session && req.session.member) {
       memberId = req.session.member.id;
       kioskMode = req.session.kioskMode === true;
+      if (kioskMode && isKioskKind(req.session.kioskKind)) {
+        kioskKind = req.session.kioskKind;
+      }
+      if (kioskMode && typeof req.session.kioskTournamentId === 'number') {
+        kioskTournamentId = req.session.kioskTournamentId;
+      }
     } else {
       // Fallback to JWT token authentication
       const authHeader = req.headers.authorization;
@@ -904,11 +937,19 @@ router.get('/member/me', async (req: Request, res: Response) => {
             memberId?: number;
             type?: string;
             kioskMode?: boolean;
+            kioskKind?: string;
+            kioskTournamentId?: number;
           };
           
           if (decoded.type === 'member' && decoded.memberId !== undefined) {
             memberId = decoded.memberId;
             kioskMode = decoded.kioskMode === true;
+            if (kioskMode && isKioskKind(decoded.kioskKind)) {
+              kioskKind = decoded.kioskKind;
+            }
+            if (kioskMode && typeof decoded.kioskTournamentId === 'number') {
+              kioskTournamentId = decoded.kioskTournamentId;
+            }
           }
         } catch (jwtError) {
           const isExpired = jwtError instanceof Error && jwtError.name === 'TokenExpiredError';
@@ -971,6 +1012,8 @@ router.get('/member/me', async (req: Request, res: Response) => {
             : null,
           hasPassword: password !== '',
           kioskMode,
+          ...(kioskMode && kioskKind ? { kioskKind } : {}),
+          ...(kioskMode && kioskTournamentId != null ? { kioskTournamentId } : {}),
           autoRelinquishPrivilegesOverride: autoOverride,
           autoRelinquishPrivileges: resolveAutoRelinquishPrivileges(autoOverride),
           autoRelinquishIdleMinutes: getAutoRelinquishIdleMinutes(),
@@ -990,6 +1033,7 @@ router.get('/member/me', async (req: Request, res: Response) => {
 
 /**
  * Relinquish Organizer/Admin privileges for public-terminal (kiosk) use.
+ * Body: { kind: 'checkin' | 'browse' | 'tournamentScore', tournamentId?: number }
  * Session stays authenticated as the same member with elevated actions disabled.
  */
 router.post('/member/relinquish-privileges', async (req: Request, res: Response) => {
@@ -1005,11 +1049,19 @@ router.post('/member/relinquish-privileges', async (req: Request, res: Response)
             memberId?: number;
             type?: string;
             kioskMode?: boolean;
+            kioskKind?: string;
+            kioskTournamentId?: number;
           };
           if (decoded.type === 'member' && decoded.memberId) {
             memberId = decoded.memberId;
             authReq.memberId = decoded.memberId;
             authReq.kioskMode = decoded.kioskMode === true;
+            if (isKioskKind(decoded.kioskKind)) {
+              authReq.kioskKind = decoded.kioskKind;
+            }
+            if (typeof decoded.kioskTournamentId === 'number') {
+              authReq.kioskTournamentId = decoded.kioskTournamentId;
+            }
           }
         } catch {
           return res.status(401).json({ error: 'Authentication required' });
@@ -1024,6 +1076,14 @@ router.post('/member/relinquish-privileges', async (req: Request, res: Response)
     if (isKioskMode(authReq) || req.session?.kioskMode === true) {
       return res.status(400).json({ error: 'Already in kiosk mode' });
     }
+
+    const kindRaw = req.body?.kind;
+    if (!isKioskKind(kindRaw)) {
+      return res.status(400).json({
+        error: 'kind is required and must be checkin, browse, or tournamentScore',
+      });
+    }
+    const kind: KioskKind = kindRaw;
 
     // Populate roles for elevated check if needed
     if (!authReq.member) {
@@ -1044,9 +1104,37 @@ router.post('/member/relinquish-privileges', async (req: Request, res: Response)
       authReq.memberId = member.id;
     }
 
-    const elevated = (await isOrganizer(authReq)) || (await isAdmin(authReq));
-    if (!elevated) {
-      return res.status(403).json({ error: 'Only organizers or administrators can enter kiosk mode' });
+    const roles = authReq.member.roles || [];
+    const isAdminRole = memberHasRole(roles, 'ADMIN');
+    const isOrganizerRole = memberHasRole(roles, 'ORGANIZER');
+
+    if (kind === 'checkin') {
+      if (!isAdminRole) {
+        return res.status(403).json({ error: 'Administrator role required for check-in kiosk' });
+      }
+    } else if (kind === 'browse' || kind === 'tournamentScore') {
+      if (!isOrganizerRole) {
+        return res.status(403).json({ error: 'Organizer role required for this kiosk mode' });
+      }
+    }
+
+    let kioskTournamentId: number | undefined;
+    if (kind === 'tournamentScore') {
+      const tournamentId = Number(req.body?.tournamentId);
+      if (!Number.isInteger(tournamentId) || tournamentId < 1) {
+        return res.status(400).json({ error: 'tournamentId is required for tournament score kiosk' });
+      }
+      const tournament = await prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { id: true, status: true },
+      });
+      if (!tournament) {
+        return res.status(404).json({ error: 'Tournament not found' });
+      }
+      if (tournament.status !== 'ACTIVE') {
+        return res.status(400).json({ error: 'Tournament must be ACTIVE to enter score kiosk' });
+      }
+      kioskTournamentId = tournament.id;
     }
 
     if (req.session) {
@@ -1060,12 +1148,24 @@ router.post('/member/relinquish-privileges', async (req: Request, res: Response)
         };
       }
       req.session.kioskMode = true;
+      req.session.kioskKind = kind;
+      if (kioskTournamentId != null) {
+        req.session.kioskTournamentId = kioskTournamentId;
+      } else {
+        delete req.session.kioskTournamentId;
+      }
       await saveSessionAsync(req);
     }
 
-    const token = signMemberToken(memberId, true);
+    const token = signMemberToken(memberId, {
+      kioskMode: true,
+      kioskKind: kind,
+      kioskTournamentId,
+    });
     return res.json({
       kioskMode: true,
+      kioskKind: kind,
+      ...(kioskTournamentId != null ? { kioskTournamentId } : {}),
       token,
       message: 'Privileges relinquished. Enter your password to restore.',
     });
@@ -1139,10 +1239,12 @@ router.post('/member/restore-privileges', [
 
     if (req.session) {
       req.session.kioskMode = false;
+      delete req.session.kioskKind;
+      delete req.session.kioskTournamentId;
       await saveSessionAsync(req);
     }
 
-    const token = signMemberToken(memberId, false);
+    const token = signMemberToken(memberId, { kioskMode: false });
     return res.json({
       kioskMode: false,
       token,

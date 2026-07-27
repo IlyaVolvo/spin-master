@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import type { AuthRequest } from '../middleware/auth';
-import { isKioskMode } from './kioskMode';
+import { getKioskClaims, isKioskMode } from './kioskMode';
 import { isOrganizer } from './organizerAccess';
 import { normalizeScorePin, scorePinsEqual } from './scorePin';
 
@@ -111,6 +111,28 @@ export async function authorizeTournamentScoreEntryRequest(
 ): Promise<MatchAuthResult> {
   const hasOrganizerAccess = await isOrganizer(req);
   const currentMemberId = req.memberId ?? req.member?.id;
+
+  if (isKioskMode(req)) {
+    const claims = getKioskClaims(req);
+    if (claims.kioskKind !== 'tournamentScore') {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Score entry is only available in tournament score kiosk mode',
+      };
+    }
+    if (
+      claims.kioskTournamentId != null &&
+      claims.kioskTournamentId !== input.tournamentId
+    ) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Score entry is locked to the selected tournament',
+      };
+    }
+  }
+
   const resolvedPlayers = await resolveTournamentMatchPlayers(
     prisma,
     input.tournamentId,
@@ -275,10 +297,17 @@ export async function authorizeStandaloneMatchScoreWrite(
   player1Forfeit?: boolean,
   player2Forfeit?: boolean
 ): Promise<MatchAuthResult> {
+  if (isKioskMode(req)) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'Score entry is only available in tournament score kiosk mode',
+    };
+  }
   return authorizeTournamentMatchScoreWrite(prisma, {
     actorMemberId: req.memberId ?? req.member?.id,
     isOrganizer: await isOrganizer(req),
-    isKioskMode: isKioskMode(req),
+    isKioskMode: false,
     member1Pin,
     member2Pin,
     member1Id,

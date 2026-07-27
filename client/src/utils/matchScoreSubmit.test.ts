@@ -10,6 +10,7 @@ vi.mock('./auth', () => ({
   getMember: () => ({ id: 1 }),
   isOrganizer: () => false,
   isKioskMode: () => true,
+  isTournamentScoreKiosk: () => true,
 }));
 
 describe('matchScoreSubmit', () => {

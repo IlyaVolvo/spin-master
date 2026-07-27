@@ -1,11 +1,9 @@
 import express, { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { getClubPlansConfig, updateSystemConfig } from '../services/systemConfigService';
-import { sendMail } from '../services/mailService';
-import crypto from 'crypto';
+import { scorePinsEqual } from '../utils/scorePin';
 
 const router = express.Router();
 
@@ -90,6 +88,7 @@ function getExpiryWarning(entitlement: {
 /**
  * Core check-in/check-out logic for a member.
  * Returns the visit and status info.
+ * First check-in of the club-local day may debit entitlement; later check-ins are free.
  */
 async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') {
   const clubDate = getClubDate();
@@ -106,7 +105,20 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
       where: { id: openVisit.id },
       data: { checkOutAt: new Date(), closedBy: closedByMethod },
     });
-    return { action: 'CHECK_OUT' as const, visit: updatedVisit, warning: null };
+    const entitlement = await getActiveEntitlement(memberId);
+    return {
+      action: 'CHECK_OUT' as const,
+      visit: updatedVisit,
+      warning: null,
+      charged: false,
+      entitlement: entitlement
+        ? {
+            type: entitlement.type,
+            visitsRemaining: entitlement.visitsRemaining,
+            validTo: entitlement.validTo,
+          }
+        : null,
+    };
   }
 
   // CHECK-IN: determine if this is the first visit of the day
@@ -117,7 +129,6 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
 
   let dailyPaymentApplied = false;
   let warning: string | null = null;
-  let paymentRequired = false;
 
   if (isFirstVisitOfDay) {
     // Get active entitlement and apply payment logic
@@ -125,7 +136,13 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
 
     if (!entitlement) {
       // No active entitlement — check-in is blocked
-      return { action: 'PAYMENT_REQUIRED' as const, visit: null, warning: 'No active plan. Please purchase a plan or contact staff.' };
+      return {
+        action: 'PAYMENT_REQUIRED' as const,
+        visit: null,
+        warning: 'No active plan. Please purchase a plan or contact staff.',
+        charged: false,
+        entitlement: null,
+      };
     }
 
     // Check entitlement type
@@ -161,7 +178,13 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
             },
           });
         } else {
-          return { action: 'PAYMENT_REQUIRED' as const, visit: null, warning: 'Visit pack exhausted. Please purchase a new plan.' };
+          return {
+            action: 'PAYMENT_REQUIRED' as const,
+            visit: null,
+            warning: 'Visit pack exhausted. Please purchase a new plan.',
+            charged: false,
+            entitlement: null,
+          };
         }
         break;
 
@@ -178,7 +201,13 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
           },
         });
         if (!todayPayment) {
-          return { action: 'PAYMENT_REQUIRED' as const, visit: null, warning: 'Per-visit payment required. Please pay at the front desk.' };
+          return {
+            action: 'PAYMENT_REQUIRED' as const,
+            visit: null,
+            warning: 'Per-visit payment required. Please pay at the front desk.',
+            charged: false,
+            entitlement: null,
+          };
         }
         dailyPaymentApplied = true;
         break;
@@ -200,7 +229,24 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
     },
   });
 
-  return { action: 'CHECK_IN' as const, visit, warning };
+  const entitlementAfter = await getActiveEntitlement(memberId);
+  if (!warning && entitlementAfter) {
+    warning = getExpiryWarning(entitlementAfter);
+  }
+
+  return {
+    action: 'CHECK_IN' as const,
+    visit,
+    warning,
+    charged: dailyPaymentApplied,
+    entitlement: entitlementAfter
+      ? {
+          type: entitlementAfter.type,
+          visitsRemaining: entitlementAfter.visitsRemaining,
+          validTo: entitlementAfter.validTo,
+        }
+      : null,
+  };
 }
 
 // ─── Public Endpoints (no auth) ──────────────────────────────────────────────
@@ -241,6 +287,8 @@ router.post('/scan', async (req: Request, res: Response) => {
       return res.status(402).json({
         action: result.action,
         message: result.warning,
+        charged: result.charged,
+        entitlement: result.entitlement,
         member: { firstName: member.firstName, lastName: member.lastName },
       });
     }
@@ -249,6 +297,8 @@ router.post('/scan', async (req: Request, res: Response) => {
       action: result.action,
       visit: result.visit,
       warning: result.warning,
+      charged: result.charged,
+      entitlement: result.entitlement,
       member: { firstName: member.firstName, lastName: member.lastName },
     });
   } catch (error) {
@@ -258,34 +308,68 @@ router.post('/scan', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/club/login-toggle — credential-based check-in/out (no session required)
- * Body: { "email": "...", "password": "..." }
- * Authenticates the member and toggles their visit.
+ * GET /api/club/members?q= — public directory for check-in kiosk (active members, names only)
  */
-router.post('/login-toggle', async (req: Request, res: Response) => {
+router.get('/members', async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (q.length < 1) {
+      return res.json({ members: [] });
     }
 
-    // Find member by email
-    const member = await prisma.member.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' } },
-      select: { id: true, firstName: true, lastName: true, isActive: true, password: true },
+    const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
+    const andFilters = tokens.map((token) => ({
+      OR: [
+        { firstName: { contains: token, mode: 'insensitive' as const } },
+        { lastName: { contains: token, mode: 'insensitive' as const } },
+      ],
+    }));
+
+    const members = await prisma.member.findMany({
+      where: {
+        isActive: true,
+        AND: andFilters,
+      },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      take: 40,
+    });
+
+    res.json({ members });
+  } catch (error) {
+    logger.error('Error searching club members', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/club/pin-toggle — score-PIN check-in/out (no session required)
+ * Body: { memberId, scorePin }
+ */
+router.post('/pin-toggle', async (req: Request, res: Response) => {
+  try {
+    const memberId = Number(req.body?.memberId);
+    const scorePin = req.body?.scorePin;
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+    if (typeof scorePin !== 'string' || !scorePin.trim()) {
+      return res.status(400).json({ error: 'scorePin is required' });
+    }
+
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { id: true, firstName: true, lastName: true, isActive: true, scorePin: true },
     });
 
     if (!member) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Invalid PIN' });
     }
 
-    // Verify password (guard against empty/invalid hash)
-    if (!member.password) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    const isValid = await bcrypt.compare(password, member.password);
-    if (!isValid) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    if (!scorePinsEqual(scorePin, member.scorePin)) {
+      return res.status(401).json({ error: 'Invalid PIN' });
     }
 
     if (!member.isActive) {
@@ -298,6 +382,8 @@ router.post('/login-toggle', async (req: Request, res: Response) => {
       return res.status(402).json({
         action: result.action,
         message: result.warning,
+        charged: result.charged,
+        entitlement: result.entitlement,
         member: { firstName: member.firstName, lastName: member.lastName },
       });
     }
@@ -306,122 +392,14 @@ router.post('/login-toggle', async (req: Request, res: Response) => {
       action: result.action,
       visit: result.visit,
       warning: result.warning,
+      charged: result.charged,
+      entitlement: result.entitlement,
       member: { firstName: member.firstName, lastName: member.lastName },
     });
   } catch (error) {
-    logger.error('Error processing login-toggle', { error: error instanceof Error ? error.message : String(error) });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * POST /api/club/request-checkin-code — send a one-time 6-digit code to the member's email
- * Body: { "email": "..." }
- */
-router.post('/request-checkin-code', async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
-    if (!email || typeof email !== 'string') {
-      return res.status(400).json({ error: 'Email is required' });
-    }
-
-    const member = await prisma.member.findFirst({
-      where: { email: { equals: email.trim(), mode: 'insensitive' } },
-      select: { id: true, email: true, firstName: true, isActive: true },
+    logger.error('Error processing pin-toggle', {
+      error: error instanceof Error ? error.message : String(error),
     });
-
-    // Always return success to avoid leaking whether email exists
-    if (!member || !member.isActive || !member.email) {
-      return res.json({ sent: true });
-    }
-
-    // Generate 6-digit numeric code
-    const code = String(crypto.randomInt(100000, 999999));
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    await prisma.member.update({
-      where: { id: member.id },
-      data: { checkinCode: code, checkinCodeExpiry: expiry },
-    });
-
-    // Send email
-    try {
-      await sendMail({
-        to: member.email,
-        subject: 'Your club check-in code',
-        text: `Hi ${member.firstName},\n\nYour one-time check-in code is: ${code}\n\nThis code expires in 10 minutes.`,
-        html: `<p>Hi ${member.firstName},</p><p>Your one-time check-in code is: <strong style="font-size:24px;letter-spacing:2px">${code}</strong></p><p>This code expires in 10 minutes.</p>`,
-      });
-    } catch (mailErr) {
-      logger.error('Failed to send check-in code email', { error: mailErr instanceof Error ? mailErr.message : String(mailErr) });
-      return res.status(500).json({ error: 'Failed to send email. Please contact staff.' });
-    }
-
-    res.json({ sent: true });
-  } catch (error) {
-    logger.error('Error requesting check-in code', { error: error instanceof Error ? error.message : String(error) });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * POST /api/club/code-toggle — check in using a one-time code (no password needed)
- * Body: { "email": "...", "code": "..." }
- */
-router.post('/code-toggle', async (req: Request, res: Response) => {
-  try {
-    const { email, code } = req.body;
-    if (!email || !code) {
-      return res.status(400).json({ error: 'Email and code are required' });
-    }
-
-    const member = await prisma.member.findFirst({
-      where: { email: { equals: email.trim(), mode: 'insensitive' } },
-      select: { id: true, firstName: true, lastName: true, isActive: true, checkinCode: true, checkinCodeExpiry: true },
-    });
-
-    if (!member) {
-      return res.status(401).json({ error: 'Invalid email or code' });
-    }
-
-    if (!member.isActive) {
-      return res.status(403).json({ error: 'Member account is inactive' });
-    }
-
-    // Verify code
-    if (!member.checkinCode || member.checkinCode !== code.trim()) {
-      return res.status(401).json({ error: 'Invalid email or code' });
-    }
-
-    // Check expiry
-    if (!member.checkinCodeExpiry || member.checkinCodeExpiry <= new Date()) {
-      return res.status(401).json({ error: 'Code has expired. Please request a new one.' });
-    }
-
-    // Clear the code (one-time use)
-    await prisma.member.update({
-      where: { id: member.id },
-      data: { checkinCode: null, checkinCodeExpiry: null },
-    });
-
-    const result = await toggleVisit(member.id, 'MANUAL');
-
-    if (result.action === 'PAYMENT_REQUIRED') {
-      return res.status(402).json({
-        action: result.action,
-        message: result.warning,
-        member: { firstName: member.firstName, lastName: member.lastName },
-      });
-    }
-
-    res.json({
-      action: result.action,
-      visit: result.visit,
-      warning: result.warning,
-      member: { firstName: member.firstName, lastName: member.lastName },
-    });
-  } catch (error) {
-    logger.error('Error processing code-toggle', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -451,9 +429,105 @@ router.post('/self/toggle', async (req: AuthRequest, res: Response) => {
       action: result.action,
       visit: result.visit,
       warning: result.warning,
+      charged: result.charged,
+      entitlement: result.entitlement,
     });
   } catch (error) {
     logger.error('Error toggling visit', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** GET /api/club/kiosk/today-status — bulk presence flags for Players check-in kiosk */
+router.get('/kiosk/today-status', async (req: AuthRequest, res: Response) => {
+  try {
+    const clubDate = getClubDate();
+    const visits = await prisma.clubVisit.findMany({
+      where: { clubDate },
+      select: { memberId: true, checkInAt: true, checkOutAt: true },
+      orderBy: { checkInAt: 'desc' },
+    });
+
+    const byMember = new Map<
+      number,
+      { present: boolean; visitedToday: boolean; lastCheckInAt: string | null }
+    >();
+
+    for (const visit of visits) {
+      const existing = byMember.get(visit.memberId);
+      if (!existing) {
+        byMember.set(visit.memberId, {
+          present: visit.checkOutAt == null,
+          visitedToday: true,
+          lastCheckInAt: visit.checkInAt.toISOString(),
+        });
+      } else if (visit.checkOutAt == null) {
+        existing.present = true;
+      }
+    }
+
+    const members = Array.from(byMember.entries()).map(([memberId, status]) => ({
+      memberId,
+      present: status.present,
+      visitedToday: status.visitedToday,
+      lastCheckInAt: status.lastCheckInAt,
+    }));
+
+    res.json({ clubDate, members });
+  } catch (error) {
+    logger.error('Error loading kiosk today-status', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** GET /api/club/kiosk/present — currently present members + who visited today */
+router.get('/kiosk/present', async (req: AuthRequest, res: Response) => {
+  try {
+    const clubDate = getClubDate();
+    const visits = await prisma.clubVisit.findMany({
+      where: { clubDate },
+      select: {
+        memberId: true,
+        checkInAt: true,
+        checkOutAt: true,
+        member: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { checkInAt: 'desc' },
+    });
+
+    const visitedTodayIds = Array.from(new Set(visits.map((v) => v.memberId)));
+    const openByMember = new Map<
+      number,
+      { memberId: number; firstName: string; lastName: string; lastCheckInAt: string }
+    >();
+
+    for (const visit of visits) {
+      if (visit.checkOutAt != null) continue;
+      if (openByMember.has(visit.memberId)) continue;
+      openByMember.set(visit.memberId, {
+        memberId: visit.member.id,
+        firstName: visit.member.firstName,
+        lastName: visit.member.lastName,
+        lastCheckInAt: visit.checkInAt.toISOString(),
+      });
+    }
+
+    const present = Array.from(openByMember.values()).sort((a, b) =>
+      a.lastCheckInAt < b.lastCheckInAt ? 1 : a.lastCheckInAt > b.lastCheckInAt ? -1 : 0,
+    );
+
+    res.json({
+      clubDate,
+      presentCount: present.length,
+      present,
+      visitedTodayIds,
+    });
+  } catch (error) {
+    logger.error('Error loading kiosk present list', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

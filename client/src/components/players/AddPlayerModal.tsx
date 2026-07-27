@@ -27,6 +27,9 @@ export interface AddPlayerModalProps {
   setNewPlayerPhone: (v: string) => void;
   newPlayerAddress: string;
   setNewPlayerAddress: (v: string) => void;
+  newPlayerPaymentCategory: string;
+  setNewPlayerPaymentCategory: (v: string) => void;
+  paymentCategoryNames: string[];
   newPlayerPicture: string;
   setNewPlayerPicture: (v: string) => void;
   addFieldErrors: Record<string, string>;
@@ -65,6 +68,9 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
   setNewPlayerPhone,
   newPlayerAddress,
   setNewPlayerAddress,
+  newPlayerPaymentCategory,
+  setNewPlayerPaymentCategory,
+  paymentCategoryNames,
   newPlayerPicture,
   setNewPlayerPicture,
   addFieldErrors,
@@ -322,6 +328,14 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
           <div className="form-group">
             <label>Address (optional)</label>
             <input type="text" value={newPlayerAddress} onChange={(e) => setNewPlayerAddress(e.target.value)} placeholder="Address" />
+          </div>
+          <div className="form-group">
+            <label>Payment Category</label>
+            <select value={newPlayerPaymentCategory} onChange={(e) => setNewPlayerPaymentCategory(e.target.value)}>
+              {paymentCategoryNames.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
           <div className={`form-group ${addFieldErrors.picture && addFieldTouched.picture ? 'has-error' : ''}`}>
             <label>Picture URL (optional)</label>

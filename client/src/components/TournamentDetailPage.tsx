@@ -26,6 +26,7 @@ import { TournamentNameEditor } from './TournamentNameEditor';
 import { getMember, setMember } from '../utils/auth';
 import { updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
 import { isOrganizer } from '../utils/auth';
+import { TournamentScoreKioskButton } from './TournamentScoreKioskButton';
 import {
   loadCancelledFilterMode,
   type CancelledFilterMode,
@@ -1802,6 +1803,7 @@ const TournamentDetailPage: React.FC = () => {
                                   title="Correct scores"
                                 />
                               )}
+                              <TournamentScoreKioskButton tournamentId={tournament.id} />
                               <TournamentHeader
                                 tournament={tournament as any}
                                 onEditClick={() => handleStartEditTournamentName(tournament)}
@@ -2092,6 +2094,9 @@ const TournamentDetailPage: React.FC = () => {
                         onChange={setActiveScoreCorrectionChecked}
                         title="Correct scores"
                       />
+                    )}
+                    {tournament.status === 'ACTIVE' && (
+                      <TournamentScoreKioskButton tournamentId={tournament.id} />
                     )}
                     <TournamentHeader
                       tournament={tournament as any}

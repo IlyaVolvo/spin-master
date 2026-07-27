@@ -9,6 +9,10 @@ export interface AuthRequest extends Request {
   userId?: number;
   /** Privilege-relinquished public-terminal mode (session or JWT). */
   kioskMode?: boolean;
+  /** checkin | browse | tournamentScore when in kiosk mode. */
+  kioskKind?: 'checkin' | 'browse' | 'tournamentScore';
+  /** Tournament id when kioskKind is tournamentScore. */
+  kioskTournamentId?: number;
   member?: {
     id: number;
     email: string | null;
@@ -32,11 +36,21 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
     (req as AuthRequest).memberId = member.id;
     (req as AuthRequest).member = member;
     (req as AuthRequest).kioskMode = req.session.kioskMode === true;
+    if ((req as AuthRequest).kioskMode) {
+      const kind = req.session.kioskKind;
+      if (kind === 'checkin' || kind === 'browse' || kind === 'tournamentScore') {
+        (req as AuthRequest).kioskKind = kind;
+      }
+      if (typeof req.session.kioskTournamentId === 'number') {
+        (req as AuthRequest).kioskTournamentId = req.session.kioskTournamentId;
+      }
+    }
     logger.info('Session authentication successful', { 
       memberId: member.id,
       method: req.method,
       path: req.path,
       kioskMode: (req as AuthRequest).kioskMode === true,
+      kioskKind: (req as AuthRequest).kioskKind,
     });
     return next();
   }
@@ -87,12 +101,26 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
       memberId?: number;
       type?: string;
       kioskMode?: boolean;
+      kioskKind?: string;
+      kioskTournamentId?: number;
     };
     
     // Handle member token
     if (decoded.type === 'member' && decoded.memberId) {
       (req as AuthRequest).memberId = decoded.memberId;
       (req as AuthRequest).kioskMode = decoded.kioskMode === true;
+      if ((req as AuthRequest).kioskMode) {
+        if (
+          decoded.kioskKind === 'checkin' ||
+          decoded.kioskKind === 'browse' ||
+          decoded.kioskKind === 'tournamentScore'
+        ) {
+          (req as AuthRequest).kioskKind = decoded.kioskKind;
+        }
+        if (typeof decoded.kioskTournamentId === 'number') {
+          (req as AuthRequest).kioskTournamentId = decoded.kioskTournamentId;
+        }
+      }
       
       // Try to fetch member data from database to populate req.member
       // This helps with role checks without requiring a database lookup in every route

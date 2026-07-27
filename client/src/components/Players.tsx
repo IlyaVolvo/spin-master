@@ -6,7 +6,15 @@ import 'react-datepicker/dist/react-datepicker.css';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder, setNameDisplayOrder, NameDisplayOrder } from '../utils/nameFormatter';
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
-import { getMember, setMember, isOrganizer, isAdmin, isKioskMode } from '../utils/auth';
+import { getMember, setMember, isOrganizer, isAdmin, isKioskMode, getKioskKind } from '../utils/auth';
+import {
+  CheckinKioskBanner,
+  CheckinPresentPopup,
+  CheckinPinModal,
+  CheckinRowButton,
+  fetchCheckinTodayStatus,
+  type CheckinStatusMap,
+} from './players/CheckinKioskUI';
 import { parseInvalidScorePinsFromError } from '../utils/matchScorePayload';
 import { createStandaloneMatchScore } from '../utils/matchScoreSubmit';
 import { tournamentPluginRegistry } from './tournaments/TournamentPluginRegistry';
@@ -20,7 +28,6 @@ import {
 } from './players/memberFormUtils.ts';
 import { AddPlayerModal } from './players/AddPlayerModal.tsx';
 import { BoundedNumericInput } from './BoundedNumericInput';
-import { getSystemConfig } from '../utils/systemConfig';
 import { SimilarNamesConfirmationModal } from './players/SimilarNamesConfirmationModal.tsx';
 import { calcAllowBirthDateInput, getEditBirthDateFieldError } from './players/playerEditBirthDateRules.ts';
 import { SuspiciousRatingConfirmModal } from './players/SuspiciousRatingConfirmModal.tsx';
@@ -56,6 +63,7 @@ import {
   isValidPhoneNumber,
   isValidRatingInput,
 } from '../../../server/src/utils/memberValidation';
+import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
 import './tournaments/plugins';
 
 // membersCache is imported from ./hooks/usePlayerData
@@ -164,9 +172,19 @@ const Players: React.FC = () => {
   const [headerHeight, setHeaderHeight] = useState<number>(40);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [paymentCategoryNames, setPaymentCategoryNames] = useState<string[]>(() => getSystemConfig().clubPlans.categories);
   const { members, setMembers, loading, setLoading, fetchMembers } = usePlayerData({ setError });
   const currentMember = getMember();
   const isUserOrganizer = isOrganizer();
+  const isCheckinKiosk = isKioskMode() && getKioskKind() === 'checkin';
+  const [checkinStatusByMember, setCheckinStatusByMember] = useState<CheckinStatusMap>({});
+  const [showCheckinPresent, setShowCheckinPresent] = useState(false);
+  const [checkinPinTarget, setCheckinPinTarget] = useState<{
+    memberId: number;
+    memberName: string;
+    action: 'CHECK_IN' | 'CHECK_OUT';
+    freeReentry: boolean;
+  } | null>(null);
   const [tournamentNotificationsEnabled, setTournamentNotificationsEnabled] = useState<boolean>(
     Boolean(currentMember?.tournamentNotificationsEnabled)
   );
@@ -403,6 +421,36 @@ const Players: React.FC = () => {
   const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string>>({});
   const [editFieldTouched, setEditFieldTouched] = useState<Record<string, boolean>>({});
   const editDuplicateCheckSeqRef = useRef(0);
+
+  // Keep payment category names in sync with system config updates
+  useEffect(() => {
+    return subscribeToSystemConfig((config) => {
+      setPaymentCategoryNames(config.clubPlans.categories);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isCheckinKiosk) {
+      setCheckinStatusByMember({});
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      fetchCheckinTodayStatus()
+        .then((map) => {
+          if (!cancelled) setCheckinStatusByMember(map);
+        })
+        .catch(() => {
+          if (!cancelled) setCheckinStatusByMember({});
+        });
+    };
+    load();
+    const interval = window.setInterval(load, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isCheckinKiosk]);
 
   // Load column visibility settings from localStorage on mount
   useEffect(() => {
@@ -948,6 +996,9 @@ const Players: React.FC = () => {
     }
     if (newPlayerAddress.trim()) {
       playerData.address = newPlayerAddress.trim();
+    }
+    if (newPlayerPaymentCategory) {
+      playerData.paymentCategory = newPlayerPaymentCategory;
     }
     if (newPlayerPicture.trim()) {
       playerData.picture = newPlayerPicture.trim();
@@ -1526,6 +1577,7 @@ const Players: React.FC = () => {
       setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
       setNewPlayerAddress('');
+      setNewPlayerPaymentCategory('Regular');
       setNewPlayerPicture('');
       setAddFieldErrors({});
       setAddFieldTouched({});
@@ -1725,6 +1777,7 @@ const Players: React.FC = () => {
       setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
       setNewPlayerAddress('');
+      setNewPlayerPaymentCategory('Regular');
       setNewPlayerPicture('');
       setAddFieldErrors({});
       setAddFieldTouched({});
@@ -2065,6 +2118,7 @@ const Players: React.FC = () => {
       setEditBirthDate(member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null);
       setEditPhone(member.phone || '');
       setEditAddress(member.address || '');
+      setEditPaymentCategory((member as any).paymentCategory || 'Regular');
       setEditPicture(member.picture || '');
       setEditIsActive(member.isActive !== undefined ? member.isActive : true);
       setEditTournamentNotificationsEnabled(Boolean(member.email && member.tournamentNotificationsEnabled));
@@ -2146,6 +2200,7 @@ const Players: React.FC = () => {
     setEditBirthDate(null);
     setEditPhone('');
     setEditAddress('');
+    setEditPaymentCategory('Regular');
     setEditPicture('');
     setEditIsActive(true);
     setEditTournamentNotificationsEnabled(false);
@@ -2239,6 +2294,7 @@ const Players: React.FC = () => {
         birthMs !== b.birthDateMs ||
         editPhone !== b.phone ||
         editAddress !== b.address ||
+        editPaymentCategory !== b.paymentCategory ||
         editPicture !== b.picture ||
         editIsActive !== b.isActive ||
         (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
@@ -2254,6 +2310,7 @@ const Players: React.FC = () => {
       editEmail !== b.email ||
       editPhone !== b.phone ||
       editAddress !== b.address ||
+      editPaymentCategory !== b.paymentCategory ||
       editPicture !== b.picture ||
       (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
       (playerEditBaselineRef.current?.birthDateMs == null && birthMs !== b.birthDateMs)
@@ -2394,6 +2451,7 @@ const Players: React.FC = () => {
       updateData.tournamentNotificationsEnabled = Boolean(editEmail.trim() && editTournamentNotificationsEnabled);
       updateData.phone = editPhone.trim() || null;
       updateData.address = editAddress.trim() || null;
+      updateData.paymentCategory = editPaymentCategory || 'Regular';
       updateData.picture = editPicture.trim() || null;
 
       const hadPendingPin = hasPendingScorePinChange();
@@ -3176,7 +3234,7 @@ const Players: React.FC = () => {
                   </button>
                 )}
           </div>
-          {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && !isRecordingMatch && (
+          {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && !isRecordingMatch && !isCheckinKiosk && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 auto', justifyContent: 'center' }}>
               {(() => {
                 const buttonStyle: React.CSSProperties = {
@@ -3220,7 +3278,7 @@ const Players: React.FC = () => {
                           + Tournament
                   </button>
                     )}
-                    {currentMember && (
+                    {currentMember && !isKioskMode() && (
                       <button 
                         onClick={handleStartRecordMatch}
                         className="button-3d"
@@ -3246,6 +3304,9 @@ const Players: React.FC = () => {
                 );
               })()}
             </div>
+          )}
+          {isCheckinKiosk && (
+            <div style={{ flex: '1 1 auto' }} />
           )}
           {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
@@ -4154,6 +4215,13 @@ const Players: React.FC = () => {
           </div>
         </div>
 
+        {isCheckinKiosk && (
+          <CheckinKioskBanner
+            presentCount={Object.values(checkinStatusByMember).filter((s) => s.present).length}
+            onOpenPresent={() => setShowCheckinPresent(true)}
+          />
+        )}
+
         {showAddForm && (
           <AddPlayerModal
             onClose={() => {
@@ -4169,6 +4237,7 @@ const Players: React.FC = () => {
               setNewPlayerRoles(['PLAYER']);
               setNewPlayerPhone('');
               setNewPlayerAddress('');
+              setNewPlayerPaymentCategory('Regular');
               setNewPlayerPicture('');
               setAddFieldErrors({});
               setAddFieldTouched({});
@@ -4196,6 +4265,9 @@ const Players: React.FC = () => {
             setNewPlayerPhone={setNewPlayerPhone}
             newPlayerAddress={newPlayerAddress}
             setNewPlayerAddress={setNewPlayerAddress}
+            newPlayerPaymentCategory={newPlayerPaymentCategory}
+            setNewPlayerPaymentCategory={setNewPlayerPaymentCategory}
+            paymentCategoryNames={paymentCategoryNames}
             newPlayerPicture={newPlayerPicture}
             setNewPlayerPicture={setNewPlayerPicture}
             addFieldErrors={addFieldErrors}
@@ -5691,6 +5763,12 @@ const Players: React.FC = () => {
                   Edit
                 </th>
               )}
+              {isCheckinKiosk && (
+                <th style={{ textAlign: 'center', backgroundColor: '#f8f9fa', padding: '12px' }}>
+                  Check-in
+                </th>
+              )}
+              {!isCheckinKiosk && (
               <th style={{ textAlign: 'right', paddingRight: '10px', backgroundColor: '#f8f9fa' }}>
                 <PlayersSettingsMenu
                   showSettingsMenu={showSettingsMenu}
@@ -5723,6 +5801,10 @@ const Players: React.FC = () => {
                   onTournamentNotificationsChange={currentMember ? handleTournamentNotificationsChange : undefined}
                 />
               </th>
+              )}
+              {isCheckinKiosk && (
+                <th style={{ backgroundColor: '#f8f9fa', padding: '12px' }} />
+              )}
             </tr>
           </thead>
           {/* Sticky selected player row for history selection - appears right under header */}
@@ -5990,7 +6072,7 @@ const Players: React.FC = () => {
                   onClick={isSelectingForHistory ? () => handleSelectPlayerForHistory(player.id) : undefined}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                    {!isCreatingTournament && !isSelectingForStats && !isSelectingForHistory && (
+                    {!isCheckinKiosk && !isCreatingTournament && !isSelectingForStats && !isSelectingForHistory && (
                       <>
                         <button
                           onClick={(e) => {
@@ -6120,6 +6202,26 @@ const Players: React.FC = () => {
                     </button>
                   </td>
                 )}
+                {isCheckinKiosk && (
+                  <td style={{ textAlign: 'center', padding: '8px' }}>
+                    <CheckinRowButton
+                      present={checkinStatusByMember[player.id]?.present === true}
+                      visitedToday={checkinStatusByMember[player.id]?.visitedToday === true}
+                      onClick={() => {
+                        const status = checkinStatusByMember[player.id];
+                        const present = status?.present === true;
+                        const visitedToday = status?.visitedToday === true;
+                        setCheckinPinTarget({
+                          memberId: player.id,
+                          memberName: formatPlayerName(player.firstName, player.lastName, nameDisplayOrder),
+                          action: present ? 'CHECK_OUT' : 'CHECK_IN',
+                          freeReentry: !present && visitedToday,
+                        });
+                      }}
+                    />
+                  </td>
+                )}
+                <td />
               </tr>
               );
             });
@@ -6417,6 +6519,18 @@ const Players: React.FC = () => {
                               onChange={(e) => setEditAddress(e.target.value)}
                               style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                             />
+                          </div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Payment Category</label>
+                            <select
+                              value={editPaymentCategory}
+                              onChange={(e) => setEditPaymentCategory(e.target.value)}
+                              style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+                            >
+                              {paymentCategoryNames.map((cat) => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </select>
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Picture URL</label>
@@ -7305,6 +7419,25 @@ const Players: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      <CheckinPresentPopup open={showCheckinPresent} onClose={() => setShowCheckinPresent(false)} />
+      {checkinPinTarget && (
+        <CheckinPinModal
+          memberId={checkinPinTarget.memberId}
+          memberName={checkinPinTarget.memberName}
+          action={checkinPinTarget.action}
+          freeReentry={checkinPinTarget.freeReentry}
+          onClose={() => setCheckinPinTarget(null)}
+          onSuccess={(message) => {
+            setCheckinPinTarget(null);
+            setSuccess(message);
+            setError('');
+            fetchCheckinTodayStatus()
+              .then(setCheckinStatusByMember)
+              .catch(() => {});
+          }}
+        />
       )}
 
     </div>

@@ -319,26 +319,18 @@ describe('Functional: non-organizer score entry', () => {
 
 
 describe('Functional: kiosk score entry with PINs', () => {
-  it('requires both PINs in kiosk mode for standalone match', async () => {
+  it('blocks standalone match create in kiosk mode (score entry is tournament-score only)', async () => {
     const organizer = await seedOrganizer(prisma);
     const players = await seedPlayers(prisma, [
       { firstName: 'A', lastName: 'One', email: 'a.one@test.local', rating: 1400 },
       { firstName: 'B', lastName: 'Two', email: 'b.two@test.local', rating: 1350 },
     ]);
-    const kioskToken = makeMemberJwt(organizer.id, { kioskMode: true });
+    const kioskToken = makeMemberJwt(organizer.id, {
+      kioskMode: true,
+      kioskKind: 'browse',
+    });
 
     const denied = await request(app)
-      .post('/api/tournaments/matches/create')
-      .set(authHeader(kioskToken))
-      .send({
-        member1Id: players[0].id,
-        member2Id: players[1].id,
-        player1Sets: 3,
-        player2Sets: 1,
-      });
-    expect(denied.status).toBe(400);
-
-    const ok = await request(app)
       .post('/api/tournaments/matches/create')
       .set(authHeader(kioskToken))
       .send({
@@ -349,6 +341,6 @@ describe('Functional: kiosk score entry with PINs', () => {
         member1Pin: FUNCTIONAL_TEST_PLAYER_PIN,
         member2Pin: FUNCTIONAL_TEST_PLAYER_PIN,
       });
-    expect(ok.status).toBe(201);
+    expect(denied.status).toBe(403);
   });
 });

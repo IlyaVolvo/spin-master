@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { isAdmin } from '../utils/auth';
 import {
@@ -119,6 +119,132 @@ function Subsection({ title, children }: { title: string; children: ReactNode })
   );
 }
 
+const PREDEFINED_PLAN_CATEGORIES = [
+  'Regular',
+  'Child',
+  'Senior',
+  'Junior',
+  'Family',
+  'Student',
+  'Premium',
+  'Basic',
+  'Monthly',
+  'Annual',
+  'Trial',
+  'Corporate',
+];
+
+function PaymentCategoryEditor({
+  categories,
+  onChange,
+}: {
+  categories: string[];
+  onChange: (cats: string[]) => void;
+}) {
+  const [selectedChoice, setSelectedChoice] = useState('');
+  const [customInput, setCustomInput] = useState('');
+  const selectRef = useRef<HTMLSelectElement>(null);
+
+  const available = PREDEFINED_PLAN_CATEGORIES.filter((p) => !categories.includes(p));
+
+  function addCategory() {
+    const name = (selectedChoice === '__custom__' ? customInput : selectedChoice).trim();
+    if (!name || categories.includes(name)) return;
+    onChange([...categories, name]);
+    setSelectedChoice('');
+    setCustomInput('');
+  }
+
+  function removeCategory(name: string) {
+    if (name === 'Regular') return; // Regular is always required
+    onChange(categories.filter((c) => c !== name));
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: categories.length ? '12px' : 0 }}>
+        {categories.map((cat) => (
+          <span
+            key={cat}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '4px 10px',
+              borderRadius: '16px',
+              background: '#eaf2f8',
+              color: '#2c3e50',
+              fontWeight: 600,
+              fontSize: '13px',
+              border: '1px solid #b8d4e8',
+            }}
+          >
+            {cat}
+            {cat !== 'Regular' && (
+              <button
+                type="button"
+                onClick={() => removeCategory(cat)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0 2px',
+                  color: '#c0392b',
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  lineHeight: 1,
+                }}
+                title={`Remove ${cat}`}
+              >×</button>
+            )}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <select
+          ref={selectRef}
+          value={selectedChoice}
+          onChange={(e) => setSelectedChoice(e.target.value)}
+          style={{ ...valueInputStyle, flex: 1 }}
+        >
+          <option value="">— Select a category —</option>
+          {available.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+          <option value="__custom__">Custom…</option>
+        </select>
+        {selectedChoice === '__custom__' && (
+          <input
+            type="text"
+            value={customInput}
+            onChange={(e) => setCustomInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addCategory()}
+            placeholder="Category name"
+            style={{ ...valueInputStyle, flex: 1 }}
+          />
+        )}
+        <button
+          type="button"
+          onClick={addCategory}
+          disabled={!selectedChoice || (selectedChoice === '__custom__' && !customInput.trim())}
+          style={{
+            padding: '8px 16px',
+            background: '#2980b9',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            opacity: (!selectedChoice || (selectedChoice === '__custom__' && !customInput.trim())) ? 0.5 : 1,
+          }}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SystemSettings() {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -220,60 +346,10 @@ export default function SystemSettings() {
         <p style={{ margin: '0 0 8px', color: '#666', fontSize: '13px' }}>
           Categories assigned to members that determine plan pricing. "Regular" is always required and used as the default.
         </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-          {(config.clubPlans?.categories ?? ['Regular']).map((cat, i) => (
-            <span key={i} style={{
-              display: 'inline-flex', alignItems: 'center', gap: '4px',
-              background: '#eaf2f8', color: '#2c3e50', padding: '4px 10px',
-              borderRadius: '14px', fontSize: '13px', fontWeight: 500,
-            }}>
-              {cat}
-              {cat !== 'Regular' && (
-                <button
-                  type="button"
-                  onClick={() => updateConfig(draft => {
-                    draft.clubPlans.categories = draft.clubPlans.categories.filter((_: string, idx: number) => idx !== i);
-                  })}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: '#c0392b', fontWeight: 700, fontSize: '14px', padding: '0 2px', lineHeight: 1,
-                  }}
-                  title="Remove category"
-                >×</button>
-              )}
-            </span>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <input
-            placeholder="New category name…"
-            id="new-category-input"
-            style={{ ...valueInputStyle, flex: 1, maxWidth: '200px' }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                const input = e.currentTarget;
-                const val = input.value.trim();
-                if (val && !(config.clubPlans?.categories ?? []).includes(val)) {
-                  updateConfig(draft => { draft.clubPlans.categories = [...(draft.clubPlans.categories ?? ['Regular']), val]; });
-                  input.value = '';
-                }
-              }
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              const input = document.getElementById('new-category-input') as HTMLInputElement;
-              const val = input?.value.trim();
-              if (val && !(config.clubPlans?.categories ?? []).includes(val)) {
-                updateConfig(draft => { draft.clubPlans.categories = [...(draft.clubPlans.categories ?? ['Regular']), val]; });
-                input.value = '';
-              }
-            }}
-            style={{ padding: '4px 12px', fontSize: '13px' }}
-          >Add</button>
-        </div>
+        <PaymentCategoryEditor
+          categories={config.clubPlans?.categories ?? ['Regular']}
+          onChange={(cats) => updateConfig(draft => { draft.clubPlans.categories = cats; })}
+        />
       </Section>
 
       <Section title="Club Payment Plans">

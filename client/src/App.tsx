@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, Suspense, useSyncExternalStore } from 'rea
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
-import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated, subscribeAuthExpired, consumeAuthExpiredMessage, isAdmin, isKioskMode, canRelinquishPrivileges } from './utils/auth';
+import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated, subscribeAuthExpired, consumeAuthExpiredMessage, isAdmin, isKioskMode, getKioskKind, getKioskTournamentId, type KioskKind } from './utils/auth';
+import { enterKioskMode, defaultKioskKindForRoles } from './utils/kioskEntry';
 import api from './utils/api';
 import { connectSocket } from './utils/socket';
 import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig, hasAnyPublicAchievementEnabled } from './utils/systemConfig';
@@ -10,6 +11,7 @@ import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPositio
 import { getErrorMessage } from './utils/errorHandler';
 import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail } from './utils/tournamentNavState';
 import { lazyWithReload } from './utils/lazyWithReload';
+import { PlayersKioskEntryButton } from './components/PlayersKioskEntryButton';
 
 // Lazy load route components for code splitting (auto-reload once if deploy invalidated chunks)
 const Players = lazyWithReload(() => import('./components/Players'));
@@ -19,7 +21,6 @@ const Statistics = lazyWithReload(() => import('./components/Statistics'));
 const History = lazyWithReload(() => import('./components/History'));
 const TournamentRegistrationLink = lazyWithReload(() => import('./components/TournamentRegistrationLink'));
 const SystemSettings = lazyWithReload(() => import('./components/SystemSettings'));
-const ClubCheckin = lazyWithReload(() => import('./components/ClubCheckin'));
 const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
 const PublicResultsLatestPage = lazyWithReload(() =>
   import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsLatestPage })),
@@ -33,8 +34,7 @@ function isUnauthenticatedPublicPath(pathname: string): boolean {
   return (
     pathname.startsWith('/tournament-registration/') ||
     pathname === '/public' ||
-    pathname.startsWith('/public/') ||
-    pathname === '/club/checkin'
+    pathname.startsWith('/public/')
   );
 }
 
@@ -89,7 +89,7 @@ function AuthRedirect() {
   
   useEffect(() => {
     if (isRoleTutorialsPath(location.pathname)) return;
-    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings', '/club/checkin'];
+    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings'];
     const isTournamentDetail = /^\/tournaments\/\d+$/.test(location.pathname);
     if (location.pathname.startsWith('/tournaments/') && !isTournamentDetail) {
       navigate('/tournaments', { replace: true });
@@ -364,45 +364,6 @@ function AppRoutes({
       <Route path="/public" element={<Navigate to="/public/achievements" replace />} />
       <Route path="/public/" element={<Navigate to="/public/achievements" replace />} />
       <Route
-        path="/club/checkin"
-        element={
-          isAuth ? (
-            <>
-              <AuthRedirect />
-              <div className="container">
-                <Header onLogout={handleLogout} clubName={clubName} />
-                <ErrorBoundary>
-                  <Suspense fallback={<div>Loading...</div>}>
-                    <ClubCheckin />
-                  </Suspense>
-                </ErrorBoundary>
-              </div>
-              {showPasswordReset && (
-                <PasswordResetModal
-                  onPasswordChanged={async () => {
-                    try {
-                      const response = await api.get('/auth/member/me');
-                      if (response.data.member) {
-                        setMember(response.data.member);
-                        setShowPasswordReset(false);
-                      }
-                    } catch (err) {
-                      setShowPasswordReset(false);
-                    }
-                  }}
-                />
-              )}
-            </>
-          ) : (
-            <ErrorBoundary>
-              <Suspense fallback={<div>Loading...</div>}>
-                <ClubCheckin />
-              </Suspense>
-            </ErrorBoundary>
-          )
-        }
-      />
-      <Route
         path="/public/results/list"
         element={
           <ErrorBoundary>
@@ -479,7 +440,6 @@ function AppRoutes({
                       <Route path="/statistics" element={<Statistics />} />
                       <Route path="/history" element={<History />} />
                       <Route path="/system-settings" element={<SystemSettings />} />
-                      <Route path="/club/checkin" element={<ClubCheckin />} />
                     </Routes>
                   </Suspense>
                 </ErrorBoundary>
@@ -664,6 +624,8 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const [userName, setUserName] = useState<string>('');
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [kioskMode, setKioskMode] = useState(() => isKioskMode());
+  const [kioskKind, setKioskKind] = useState<KioskKind | undefined>(() => getKioskKind());
+  const [kioskTournamentId, setKioskTournamentId] = useState<number | undefined>(() => getKioskTournamentId());
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [restorePassword, setRestorePassword] = useState('');
   const [restoreError, setRestoreError] = useState('');
@@ -675,7 +637,6 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   
   const isPlayersActive = location.pathname === '/players';
   const isTournamentsActive = location.pathname === '/tournaments' || location.pathname.startsWith('/tournaments/');
-  const isClubActive = location.pathname === '/club/checkin';
   const isSettingsActive = location.pathname === '/system-settings';
   const isAchievementsActive =
     location.pathname === '/public' ||
@@ -691,6 +652,32 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   };
   
   useEffect(() => {
+    const applyMember = (member: {
+      firstName?: string;
+      lastName?: string;
+      roles?: string[];
+      kioskMode?: boolean;
+      kioskKind?: KioskKind;
+      kioskTournamentId?: number;
+    }) => {
+      setUserName(`${member.firstName || ''} ${member.lastName || ''}`.trim() || 'User');
+      setUserRoles(member.roles || []);
+      setKioskMode(member.kioskMode === true);
+      setKioskKind(
+        member.kioskMode === true &&
+          (member.kioskKind === 'checkin' ||
+            member.kioskKind === 'browse' ||
+            member.kioskKind === 'tournamentScore')
+          ? member.kioskKind
+          : undefined,
+      );
+      setKioskTournamentId(
+        member.kioskMode === true && typeof member.kioskTournamentId === 'number'
+          ? member.kioskTournamentId
+          : undefined,
+      );
+    };
+
     // Fetch current user info
     const fetchUserInfo = async () => {
       try {
@@ -699,18 +686,14 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
         if (response.data.member) {
           const member = response.data.member;
           setMember(member);
-          setUserName(`${member.firstName} ${member.lastName}`);
-          setUserRoles(member.roles || []);
-          setKioskMode(member.kioskMode === true);
+          applyMember(member);
           return;
         }
       } catch (err) {
         // If member endpoint fails, try to get from localStorage
         const member = getMember();
         if (member) {
-          setUserName(`${member.firstName} ${member.lastName}`);
-          setUserRoles(member.roles || []);
-          setKioskMode(member.kioskMode === true);
+          applyMember(member);
           return;
         }
       }
@@ -720,11 +703,33 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
         setUserName('User');
         setUserRoles([]);
         setKioskMode(false);
+        setKioskKind(undefined);
+        setKioskTournamentId(undefined);
       }
     };
     
     fetchUserInfo();
+    const onKioskChanged = () => {
+      const member = getMember();
+      if (member) applyMember(member);
+    };
+    window.addEventListener('kiosk-mode-changed', onKioskChanged);
+    return () => window.removeEventListener('kiosk-mode-changed', onKioskChanged);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!kioskMode) return;
+    if (kioskKind === 'checkin' && location.pathname !== '/players') {
+      navigate('/players', { replace: true });
+      return;
+    }
+    if (kioskKind === 'tournamentScore' && kioskTournamentId != null) {
+      const expected = `/tournaments/${kioskTournamentId}`;
+      if (location.pathname !== expected) {
+        navigate(expected, { replace: true });
+      }
+    }
+  }, [kioskMode, kioskKind, kioskTournamentId, location.pathname, navigate]);
 
   const clearAutoRelinquishIdleTimer = () => {
     if (autoRelinquishIdleTimerRef.current !== null) {
@@ -737,19 +742,26 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     }
   };
 
-  const handleRelinquish = async () => {
+  const handleRelinquish = async (kind?: KioskKind, tournamentId?: number) => {
     clearAutoRelinquishIdleTimer();
     try {
-      const response = await api.post('/auth/member/relinquish-privileges');
-      if (response.data.token) {
-        setToken(response.data.token);
+      const resolvedKind = kind ?? defaultKioskKindForRoles(getMember()?.roles || userRoles);
+      if (!resolvedKind) {
+        window.alert('Unable to determine kiosk mode for this account');
+        return;
       }
-      const me = await api.get('/auth/member/me');
-      if (me.data.member) {
-        setMember(me.data.member);
-        setKioskMode(me.data.member.kioskMode === true);
-        setUserRoles(me.data.member.roles || []);
+      const path = await enterKioskMode({
+        kind: resolvedKind,
+        tournamentId,
+      });
+      const member = getMember();
+      if (member) {
+        setKioskMode(member.kioskMode === true);
+        setKioskKind(getKioskKind());
+        setKioskTournamentId(getKioskTournamentId());
+        setUserRoles(member.roles || []);
       }
+      navigate(path, { replace: true });
     } catch (err: any) {
       window.alert(err.response?.data?.error || 'Failed to enter kiosk mode');
     }
@@ -810,6 +822,8 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
       if (me.data.member) {
         setMember(me.data.member);
         setKioskMode(false);
+        setKioskKind(undefined);
+        setKioskTournamentId(undefined);
         setUserRoles(me.data.member.roles || []);
         scheduleAutoRelinquishIdle(me.data.member);
       }
@@ -912,14 +926,6 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     navigate('/tournaments', { replace: true });
   };
 
-  const handleClubClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    clearAllScrollPositions();
-    clearAllUIStates();
-    window.scrollTo(0, 0);
-    navigate('/club/checkin', { replace: true });
-  };
-
   const handleSettingsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     clearAllScrollPositions();
@@ -930,7 +936,14 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
 
   const hasPendingPreregistrations = pendingPreregistrationCount > 0;
   const isAdminUser = !kioskMode && isAdmin();
-  const canEnterKiosk = !kioskMode && canRelinquishPrivileges();
+  const showPlayersTab = !kioskMode || kioskKind === 'browse' || kioskKind === 'checkin';
+  const showTournamentsTab = !kioskMode || kioskKind === 'browse';
+  const kioskBannerText =
+    kioskKind === 'checkin'
+      ? 'KIOSK MODE — Club check-in / check-out. Use your score PIN on your row.'
+      : kioskKind === 'tournamentScore'
+        ? 'KIOSK MODE — Tournament score entry. Enter match scores with participant PINs.'
+        : 'KIOSK MODE — Browse. View players, tournaments, statistics, and history.';
   
   return (
     <>
@@ -950,7 +963,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
         }}
       >
-        KIOSK MODE — Privileges relinquished. Public terminal: view results and enter scores with participant PINs.
+        {kioskBannerText}
         <button
           type="button"
           onClick={() => { setShowRestoreModal(true); setRestoreError(''); setRestorePassword(''); }}
@@ -985,6 +998,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
         gap: '15px'
       }}>
         <div className="app-header-tabs" style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginBottom: '-1px', flexShrink: 0 }}>
+          {showPlayersTab && (
           <a 
             className="app-header-tab"
             href="/players" 
@@ -1022,6 +1036,8 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           >
             Players
           </a>
+          )}
+          {showTournamentsTab && (
           <a 
             className="app-header-tab"
             href="/tournaments" 
@@ -1064,43 +1080,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
               </span>
             ) : null}
           </a>
-          <a 
-            className="app-header-tab"
-            href="/club/checkin" 
-            onClick={handleClubClick} 
-            style={{ 
-              color: isClubActive ? '#333' : 'rgba(255, 255, 255, 0.8)', 
-              textDecoration: 'none', 
-              padding: '10px 24px 12px 24px', 
-              background: isClubActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
-              borderTopLeftRadius: '8px',
-              borderTopRightRadius: '8px',
-              border: isClubActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-              borderBottom: isClubActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
-              transition: 'all 0.2s', 
-              fontSize: '16px', 
-              fontWeight: isClubActive ? '600' : '500', 
-              cursor: 'pointer',
-              position: 'relative',
-              zIndex: isClubActive ? 10 : 1,
-              boxShadow: isClubActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-              marginBottom: isClubActive ? '0' : '1px'
-            }} 
-            onMouseEnter={(e) => {
-              if (!isClubActive) {
-                e.currentTarget.style.color = 'white';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isClubActive) {
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-              }
-            }}
-          >
-            Club
-          </a>
+          )}
           {isAdminUser ? (
             <a
               className="app-header-tab"
@@ -1287,25 +1267,6 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                 ⚙️
               </button>
               )}
-              {canEnterKiosk && (
-                <button
-                  type="button"
-                  onClick={handleRelinquish}
-                  title="Relinquish privileges for public terminal use"
-                  style={{
-                    padding: '8px 12px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    color: 'white',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                  }}
-                >
-                  Kiosk
-                </button>
-              )}
             <span style={{ 
               color: 'white',
               fontSize: '16px',
@@ -1327,7 +1288,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                 )}
                 {kioskMode && (
                   <span style={{ fontSize: '12px', marginLeft: '6px', opacity: 0.95 }}>
-                    (Kiosk)
+                    (Kiosk{kioskKind ? `: ${kioskKind}` : ''})
                   </span>
                 )}
             </span>
@@ -1347,32 +1308,35 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
                 Logout
               </button>
             )}
-            {showAchievementsLink ? (
-              <button
-                type="button"
-                className="app-header-public-link"
-                onClick={() => {
-                  clearAllScrollPositions();
-                  clearAllUIStates();
-                  window.scrollTo(0, 0);
-                  navigate('/public');
-                }}
-                style={{
-                  padding: '2px 8px',
-                  fontSize: '11px',
-                  fontWeight: isAchievementsActive ? 700 : 500,
-                  lineHeight: 1.2,
-                  color: isAchievementsActive ? '#fff' : 'rgba(255, 255, 255, 0.75)',
-                  background: isAchievementsActive ? 'rgba(255, 255, 255, 0.22)' : 'transparent',
-                  border: '1px solid rgba(255, 255, 255, 0.35)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Public
-              </button>
-            ) : null}
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+              {!kioskMode ? <PlayersKioskEntryButton /> : null}
+              {showAchievementsLink ? (
+                <button
+                  type="button"
+                  className="app-header-public-link"
+                  onClick={() => {
+                    clearAllScrollPositions();
+                    clearAllUIStates();
+                    window.scrollTo(0, 0);
+                    navigate('/public');
+                  }}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    fontWeight: isAchievementsActive ? 700 : 500,
+                    lineHeight: 1.2,
+                    color: isAchievementsActive ? '#fff' : 'rgba(255, 255, 255, 0.75)',
+                    background: isAchievementsActive ? 'rgba(255, 255, 255, 0.22)' : 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.35)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Public
+                </button>
+              ) : null}
+            </div>
           </div>
           </div>
         </div>

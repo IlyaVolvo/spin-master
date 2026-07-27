@@ -11,6 +11,10 @@ declare module 'express-session' {
     };
     /** When true, elevated Organizer/Admin privileges are relinquished (public terminal). */
     kioskMode?: boolean;
+    /** checkin | browse | tournamentScore when in kiosk mode. */
+    kioskKind?: 'checkin' | 'browse' | 'tournamentScore';
+    /** Tournament id when kioskKind is tournamentScore. */
+    kioskTournamentId?: number;
   }
 }
 

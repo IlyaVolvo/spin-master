@@ -12,6 +12,8 @@ export default defineConfig(({ mode }) => {
     env.SOURCE_VERSION ||
     'devbuild'
   ).slice(0, 7);
+  const devServerPort = Number(env.VITE_DEV_SERVER_PORT || 3000);
+  const apiOrigin = (env.VITE_DEV_API_ORIGIN || 'http://localhost:3001').replace(/\/$/, '');
 
   return {
     plugins: [react()],
@@ -21,19 +23,20 @@ export default defineConfig(({ mode }) => {
     server: {
       // Listen on all interfaces so LAN devices (e.g. iPad) can connect
       host: true,
-      port: 3000,
+      port: Number.isFinite(devServerPort) && devServerPort > 0 ? devServerPort : 3000,
+      strictPort: true,
       fs: {
         allow: ['..'],
       },
       proxy: {
         '/api': {
-          target: 'http://localhost:3001',
+          target: apiOrigin,
           changeOrigin: true,
           secure: false,
           ws: true,
         },
         '/socket.io': {
-          target: 'http://localhost:3001',
+          target: apiOrigin,
           changeOrigin: true,
           secure: false,
           ws: true,
@@ -74,6 +77,3 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
-
-
-

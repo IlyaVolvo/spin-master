@@ -1,13 +1,13 @@
-import { getMember, isOrganizer, isKioskMode } from './auth';
+import { getMember, isOrganizer, isKioskMode, isTournamentScoreKiosk } from './auth';
 
 export type InvalidScorePins = { member1: boolean; member2: boolean };
 
-/** Attach participant PINs when in kiosk mode (server validates). */
+/** Attach participant PINs when in tournament score kiosk (server validates). */
 export function attachScorePinsIfNeeded(
   apiData: Record<string, unknown>,
   pins: { member1Pin?: string; member2Pin?: string } | undefined
 ): void {
-  if (!isKioskMode()) return;
+  if (!isTournamentScoreKiosk()) return;
   if (pins?.member1Pin?.trim()) {
     apiData.member1Pin = pins.member1Pin.trim();
   }
@@ -16,21 +16,22 @@ export function attachScorePinsIfNeeded(
   }
 }
 
-/** Organizers or kiosk may edit any match; players may edit only matches they are in. */
+/** Organizers or tournament-score kiosk may edit any match; players may edit only matches they are in. */
 export function canOpenTournamentMatchEditor(member1Id: number, member2Id: number | null): boolean {
-  if (isOrganizer() || isKioskMode()) return true;
+  if (isOrganizer() || isTournamentScoreKiosk()) return true;
+  if (isKioskMode()) return false;
   const me = getMember()?.id;
   if (!me) return false;
   if (member2Id == null || member2Id === 0) return false;
   return me === member1Id || me === member2Id;
 }
 
-/** Show PIN fields only in kiosk mode for two-player matches. */
+/** Show PIN fields only in tournament score kiosk for two-player matches. */
 export function shouldShowScorePinsForMatchEdit(editing: {
   member1Id: number;
   member2Id: number;
 }): boolean {
-  if (!isKioskMode()) return false;
+  if (!isTournamentScoreKiosk()) return false;
   if (editing.member2Id == null || editing.member2Id === 0) return false;
   return true;
 }
