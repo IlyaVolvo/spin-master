@@ -27,9 +27,9 @@ export interface AddPlayerModalProps {
   setNewPlayerPhone: (v: string) => void;
   newPlayerAddress: string;
   setNewPlayerAddress: (v: string) => void;
-  newPlayerPaymentCategory: string;
-  setNewPlayerPaymentCategory: (v: string) => void;
-  paymentCategoryNames: string[];
+  newPlayerSegment: string;
+  setNewPlayerSegment: (v: string) => void;
+  segmentNames: string[];
   newPlayerPicture: string;
   setNewPlayerPicture: (v: string) => void;
   addFieldErrors: Record<string, string>;
@@ -68,9 +68,9 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
   setNewPlayerPhone,
   newPlayerAddress,
   setNewPlayerAddress,
-  newPlayerPaymentCategory,
-  setNewPlayerPaymentCategory,
-  paymentCategoryNames,
+  newPlayerSegment,
+  setNewPlayerSegment,
+  segmentNames,
   newPlayerPicture,
   setNewPlayerPicture,
   addFieldErrors,
@@ -330,9 +330,9 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
             <input type="text" value={newPlayerAddress} onChange={(e) => setNewPlayerAddress(e.target.value)} placeholder="Address" />
           </div>
           <div className="form-group">
-            <label>Payment Category</label>
-            <select value={newPlayerPaymentCategory} onChange={(e) => setNewPlayerPaymentCategory(e.target.value)}>
-              {paymentCategoryNames.map((cat) => (
+            <label>Segment</label>
+            <select value={newPlayerSegment} onChange={(e) => setNewPlayerSegment(e.target.value)}>
+              {segmentNames.map((cat) => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>

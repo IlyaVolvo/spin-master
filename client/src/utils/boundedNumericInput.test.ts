@@ -38,6 +38,14 @@ describe('boundedNumericInput helpers', () => {
     expect(isAcceptableNumericDraft('130', { min: 5, max: 12 })).toBe(false);
   });
 
+  it('allows multi-digit entry when only min is set (no max)', () => {
+    expect(isAcceptableNumericDraft('1', { min: 2 })).toBe(true);
+    expect(isAcceptableNumericDraft('16', { min: 2 })).toBe(true);
+    expect(isAcceptableNumericDraft('6', { min: 6 })).toBe(true);
+    expect(isAcceptableNumericDraft('12', { min: 6 })).toBe(true);
+    expect(isAcceptableNumericDraft('1234567', { min: 6 })).toBe(false);
+  });
+
   it('flags out-of-range drafts for red feedback', () => {
     expect(isOutOfRangeNumericDraft('', { min: 5, max: 32 })).toBe(false);
     expect(isOutOfRangeNumericDraft('1', { min: 5, max: 32 })).toBe(true);

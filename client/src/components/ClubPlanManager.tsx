@@ -1,96 +1,37 @@
 import { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { getErrorMessage } from '../utils/errorHandler';
+import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
 
 interface ClubPlan {
   id: number;
+  familyKey: string;
   name: string;
-  type: 'PERIOD' | 'VISIT_COUNT';
+  kind: 'TIME' | 'VISIT';
+  segment: string;
+  priceCents: number;
+  currency: string;
+  durationUnit?: 'DAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'YEAR' | null;
+  durationValue?: number | null;
+  visitCount?: number | null;
   isActive: boolean;
   sortOrder: number;
-  config: {
-    periodUnit?: string;
-    periodValue?: number;
-    visitCount?: number;
-    prices: Record<string, { priceCents: number; isDefault?: boolean }>;
-  };
 }
 
 type PlanFormData = {
+  familyKey: string;
   name: string;
-  type: 'PERIOD' | 'VISIT_COUNT';
-  sortOrder: number;
-  periodUnit: string;
-  periodValue: number;
+  kind: 'TIME' | 'VISIT';
+  segment: string;
+  /** TIME: total cents. VISIT: per-visit cents. */
+  priceCents: number;
+  durationUnit: 'DAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'YEAR';
+  durationValue: number;
   visitCount: number;
-  prices: Record<string, number>; // category → cents
+  sortOrder: number;
 };
 
-const PERIOD_UNITS = ['DAY', 'WEEK', 'MONTH', 'YEAR'] as const;
-
-function getEmptyForm(): PlanFormData {
-  return {
-    name: '',
-    type: 'PERIOD',
-    sortOrder: 0,
-    periodUnit: 'MONTH',
-    periodValue: 1,
-    visitCount: 10,
-    prices: { Normal: 0 },
-  };
-}
-
-function planToForm(plan: ClubPlan): PlanFormData {
-  const prices: Record<string, number> = {};
-  for (const [cat, val] of Object.entries(plan.config.prices || {})) {
-    prices[cat] = val.priceCents;
-  }
-  return {
-    name: plan.name,
-    type: plan.type,
-    sortOrder: plan.sortOrder,
-    periodUnit: plan.config.periodUnit || 'MONTH',
-    periodValue: plan.config.periodValue || 1,
-    visitCount: plan.config.visitCount || 10,
-    prices,
-  };
-}
-
-function formToPayload(form: PlanFormData) {
-  const prices: Record<string, { priceCents: number }> = {};
-  for (const [cat, cents] of Object.entries(form.prices)) {
-    prices[cat] = { priceCents: cents };
-  }
-  const config: Record<string, unknown> = { prices };
-  if (form.type === 'PERIOD') {
-    config.periodUnit = form.periodUnit;
-    config.periodValue = form.periodValue;
-  } else {
-    config.visitCount = form.visitCount;
-  }
-  return {
-    name: form.name,
-    type: form.type,
-    sortOrder: form.sortOrder,
-    config,
-  };
-}
-
-function formatCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
-function describePlan(plan: ClubPlan): string {
-  const cfg = plan.config;
-  if (plan.type === 'PERIOD') {
-    const unit = (cfg.periodUnit || 'MONTH').toLowerCase();
-    const val = cfg.periodValue || 1;
-    return val === 1 ? `1 ${unit}` : `${val} ${unit}s`;
-  }
-  return `${cfg.visitCount || '?'} visits`;
-}
-
-// ─── Styles ──────────────────────────────────────────────────────────────────
+const DURATION_UNITS = ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] as const;
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -119,23 +60,144 @@ const smallBtnStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-// ─── Component ───────────────────────────────────────────────────────────────
+function getEmptyForm(defaultSegment = 'Regular'): PlanFormData {
+  return {
+    familyKey: '',
+    name: '',
+    kind: 'TIME',
+    segment: defaultSegment,
+    priceCents: 0,
+    durationUnit: 'MONTH',
+    durationValue: 1,
+    visitCount: 10,
+    sortOrder: 0,
+  };
+}
+
+function planToForm(plan: ClubPlan): PlanFormData {
+  return {
+    familyKey: plan.familyKey,
+    name: plan.name,
+    kind: plan.kind,
+    segment: plan.segment,
+    priceCents: plan.priceCents,
+    durationUnit: plan.durationUnit || 'MONTH',
+    durationValue: plan.durationValue || 1,
+    visitCount: plan.visitCount || 10,
+    sortOrder: plan.sortOrder,
+  };
+}
+
+function formToPayload(form: PlanFormData) {
+  const payload: Record<string, unknown> = {
+    familyKey: form.familyKey.trim() || undefined,
+    name: form.name.trim(),
+    kind: form.kind,
+    segment: form.segment,
+    priceCents: form.priceCents,
+    sortOrder: form.sortOrder,
+  };
+  if (form.kind === 'TIME') {
+    payload.durationUnit = form.durationUnit;
+    payload.durationValue = form.durationValue;
+  } else {
+    payload.visitCount = form.visitCount;
+  }
+  return payload;
+}
+
+function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function planTotalCents(plan: Pick<ClubPlan, 'kind' | 'priceCents' | 'visitCount'>): number {
+  if (plan.kind === 'VISIT') {
+    return (plan.priceCents || 0) * Math.max(0, plan.visitCount || 0);
+  }
+  return plan.priceCents || 0;
+}
+
+function describePlan(plan: ClubPlan): string {
+  if (plan.kind === 'TIME') {
+    const unit = (plan.durationUnit || 'MONTH').toLowerCase();
+    const val = plan.durationValue || 1;
+    return val === 1 ? `1 ${unit}` : `${val} ${unit}s`;
+  }
+  return `${plan.visitCount || '?'} visits`;
+}
+
+function describePrice(plan: ClubPlan): string {
+  if (plan.kind === 'VISIT') {
+    const visits = plan.visitCount || 0;
+    return `${formatCents(plan.priceCents)}/visit · total ${formatCents(planTotalCents(plan))} (${visits})`;
+  }
+  return formatCents(plan.priceCents);
+}
+
+/** Dollar amount input: defaults to 0.00; focus selects all so typing overwrites. */
+function MoneyInput({
+  cents,
+  onCentsChange,
+  inputKey,
+}: {
+  cents: number;
+  onCentsChange: (cents: number) => void;
+  inputKey: string;
+}) {
+  const [text, setText] = useState(() => (cents / 100).toFixed(2));
+
+  useEffect(() => {
+    setText((cents / 100).toFixed(2));
+    // Reset display only when the form opens / switches plan — not on each keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputKey]);
+
+  const commit = (raw: string) => {
+    const cleaned = raw.trim();
+    const n = cleaned === '' || cleaned === '.' ? 0 : Number(cleaned);
+    const nextCents = Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0;
+    onCentsChange(nextCents);
+    setText((nextCents / 100).toFixed(2));
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      style={inputStyle}
+      value={text}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const v = e.target.value.replace(/[^0-9.]/g, '');
+        const parts = v.split('.');
+        const normalized =
+          parts.length <= 1
+            ? v
+            : `${parts[0]}.${parts.slice(1).join('').slice(0, 2)}`;
+        setText(normalized);
+        if (normalized !== '' && normalized !== '.' && Number.isFinite(Number(normalized))) {
+          onCentsChange(Math.round(Number(normalized) * 100));
+        }
+      }}
+      onBlur={() => commit(text)}
+      placeholder="0.00"
+    />
+  );
+}
 
 export default function ClubPlanManager() {
   const [plans, setPlans] = useState<ClubPlan[]>([]);
+  const [segments, setSegments] = useState<string[]>(() => getSystemConfig().clubPlans.segments);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  // Edit / Create
-  const [editingPlanId, setEditingPlanId] = useState<number | null>(null); // null = creating new
+  const [editingPlanId, setEditingPlanId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<PlanFormData>(getEmptyForm());
   const [saving, setSaving] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
-
-  // Price category input
-  const [newCategory, setNewCategory] = useState('');
+  const [priceFieldKey, setPriceFieldKey] = useState(0);
 
   const fetchPlans = async () => {
     try {
@@ -150,14 +212,21 @@ export default function ClubPlanManager() {
 
   useEffect(() => { fetchPlans(); }, []);
 
+  useEffect(() => {
+    return subscribeToSystemConfig((config) => {
+      setSegments(config.clubPlans.segments);
+    });
+  }, []);
+
   const flash = (msg: string) => {
     setMessage(msg);
     setTimeout(() => setMessage(''), 3000);
   };
 
-  const openCreate = () => {
+  const openCreate = (preset?: Partial<PlanFormData>) => {
     setEditingPlanId(null);
-    setForm(getEmptyForm());
+    setForm({ ...getEmptyForm('Regular'), ...preset });
+    setPriceFieldKey((k) => k + 1);
     setShowForm(true);
     setError('');
   };
@@ -165,13 +234,27 @@ export default function ClubPlanManager() {
   const openEdit = (plan: ClubPlan) => {
     setEditingPlanId(plan.id);
     setForm(planToForm(plan));
+    setPriceFieldKey((k) => k + 1);
     setShowForm(true);
     setError('');
   };
 
   const handleSave = async () => {
     if (!form.name.trim()) { setError('Plan name is required'); return; }
-    if (Object.keys(form.prices).length === 0) { setError('At least one price category is required'); return; }
+    if (!form.segment.trim()) { setError('Segment is required'); return; }
+    if (form.segment !== 'Regular') {
+      const familyKey = form.familyKey.trim() || form.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const hasRegular = plans.some(
+        (p) => p.familyKey === familyKey && p.segment === 'Regular' && (editingPlanId == null || p.id !== editingPlanId),
+      );
+      const familyHasRegular = plans.some((p) => {
+        return p.familyKey === (form.familyKey.trim() || familyKey) && p.segment === 'Regular';
+      });
+      if (!hasRegular && !familyHasRegular) {
+        setError('Create a Regular plan for this family before adding other segments');
+        return;
+      }
+    }
 
     setSaving(true);
     setError('');
@@ -197,10 +280,10 @@ export default function ClubPlanManager() {
     try {
       if (plan.isActive) {
         await api.delete(`/club/admin/plans/${plan.id}`);
-        flash(`"${plan.name}" deactivated`);
+        flash(`"${plan.name}" (${plan.segment}) deactivated`);
       } else {
         await api.put(`/club/admin/plans/${plan.id}`, { isActive: true });
-        flash(`"${plan.name}" reactivated`);
+        flash(`"${plan.name}" (${plan.segment}) reactivated`);
       }
       await fetchPlans();
     } catch (err) {
@@ -208,40 +291,32 @@ export default function ClubPlanManager() {
     }
   };
 
-  const addPriceCategory = () => {
-    const cat = newCategory.trim();
-    if (!cat || cat in form.prices) return;
-    setForm({ ...form, prices: { ...form.prices, [cat]: 0 } });
-    setNewCategory('');
-  };
+  const visiblePlans = showInactive ? plans : plans.filter((p) => p.isActive);
 
-  const removePriceCategory = (cat: string) => {
-    const next = { ...form.prices };
-    delete next[cat];
-    setForm({ ...form, prices: next });
-  };
+  const families = Array.from(
+    visiblePlans.reduce((map, plan) => {
+      const list = map.get(plan.familyKey) || [];
+      list.push(plan);
+      map.set(plan.familyKey, list);
+      return map;
+    }, new Map<string, ClubPlan[]>()),
+  );
 
-  const updatePrice = (cat: string, cents: number) => {
-    setForm({ ...form, prices: { ...form.prices, [cat]: cents } });
-  };
-
-  // Filter plans
-  const visiblePlans = showInactive ? plans : plans.filter(p => p.isActive);
+  const visitTotalCents = form.priceCents * Math.max(0, form.visitCount || 0);
 
   if (loading) return <div style={{ padding: '12px', color: '#666' }}>Loading plans...</div>;
 
   return (
     <div>
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
         <h3 style={{ margin: 0, color: '#2c3e50' }}>Payment Plans</h3>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <label style={{ fontSize: '13px', color: '#666', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
             Show inactive
           </label>
           {!showForm && (
-            <button onClick={openCreate} style={{ padding: '6px 14px', fontSize: '13px', fontWeight: 600 }}>
+            <button onClick={() => openCreate()} style={{ padding: '6px 14px', fontSize: '13px', fontWeight: 600 }}>
               + New Plan
             </button>
           )}
@@ -251,7 +326,6 @@ export default function ClubPlanManager() {
       {error && <div className="error-message" style={{ marginBottom: '12px' }}>{error}</div>}
       {message && <div className="success-message" style={{ marginBottom: '12px' }}>{message}</div>}
 
-      {/* Plan Form (create/edit) */}
       {showForm && (
         <div className="card" style={{ marginBottom: '16px', border: '2px solid #3498db', padding: '16px' }}>
           <h4 style={{ margin: '0 0 14px', color: '#2c3e50' }}>
@@ -264,95 +338,128 @@ export default function ClubPlanManager() {
               <input
                 style={inputStyle}
                 value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="e.g. Monthly, 10-Visit Pack"
               />
             </div>
             <div>
-              <label style={labelStyle}>Type</label>
+              <label style={labelStyle}>Family key</label>
+              <input
+                style={inputStyle}
+                value={form.familyKey}
+                onChange={(e) => setForm({ ...form, familyKey: e.target.value })}
+                placeholder="auto from name if empty"
+                disabled={editingPlanId !== null}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+            <div>
+              <label style={labelStyle}>Kind</label>
               <select
                 style={inputStyle}
-                value={form.type}
-                onChange={e => setForm({ ...form, type: e.target.value as 'PERIOD' | 'VISIT_COUNT' })}
+                value={form.kind}
+                onChange={(e) => setForm({ ...form, kind: e.target.value as 'TIME' | 'VISIT' })}
               >
-                <option value="PERIOD">Time Period</option>
-                <option value="VISIT_COUNT">Visit Count</option>
+                <option value="TIME">Time</option>
+                <option value="VISIT">Visit pack</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Segment</label>
+              <select
+                style={inputStyle}
+                value={form.segment}
+                onChange={(e) => setForm({ ...form, segment: e.target.value })}
+              >
+                {segments.map((seg) => (
+                  <option key={seg} value={seg}>{seg}</option>
+                ))}
               </select>
             </div>
           </div>
 
-          {form.type === 'PERIOD' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          {form.kind === 'TIME' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
               <div>
-                <label style={labelStyle}>Period Unit</label>
-                <select style={inputStyle} value={form.periodUnit} onChange={e => setForm({ ...form, periodUnit: e.target.value })}>
-                  {PERIOD_UNITS.map(u => <option key={u} value={u}>{u.charAt(0) + u.slice(1).toLowerCase()}</option>)}
+                <label style={labelStyle}>Duration unit</label>
+                <select
+                  style={inputStyle}
+                  value={form.durationUnit}
+                  onChange={(e) => setForm({ ...form, durationUnit: e.target.value as PlanFormData['durationUnit'] })}
+                >
+                  {DURATION_UNITS.map((u) => (
+                    <option key={u} value={u}>{u.charAt(0) + u.slice(1).toLowerCase()}</option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Period Value</label>
-                <input type="number" min={1} style={inputStyle} value={form.periodValue} onChange={e => setForm({ ...form, periodValue: Number(e.target.value) })} />
+                <label style={labelStyle}>Duration value</label>
+                <input
+                  type="number"
+                  min={1}
+                  style={inputStyle}
+                  value={form.durationValue}
+                  onChange={(e) => setForm({ ...form, durationValue: Number(e.target.value) })}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Total price ($)</label>
+                <MoneyInput
+                  inputKey={`time-${priceFieldKey}`}
+                  cents={form.priceCents}
+                  onCentsChange={(priceCents) => setForm({ ...form, priceCents })}
+                />
               </div>
             </div>
           ) : (
-            <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Number of Visits</label>
-              <input type="number" min={1} style={{ ...inputStyle, maxWidth: '200px' }} value={form.visitCount} onChange={e => setForm({ ...form, visitCount: Number(e.target.value) })} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div>
+                <label style={labelStyle}>Number of visits</label>
+                <input
+                  type="number"
+                  min={1}
+                  style={inputStyle}
+                  value={form.visitCount}
+                  onChange={(e) => setForm({ ...form, visitCount: Number(e.target.value) })}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Price per visit ($)</label>
+                <MoneyInput
+                  inputKey={`visit-${priceFieldKey}`}
+                  cents={form.priceCents}
+                  onCentsChange={(priceCents) => setForm({ ...form, priceCents })}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Total</label>
+                <div style={{ ...inputStyle, backgroundColor: '#eef3f8', color: '#2c3e50', fontWeight: 600 }}>
+                  {formatCents(visitTotalCents)}
+                  <span style={{ fontWeight: 400, color: '#666', marginLeft: '6px', fontSize: '12px' }}>
+                    ({form.visitCount || 0} × {formatCents(form.priceCents)})
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
           <div style={{ marginBottom: '12px' }}>
-            <label style={labelStyle}>Sort Order</label>
-            <input type="number" style={{ ...inputStyle, maxWidth: '120px' }} value={form.sortOrder} onChange={e => setForm({ ...form, sortOrder: Number(e.target.value) })} />
-          </div>
-
-          {/* Prices by category */}
-          <div style={{ marginBottom: '12px' }}>
-            <label style={labelStyle}>Prices by Category</label>
-            {Object.entries(form.prices).map(([cat, cents]) => (
-              <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                <span style={{ minWidth: '80px', fontWeight: 500, fontSize: '14px' }}>{cat}</span>
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                  <span style={{ position: 'absolute', left: '8px', color: '#666', fontSize: '14px', pointerEvents: 'none' }}>$</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={(cents / 100).toFixed(2)}
-                    onChange={e => updatePrice(cat, Math.round(Number(e.target.value) * 100))}
-                    style={{ ...inputStyle, width: '130px', paddingLeft: '22px' }}
-                  />
-                </div>
-                {Object.keys(form.prices).length > 1 && (
-                  <button
-                    onClick={() => removePriceCategory(cat)}
-                    style={{ ...smallBtnStyle, backgroundColor: '#e74c3c', color: 'white' }}
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-              <input
-                style={{ ...inputStyle, width: '140px' }}
-                value={newCategory}
-                onChange={e => setNewCategory(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPriceCategory(); } }}
-                placeholder="New category..."
-              />
-              <button
-                onClick={addPriceCategory}
-                disabled={!newCategory.trim() || newCategory.trim() in form.prices}
-                style={{ ...smallBtnStyle, backgroundColor: '#27ae60', color: 'white', opacity: (!newCategory.trim() || newCategory.trim() in form.prices) ? 0.5 : 1 }}
-              >
-                Add
-              </button>
-            </div>
+            <label style={labelStyle}>Sort order</label>
+            <input
+              type="number"
+              style={{ ...inputStyle, maxWidth: '120px' }}
+              value={form.sortOrder}
+              onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })}
+            />
           </div>
 
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-            <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', fontSize: '13px', backgroundColor: '#95a5a6', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+            <button
+              onClick={() => setShowForm(false)}
+              style={{ padding: '8px 16px', fontSize: '13px', backgroundColor: '#95a5a6', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+            >
               Cancel
             </button>
             <button onClick={handleSave} disabled={saving} style={{ padding: '8px 16px', fontSize: '13px' }}>
@@ -362,60 +469,95 @@ export default function ClubPlanManager() {
         </div>
       )}
 
-      {/* Plan List */}
-      {visiblePlans.length === 0 ? (
+      {families.length === 0 ? (
         <div style={{ padding: '20px', textAlign: 'center', color: '#999', fontSize: '14px' }}>
           {plans.length === 0 ? 'No plans created yet.' : 'No active plans. Toggle "Show inactive" to see deactivated plans.'}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {visiblePlans.map(plan => (
-            <div
-              key={plan.id}
-              className="card"
-              style={{
-                padding: '12px 16px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                opacity: plan.isActive ? 1 : 0.55,
-                borderLeft: plan.isActive ? '4px solid #27ae60' : '4px solid #bdc3c7',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '15px', color: '#2c3e50' }}>
-                  {plan.name}
-                  {!plan.isActive && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#e74c3c', fontWeight: 700 }}>INACTIVE</span>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {families.map(([familyKey, familyPlans]) => {
+            const head = familyPlans[0];
+            const hasRegular = familyPlans.some((p) => p.segment === 'Regular');
+            return (
+              <div key={familyKey} className="card" style={{ padding: '12px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '15px', color: '#2c3e50' }}>
+                      {head.name}
+                      <span style={{ marginLeft: '8px', fontSize: '12px', color: '#888', fontWeight: 500 }}>
+                        {familyKey} · {head.kind === 'TIME' ? 'Time' : 'Visit'} · {describePlan(head)}
+                      </span>
+                    </div>
+                    {!hasRegular && (
+                      <div style={{ fontSize: '12px', color: '#c0392b', marginTop: '2px' }}>
+                        Missing Regular segment — add one before selling this family
+                      </div>
+                    )}
+                  </div>
+                  {!showForm && (
+                    <button
+                      onClick={() => openCreate({
+                        familyKey,
+                        name: head.name,
+                        kind: head.kind,
+                        durationUnit: head.durationUnit || 'MONTH',
+                        durationValue: head.durationValue || 1,
+                        visitCount: head.visitCount || 10,
+                        sortOrder: head.sortOrder,
+                        segment: segments.find((s) => s !== 'Regular' && !familyPlans.some((p) => p.segment === s)) || 'Regular',
+                      })}
+                      style={{ ...smallBtnStyle, backgroundColor: '#27ae60', color: 'white' }}
+                    >
+                      + Segment
+                    </button>
+                  )}
                 </div>
-                <div style={{ fontSize: '13px', color: '#666', marginTop: '2px' }}>
-                  {plan.type === 'PERIOD' ? 'Time Period' : 'Visit Count'} &mdash; {describePlan(plan)}
-                </div>
-                <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
-                  {Object.entries(plan.config.prices || {}).map(([cat, val]) => (
-                    <span key={cat} style={{ marginRight: '10px' }}>{cat}: {formatCents(val.priceCents)}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {familyPlans.map((plan) => (
+                    <div
+                      key={plan.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '8px 10px',
+                        background: '#f8fbff',
+                        borderRadius: '5px',
+                        opacity: plan.isActive ? 1 : 0.55,
+                        borderLeft: plan.isActive ? '3px solid #27ae60' : '3px solid #bdc3c7',
+                      }}
+                    >
+                      <div style={{ fontSize: '14px' }}>
+                        <strong>{plan.segment}</strong>
+                        <span style={{ marginLeft: '10px', color: '#555' }}>{describePrice(plan)}</span>
+                        {!plan.isActive && (
+                          <span style={{ marginLeft: '8px', fontSize: '11px', color: '#e74c3c', fontWeight: 700 }}>INACTIVE</span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          onClick={() => openEdit(plan)}
+                          style={{ ...smallBtnStyle, backgroundColor: '#3498db', color: 'white' }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleToggleActive(plan)}
+                          style={{
+                            ...smallBtnStyle,
+                            backgroundColor: plan.isActive ? '#e74c3c' : '#27ae60',
+                            color: 'white',
+                          }}
+                        >
+                          {plan.isActive ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                <button
-                  onClick={() => openEdit(plan)}
-                  style={{ ...smallBtnStyle, backgroundColor: '#3498db', color: 'white' }}
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleToggleActive(plan)}
-                  style={{
-                    ...smallBtnStyle,
-                    backgroundColor: plan.isActive ? '#e74c3c' : '#27ae60',
-                    color: 'white',
-                  }}
-                >
-                  {plan.isActive ? 'Deactivate' : 'Reactivate'}
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

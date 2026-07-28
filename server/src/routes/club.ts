@@ -2,8 +2,15 @@ import express, { Request, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
-import { getClubPlansConfig, updateSystemConfig } from '../services/systemConfigService';
+import { getClubPlansConfig, updateSystemConfig, getPaymentsConfig } from '../services/systemConfigService';
 import { scorePinsEqual } from '../utils/scorePin';
+import {
+  evaluateCourtesy,
+  ensureCourtesyObligation,
+  notifyAdminsOfCourtesy,
+} from '../payments/courtesy';
+import { resolvePlanForMember, planChargeAmountCents } from '../payments/resolvePlan';
+import { computeValidTo } from '../utils/planDuration';
 
 const router = express.Router();
 
@@ -68,21 +75,83 @@ function getExpiryWarning(entitlement: {
   validTo: Date | null;
   visitsRemaining: number | null;
 }): string | null {
-  const WARNING_DAYS = 14;
-  const WARNING_VISITS = 1;
+  const reminders = getPaymentsConfig().reminders;
+  if (!reminders.checkInBannerEnabled) return null;
 
   if (entitlement.type === 'VISIT_PACK') {
-    if (entitlement.visitsRemaining !== null && entitlement.visitsRemaining <= WARNING_VISITS) {
+    if (
+      entitlement.visitsRemaining !== null &&
+      entitlement.visitsRemaining <= reminders.visitPackVisitsRemaining
+    ) {
       return `Only ${entitlement.visitsRemaining} visit(s) remaining on your plan.`;
     }
   } else if (entitlement.validTo) {
     const daysLeft = Math.ceil((entitlement.validTo.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= WARNING_DAYS) {
+    if (daysLeft <= reminders.periodDaysBeforeExpiry) {
       return `Your plan expires in ${daysLeft} day(s).`;
     }
   }
 
   return null;
+}
+
+async function tryCourtesyCheckIn(
+  memberId: number,
+  clubDate: string,
+  paymentRequiredMessage: string,
+) {
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { firstName: true, lastName: true, email: true },
+  });
+  const canPay = Boolean(member?.email);
+
+  const courtesy = await evaluateCourtesy(memberId);
+  if (!courtesy.allowed) {
+    return {
+      action: 'PAYMENT_REQUIRED' as const,
+      visit: null,
+      warning: courtesy.message || paymentRequiredMessage,
+      charged: false,
+      entitlement: null,
+      courtesy: false,
+      canPay,
+      paymentInProgress: false,
+    };
+  }
+
+  const visit = await prisma.clubVisit.create({
+    data: {
+      memberId,
+      clubDate,
+      dailyPaymentApplied: false,
+      isCourtesy: true,
+    },
+  });
+  await ensureCourtesyObligation(memberId, visit.id);
+
+  const memberName = member ? `${member.firstName} ${member.lastName}`.trim() : `Member ${memberId}`;
+  await notifyAdminsOfCourtesy({
+    memberId,
+    memberName,
+    message: courtesy.message,
+  });
+
+  const pending = await prisma.clubPayment.findFirst({
+    where: { memberId, status: 'PENDING' },
+    orderBy: { recordedAt: 'desc' },
+  });
+
+  return {
+    action: 'CHECK_IN' as const,
+    visit,
+    warning: courtesy.message,
+    charged: false,
+    entitlement: null,
+    courtesy: true,
+    canPay,
+    paymentInProgress: Boolean(pending?.externalRef),
+  };
 }
 
 /**
@@ -118,6 +187,9 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
             validTo: entitlement.validTo,
           }
         : null,
+      courtesy: openVisit.isCourtesy,
+      canPay: false,
+      paymentInProgress: false,
     };
   }
 
@@ -135,14 +207,11 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
     const entitlement = await getActiveEntitlement(memberId);
 
     if (!entitlement) {
-      // No active entitlement — check-in is blocked
-      return {
-        action: 'PAYMENT_REQUIRED' as const,
-        visit: null,
-        warning: 'No active plan. Please purchase a plan or contact staff.',
-        charged: false,
-        entitlement: null,
-      };
+      return tryCourtesyCheckIn(
+        memberId,
+        clubDate,
+        'No active plan. Please purchase a plan or contact staff.',
+      );
     }
 
     // Check entitlement type
@@ -155,6 +224,7 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
           data: {
             memberId,
             amountCents: 0,
+            provider: 'manual',
             purpose: `Covered visit (${entitlement.type})`,
             status: 'SUCCEEDED',
           },
@@ -173,18 +243,17 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
             data: {
               memberId,
               amountCents: 0,
+              provider: 'manual',
               purpose: `Visit pack debit (${entitlement.visitsRemaining - 1} remaining)`,
               status: 'SUCCEEDED',
             },
           });
         } else {
-          return {
-            action: 'PAYMENT_REQUIRED' as const,
-            visit: null,
-            warning: 'Visit pack exhausted. Please purchase a new plan.',
-            charged: false,
-            entitlement: null,
-          };
+          return tryCourtesyCheckIn(
+            memberId,
+            clubDate,
+            'Visit pack exhausted. Please purchase a new plan.',
+          );
         }
         break;
 
@@ -201,12 +270,20 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
           },
         });
         if (!todayPayment) {
+          // No courtesy for PPV
+          const member = await prisma.member.findUnique({
+            where: { id: memberId },
+            select: { email: true },
+          });
           return {
             action: 'PAYMENT_REQUIRED' as const,
             visit: null,
-            warning: 'Per-visit payment required. Please pay at the front desk.',
+            warning: 'Per-visit payment required. Please pay at the front desk or start checkout.',
             charged: false,
             entitlement: null,
+            courtesy: false,
+            canPay: Boolean(member?.email),
+            paymentInProgress: false,
           };
         }
         dailyPaymentApplied = true;
@@ -234,6 +311,10 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
     warning = getExpiryWarning(entitlementAfter);
   }
 
+  const pendingCheckout = await prisma.clubPayment.findFirst({
+    where: { memberId, status: 'PENDING', externalRef: { not: null } },
+  });
+
   return {
     action: 'CHECK_IN' as const,
     visit,
@@ -246,6 +327,9 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
           validTo: entitlementAfter.validTo,
         }
       : null,
+    courtesy: false,
+    canPay: false,
+    paymentInProgress: Boolean(pendingCheckout),
   };
 }
 
@@ -384,6 +468,9 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
         message: result.warning,
         charged: result.charged,
         entitlement: result.entitlement,
+        courtesy: result.courtesy,
+        canPay: result.canPay,
+        paymentInProgress: result.paymentInProgress,
         member: { firstName: member.firstName, lastName: member.lastName },
       });
     }
@@ -394,6 +481,9 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
       warning: result.warning,
       charged: result.charged,
       entitlement: result.entitlement,
+      courtesy: result.courtesy,
+      canPay: result.canPay,
+      paymentInProgress: result.paymentInProgress,
       member: { firstName: member.firstName, lastName: member.lastName },
     });
   } catch (error) {
@@ -593,8 +683,8 @@ router.get('/admin/entitlements', async (req: AuthRequest, res: Response) => {
 /**
  * POST /api/club/admin/entitlements — create an entitlement for a member.
  * Supports two modes:
- *   1. Plan-based (new): { memberId, planId, planCategory, discountType?, discountValue? }
- *   2. Legacy:           { memberId, type, startsAt?, expiresAt?, visitsTotal?, pricePaid? }
+ *   1. Plan-based: { memberId, planId | familyKey, discountType?, discountValue? }
+ *   2. Legacy:     { memberId, type, startsAt?, expiresAt?, visitsTotal?, pricePaid? }
  */
 router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
   try {
@@ -616,24 +706,35 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
     }
 
     // ── Plan-based creation ──
-    if (req.body.planId) {
-      const { planId, planCategory, discountType, discountValue } = req.body;
-      const category = planCategory || 'Normal';
+    if (req.body.planId || req.body.familyKey) {
+      const { planId, familyKey, discountType, discountValue } = req.body;
 
-      const plan = await prisma.clubPlan.findUnique({ where: { id: planId } });
-      if (!plan || !plan.isActive) {
-        return res.status(400).json({ error: 'Plan not found or inactive' });
+      const member = await prisma.member.findUnique({
+        where: { id: Number(memberId) },
+        select: { segment: true },
+      });
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' });
       }
 
-      const cfg = plan.config as Record<string, any>;
-      const categoryPrice = cfg.prices?.[category];
-      if (!categoryPrice) {
-        return res.status(400).json({ error: `No price defined for category "${category}" on this plan` });
+      let plan;
+      if (planId) {
+        plan = await prisma.clubPlan.findUnique({ where: { id: Number(planId) } });
+        if (!plan || !plan.isActive) {
+          return res.status(400).json({ error: 'Plan not found or inactive' });
+        }
+      } else {
+        try {
+          plan = await resolvePlanForMember(String(familyKey).trim(), member.segment);
+        } catch (err) {
+          return res.status(400).json({
+            error: err instanceof Error ? err.message : 'Plan not found',
+          });
+        }
       }
 
-      const basePriceCents: number = categoryPrice.priceCents || 0;
+      const basePriceCents = planChargeAmountCents(plan);
 
-      // Calculate discount
       let discountAmount = 0;
       if (discountType === 'PERCENT' && typeof discountValue === 'number') {
         discountAmount = Math.round(basePriceCents * Math.min(discountValue, 100) / 100);
@@ -642,29 +743,31 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
       }
       const finalPrice = basePriceCents - discountAmount;
 
-      // Derive entitlement fields from plan config
-      let entitlementType: string;
-      let expiresAt: Date | null = null;
-      let visitsTotal: number | null = null;
+      const validFrom = new Date();
+      let entitlementType: 'MONTHLY' | 'YEARLY' | 'VISIT_PACK';
+      let validTo: Date | null = null;
+      let visitsRemaining: number | null = null;
 
-      if (plan.type === 'PERIOD') {
-        entitlementType = 'MONTHLY'; // legacy enum placeholder for period-based
-        // expiresAt is NOT set at creation — it's calculated on first use
-      } else {
+      if (plan.kind === 'VISIT') {
         entitlementType = 'VISIT_PACK';
-        visitsTotal = cfg.visitCount || 0;
+        visitsRemaining = plan.visitCount || 0;
+      } else {
+        const unit = plan.durationUnit || 'MONTH';
+        const value = plan.durationValue || 1;
+        entitlementType = unit === 'YEAR' ? 'YEARLY' : 'MONTHLY';
+        validTo = computeValidTo(validFrom, unit, value);
       }
 
       const entitlement = await prisma.clubEntitlement.create({
         data: {
           memberId,
-          type: entitlementType as any,
+          type: entitlementType,
           active: true,
-          validFrom: new Date(),
-          validTo: expiresAt,
-          visitsRemaining: visitsTotal,
+          validFrom,
+          validTo,
+          visitsRemaining,
           planId: plan.id,
-          planCategory: category,
+          planSegment: plan.segment,
         },
       });
 
@@ -673,7 +776,7 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
           data: {
             memberId,
             amountCents: finalPrice,
-            purpose: `${plan.name} (${category}) plan purchase`,
+            purpose: `${plan.name} (${plan.segment}) plan purchase`,
             status: 'SUCCEEDED',
           },
         });
@@ -773,6 +876,18 @@ router.post('/admin/record-per-visit-payment', async (req: AuthRequest, res: Res
 
 // ─── Plan Management (Admin) ────────────────────────────────────────────────
 
+const PLAN_KINDS = ['TIME', 'VISIT'] as const;
+const DURATION_UNITS = ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] as const;
+
+function slugifyFamilyKey(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'plan';
+}
+
 /** GET /api/club/admin/plans — list all plans */
 router.get('/admin/plans', async (req: AuthRequest, res: Response) => {
   try {
@@ -785,7 +900,7 @@ router.get('/admin/plans', async (req: AuthRequest, res: Response) => {
 
     const plans = await prisma.clubPlan.findMany({
       where,
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [{ sortOrder: 'asc' }, { familyKey: 'asc' }, { segment: 'asc' }],
     });
 
     res.json(plans);
@@ -795,55 +910,95 @@ router.get('/admin/plans', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** POST /api/club/admin/plans — create a plan */
+/** POST /api/club/admin/plans — create a plan row (one familyKey + segment) */
 router.post('/admin/plans', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdminOrOrganizer(req)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const { name, type, config, sortOrder } = req.body;
+    const {
+      name,
+      kind,
+      segment: rawSegment,
+      familyKey: rawFamilyKey,
+      priceCents,
+      currency,
+      durationUnit,
+      durationValue,
+      visitCount,
+      sortOrder,
+    } = req.body;
 
-    if (!name || typeof name !== 'string') {
+    if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
-    if (!['PERIOD', 'VISIT_COUNT'].includes(type)) {
-      return res.status(400).json({ error: 'type must be PERIOD or VISIT_COUNT' });
-    }
-    if (!config || typeof config !== 'object') {
-      return res.status(400).json({ error: 'config object is required' });
+    if (!PLAN_KINDS.includes(kind)) {
+      return res.status(400).json({ error: 'kind must be TIME or VISIT' });
     }
 
-    // Validate config shape
-    if (type === 'PERIOD') {
-      const validUnits = ['DAY', 'WEEK', 'MONTH', 'YEAR'];
-      if (!validUnits.includes(config.periodUnit)) {
-        return res.status(400).json({ error: `config.periodUnit must be one of: ${validUnits.join(', ')}` });
+    const segment =
+      typeof rawSegment === 'string' && rawSegment.trim()
+        ? (rawSegment.trim() === 'Normal' ? 'Regular' : rawSegment.trim())
+        : 'Regular';
+    const familyKey =
+      typeof rawFamilyKey === 'string' && rawFamilyKey.trim()
+        ? slugifyFamilyKey(rawFamilyKey)
+        : slugifyFamilyKey(name);
+
+    if (kind === 'TIME') {
+      if (!DURATION_UNITS.includes(durationUnit)) {
+        return res.status(400).json({ error: `durationUnit must be one of: ${DURATION_UNITS.join(', ')}` });
       }
-      if (!Number.isInteger(config.periodValue) || config.periodValue < 1) {
-        return res.status(400).json({ error: 'config.periodValue must be a positive integer' });
+      if (!Number.isInteger(durationValue) || durationValue < 1) {
+        return res.status(400).json({ error: 'durationValue must be a positive integer' });
       }
-    } else {
-      if (!Number.isInteger(config.visitCount) || config.visitCount < 1) {
-        return res.status(400).json({ error: 'config.visitCount must be a positive integer' });
-      }
+    } else if (!Number.isInteger(visitCount) || visitCount < 1) {
+      return res.status(400).json({ error: 'visitCount must be a positive integer' });
     }
 
-    if (!config.prices || typeof config.prices !== 'object' || Object.keys(config.prices).length === 0) {
-      return res.status(400).json({ error: 'config.prices must have at least one category' });
+    const cents = Number.isInteger(priceCents) ? priceCents : Math.round(Number(priceCents) || 0);
+    if (!Number.isInteger(cents) || cents < 0) {
+      return res.status(400).json({ error: 'priceCents must be a non-negative integer' });
+    }
+
+    const siblings = await prisma.clubPlan.findMany({ where: { familyKey } });
+    if (siblings.length > 0) {
+      const siblingKind = siblings[0].kind;
+      if (siblingKind !== kind) {
+        return res.status(400).json({ error: `Family "${familyKey}" already uses kind ${siblingKind}` });
+      }
+    }
+    if (segment !== 'Regular') {
+      const hasRegular = siblings.some((p) => p.segment === 'Regular');
+      if (!hasRegular) {
+        return res.status(400).json({
+          error: `Create a Regular plan for family "${familyKey}" before adding segment "${segment}"`,
+        });
+      }
     }
 
     const plan = await prisma.clubPlan.create({
       data: {
         name: name.trim(),
-        type,
-        config,
-        sortOrder: sortOrder ?? 0,
+        familyKey,
+        kind,
+        segment,
+        priceCents: cents,
+        currency: typeof currency === 'string' && currency.trim() ? currency.trim() : 'USD',
+        durationUnit: kind === 'TIME' ? durationUnit : null,
+        durationValue: kind === 'TIME' ? durationValue : null,
+        visitCount: kind === 'VISIT' ? visitCount : null,
+        sortOrder: Number.isInteger(sortOrder) ? sortOrder : 0,
       },
     });
 
     res.status(201).json(plan);
-  } catch (error) {
+  } catch (error: unknown) {
+    const prismaCode = (error as { code?: string })?.code;
+    if (prismaCode === 'P2002') {
+      return res.status(400).json({ error: 'A plan with this familyKey and segment already exists' });
+    }
     logger.error('Error creating plan', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -867,18 +1022,134 @@ router.put('/admin/plans/:id', async (req: AuthRequest, res: Response) => {
     }
 
     const data: Record<string, unknown> = {};
-    if (req.body.name !== undefined) data.name = req.body.name.trim();
-    if (req.body.isActive !== undefined) data.isActive = req.body.isActive;
+    if (req.body.name !== undefined) {
+      if (typeof req.body.name !== 'string' || !req.body.name.trim()) {
+        return res.status(400).json({ error: 'name must be a non-empty string' });
+      }
+      data.name = req.body.name.trim();
+    }
+    if (req.body.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
     if (req.body.sortOrder !== undefined) data.sortOrder = req.body.sortOrder;
-    if (req.body.config !== undefined) data.config = req.body.config;
+    if (req.body.priceCents !== undefined) {
+      const cents = Number.isInteger(req.body.priceCents)
+        ? req.body.priceCents
+        : Math.round(Number(req.body.priceCents) || 0);
+      if (!Number.isInteger(cents) || cents < 0) {
+        return res.status(400).json({ error: 'priceCents must be a non-negative integer' });
+      }
+      data.priceCents = cents;
+    }
+    if (req.body.currency !== undefined && typeof req.body.currency === 'string') {
+      data.currency = req.body.currency.trim() || 'USD';
+    }
+    if (req.body.segment !== undefined) {
+      const seg = String(req.body.segment).trim();
+      data.segment = seg === 'Normal' ? 'Regular' : seg;
+    }
+    if (req.body.familyKey !== undefined) {
+      data.familyKey = slugifyFamilyKey(String(req.body.familyKey));
+    }
+    if (req.body.kind !== undefined) {
+      if (!PLAN_KINDS.includes(req.body.kind)) {
+        return res.status(400).json({ error: 'kind must be TIME or VISIT' });
+      }
+      data.kind = req.body.kind;
+    }
+
+    const nextKind = (data.kind as string) || existing.kind;
+    if (nextKind === 'TIME') {
+      if (req.body.durationUnit !== undefined) {
+        if (!DURATION_UNITS.includes(req.body.durationUnit)) {
+          return res.status(400).json({ error: `durationUnit must be one of: ${DURATION_UNITS.join(', ')}` });
+        }
+        data.durationUnit = req.body.durationUnit;
+      }
+      if (req.body.durationValue !== undefined) {
+        if (!Number.isInteger(req.body.durationValue) || req.body.durationValue < 1) {
+          return res.status(400).json({ error: 'durationValue must be a positive integer' });
+        }
+        data.durationValue = req.body.durationValue;
+      }
+      data.visitCount = null;
+    } else {
+      if (req.body.visitCount !== undefined) {
+        if (!Number.isInteger(req.body.visitCount) || req.body.visitCount < 1) {
+          return res.status(400).json({ error: 'visitCount must be a positive integer' });
+        }
+        data.visitCount = req.body.visitCount;
+      }
+      data.durationUnit = null;
+      data.durationValue = null;
+    }
+
+    const nextFamily = (data.familyKey as string) || existing.familyKey;
+    const nextSegment = (data.segment as string) || existing.segment;
+    const nextActive = data.isActive !== undefined ? Boolean(data.isActive) : existing.isActive;
+
+    if (nextSegment !== 'Regular') {
+      const regular = await prisma.clubPlan.findFirst({
+        where: { familyKey: nextFamily, segment: 'Regular', NOT: { id: planId } },
+      });
+      const selfIsRegularMoving = existing.segment === 'Regular' && nextSegment !== 'Regular';
+      if (!regular || selfIsRegularMoving) {
+        // If this row was the Regular and is changing segment, require another Regular
+        const stillHasRegular =
+          regular != null || (nextSegment === 'Regular' && !selfIsRegularMoving);
+        if (!stillHasRegular) {
+          return res.status(400).json({
+            error: `Family "${nextFamily}" must keep a Regular plan`,
+          });
+        }
+      }
+    }
+
+    if (existing.segment === 'Regular' && (nextSegment !== 'Regular' || nextActive === false)) {
+      const otherActive = await prisma.clubPlan.count({
+        where: {
+          familyKey: existing.familyKey,
+          isActive: true,
+          NOT: { id: planId },
+        },
+      });
+      if (otherActive > 0 && (nextSegment !== 'Regular' || nextActive === false)) {
+        const remainingRegular = await prisma.clubPlan.findFirst({
+          where: {
+            familyKey: nextFamily,
+            segment: 'Regular',
+            isActive: true,
+            NOT: { id: planId },
+          },
+        });
+        if (!remainingRegular) {
+          return res.status(400).json({
+            error: 'Cannot remove or deactivate the only Regular plan while other variants exist',
+          });
+        }
+      }
+    }
 
     const updated = await prisma.clubPlan.update({
       where: { id: planId },
       data,
     });
 
+    // Keep shared family display name / sort in sync when Regular is edited
+    if (updated.segment === 'Regular' && (data.name !== undefined || data.sortOrder !== undefined)) {
+      await prisma.clubPlan.updateMany({
+        where: { familyKey: updated.familyKey, NOT: { id: updated.id } },
+        data: {
+          ...(data.name !== undefined ? { name: updated.name } : {}),
+          ...(data.sortOrder !== undefined ? { sortOrder: updated.sortOrder } : {}),
+        },
+      });
+    }
+
     res.json(updated);
-  } catch (error) {
+  } catch (error: unknown) {
+    const prismaCode = (error as { code?: string })?.code;
+    if (prismaCode === 'P2002') {
+      return res.status(400).json({ error: 'A plan with this familyKey and segment already exists' });
+    }
     logger.error('Error updating plan', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -896,6 +1167,22 @@ router.delete('/admin/plans/:id', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Invalid plan ID' });
     }
 
+    const existing = await prisma.clubPlan.findUnique({ where: { id: planId } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    if (existing.segment === 'Regular') {
+      const otherActive = await prisma.clubPlan.count({
+        where: { familyKey: existing.familyKey, isActive: true, NOT: { id: planId } },
+      });
+      if (otherActive > 0) {
+        return res.status(400).json({
+          error: 'Deactivate other segment variants before deactivating the Regular plan',
+        });
+      }
+    }
+
     const updated = await prisma.clubPlan.update({
       where: { id: planId },
       data: { isActive: false },
@@ -908,7 +1195,7 @@ router.delete('/admin/plans/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** GET /api/club/admin/plan-config — get plan categories + formula from SystemConfig */
+/** GET /api/club/admin/plan-config — get plan segments + formula from SystemConfig */
 router.get('/admin/plan-config', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdminOrOrganizer(req)) {
@@ -921,7 +1208,7 @@ router.get('/admin/plan-config', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** PUT /api/club/admin/plan-config — update plan categories + formula */
+/** PUT /api/club/admin/plan-config — update plan segments + formula */
 router.put('/admin/plan-config', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdminOrOrganizer(req)) {
@@ -947,7 +1234,8 @@ router.get('/admin/plan-price-suggestion', async (req: AuthRequest, res: Respons
     }
 
     const visitCount = parseInt(req.query.visitCount as string);
-    const category = (req.query.category as string) || 'Normal';
+    const rawCategory = (req.query.category as string) || (req.query.segment as string) || 'Regular';
+    const category = rawCategory === 'Normal' ? 'Regular' : rawCategory;
 
     if (isNaN(visitCount) || visitCount < 1) {
       return res.status(400).json({ error: 'visitCount must be a positive integer' });
@@ -957,7 +1245,7 @@ router.get('/admin/plan-price-suggestion', async (req: AuthRequest, res: Respons
     const formulaParams = config.visitPricingFormula[category];
 
     if (!formulaParams) {
-      return res.status(400).json({ error: `No formula parameters found for category "${category}"` });
+      return res.status(400).json({ error: `No formula parameters found for segment "${category}"` });
     }
 
     // Formula: pricePerVisit = basePricePerVisit × (1/visitCount)^exponent
@@ -969,6 +1257,7 @@ router.get('/admin/plan-price-suggestion', async (req: AuthRequest, res: Respons
     res.json({
       visitCount,
       category,
+      segment: category,
       pricePerVisitCents,
       totalPriceCents,
       formula: {
@@ -1023,6 +1312,106 @@ router.post('/cron/auto-checkout', async (req: Request, res: Response) => {
     res.json({ clubDate: targetDate, closedCount: result.count });
   } catch (error) {
     logger.error('Error during auto-checkout', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** GET /api/club/admin/courtesy-visits — list uncleared courtesy visits */
+router.get('/admin/courtesy-visits', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdminOrOrganizer(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const visits = await prisma.clubVisit.findMany({
+      where: { isCourtesy: true, courtesyClearedAt: null },
+      include: {
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            courtesySuspended: true,
+          },
+        },
+      },
+      orderBy: { checkInAt: 'desc' },
+      take: 500,
+    });
+    res.json({ visits });
+  } catch (error) {
+    logger.error('Error listing courtesy visits', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** POST /api/club/admin/members/:id/courtesy-suspend — body: { suspended: boolean } */
+router.post('/admin/members/:id/courtesy-suspend', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdminOrOrganizer(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const memberId = Number(req.params.id);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'Invalid member id' });
+    }
+    const suspended = Boolean(req.body?.suspended);
+    const member = await prisma.member.update({
+      where: { id: memberId },
+      data: { courtesySuspended: suspended },
+      select: { id: true, firstName: true, lastName: true, courtesySuspended: true },
+    });
+    res.json({ member });
+  } catch (error) {
+    logger.error('Error updating courtesy suspend', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/club/cron/payment-reminders — preemptive entitlement reminder emails
+ */
+router.post('/cron/payment-reminders', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+
+    const { sendPreemptivePaymentReminders } = await import('../payments/reminderCron');
+    const result = await sendPreemptivePaymentReminders();
+    res.json(result);
+  } catch (error) {
+    logger.error('Error sending payment reminders', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/club/cron/reconcile-payments — backup confirm for PENDING payments
+ */
+router.post('/cron/reconcile-payments', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+
+    const { reconcilePendingPayments } = await import('../payments/reconcilePending');
+    const result = await reconcilePendingPayments();
+    res.json(result);
+  } catch (error) {
+    logger.error('Error reconciling payments', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

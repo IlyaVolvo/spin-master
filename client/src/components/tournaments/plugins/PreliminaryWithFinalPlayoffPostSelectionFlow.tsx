@@ -10,10 +10,16 @@ type Step = 'configure' | 'confirm_groups' | 'confirmation';
 
 /**
  * Compute valid playoff bracket sizes.
- * Must be a power of 2, >= (numGroups + prequalified), < totalPlayers.
+ * Must be a power of 2, >= (numGroups * qualifiersPerGroup + prequalified), < totalPlayers.
  */
-function getValidPlayoffSizes(numGroups: number, prequalified: number, totalPlayers: number): number[] {
-  const minSize = numGroups + prequalified;
+function getValidPlayoffSizes(
+  numGroups: number,
+  prequalified: number,
+  totalPlayers: number,
+  qualifiersPerGroup: number,
+): number[] {
+  const perGroup = Math.max(1, qualifiersPerGroup);
+  const minSize = numGroups * perGroup + prequalified;
   const sizes: number[] = [];
   let size = 2;
   while (size <= totalPlayers) {
@@ -40,9 +46,12 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
   formatPlayerName,
   nameDisplayOrder,
 }) => {
-  const preliminaryRules = getSystemConfig().tournamentRules.preliminary;
+  const preliminaryRules = getSystemConfig().tournamentRules.preliminaryWithFinalPlayoff;
   const [step, setStep] = useState<Step>('configure');
   const [groupSize, setGroupSize] = useState<number>(preliminaryRules.groupSizeDefault);
+  const [qualifiersPerGroup, setQualifiersPerGroup] = useState<number>(
+    Math.max(1, preliminaryRules.qualifiersPerGroup || 1),
+  );
   const [playoffBracketSize, setPlayoffBracketSize] = useState<number>(0);
   const [autoQualifiedCount, setAutoQualifiedCount] = useState<number>(0);
   const [playerGroups, setPlayerGroups] = useState<number[][]>([]);
@@ -79,8 +88,13 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
 
   // Valid playoff bracket sizes
   const validPlayoffSizes = useMemo(() => {
-    return getValidPlayoffSizes(numGroups, autoQualifiedCount, selectedPlayerIds.length);
-  }, [numGroups, autoQualifiedCount, selectedPlayerIds.length]);
+    return getValidPlayoffSizes(
+      numGroups,
+      autoQualifiedCount,
+      selectedPlayerIds.length,
+      qualifiersPerGroup,
+    );
+  }, [numGroups, autoQualifiedCount, selectedPlayerIds.length, qualifiersPerGroup]);
 
   // Auto-select smallest valid playoff size when options change
   useMemo(() => {
@@ -133,6 +147,7 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
           playoffBracketSize,
           autoQualifiedCount,
           autoQualifiedMemberIds,
+          qualifiersPerGroup,
         },
       };
 
@@ -172,8 +187,9 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
     };
   };
 
-  // How many extra spots beyond prequalified + group winners
-  const extraSpots = playoffBracketSize - autoQualifiedCount - numGroups;
+  // How many extra spots beyond prequalified + guaranteed group qualifiers
+  const guaranteedFromGroups = numGroups * Math.max(1, qualifiersPerGroup);
+  const extraSpots = playoffBracketSize - autoQualifiedCount - guaranteedFromGroups;
 
   // ========== CONFIGURE STEP ==========
   if (step === 'configure') {
@@ -214,7 +230,27 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
               allowEmpty={false}
               hintExtra="Desired group size. Actual size may be 1 less if not evenly divisible."
               onChange={(value) => {
-                if (value !== null) setGroupSize(value);
+                if (value !== null) {
+                  setGroupSize(value);
+                  if (qualifiersPerGroup > value - 1) {
+                    setQualifiersPerGroup(Math.max(1, value - 1));
+                  }
+                }
+              }}
+            />
+          </div>
+
+          {/* Qualifiers per group */}
+          <div style={{ marginBottom: '16px' }}>
+            <BoundedNumericInput
+              label="Players per group that qualify:"
+              min={1}
+              max={Math.max(1, groupSize - 1)}
+              value={qualifiersPerGroup}
+              allowEmpty={false}
+              hintExtra="Top finishers from each preliminary group advance to the playoff."
+              onChange={(value) => {
+                if (value !== null) setQualifiersPerGroup(value);
               }}
             />
           </div>
@@ -243,11 +279,11 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
               </select>
             ) : (
               <div style={{ padding: '10px', color: '#e74c3c', fontSize: '13px' }}>
-                No valid bracket size available. Adjust group size or auto-qualified count.
+                No valid bracket size available. Adjust group size, qualifiers, or auto-qualified count.
               </div>
             )}
             <div style={{ marginTop: '4px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-              Must be a power of 2, at least {autoQualifiedCount + numGroups} ({autoQualifiedCount} prequalified + {numGroups} group winner{numGroups !== 1 ? 's' : ''})
+              Must be a power of 2, at least {autoQualifiedCount + guaranteedFromGroups} ({autoQualifiedCount} prequalified + {numGroups}×{qualifiersPerGroup} from groups)
             </div>
           </div>
 
@@ -272,9 +308,9 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
               <div><strong>Playoff bracket:</strong> {playoffBracketSize} players</div>
               <div style={{ marginTop: '6px', fontSize: '12px', color: '#555' }}>
                 <strong>Playoff qualification:</strong> {autoQualifiedCount > 0 ? `${autoQualifiedCount} prequalified + ` : ''}
-                {numGroups} group winner{numGroups !== 1 ? 's' : ''}
+                {guaranteedFromGroups} from groups (top {qualifiersPerGroup}×{numGroups})
                 {extraSpots > 0 && (
-                  <span style={{ color: '#27ae60' }}> + {extraSpots} best 2nd/3rd place by rating</span>
+                  <span style={{ color: '#27ae60' }}> + {extraSpots} best next places by rating</span>
                 )}
               </div>
             </div>
@@ -382,7 +418,8 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
         }}>
           <strong>Playoff bracket:</strong> {playoffBracketSize} players |{' '}
           <strong>Qualification:</strong> {autoQualifiedCount > 0 ? `${autoQualifiedCount} prequalified + ` : ''}
-          all 1st places{extraSpots > 0 ? ` + ${extraSpots} best 2nd/3rd by rating` : ''}
+          top {qualifiersPerGroup} from each group
+          {extraSpots > 0 ? ` + ${extraSpots} best next places by rating` : ''}
         </div>
 
         {/* Preliminary groups */}

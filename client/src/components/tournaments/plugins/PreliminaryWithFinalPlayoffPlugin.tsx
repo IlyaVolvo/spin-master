@@ -350,7 +350,7 @@ export const PreliminaryWithFinalPlayoffPlugin: TournamentPlugin = {
   description: 'Preliminary round-robin groups followed by a final playoff bracket for top qualifiers',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: getSystemConfig().tournamentRules.preliminary.groupSizeMin + getSystemConfig().tournamentRules.playoff.minPlayers,
+    minPlayers: getSystemConfig().tournamentRules.preliminaryWithFinalPlayoff.groupSizeMin + getSystemConfig().tournamentRules.playoff.minPlayers,
     maxPlayers: -1,
     steps: [],
     renderPostSelectionFlow: (props) => (

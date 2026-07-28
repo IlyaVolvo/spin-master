@@ -18,8 +18,11 @@ import tournamentRoutes from './routes/tournaments';
 import clubRoutes from './routes/club';
 import publicResultsRoutes from './routes/publicResults';
 import publicAchievementsRoutes from './routes/publicAchievements';
+import paymentCheckoutRoutes from './payments/routes/checkout';
+import paymentWebhookRoutes from './payments/routes/webhook';
 import { initializeCache } from './services/cacheService';
 import { initializeSystemConfig } from './services/systemConfigService';
+import { initializePaymentProviders } from './payments';
 import { setIO } from './services/socketService';
 import { logger } from './utils/logger';
 
@@ -129,6 +132,8 @@ app.use('/api/tournaments', tournamentBracketRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/club', clubRoutes);
+app.use('/api/payments', paymentCheckoutRoutes);
+app.use('/api/payments', paymentWebhookRoutes);
 app.use('/api/public/results', publicResultsRoutes);
 app.use('/api/public/achievements', publicAchievementsRoutes);
 
@@ -188,6 +193,7 @@ io.on('connection', (socket) => {
 
 // Only start the server if this file is run directly, not when imported as a module
 if (require.main === module) {
+  initializePaymentProviders();
   initializeSystemConfig().then(() => {
     logger.info('System configuration initialization completed');
   }).catch((error) => {

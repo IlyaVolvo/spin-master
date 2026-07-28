@@ -226,7 +226,7 @@ interface ImportedPlayerPayload {
   phone?: string;
   address?: string;
   rating?: number;
-  paymentCategory?: string;
+  segment?: string;
   mustResetPassword?: boolean;
 }
 
@@ -437,8 +437,9 @@ function parsePlayersCsv(text: string): ParsePlayersCsvResult {
             rowRatingError = `Row ${rowNumber}: Rating must be an integer between 0 and 9999`;
           }
           break;
+        case 'segment':
         case 'paymentcategory':
-          player.paymentCategory = value;
+          player.segment = value;
           break;
       }
     });
@@ -911,7 +912,7 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
         rating: true,
         phone: true,
         address: true,
-        paymentCategory: true,
+        segment: true,
       },
       orderBy: [
         { lastName: 'asc' },
@@ -1026,7 +1027,7 @@ router.post('/', [
   body('address').optional().trim(),
   body('picture').optional().trim(),
   body('tournamentNotificationsEnabled').optional().isBoolean(),
-  body('paymentCategory').optional().isString().trim(),
+  body('segment').optional().isString().trim(),
   body('autoRelinquishPrivileges').optional({ nullable: true }).isBoolean(),
 ], async (req: AuthRequest, res: Response) => {
   try {
@@ -1035,7 +1036,7 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck, tournamentNotificationsEnabled, paymentCategory, autoRelinquishPrivileges } = req.body;
+    const { firstName, lastName, email, gender, birthDate, rating, phone, address, picture, roles, skipSimilarityCheck, tournamentNotificationsEnabled, segment, autoRelinquishPrivileges } = req.body;
     const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
     const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
     const trimmedEmailInput = typeof email === 'string' ? email.trim() : '';
@@ -1153,7 +1154,7 @@ router.post('/', [
           phone: phone ? phone.trim() : null,
           address: address ? address.trim() : null,
           picture: picture ? picture.trim() : null,
-          paymentCategory: paymentCategory || 'Regular',
+          segment: segment || 'Regular',
           qrTokenHash: generateQrTokenHash(),
         scorePin: generateScorePin(),
           autoRelinquishPrivileges:
@@ -1204,7 +1205,7 @@ router.post('/', [
         phone: phone ? phone.trim() : null,
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
-        paymentCategory: paymentCategory || 'Regular',
+        segment: segment || 'Regular',
         qrTokenHash: generateQrTokenHash(),
         scorePin: generateScorePin(),
         autoRelinquishPrivileges:
@@ -1572,7 +1573,7 @@ router.patch('/:id', [
   body('picture').optional().trim(),
   body('roles').optional().isArray(),
   body('tournamentNotificationsEnabled').optional().isBoolean(),
-  body('paymentCategory').optional().isString().trim(),
+  body('segment').optional().isString().trim(),
   body('autoRelinquishPrivileges').optional({ nullable: true }).isBoolean(),
 ], async (req: AuthRequest, res: Response) => {
   try {
@@ -1624,7 +1625,7 @@ router.patch('/:id', [
       return res.status(403).json({ error: 'Only Administrators can modify other members\' profiles.' });
     }
 
-    const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, tournamentNotificationsEnabled, paymentCategory, autoRelinquishPrivileges, ...rest } = req.body;
+    const { firstName, lastName, email, gender, birthDate, rating, isActive, phone, address, picture, roles, tournamentNotificationsEnabled, segment, autoRelinquishPrivileges, ...rest } = req.body;
 
     // Birth date is optional on PATCH (may be omitted, set, or cleared to null); invalid values rejected below.
 
@@ -1721,7 +1722,7 @@ router.patch('/:id', [
     if (phone !== undefined) updateData.phone = phone || null;
     if (address !== undefined) updateData.address = address || null;
     if (picture !== undefined) updateData.picture = picture || null;
-    if (paymentCategory !== undefined) updateData.paymentCategory = paymentCategory || 'Regular';
+    if (segment !== undefined) updateData.segment = segment || 'Regular';
     if (tournamentNotificationsEnabled !== undefined) {
       if (!isCurrentMember && !hasAdminAccess) {
         return res.status(403).json({ error: 'Only the member themselves or Admins can change tournament notification settings' });
@@ -2694,7 +2695,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
                   ? player.address.trim()
                   : String(player.address).trim()
                 : null,
-              paymentCategory: player.paymentCategory || 'Regular',
+              segment: player.segment || 'Regular',
               qrTokenHash: generateQrTokenHash(),
         scorePin: generateScorePin(),
               isActive: true,
@@ -2755,7 +2756,7 @@ router.post('/import', importUpload.single('file'), async (req: AuthRequest & { 
                 ? player.address.trim()
                 : String(player.address).trim()
               : null,
-            paymentCategory: player.paymentCategory || 'Regular',
+            segment: player.segment || 'Regular',
             qrTokenHash: generateQrTokenHash(),
         scorePin: generateScorePin(),
             // Active immediately when skipping invitation email (export/re-import without invite).

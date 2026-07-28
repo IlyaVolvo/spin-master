@@ -23,7 +23,7 @@ export const PreliminaryWithFinalRoundRobinPostSelectionFlow: React.FC<PostSelec
   formatPlayerName,
   nameDisplayOrder,
 }) => {
-  const preliminaryRules = getSystemConfig().tournamentRules.preliminary;
+  const preliminaryRules = getSystemConfig().tournamentRules.preliminaryWithFinalRoundRobin;
   const [step, setStep] = useState<Step>('configure');
   const [groupSize, setGroupSize] = useState<number>(preliminaryRules.groupSizeDefault);
   const [finalRoundRobinSize, setFinalRoundRobinSize] = useState<number>(preliminaryRules.finalRoundRobinSizeDefault);

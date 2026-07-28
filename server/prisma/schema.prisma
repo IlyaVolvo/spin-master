@@ -59,8 +59,8 @@ model Member {
   checkinCode       String?
   checkinCodeExpiry DateTime?
 
-  // Payment category for club plans (e.g. "Regular", "Child", "Senior")
-  paymentCategory String @default("Regular")
+  // Segment for club plan pricing (e.g. "Regular", "Child", "Senior")
+  segment String @default("Regular")
 
   // QR-based authentication token hash
   qrTokenHash String @unique
@@ -91,6 +91,9 @@ model Member {
 
   // Discount percentage for next plan purchase (0-100)
   clubDiscount     Int @default(0)
+
+  /** When true, unpaid check-in cannot use courtesy grace. */
+  courtesySuspended Boolean @default(false)
 
   @@index([email])
   @@map("members")
@@ -320,6 +323,7 @@ model SystemConfig {
   clientRuntime     Json     @default("{}")
   clubPlans         Json     @default("{}")
   publicAccess      Json     @default("{}")
+  payments          Json     @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -334,6 +338,8 @@ model PreliminaryConfig {
   finalSize              Int      @default(0) // Size of the final phase (RR player count or playoff bracket size)
   autoQualifiedCount     Int      @default(0) // Number of auto-qualified players (highest rated, skip preliminary)
   autoQualifiedMemberIds Int[]    // Member IDs of auto-qualified players
+  /** Playoff only: how many finishers from each prelim group qualify (default 1). */
+  qualifiersPerGroup     Int      @default(1)
 
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
@@ -344,24 +350,40 @@ model PreliminaryConfig {
 // CLUB CHECK-IN / PAYMENT SYSTEM
 // ==============================
 
-enum ClubPlanType {
-  PERIOD
-  VISIT_COUNT
+enum ClubPlanKind {
+  TIME
+  VISIT
+}
+
+enum ClubPlanDurationUnit {
+  DAY
+  WEEK
+  MONTH
+  QUARTER
+  YEAR
 }
 
 model ClubPlan {
-  id        Int          @id @default(autoincrement())
-  name      String       // Display name: "Monthly", "10 Visits", etc.
-  type      ClubPlanType // PERIOD or VISIT_COUNT
-  isActive  Boolean      @default(true)
-  sortOrder Int          @default(0)
-  config    Json         // { periodUnit, periodValue, visitCount, prices: { "Normal": { priceCents, isDefault } } }
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id            Int                   @id @default(autoincrement())
+  familyKey     String                // Groups segment variants of the same offer
+  name          String                // Display name shared by the family
+  kind          ClubPlanKind
+  segment       String                @default("Regular")
+  priceCents    Int                   @default(0)
+  currency      String                @default("USD")
+  durationUnit  ClubPlanDurationUnit? // TIME only
+  durationValue Int?                  // TIME only
+  visitCount    Int?                  // VISIT only
+  isActive      Boolean               @default(true)
+  sortOrder     Int                   @default(0)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
 
   entitlements ClubEntitlement[]
 
-  @@index([type, isActive])
+  @@unique([familyKey, segment])
+  @@index([kind, isActive])
+  @@index([familyKey, isActive])
   @@map("club_plans")
 }
 
@@ -376,12 +398,6 @@ enum ClubEntitlementType {
   MONTHLY
   VISIT_PACK
   PAY_PER_VISIT_EXTERNAL
-}
-
-enum ClubPaymentProvider {
-  MANUAL
-  EXTERNAL_CHECKOUT
-  STRIPE
 }
 
 enum ClubPaymentStatus {
@@ -401,14 +417,20 @@ model ClubVisit {
   checkOutAt          DateTime?           @map("checkedOutAt")
   closedBy            ClubVisitClosedBy?  // How the visit was closed
   dailyPaymentApplied Boolean             @default(false) // True if this is the first visit of the day that debited entitlement
+  isCourtesy          Boolean             @default(false)
+  courtesyClearedAt   DateTime?
+  obligationPaymentId Int?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
-  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  member             Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  obligationPayment  ClubPayment? @relation(fields: [obligationPaymentId], references: [id], onDelete: SetNull)
 
   @@index([memberId])
   @@index([clubDate])
   @@index([memberId, clubDate])
+  @@index([isCourtesy, courtesyClearedAt])
+  @@index([obligationPaymentId])
   @@map("club_visits")
 }
 
@@ -426,8 +448,8 @@ model ClubEntitlement {
   updatedAt       DateTime            @updatedAt
 
   // Plan reference
-  planId       Int?
-  planCategory String?    // Snapshot of category used at purchase: "Normal", "Child", etc.
+  planId      Int?
+  planSegment String? // Snapshot of member segment used at purchase
 
   member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
   plan     ClubPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
@@ -437,23 +459,25 @@ model ClubEntitlement {
   @@map("club_entitlements")
 }
 
-// ClubPayment: Ledger-only payment record
+// ClubPayment: Ledger-only payment record (provider = plugin id string, e.g. "test", "manual")
 model ClubPayment {
-  id          Int                  @id @default(autoincrement())
+  id          Int               @id @default(autoincrement())
   memberId    Int
-  amountCents Int                  @default(0)
-  currency    String               @default("USD")
-  provider    ClubPaymentProvider  @default(MANUAL)
+  amountCents Int               @default(0)
+  currency    String            @default("USD")
+  provider    String            @default("manual")
   externalRef String?
   status      ClubPaymentStatus
   purpose     String
   metadata    Json?
-  recordedAt  DateTime             @default(now())
+  recordedAt  DateTime          @default(now())
 
-  member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  member          Member      @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  courtesyVisits  ClubVisit[]
 
   @@index([memberId])
   @@index([externalRef])
+  @@index([status, provider])
   @@map("club_payments")
 }
 

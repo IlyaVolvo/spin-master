@@ -12,7 +12,7 @@ export const PLAYERS_CSV_COLUMN_HEADERS = [
   'phone',
   'address',
   'rating',
-  'paymentcategory',
+  'segment',
 ] as const;
 
 /** Headers normalized the same way as parsed CSV header cells (import). */

@@ -26,7 +26,7 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
   validateCreateRules(_participantCount: number, data: any): string | null {
     // Lazy require avoids circular import via systemConfigService → index → registry
     const { getTournamentRulesConfig } = require('../services/systemConfigService');
-    const rules = getTournamentRulesConfig().preliminary;
+    const rules = getTournamentRulesConfig().preliminaryWithFinalRoundRobin;
     const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
     if (Number.isInteger(groupSize) && (groupSize < rules.groupSizeMin || groupSize > rules.groupSizeMax)) {
       return `Preliminary group size must be between ${rules.groupSizeMin} and ${rules.groupSizeMax}`;

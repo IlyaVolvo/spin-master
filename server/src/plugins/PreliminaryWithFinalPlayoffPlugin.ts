@@ -27,10 +27,21 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
   validateCreateRules(_participantCount: number, data: any): string | null {
     // Lazy require avoids circular import via systemConfigService → index → registry
     const { getTournamentRulesConfig } = require('../services/systemConfigService');
-    const rules = getTournamentRulesConfig().preliminary;
+    const rules = getTournamentRulesConfig().preliminaryWithFinalPlayoff;
     const groupSize = Number(data?.groupSize ?? data?.additionalData?.groupSize);
     if (Number.isInteger(groupSize) && (groupSize < rules.groupSizeMin || groupSize > rules.groupSizeMax)) {
       return `Preliminary group size must be between ${rules.groupSizeMin} and ${rules.groupSizeMax}`;
+    }
+    const qualifiersPerGroup = Number(
+      data?.qualifiersPerGroup ?? data?.additionalData?.qualifiersPerGroup,
+    );
+    if (Number.isInteger(qualifiersPerGroup)) {
+      if (qualifiersPerGroup < 1) {
+        return 'Qualifiers per group must be at least 1';
+      }
+      if (Number.isInteger(groupSize) && qualifiersPerGroup >= groupSize) {
+        return 'Qualifiers per group must be less than the group size';
+      }
     }
     return null;
   }
@@ -50,6 +61,7 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
     const groups: number[][] = additionalData?.groups || [];
     const autoQualifiedCount: number = additionalData?.autoQualifiedCount || 0;
     const autoQualifiedMemberIds: number[] = additionalData?.autoQualifiedMemberIds || [];
+    const qualifiersPerGroup: number = Math.max(1, Number(additionalData?.qualifiersPerGroup) || 1);
 
     // Create main (parent) tournament
     const mainTournament = await prisma.tournament.create({
@@ -71,6 +83,7 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
             finalSize,
             autoQualifiedCount,
             autoQualifiedMemberIds,
+            qualifiersPerGroup,
           },
         },
       },
@@ -133,6 +146,7 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
     const groups: number[][] = additionalData?.groups || [];
     const autoQualifiedCount: number = additionalData?.autoQualifiedCount || 0;
     const autoQualifiedMemberIds: number[] = additionalData?.autoQualifiedMemberIds || [];
+    const qualifiersPerGroup: number = Math.max(1, Number(additionalData?.qualifiersPerGroup) || 1);
 
     // Re-create preliminary config
     await prisma.preliminaryConfig.create({
@@ -141,6 +155,7 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
         finalSize,
         autoQualifiedCount,
         autoQualifiedMemberIds,
+        qualifiersPerGroup,
       },
     });
 
@@ -297,6 +312,7 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
 
     const playoffBracketSize = config.finalSize;
     const autoQualifiedMemberIds: number[] = config.autoQualifiedMemberIds || [];
+    const qualifiersPerGroup = Math.max(1, Number(config.qualifiersPerGroup) || 1);
 
     // Calculate standings for each group
     const groupResults: GroupResult[] = preliminaryGroups.map((rr: any) => ({
@@ -307,29 +323,29 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
     // === Build the qualified players list ===
     // Qualification order:
     // 1. Prequalified players
-    // 2. All 1st-place finishers from each group
-    // 3. Fill remaining from 2nd place (sorted by rating desc), then 3rd, etc.
+    // 2. Top N finishers from each group (N = qualifiersPerGroup)
+    // 3. Fill remaining from next places (sorted by rating desc), then next place, etc.
 
     const qualifiedMemberIds: number[] = [];
 
     // 1. Add prequalified players first
     qualifiedMemberIds.push(...autoQualifiedMemberIds);
 
-    // 2. Add all 1st-place finishers from each group
+    // 2. Add top N finishers from each group
     for (const group of groupResults) {
-      if (group.players.length > 0) {
-        const firstPlace = group.players[0];
-        if (!qualifiedMemberIds.includes(firstPlace.memberId)) {
-          qualifiedMemberIds.push(firstPlace.memberId);
+      for (let i = 0; i < qualifiersPerGroup && i < group.players.length; i++) {
+        const player = group.players[i];
+        if (!qualifiedMemberIds.includes(player.memberId)) {
+          qualifiedMemberIds.push(player.memberId);
         }
       }
     }
 
-    // 3. Fill remaining slots from 2nd place, then 3rd, etc. — sorted by rating within each place
+    // 3. Fill remaining slots from next places — sorted by rating within each place
     let remainingSlots = playoffBracketSize - qualifiedMemberIds.length;
-    let placeIndex = 1; // 0-indexed: 1 = 2nd place, 2 = 3rd place, etc.
+    let placeIndex = qualifiersPerGroup;
 
-    while (remainingSlots > 0 && placeIndex < Math.max(...groupResults.map(g => g.players.length))) {
+    while (remainingSlots > 0 && placeIndex < Math.max(...groupResults.map(g => g.players.length), 0)) {
       // Collect all players at this place across all groups
       const candidatesAtPlace: Array<{ memberId: number; rating: number | null }> = [];
 
@@ -389,10 +405,8 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       }
     }
 
-    // Seeding order: prequalified first, then 1st places by rating desc, then 2nd places by rating desc, etc.
-    // The "seeded" portion = prequalified + 1st places
-    // The "rest" = 2nd places and beyond → take random remaining slots
-    
+    // Seeding order: prequalified first, then guaranteed group qualifiers by place then rating,
+    // then remaining fillers as "rest"
     const seededIds: number[] = [];
     const restIds: number[] = [];
 
@@ -403,14 +417,25 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
     seededIds.push(...prequalified.map(p => p.id));
 
-    // 1st-place finishers sorted by rating desc
-    const firstPlaces = qualifiedMemberIds
-      .filter(id => !autoQualifiedMemberIds.includes(id) && playerInfoMap.get(id)?.place === 1)
-      .map(id => ({ id, rating: playerInfoMap.get(id)?.rating ?? 0 }))
-      .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-    seededIds.push(...firstPlaces.map(p => p.id));
+    // Guaranteed group qualifiers (place 1..N) sorted by place asc, then rating desc
+    const guaranteedFromGroups = qualifiedMemberIds
+      .filter((id) => {
+        if (autoQualifiedMemberIds.includes(id)) return false;
+        const place = playerInfoMap.get(id)?.place ?? 999;
+        return place >= 1 && place <= qualifiersPerGroup;
+      })
+      .map(id => ({
+        id,
+        place: playerInfoMap.get(id)?.place ?? 999,
+        rating: playerInfoMap.get(id)?.rating ?? 0,
+      }))
+      .sort((a, b) => {
+        if (a.place !== b.place) return a.place - b.place;
+        return (b.rating ?? 0) - (a.rating ?? 0);
+      });
+    seededIds.push(...guaranteedFromGroups.map(p => p.id));
 
-    // Everyone else (2nd place+) goes to "rest" — they take random remaining slots
+    // Everyone else goes to "rest" — they take remaining slots
     for (const id of qualifiedMemberIds) {
       if (!seededIds.includes(id)) {
         restIds.push(id);

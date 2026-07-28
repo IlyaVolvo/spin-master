@@ -347,7 +347,7 @@ export const PreliminaryWithFinalRoundRobinPlugin: TournamentPlugin = {
   description: 'Preliminary round-robin groups followed by a final round-robin for top qualifiers',
 
   getCreationFlow: (): TournamentCreationFlow => ({
-    minPlayers: getSystemConfig().tournamentRules.preliminary.groupSizeMin + getSystemConfig().tournamentRules.preliminary.finalRoundRobinSizeDefault,
+    minPlayers: getSystemConfig().tournamentRules.preliminaryWithFinalRoundRobin.groupSizeMin + getSystemConfig().tournamentRules.preliminaryWithFinalRoundRobin.finalRoundRobinSizeDefault,
     maxPlayers: -1,
     steps: [],
     renderPostSelectionFlow: (props) => (

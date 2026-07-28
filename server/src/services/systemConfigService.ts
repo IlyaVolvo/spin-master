@@ -43,6 +43,22 @@ export type RatingValidationConfig = {
   suspiciousRatingMax: number;
 };
 
+export type PreliminaryGroupRulesConfig = {
+  groupSizeMin: number;
+  groupSizeMax: number;
+  groupSizeDefault: number;
+  reservedFinalSpotsForAutoQualified: number;
+};
+
+export type PreliminaryWithFinalPlayoffRulesConfig = PreliminaryGroupRulesConfig & {
+  /** How many finishers from each preliminary group qualify for the playoff. */
+  qualifiersPerGroup: number;
+};
+
+export type PreliminaryWithFinalRoundRobinRulesConfig = PreliminaryGroupRulesConfig & {
+  finalRoundRobinSizeDefault: number;
+};
+
 export type TournamentRulesConfig = {
   roundRobin: {
     minPlayers: number;
@@ -63,13 +79,10 @@ export type TournamentRulesConfig = {
     maxGroupSize: number;
     minGroups: number;
   };
-  preliminary: {
-    groupSizeMin: number;
-    groupSizeMax: number;
-    groupSizeDefault: number;
-    finalRoundRobinSizeDefault: number;
-    reservedFinalSpotsForAutoQualified: number;
-  };
+  /** Settings for PRELIMINARY_WITH_FINAL_ROUND_ROBIN */
+  preliminaryWithFinalRoundRobin: PreliminaryWithFinalRoundRobinRulesConfig;
+  /** Settings for PRELIMINARY_WITH_FINAL_PLAYOFF */
+  preliminaryWithFinalPlayoff: PreliminaryWithFinalPlayoffRulesConfig;
   matchScore: {
     min: number;
     max: number;
@@ -89,8 +102,27 @@ export type VisitPricingFormulaParams = {
 };
 
 export type ClubPlansConfig = {
-  categories: string[];
+  /** Admin-defined member segments; "Regular" is always required. */
+  segments: string[];
+  /** Optional legacy visit-pack pricing hints (not used by plan CRUD UI). */
   visitPricingFormula: Record<string, VisitPricingFormulaParams>;
+};
+
+export type PaymentsReminderConfig = {
+  checkInBannerEnabled: boolean;
+  emailEnabled: boolean;
+  periodDaysBeforeExpiry: number;
+  visitPackVisitsRemaining: number;
+};
+
+export type PaymentsConfig = {
+  /** Active provider plugin id; empty = auto when exactly one usable offered provider. */
+  providerId: string;
+  adminNotifyEmails: string[];
+  notifyAdminsOnCourtesy: boolean;
+  courtesyGraceDays: number;
+  courtesyExtraVisits: number;
+  reminders: PaymentsReminderConfig;
 };
 
 export type AchievementsPublicAccessConfig = Record<AchievementCategoryId, number>;
@@ -108,6 +140,7 @@ export type SystemConfig = {
   clientRuntime: ClientRuntimeConfig;
   clubPlans: ClubPlansConfig;
   publicAccess: PublicAccessConfig;
+  payments: PaymentsConfig;
 };
 
 export type SystemConfigPatch = Partial<{
@@ -173,12 +206,19 @@ export function getDefaultSystemConfig(): SystemConfig {
         maxGroupSize: 12,
         minGroups: 2,
       },
-      preliminary: {
+      preliminaryWithFinalRoundRobin: {
         groupSizeMin: 3,
         groupSizeMax: 12,
         groupSizeDefault: 4,
         finalRoundRobinSizeDefault: 6,
         reservedFinalSpotsForAutoQualified: 6,
+      },
+      preliminaryWithFinalPlayoff: {
+        groupSizeMin: 3,
+        groupSizeMax: 12,
+        groupSizeDefault: 4,
+        reservedFinalSpotsForAutoQualified: 6,
+        qualifiersPerGroup: 1,
       },
       matchScore: {
         min: 0,
@@ -192,15 +232,28 @@ export function getDefaultSystemConfig(): SystemConfig {
       socketReconnectionAttempts: 5,
     },
     clubPlans: {
-      categories: ['Normal'],
+      segments: ['Regular'],
       visitPricingFormula: {
-        Normal: { basePricePerVisitCents: 1000, exponent: 0.08 },
+        Regular: { basePricePerVisitCents: 1000, exponent: 0.08 },
       },
     },
     publicAccess: {
       achievements: Object.fromEntries(
         ACHIEVEMENT_CATEGORY_IDS.map((id) => [id, 0]),
       ) as AchievementsPublicAccessConfig,
+    },
+    payments: {
+      providerId: '',
+      adminNotifyEmails: [],
+      notifyAdminsOnCourtesy: true,
+      courtesyGraceDays: 7,
+      courtesyExtraVisits: 3,
+      reminders: {
+        checkInBannerEnabled: true,
+        emailEnabled: true,
+        periodDaysBeforeExpiry: 14,
+        visitPackVisitsRemaining: 2,
+      },
     },
   };
 }
@@ -313,8 +366,54 @@ export function calculateSwissDefaultRounds(participantCount: number, maxRoundsD
   return Math.max(3, Math.min(suggestedRounds, Math.max(3, maxRounds)));
 }
 
+function validatePreliminaryGroupRules(
+  value: unknown,
+  path: string,
+): PreliminaryGroupRulesConfig {
+  const defaults = getDefaultSystemConfig().tournamentRules.preliminaryWithFinalPlayoff;
+  const config = deepMerge(defaults, value);
+  const groupSizeMin = requireInteger(config.groupSizeMin, `${path}.groupSizeMin`, 2);
+  const groupSizeMax = requireInteger(config.groupSizeMax, `${path}.groupSizeMax`, groupSizeMin);
+  const groupSizeDefault = requireInteger(config.groupSizeDefault, `${path}.groupSizeDefault`, groupSizeMin, groupSizeMax);
+  return {
+    groupSizeMin,
+    groupSizeMax,
+    groupSizeDefault,
+    reservedFinalSpotsForAutoQualified: requireInteger(
+      config.reservedFinalSpotsForAutoQualified,
+      `${path}.reservedFinalSpotsForAutoQualified`,
+      0,
+    ),
+  };
+}
+
+function migrateTournamentRulesInput(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const raw = { ...value };
+  // Legacy single `preliminary` block → per-final-type settings
+  if (isRecord(raw.preliminary)) {
+    const legacy = raw.preliminary;
+    if (!isRecord(raw.preliminaryWithFinalRoundRobin)) {
+      raw.preliminaryWithFinalRoundRobin = { ...legacy };
+    }
+    if (!isRecord(raw.preliminaryWithFinalPlayoff)) {
+      raw.preliminaryWithFinalPlayoff = {
+        groupSizeMin: legacy.groupSizeMin,
+        groupSizeMax: legacy.groupSizeMax,
+        groupSizeDefault: legacy.groupSizeDefault,
+        reservedFinalSpotsForAutoQualified: legacy.reservedFinalSpotsForAutoQualified,
+      };
+    }
+  }
+  delete raw.preliminary;
+  return raw;
+}
+
 function validateTournamentRules(value: unknown): TournamentRulesConfig {
-  const config = deepMerge(getDefaultSystemConfig().tournamentRules, value);
+  const config = deepMerge(
+    getDefaultSystemConfig().tournamentRules,
+    migrateTournamentRulesInput(value),
+  );
 
   const roundRobinMin = requireInteger(config.roundRobin.minPlayers, 'tournamentRules.roundRobin.minPlayers', 2);
   const roundRobinMax = requireInteger(config.roundRobin.maxPlayers, 'tournamentRules.roundRobin.maxPlayers', roundRobinMin);
@@ -322,9 +421,23 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
   const playoffMin = requireInteger(config.playoff.minPlayers, 'tournamentRules.playoff.minPlayers', 2);
   const seedDivisor = requireInteger(config.playoff.seedDivisor, 'tournamentRules.playoff.seedDivisor', 1);
 
-  const groupSizeMin = requireInteger(config.preliminary.groupSizeMin, 'tournamentRules.preliminary.groupSizeMin', 2);
-  const groupSizeMax = requireInteger(config.preliminary.groupSizeMax, 'tournamentRules.preliminary.groupSizeMax', groupSizeMin);
-  const groupSizeDefault = requireInteger(config.preliminary.groupSizeDefault, 'tournamentRules.preliminary.groupSizeDefault', groupSizeMin, groupSizeMax);
+  const rrPrelim = validatePreliminaryGroupRules(
+    config.preliminaryWithFinalRoundRobin,
+    'tournamentRules.preliminaryWithFinalRoundRobin',
+  );
+  const playoffPrelimBase = validatePreliminaryGroupRules(
+    config.preliminaryWithFinalPlayoff,
+    'tournamentRules.preliminaryWithFinalPlayoff',
+  );
+  const playoffPrelim: PreliminaryWithFinalPlayoffRulesConfig = {
+    ...playoffPrelimBase,
+    qualifiersPerGroup: requireInteger(
+      (config.preliminaryWithFinalPlayoff as PreliminaryWithFinalPlayoffRulesConfig).qualifiersPerGroup,
+      'tournamentRules.preliminaryWithFinalPlayoff.qualifiersPerGroup',
+      1,
+      playoffPrelimBase.groupSizeMax,
+    ),
+  };
 
   const scoreMin = requireInteger(config.matchScore.min, 'tournamentRules.matchScore.min', 0);
   const scoreMax = requireInteger(config.matchScore.max, 'tournamentRules.matchScore.max', scoreMin);
@@ -352,13 +465,15 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
         minGroups: requireInteger(config.multiRoundRobins.minGroups, 'tournamentRules.multiRoundRobins.minGroups', 2),
       };
     })(),
-    preliminary: {
-      groupSizeMin,
-      groupSizeMax,
-      groupSizeDefault,
-      finalRoundRobinSizeDefault: requireInteger(config.preliminary.finalRoundRobinSizeDefault, 'tournamentRules.preliminary.finalRoundRobinSizeDefault', 2),
-      reservedFinalSpotsForAutoQualified: requireInteger(config.preliminary.reservedFinalSpotsForAutoQualified, 'tournamentRules.preliminary.reservedFinalSpotsForAutoQualified', 0),
+    preliminaryWithFinalRoundRobin: {
+      ...rrPrelim,
+      finalRoundRobinSizeDefault: requireInteger(
+        (config.preliminaryWithFinalRoundRobin as PreliminaryWithFinalRoundRobinRulesConfig).finalRoundRobinSizeDefault,
+        'tournamentRules.preliminaryWithFinalRoundRobin.finalRoundRobinSizeDefault',
+        2,
+      ),
     },
+    preliminaryWithFinalPlayoff: playoffPrelim,
     matchScore: {
       min: scoreMin,
       max: scoreMax,
@@ -376,27 +491,44 @@ function validateClientRuntime(value: unknown): ClientRuntimeConfig {
   };
 }
 
-function validateClubPlans(value: unknown): ClubPlansConfig {
-  const config = deepMerge(getDefaultSystemConfig().clubPlans, value);
-
-  if (!Array.isArray(config.categories) || config.categories.length === 0) {
-    throw new Error('clubPlans.categories must include at least one category');
+function normalizeClubPlansInput(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const raw = { ...value };
+  // Migrate legacy key categories → segments
+  if (!Array.isArray(raw.segments) && Array.isArray(raw.categories)) {
+    raw.segments = raw.categories;
   }
-  const categories = config.categories.map((cat: unknown, i: number) => {
-    if (typeof cat !== 'string' || cat.trim() === '') {
-      throw new Error(`clubPlans.categories[${i}] must be a non-empty string`);
+  delete raw.categories;
+  return raw;
+}
+
+function validateClubPlans(value: unknown): ClubPlansConfig {
+  const config = deepMerge(getDefaultSystemConfig().clubPlans, normalizeClubPlansInput(value));
+
+  if (!Array.isArray(config.segments) || config.segments.length === 0) {
+    throw new Error('clubPlans.segments must include at least one segment');
+  }
+  const segments = config.segments.map((seg: unknown, i: number) => {
+    if (typeof seg !== 'string' || seg.trim() === '') {
+      throw new Error(`clubPlans.segments[${i}] must be a non-empty string`);
     }
-    return cat.trim();
+    const trimmed = seg.trim();
+    return trimmed === 'Normal' ? 'Regular' : trimmed;
   });
+  const unique = Array.from(new Set(segments));
+  if (!unique.includes('Regular')) {
+    throw new Error('clubPlans.segments must include "Regular"');
+  }
 
   const visitPricingFormula: Record<string, VisitPricingFormulaParams> = {};
   if (isRecord(config.visitPricingFormula)) {
     for (const [key, val] of Object.entries(config.visitPricingFormula)) {
       if (!isRecord(val)) continue;
-      visitPricingFormula[key] = {
+      const formulaKey = key === 'Normal' ? 'Regular' : key;
+      visitPricingFormula[formulaKey] = {
         basePricePerVisitCents: requireInteger(
           (val as Record<string, unknown>).basePricePerVisitCents,
-          `clubPlans.visitPricingFormula.${key}.basePricePerVisitCents`,
+          `clubPlans.visitPricingFormula.${formulaKey}.basePricePerVisitCents`,
           1,
         ),
         exponent: typeof (val as Record<string, unknown>).exponent === 'number'
@@ -406,7 +538,7 @@ function validateClubPlans(value: unknown): ClubPlansConfig {
     }
   }
 
-  return { categories, visitPricingFormula };
+  return { segments: unique, visitPricingFormula };
 }
 
 function coerceAchievementDisplayCount(value: unknown, path: string): number {
@@ -432,6 +564,36 @@ function validatePublicAccess(value: unknown): PublicAccessConfig {
   return { achievements };
 }
 
+function validatePayments(value: unknown): PaymentsConfig {
+  const config = deepMerge(getDefaultSystemConfig().payments, value);
+  if (typeof config.providerId !== 'string') {
+    throw new Error('payments.providerId must be a string');
+  }
+  if (!Array.isArray(config.adminNotifyEmails)) {
+    throw new Error('payments.adminNotifyEmails must be an array');
+  }
+  config.adminNotifyEmails = config.adminNotifyEmails
+    .map((e) => String(e).trim())
+    .filter(Boolean);
+  if (config.notifyAdminsOnCourtesy && config.adminNotifyEmails.length < 1) {
+    // Allow empty during bootstrap; UI should require ≥1 when enabling notify
+  }
+  config.courtesyGraceDays = Math.max(0, Math.floor(Number(config.courtesyGraceDays) || 0));
+  config.courtesyExtraVisits = Math.max(0, Math.floor(Number(config.courtesyExtraVisits) || 0));
+  config.reminders.checkInBannerEnabled = Boolean(config.reminders.checkInBannerEnabled);
+  config.reminders.emailEnabled = Boolean(config.reminders.emailEnabled);
+  config.reminders.periodDaysBeforeExpiry = Math.max(
+    0,
+    Math.floor(Number(config.reminders.periodDaysBeforeExpiry) || 0),
+  );
+  config.reminders.visitPackVisitsRemaining = Math.max(
+    0,
+    Math.floor(Number(config.reminders.visitPackVisitsRemaining) || 0),
+  );
+  config.notifyAdminsOnCourtesy = Boolean(config.notifyAdminsOnCourtesy);
+  return config;
+}
+
 export function validateSystemConfig(input: unknown): SystemConfig {
   const merged = deepMerge(getDefaultSystemConfig(), input);
   return {
@@ -443,6 +605,7 @@ export function validateSystemConfig(input: unknown): SystemConfig {
     clientRuntime: validateClientRuntime(merged.clientRuntime),
     clubPlans: validateClubPlans(merged.clubPlans),
     publicAccess: validatePublicAccess(merged.publicAccess),
+    payments: validatePayments(merged.payments),
   };
 }
 
@@ -463,6 +626,7 @@ async function persistConfig(config: SystemConfig): Promise<void> {
       clientRuntime: toPrismaJson(config.clientRuntime),
       clubPlans: toPrismaJson(config.clubPlans),
       publicAccess: toPrismaJson(config.publicAccess),
+      payments: toPrismaJson(config.payments),
     },
     update: {
       branding: toPrismaJson(config.branding),
@@ -473,6 +637,7 @@ async function persistConfig(config: SystemConfig): Promise<void> {
       clientRuntime: toPrismaJson(config.clientRuntime),
       clubPlans: toPrismaJson(config.clubPlans),
       publicAccess: toPrismaJson(config.publicAccess),
+      payments: toPrismaJson(config.payments),
     },
   });
 }
@@ -489,6 +654,7 @@ export async function initializeSystemConfig(): Promise<SystemConfig> {
         clientRuntime: row.clientRuntime,
         clubPlans: row.clubPlans,
         publicAccess: (row as { publicAccess?: unknown }).publicAccess,
+        payments: (row as { payments?: unknown }).payments,
       }
     : undefined;
 
@@ -545,6 +711,10 @@ export function getClientRuntimeConfig(): ClientRuntimeConfig {
 
 export function getClubPlansConfig(): ClubPlansConfig {
   return getSystemConfig().clubPlans;
+}
+
+export function getPaymentsConfig(): PaymentsConfig {
+  return getSystemConfig().payments;
 }
 
 export function getPublicAccessConfig(): PublicAccessConfig {

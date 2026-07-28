@@ -23,6 +23,9 @@ type PinToggleResponse = {
   warning?: string | null;
   message?: string;
   charged?: boolean;
+  courtesy?: boolean;
+  canPay?: boolean;
+  paymentInProgress?: boolean;
   entitlement?: EntitlementSummary;
   member?: { firstName: string; lastName: string };
 };
@@ -52,6 +55,7 @@ export function formatPinToggleMessage(data: PinToggleResponse): string {
   const name = data.member
     ? formatPlayerName(data.member.firstName, data.member.lastName)
     : 'Member';
+  const bannerOn = getSystemConfig().payments?.reminders?.checkInBannerEnabled !== false;
 
   if (data.action === 'PAYMENT_REQUIRED') {
     return data.message || data.warning || 'Payment required before check-in.';
@@ -61,20 +65,25 @@ export function formatPinToggleMessage(data: PinToggleResponse): string {
     const parts = [`${name} checked out.`];
     const entitlementLine = formatEntitlementLine(data.entitlement ?? null);
     if (entitlementLine) parts.push(entitlementLine);
-    if (data.warning) parts.push(data.warning);
+    if (data.warning && bannerOn) parts.push(data.warning);
     return parts.join(' ');
   }
 
   // CHECK_IN
   const parts: string[] = [];
-  if (data.charged === false) {
+  if (data.courtesy) {
+    parts.push(`${name} checked in (courtesy).`);
+  } else if (data.charged === false) {
     parts.push(`${name} checked in — free re-entry (already checked in today).`);
   } else {
     parts.push(`${name} checked in.`);
   }
+  if (data.paymentInProgress) {
+    parts.push('Payment in progress.');
+  }
   const entitlementLine = formatEntitlementLine(data.entitlement ?? null);
   if (entitlementLine) parts.push(entitlementLine);
-  if (data.warning) parts.push(data.warning);
+  if (data.warning && bannerOn) parts.push(data.warning);
   return parts.join(' ');
 }
 
@@ -255,6 +264,8 @@ type PinModalProps = {
   onSuccess: (message: string) => void;
 };
 
+type PlanOption = { familyKey: string; name: string; kind: string };
+
 export function CheckinPinModal({
   memberId,
   memberName,
@@ -267,6 +278,11 @@ export function CheckinPinModal({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [pinLength, setPinLength] = useState(() => getSystemConfig().authPolicy.pinLength);
+  const [phase, setPhase] = useState<'pin' | 'pay_offer' | 'pick_plan'>('pin');
+  const [resultMessage, setResultMessage] = useState('');
+  const [canPay, setCanPay] = useState(false);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -279,6 +295,10 @@ export function CheckinPinModal({
     inputRef.current?.focus();
   }, []);
 
+  const finish = (message: string) => {
+    onSuccess(message);
+  };
+
   const submit = async () => {
     if (!scorePin.trim()) {
       setError('Enter your score PIN');
@@ -288,16 +308,70 @@ export function CheckinPinModal({
     setError('');
     try {
       const res = await api.post('/club/pin-toggle', { memberId, scorePin: scorePin.trim() });
-      onSuccess(formatPinToggleMessage(res.data as PinToggleResponse));
+      const data = res.data as PinToggleResponse;
+      const message = formatPinToggleMessage(data);
+      if (data.canPay || data.courtesy) {
+        setResultMessage(message);
+        setCanPay(data.canPay === true);
+        setPhase('pay_offer');
+      } else {
+        finish(message);
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: PinToggleResponse & { error?: string } } };
       if (axiosErr.response?.status === 402 && axiosErr.response.data) {
-        setError(formatPinToggleMessage(axiosErr.response.data));
+        const data = axiosErr.response.data;
+        const message = formatPinToggleMessage(data);
+        if (data.canPay) {
+          setResultMessage(message);
+          setCanPay(true);
+          setPhase('pay_offer');
+        } else {
+          setError(message);
+        }
       } else {
         setError(getErrorMessage(err, 'Check-in failed'));
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPlansAndPay = async () => {
+    setCheckoutLoading(true);
+    setError('');
+    try {
+      const res = await api.get('/payments/plans');
+      const list = Array.isArray(res.data?.plans) ? res.data.plans : [];
+      setPlans(
+        list.map((p: { familyKey: string; name: string; kind: string }) => ({
+          familyKey: p.familyKey,
+          name: p.name,
+          kind: p.kind,
+        })),
+      );
+      setPhase('pick_plan');
+    } catch (err) {
+      // Plans endpoint may require auth — kiosk session should work
+      setError(getErrorMessage(err, 'Could not load plans'));
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
+
+  const startCheckout = async (familyKey: string) => {
+    setCheckoutLoading(true);
+    setError('');
+    try {
+      const res = await api.post('/payments/checkout', { memberId, familyKey, kind: 'plan' });
+      const msg = res.data?.confirmedImmediately
+        ? `${resultMessage} Payment confirmed (${res.data.providerId || 'provider'}).`
+        : `${resultMessage} Checkout started. ${res.data?.instructions || 'Complete payment outside the app.'}`;
+      finish(msg);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Checkout failed'));
+    } finally {
+      setCheckoutLoading(false);
     }
   };
 
@@ -315,43 +389,112 @@ export function CheckinPinModal({
         justifyContent: 'center',
         padding: '20px',
       }}
-      onClick={() => !loading && onClose()}
+      onClick={() => !loading && !checkoutLoading && onClose()}
     >
       <div
         className="card"
-        style={{ maxWidth: '400px', width: '100%', margin: 0 }}
+        style={{ maxWidth: '420px', width: '100%', margin: 0 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ marginTop: 0 }}>{label}</h3>
-        <p style={{ color: '#555', fontSize: '14px' }}>
-          {memberName} — enter score PIN
-          {pinLength ? ` (${pinLength} digits)` : ''}
-        </p>
-        {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
-        <input
-          ref={inputRef}
-          type="password"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          value={scorePin}
-          onChange={(e) => setScorePin(e.target.value.replace(/\D/g, '').slice(0, pinLength || 8))}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              void submit();
-            }
-          }}
-          placeholder="Score PIN"
-          style={{ width: '100%', padding: '10px', marginBottom: '16px', boxSizing: 'border-box', fontSize: '18px' }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button type="button" onClick={onClose} disabled={loading}>
-            Cancel
-          </button>
-          <button type="button" className="success" onClick={() => void submit()} disabled={loading}>
-            {loading ? '…' : label}
-          </button>
-        </div>
+        {phase === 'pin' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>{label}</h3>
+            <p style={{ color: '#555', fontSize: '14px' }}>
+              {memberName} — enter score PIN
+              {pinLength ? ` (${pinLength} digits)` : ''}
+            </p>
+            {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
+            <input
+              ref={inputRef}
+              type="password"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={scorePin}
+              onChange={(e) => setScorePin(e.target.value.replace(/\D/g, '').slice(0, pinLength || 8))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+              placeholder="Score PIN"
+              style={{ width: '100%', padding: '10px', marginBottom: '16px', boxSizing: 'border-box', fontSize: '18px' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" onClick={onClose} disabled={loading}>
+                Cancel
+              </button>
+              <button type="button" className="success" onClick={() => void submit()} disabled={loading}>
+                {loading ? '…' : label}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phase === 'pay_offer' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Payment</h3>
+            <p style={{ fontSize: '14px', color: '#333' }}>{resultMessage}</p>
+            {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
+            <p style={{ fontSize: '13px', color: '#666' }}>
+              {canPay
+                ? 'Pay now with an active plan, or defer and settle later.'
+                : 'Add an email on the member profile to enable payment.'}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {canPay && (
+                <button
+                  type="button"
+                  className="success"
+                  disabled={checkoutLoading}
+                  onClick={() => void loadPlansAndPay()}
+                >
+                  {checkoutLoading ? '…' : 'Pay now'}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={checkoutLoading}
+                onClick={() => finish(resultMessage + (canPay ? ' Payment deferred.' : ''))}
+              >
+                {canPay ? 'Defer payment' : 'OK'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phase === 'pick_plan' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Choose a plan</h3>
+            {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '50vh', overflow: 'auto' }}>
+              {plans.length === 0 && <div style={{ color: '#666' }}>No active plans configured.</div>}
+              {plans.map((p) => (
+                <button
+                  key={p.familyKey}
+                  type="button"
+                  disabled={checkoutLoading}
+                  onClick={() => void startCheckout(p.familyKey)}
+                  style={{
+                    padding: '10px 12px',
+                    textAlign: 'left',
+                    border: '1px solid #ccc',
+                    borderRadius: '6px',
+                    background: '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {p.name} <span style={{ color: '#888', fontSize: '12px' }}>({p.kind})</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setPhase('pay_offer')} disabled={checkoutLoading}>
+                Back
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

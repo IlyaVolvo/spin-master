@@ -61,12 +61,19 @@ export type SystemConfig = {
       maxGroupSize: number;
       minGroups: number;
     };
-    preliminary: {
+    preliminaryWithFinalRoundRobin: {
       groupSizeMin: number;
       groupSizeMax: number;
       groupSizeDefault: number;
       finalRoundRobinSizeDefault: number;
       reservedFinalSpotsForAutoQualified: number;
+    };
+    preliminaryWithFinalPlayoff: {
+      groupSizeMin: number;
+      groupSizeMax: number;
+      groupSizeDefault: number;
+      reservedFinalSpotsForAutoQualified: number;
+      qualifiersPerGroup: number;
     };
     matchScore: {
       min: number;
@@ -80,10 +87,23 @@ export type SystemConfig = {
     socketReconnectionAttempts: number;
   };
   clubPlans: {
-    categories: string[];
+    segments: string[];
   };
   publicAccess: {
     achievements: Record<AchievementCategoryId, number>;
+  };
+  payments: {
+    providerId: string;
+    adminNotifyEmails: string[];
+    notifyAdminsOnCourtesy: boolean;
+    courtesyGraceDays: number;
+    courtesyExtraVisits: number;
+    reminders: {
+      checkInBannerEnabled: boolean;
+      emailEnabled: boolean;
+      periodDaysBeforeExpiry: number;
+      visitPackVisitsRemaining: number;
+    };
   };
 };
 
@@ -140,12 +160,19 @@ const defaultSystemConfig: SystemConfig = {
       maxGroupSize: 12,
       minGroups: 2,
     },
-    preliminary: {
+    preliminaryWithFinalRoundRobin: {
       groupSizeMin: 3,
       groupSizeMax: 12,
       groupSizeDefault: 4,
       finalRoundRobinSizeDefault: 6,
       reservedFinalSpotsForAutoQualified: 6,
+    },
+    preliminaryWithFinalPlayoff: {
+      groupSizeMin: 3,
+      groupSizeMax: 12,
+      groupSizeDefault: 4,
+      reservedFinalSpotsForAutoQualified: 6,
+      qualifiersPerGroup: 1,
     },
     matchScore: {
       min: 0,
@@ -159,12 +186,25 @@ const defaultSystemConfig: SystemConfig = {
     socketReconnectionAttempts: 5,
   },
   clubPlans: {
-    categories: ['Regular'],
+    segments: ['Regular'],
   },
   publicAccess: {
     achievements: Object.fromEntries(
       ACHIEVEMENT_CATEGORY_IDS.map((id) => [id, 0]),
     ) as Record<AchievementCategoryId, number>,
+  },
+  payments: {
+    providerId: '',
+    adminNotifyEmails: [],
+    notifyAdminsOnCourtesy: true,
+    courtesyGraceDays: 7,
+    courtesyExtraVisits: 3,
+    reminders: {
+      checkInBannerEnabled: true,
+      emailEnabled: true,
+      periodDaysBeforeExpiry: 14,
+      visitPackVisitsRemaining: 2,
+    },
   },
 };
 
@@ -186,7 +226,35 @@ function deepMerge<T>(base: T, override: unknown): T {
 }
 
 function setCachedSystemConfig(config: unknown): SystemConfig {
-  cachedSystemConfig = deepMerge(defaultSystemConfig, config);
+  const raw = isRecord(config) ? { ...config } : {};
+  if (isRecord(raw.clubPlans)) {
+    const clubPlans = { ...raw.clubPlans };
+    if (!Array.isArray(clubPlans.segments) && Array.isArray(clubPlans.categories)) {
+      clubPlans.segments = clubPlans.categories;
+    }
+    delete clubPlans.categories;
+    raw.clubPlans = clubPlans;
+  }
+  if (isRecord(raw.tournamentRules)) {
+    const rules = { ...raw.tournamentRules };
+    if (isRecord(rules.preliminary)) {
+      const legacy = rules.preliminary;
+      if (!isRecord(rules.preliminaryWithFinalRoundRobin)) {
+        rules.preliminaryWithFinalRoundRobin = { ...legacy };
+      }
+      if (!isRecord(rules.preliminaryWithFinalPlayoff)) {
+        rules.preliminaryWithFinalPlayoff = {
+          groupSizeMin: legacy.groupSizeMin,
+          groupSizeMax: legacy.groupSizeMax,
+          groupSizeDefault: legacy.groupSizeDefault,
+          reservedFinalSpotsForAutoQualified: legacy.reservedFinalSpotsForAutoQualified,
+        };
+      }
+    }
+    delete rules.preliminary;
+    raw.tournamentRules = rules;
+  }
+  cachedSystemConfig = deepMerge(defaultSystemConfig, raw);
   listeners.forEach(listener => listener(cachedSystemConfig));
   return cachedSystemConfig;
 }

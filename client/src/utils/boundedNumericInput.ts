@@ -33,15 +33,20 @@ export function sanitizeNumericDraft(raw: string, { allowNegative = false } = {}
   return negative ? `-${digits}` : digits;
 }
 
+/** When no max is set, allow this many digits so min-only fields (e.g. Swiss min=6) can type "16". */
+const DEFAULT_MAX_DIGITS_WITHOUT_MAX = 6;
+
 function maxAllowedDigitCount(min?: number, max?: number): number {
-  const lengths: number[] = [1];
+  const lengths: number[] = [];
   if (min !== undefined && Number.isFinite(min)) {
     lengths.push(String(Math.trunc(Math.abs(min))).length);
   }
   if (max !== undefined && Number.isFinite(max)) {
     lengths.push(String(Math.trunc(Math.abs(max))).length);
+  } else {
+    lengths.push(DEFAULT_MAX_DIGITS_WITHOUT_MAX);
   }
-  return Math.max(...lengths);
+  return Math.max(1, ...lengths);
 }
 
 /**

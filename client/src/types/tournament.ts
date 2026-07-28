@@ -123,6 +123,8 @@ export interface PreliminaryConfig {
   finalSize: number;
   autoQualifiedCount: number;
   autoQualifiedMemberIds: number[];
+  /** Playoff: how many finishers from each prelim group qualify. */
+  qualifiersPerGroup?: number;
 }
 
 export interface CorrectionEligibility {

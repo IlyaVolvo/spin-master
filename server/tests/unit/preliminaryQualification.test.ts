@@ -107,28 +107,30 @@ function calculateGroupStandings(roundRobin: {
 function buildQualifiedList(
   groupResults: GroupResult[],
   finalSize: number,
-  autoQualifiedMemberIds: number[]
+  autoQualifiedMemberIds: number[],
+  qualifiersPerGroup = 1,
 ): number[] {
   const qualifiedMemberIds: number[] = [];
+  const perGroup = Math.max(1, qualifiersPerGroup);
 
   // 1. Auto-qualified
   qualifiedMemberIds.push(...autoQualifiedMemberIds);
 
-  // 2. All 1st-place finishers
+  // 2. Top N finishers from each group
   for (const group of groupResults) {
-    if (group.players.length > 0) {
-      const firstPlace = group.players[0];
-      if (!qualifiedMemberIds.includes(firstPlace.memberId)) {
-        qualifiedMemberIds.push(firstPlace.memberId);
+    for (let i = 0; i < perGroup && i < group.players.length; i++) {
+      const player = group.players[i];
+      if (!qualifiedMemberIds.includes(player.memberId)) {
+        qualifiedMemberIds.push(player.memberId);
       }
     }
   }
 
-  // 3. Fill remaining from 2nd, 3rd, etc. sorted by rating desc
+  // 3. Fill remaining from next places, sorted by rating desc
   let remainingSlots = finalSize - qualifiedMemberIds.length;
-  let placeIndex = 1;
+  let placeIndex = perGroup;
 
-  while (remainingSlots > 0 && placeIndex < Math.max(...groupResults.map(g => g.players.length))) {
+  while (remainingSlots > 0 && placeIndex < Math.max(...groupResults.map(g => g.players.length), 0)) {
     const candidatesAtPlace: Array<{ memberId: number; rating: number | null }> = [];
 
     for (const group of groupResults) {

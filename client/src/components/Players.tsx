@@ -79,7 +79,7 @@ type PlayerEditBaseline = {
   phone: string;
   address: string;
   picture: string;
-  paymentCategory: string;
+  segment: string;
   isActive: boolean;
   tournamentNotificationsEnabled: boolean;
   rolesKey: string;
@@ -153,7 +153,7 @@ function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
     phone: member.phone || '',
     address: member.address || '',
     picture: member.picture || '',
-    paymentCategory: (member as any).paymentCategory || 'Regular',
+    segment: (member as any).segment || 'Regular',
     isActive: member.isActive !== undefined ? member.isActive : true,
     tournamentNotificationsEnabled: Boolean(member.tournamentNotificationsEnabled && member.email),
     rolesKey: [...(member.roles || [])].sort().join(','),
@@ -172,7 +172,7 @@ const Players: React.FC = () => {
   const [headerHeight, setHeaderHeight] = useState<number>(40);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [paymentCategoryNames, setPaymentCategoryNames] = useState<string[]>(() => getSystemConfig().clubPlans.categories);
+  const [segmentNames, setSegmentNames] = useState<string[]>(() => getSystemConfig().clubPlans.segments);
   const { members, setMembers, loading, setLoading, fetchMembers } = usePlayerData({ setError });
   const currentMember = getMember();
   const isUserOrganizer = isOrganizer();
@@ -200,7 +200,7 @@ const Players: React.FC = () => {
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
   const [newPlayerAddress, setNewPlayerAddress] = useState('');
   const [newPlayerPicture, setNewPlayerPicture] = useState('');
-  const [newPlayerPaymentCategory, setNewPlayerPaymentCategory] = useState('Regular');
+  const [newPlayerSegment, setNewPlayerSegment] = useState('Regular');
   const [newPlayerRoles, setNewPlayerRoles] = useState<string[]>(['PLAYER']);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [similarNames, setSimilarNames] = useState<SimilarName[]>([]);
@@ -370,7 +370,7 @@ const Players: React.FC = () => {
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editPicture, setEditPicture] = useState('');
-  const [editPaymentCategory, setEditPaymentCategory] = useState('Regular');
+  const [editSegment, setEditSegment] = useState('Regular');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editTournamentNotificationsEnabled, setEditTournamentNotificationsEnabled] = useState(false);
   const [editRoles, setEditRoles] = useState<string[]>([]);
@@ -422,10 +422,10 @@ const Players: React.FC = () => {
   const [editFieldTouched, setEditFieldTouched] = useState<Record<string, boolean>>({});
   const editDuplicateCheckSeqRef = useRef(0);
 
-  // Keep payment category names in sync with system config updates
+  // Keep segment names in sync with system config updates
   useEffect(() => {
     return subscribeToSystemConfig((config) => {
-      setPaymentCategoryNames(config.clubPlans.categories);
+      setSegmentNames(config.clubPlans.segments);
     });
   }, []);
 
@@ -997,8 +997,8 @@ const Players: React.FC = () => {
     if (newPlayerAddress.trim()) {
       playerData.address = newPlayerAddress.trim();
     }
-    if (newPlayerPaymentCategory) {
-      playerData.paymentCategory = newPlayerPaymentCategory;
+    if (newPlayerSegment) {
+      playerData.segment = newPlayerSegment;
     }
     if (newPlayerPicture.trim()) {
       playerData.picture = newPlayerPicture.trim();
@@ -1577,7 +1577,7 @@ const Players: React.FC = () => {
       setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
       setNewPlayerAddress('');
-      setNewPlayerPaymentCategory('Regular');
+      setNewPlayerSegment('Regular');
       setNewPlayerPicture('');
       setAddFieldErrors({});
       setAddFieldTouched({});
@@ -1777,7 +1777,7 @@ const Players: React.FC = () => {
       setNewPlayerRoles(['PLAYER']);
       setNewPlayerPhone('');
       setNewPlayerAddress('');
-      setNewPlayerPaymentCategory('Regular');
+      setNewPlayerSegment('Regular');
       setNewPlayerPicture('');
       setAddFieldErrors({});
       setAddFieldTouched({});
@@ -2118,7 +2118,7 @@ const Players: React.FC = () => {
       setEditBirthDate(member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null);
       setEditPhone(member.phone || '');
       setEditAddress(member.address || '');
-      setEditPaymentCategory((member as any).paymentCategory || 'Regular');
+      setEditSegment((member as any).segment || 'Regular');
       setEditPicture(member.picture || '');
       setEditIsActive(member.isActive !== undefined ? member.isActive : true);
       setEditTournamentNotificationsEnabled(Boolean(member.email && member.tournamentNotificationsEnabled));
@@ -2200,7 +2200,7 @@ const Players: React.FC = () => {
     setEditBirthDate(null);
     setEditPhone('');
     setEditAddress('');
-    setEditPaymentCategory('Regular');
+    setEditSegment('Regular');
     setEditPicture('');
     setEditIsActive(true);
     setEditTournamentNotificationsEnabled(false);
@@ -2294,7 +2294,7 @@ const Players: React.FC = () => {
         birthMs !== b.birthDateMs ||
         editPhone !== b.phone ||
         editAddress !== b.address ||
-        editPaymentCategory !== b.paymentCategory ||
+        editSegment !== b.segment ||
         editPicture !== b.picture ||
         editIsActive !== b.isActive ||
         (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
@@ -2310,7 +2310,7 @@ const Players: React.FC = () => {
       editEmail !== b.email ||
       editPhone !== b.phone ||
       editAddress !== b.address ||
-      editPaymentCategory !== b.paymentCategory ||
+      editSegment !== b.segment ||
       editPicture !== b.picture ||
       (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
       (playerEditBaselineRef.current?.birthDateMs == null && birthMs !== b.birthDateMs)
@@ -2451,7 +2451,7 @@ const Players: React.FC = () => {
       updateData.tournamentNotificationsEnabled = Boolean(editEmail.trim() && editTournamentNotificationsEnabled);
       updateData.phone = editPhone.trim() || null;
       updateData.address = editAddress.trim() || null;
-      updateData.paymentCategory = editPaymentCategory || 'Regular';
+      updateData.segment = editSegment || 'Regular';
       updateData.picture = editPicture.trim() || null;
 
       const hadPendingPin = hasPendingScorePinChange();
@@ -4237,7 +4237,7 @@ const Players: React.FC = () => {
               setNewPlayerRoles(['PLAYER']);
               setNewPlayerPhone('');
               setNewPlayerAddress('');
-              setNewPlayerPaymentCategory('Regular');
+              setNewPlayerSegment('Regular');
               setNewPlayerPicture('');
               setAddFieldErrors({});
               setAddFieldTouched({});
@@ -4265,9 +4265,9 @@ const Players: React.FC = () => {
             setNewPlayerPhone={setNewPlayerPhone}
             newPlayerAddress={newPlayerAddress}
             setNewPlayerAddress={setNewPlayerAddress}
-            newPlayerPaymentCategory={newPlayerPaymentCategory}
-            setNewPlayerPaymentCategory={setNewPlayerPaymentCategory}
-            paymentCategoryNames={paymentCategoryNames}
+            newPlayerSegment={newPlayerSegment}
+            setNewPlayerSegment={setNewPlayerSegment}
+            segmentNames={segmentNames}
             newPlayerPicture={newPlayerPicture}
             setNewPlayerPicture={setNewPlayerPicture}
             addFieldErrors={addFieldErrors}
@@ -6521,13 +6521,13 @@ const Players: React.FC = () => {
                             />
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
-                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Payment Category</label>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Segment</label>
                             <select
-                              value={editPaymentCategory}
-                              onChange={(e) => setEditPaymentCategory(e.target.value)}
+                              value={editSegment}
+                              onChange={(e) => setEditSegment(e.target.value)}
                               style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                             >
-                              {paymentCategoryNames.map((cat) => (
+                              {segmentNames.map((cat) => (
                                 <option key={cat} value={cat}>{cat}</option>
                               ))}
                             </select>
