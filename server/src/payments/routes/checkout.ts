@@ -4,7 +4,11 @@ import { prisma } from '../../index';
 import { logger } from '../../utils/logger';
 import { getActivePaymentProvider, listPaymentProvidersForAdmin } from '../getActivePaymentProvider';
 import { listActivePlanFamilies, resolvePlanForMember, planChargeAmountCents } from '../resolvePlan';
-import type { CheckoutProduct, PaymentInitiatedBy, PaymentMetadata } from '../types';
+import { runMemberCheckout } from '../runCheckout';
+import { paymentProviderRegistry } from '../PaymentProviderRegistry';
+import { getPaymentsConfig } from '../../services/systemConfigService';
+import { isTrialPlanFamily } from '../planPurchaseRules';
+import type { PaymentInitiatedBy } from '../types';
 
 const router = express.Router();
 
@@ -18,7 +22,15 @@ router.get('/providers', authenticate, async (req: AuthRequest, res: Response) =
     if (!isAdmin(req)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    const providers = listPaymentProvidersForAdmin();
+    const cfg = getPaymentsConfig();
+    const providers = listPaymentProvidersForAdmin().map((p) => {
+      const provider = paymentProviderRegistry.get(p.id);
+      return {
+        ...p,
+        settingsSchema: provider.getSettingsSchema?.() ?? [],
+        settings: cfg.providers?.[p.id] ?? provider.getDefaultSettings?.() ?? {},
+      };
+    });
     let activeId = '';
     try {
       activeId = getActivePaymentProvider().id;
@@ -48,10 +60,99 @@ router.get('/plans', authenticate, async (_req: AuthRequest, res: Response) => {
 });
 
 /**
+ * GET /api/payments/plans/for-member/:memberId — families with resolved price for segment
+ */
+router.get('/plans/for-member/:memberId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const memberId = Number(req.params.memberId);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'Invalid member id' });
+    }
+    if (!isAdmin(req) && req.memberId !== memberId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { segment: true, purchaseCreditCents: true },
+    });
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    const families = await listActivePlanFamilies();
+    const plans = [];
+    for (const f of families) {
+      if (isTrialPlanFamily(f.familyKey, f.name) && !isAdmin(req)) {
+        continue;
+      }
+      try {
+        const plan = await resolvePlanForMember(f.familyKey, member.segment);
+        const listAmountCents = planChargeAmountCents(plan);
+        plans.push({
+          familyKey: f.familyKey,
+          name: plan.name,
+          kind: plan.kind,
+          segment: plan.segment,
+          planId: plan.id,
+          listAmountCents,
+          creditPreviewCents: Math.min(member.purchaseCreditCents || 0, listAmountCents),
+          chargePreviewCents: Math.max(
+            0,
+            listAmountCents - Math.min(member.purchaseCreditCents || 0, listAmountCents),
+          ),
+          durationUnit: plan.durationUnit,
+          durationValue: plan.durationValue,
+          visitCount: plan.visitCount,
+          priceCents: plan.priceCents,
+          isTrial: isTrialPlanFamily(f.familyKey, plan.name),
+        });
+      } catch {
+        // skip families without resolvable row
+      }
+    }
+    res.json({
+      plans,
+      purchaseCreditCents: member.purchaseCreditCents,
+      memberSegment: member.segment,
+    });
+  } catch (error) {
+    logger.error('List plans for member failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Failed to list plans' });
+  }
+});
+
+/** GET /api/payments/:paymentId — poll payment status */
+router.get('/:paymentId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const paymentId = Number(req.params.paymentId);
+    if (!Number.isInteger(paymentId) || paymentId < 1) {
+      return res.status(400).json({ error: 'Invalid payment id' });
+    }
+    const payment = await prisma.clubPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+    if (!isAdmin(req) && payment.memberId !== req.memberId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    res.json({
+      id: payment.id,
+      status: payment.status,
+      amountCents: payment.amountCents,
+      provider: payment.provider,
+      externalRef: payment.externalRef,
+      purpose: payment.purpose,
+      memberId: payment.memberId,
+    });
+  } catch (error) {
+    logger.error('Get payment failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Failed to get payment' });
+  }
+});
+
+/**
  * POST /api/payments/checkout
- * Body: { memberId?, familyKey?, kind?: 'plan'|'pay_per_visit', amountCents? }
- * Member self-pay or Admin-on-behalf (same flow).
- * Plan price is resolved from member.segment (fallback Regular).
+ * Body: { memberId?, familyKey?, kind?: 'plan'|'pay_per_visit', amountCents?, autoRenew? }
  */
 router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -82,148 +183,27 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       return res.status(403).json({ error: 'Cannot pay for another member' });
     }
 
-    const member = await prisma.member.findUnique({
-      where: { id: targetMemberId },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        segment: true,
-        isActive: true,
-      },
-    });
-
-    if (!member || !member.isActive) {
-      return res.status(404).json({ error: 'Member not found' });
-    }
-
-    if (!member.email || !member.email.trim()) {
-      return res.status(400).json({ error: 'Member must have an email address to pay' });
-    }
-
-    let product: CheckoutProduct;
-    let amountCents: number;
-    let purpose: string;
-
-    const kind = req.body?.kind === 'pay_per_visit' ? 'pay_per_visit' : 'plan';
-
-    if (kind === 'pay_per_visit') {
-      amountCents = Number(req.body?.amountCents);
-      if (!Number.isInteger(amountCents) || amountCents < 0) {
-        return res.status(400).json({ error: 'amountCents is required for pay_per_visit' });
-      }
-      const clubDate =
-        typeof req.body?.clubDate === 'string' && req.body.clubDate
-          ? req.body.clubDate
-          : new Date().toLocaleDateString('en-CA', {
-              timeZone: process.env.CLUB_TIMEZONE || 'UTC',
-            });
-      product = { kind: 'pay_per_visit', amountCents, clubDate };
-      purpose = `Pay per visit ${clubDate}`;
-    } else {
-      const familyKey =
-        typeof req.body?.familyKey === 'string' ? req.body.familyKey.trim() : '';
-      if (!familyKey) {
-        return res.status(400).json({ error: 'familyKey is required' });
-      }
-      let plan;
-      try {
-        plan = await resolvePlanForMember(familyKey, member.segment);
-      } catch (err) {
-        return res.status(400).json({
-          error: err instanceof Error ? err.message : 'Plan not found for member segment',
-        });
-      }
-      amountCents = planChargeAmountCents(plan);
-      product = {
-        kind: 'plan',
-        familyKey: plan.familyKey,
-        planId: plan.id,
-        planSegment: plan.segment,
-      };
-      purpose = `Plan purchase: ${plan.name} (${plan.segment})`;
-    }
-
-    const openCourtesy = await prisma.clubVisit.findMany({
-      where: {
-        memberId: member.id,
-        isCourtesy: true,
-        courtesyClearedAt: null,
-      },
-      select: { id: true },
-    });
-
-    let payment = await prisma.clubPayment.findFirst({
-      where: {
-        memberId: member.id,
-        status: 'PENDING',
-      },
-      orderBy: { recordedAt: 'desc' },
-    });
-
-    const metadata: PaymentMetadata = {
-      kind: 'checkout',
-      product,
-      familyKey: product.kind === 'plan' ? product.familyKey : undefined,
-      planId: product.kind === 'plan' ? product.planId : undefined,
-      planSegment: product.kind === 'plan' ? product.planSegment : member.segment,
+    const result = await runMemberCheckout({
+      memberId: targetMemberId,
+      kind: req.body?.kind === 'pay_per_visit' ? 'pay_per_visit' : 'plan',
+      familyKey: typeof req.body?.familyKey === 'string' ? req.body.familyKey : undefined,
+      amountCents: req.body?.amountCents != null ? Number(req.body.amountCents) : undefined,
+      clubDate: typeof req.body?.clubDate === 'string' ? req.body.clubDate : undefined,
+      startDate: typeof req.body?.startDate === 'string' ? req.body.startDate : undefined,
+      autoRenew: req.body?.autoRenew === true,
       initiatedBy,
-      visitIds: openCourtesy.map((v) => v.id),
-    };
-
-    if (payment) {
-      payment = await prisma.clubPayment.update({
-        where: { id: payment.id },
-        data: {
-          amountCents,
-          purpose,
-          metadata,
-        },
-      });
-    } else {
-      payment = await prisma.clubPayment.create({
-        data: {
-          memberId: member.id,
-          amountCents,
-          purpose,
-          status: 'PENDING',
-          provider: 'manual',
-          metadata,
-        },
-      });
-    }
-
-    if (openCourtesy.length > 0) {
-      await prisma.clubVisit.updateMany({
-        where: { id: { in: openCourtesy.map((v) => v.id) } },
-        data: { obligationPaymentId: payment.id },
-      });
-    }
-
-    const provider = getActivePaymentProvider();
-    const result = await provider.startCheckout({
-      memberId: member.id,
-      memberEmail: member.email,
-      memberName: `${member.firstName} ${member.lastName}`.trim(),
-      amountCents,
-      currency: 'USD',
-      purpose,
-      product,
-      initiatedBy,
-      paymentId: payment.id,
+      allowTrial: isAdmin(req),
     });
 
-    res.json({
-      ...result,
-      paymentId: payment.id,
-      providerId: provider.id,
-    });
+    res.json(result);
   } catch (error) {
-    logger.error('Checkout failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Checkout failed' });
+    const message = error instanceof Error ? error.message : 'Checkout failed';
+    logger.error('Checkout failed', { error: message });
+    const status =
+      message.includes('future plan') || message.includes('familyKey') || message.includes('email')
+        ? 400
+        : 500;
+    res.status(status).json({ error: message });
   }
 });
 

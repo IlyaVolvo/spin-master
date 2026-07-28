@@ -104,6 +104,13 @@ export type SystemConfig = {
       periodDaysBeforeExpiry: number;
       visitPackVisitsRemaining: number;
     };
+    providers: {
+      test: {
+        confirmDelayMeanMs: number;
+        confirmDelayStdDevMs: number;
+      };
+      [providerId: string]: Record<string, unknown>;
+    };
   };
 };
 
@@ -204,6 +211,12 @@ const defaultSystemConfig: SystemConfig = {
       emailEnabled: true,
       periodDaysBeforeExpiry: 14,
       visitPackVisitsRemaining: 2,
+    },
+    providers: {
+      test: {
+        confirmDelayMeanMs: 2500,
+        confirmDelayStdDevMs: 800,
+      },
     },
   },
 };

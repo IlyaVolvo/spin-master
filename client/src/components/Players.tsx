@@ -32,6 +32,7 @@ import { SimilarNamesConfirmationModal } from './players/SimilarNamesConfirmatio
 import { calcAllowBirthDateInput, getEditBirthDateFieldError } from './players/playerEditBirthDateRules.ts';
 import { SuspiciousRatingConfirmModal } from './players/SuspiciousRatingConfirmModal.tsx';
 import { PlayersSettingsMenu } from './memberSettings/PlayersSettingsMenu.tsx';
+import { MemberPlanScreen } from './players/MemberPlanScreen';
 import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
 import { useTournamentCreation } from './hooks/useTournamentCreation';
 import { useShiftRangeAnchor } from './hooks/useShiftRangeAnchor';
@@ -226,6 +227,8 @@ const Players: React.FC = () => {
   const [showStatusColumn, setShowStatusColumn] = useState(false);
   const [showActionsColumn, setShowActionsColumn] = useState(false);
   const [showGamesColumn, setShowGamesColumn] = useState(false);
+  const [showPlanColumn, setShowPlanColumn] = useState(false);
+  const [planScreenMemberId, setPlanScreenMemberId] = useState<number | null>(null);
   const [gamesTimePeriod, setGamesTimePeriod] = useState<'today' | 'week' | 'month' | 'custom' | 'all'>('month');
   const [gamesCustomStartDate, setGamesCustomStartDate] = useState<Date | null>(null);
   const [gamesCustomEndDate, setGamesCustomEndDate] = useState<Date | null>(null);
@@ -459,6 +462,7 @@ const Players: React.FC = () => {
     const savedShowStatusColumn = localStorage.getItem('players_showStatusColumn');
     const savedShowActionsColumn = localStorage.getItem('players_showActionsColumn');
     const savedShowGamesColumn = localStorage.getItem('players_showGamesColumn');
+    const savedShowPlanColumn = localStorage.getItem('players_showPlanColumn');
     const savedGamesTimePeriod = localStorage.getItem('players_gamesTimePeriod');
     const savedGamesCustomStartDate = localStorage.getItem('players_gamesCustomStartDate');
     const savedGamesCustomEndDate = localStorage.getItem('players_gamesCustomEndDate');
@@ -489,6 +493,9 @@ const Players: React.FC = () => {
     if (savedShowActionsColumn === 'true') setShowActionsColumn(true);
     if (savedShowGamesColumn === 'true') {
       setShowGamesColumn(true);
+    }
+    if (savedShowPlanColumn === 'true' && isAdmin()) {
+      setShowPlanColumn(true);
     }
     if (savedGamesTimePeriod && ['today', 'week', 'month', 'custom', 'all'].includes(savedGamesTimePeriod)) {
       setGamesTimePeriod(savedGamesTimePeriod as 'today' | 'week' | 'month' | 'custom' | 'all');
@@ -3288,6 +3295,16 @@ const Players: React.FC = () => {
                         + Match
                       </button>
                     )}
+                    {currentMember && !isKioskMode() && (
+                      <button
+                        onClick={() => setPlanScreenMemberId(currentMember.id)}
+                        className="button-3d"
+                        style={buttonStyle}
+                        title="View and manage your club plan"
+                      >
+                        Plan
+                      </button>
+                    )}
                     {hasButtonsBeforeSeparator && (
                       <span style={{ color: '#666', fontSize: '16px', margin: '0 4px', fontWeight: 'bold' }}>|</span>
                     )}
@@ -5763,6 +5780,11 @@ const Players: React.FC = () => {
                   Edit
                 </th>
               )}
+              {isAdmin() && showPlanColumn && !isCheckinKiosk && (
+                <th style={{ textAlign: 'center', backgroundColor: '#f8f9fa', padding: '12px' }}>
+                  Plan
+                </th>
+              )}
               {isCheckinKiosk && (
                 <th style={{ textAlign: 'center', backgroundColor: '#f8f9fa', padding: '12px' }}>
                   Check-in
@@ -5781,6 +5803,8 @@ const Players: React.FC = () => {
                   setShowStatusColumn={setShowStatusColumn}
                   showGamesColumn={showGamesColumn}
                   setShowGamesColumn={setShowGamesColumn}
+                  showPlanColumn={showPlanColumn}
+                  setShowPlanColumn={setShowPlanColumn}
                   showAllPlayers={showAllPlayers}
                   setShowAllPlayers={setShowAllPlayers}
                   showAllRoles={showAllRoles}
@@ -5799,6 +5823,11 @@ const Players: React.FC = () => {
                   setImportSendEmail={setImportSendEmail}
                   tournamentNotificationsEnabled={tournamentNotificationsEnabled}
                   onTournamentNotificationsChange={currentMember ? handleTournamentNotificationsChange : undefined}
+                  onOpenOwnPlan={
+                    currentMember
+                      ? () => setPlanScreenMemberId(currentMember.id)
+                      : undefined
+                  }
                 />
               </th>
               )}
@@ -6178,27 +6207,70 @@ const Players: React.FC = () => {
                   )}
                 {isAdmin() && (
                   <td style={{ textAlign: 'center', padding: '8px' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleStartEdit(player.id);
+                        }}
+                        title="Edit member profile"
+                        style={{
+                          padding: '2px 3px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          fontSize: '16px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        ✏️
+                      </button>
+                      {!isCheckinKiosk && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setPlanScreenMemberId(player.id);
+                          }}
+                          title="Member plan"
+                          style={{
+                            padding: '2px 6px',
+                            border: '1px solid #ccc',
+                            background: '#fff',
+                            color: '#333',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            borderRadius: '4px',
+                          }}
+                        >
+                          Plan
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
+                {isAdmin() && showPlanColumn && !isCheckinKiosk && (
+                  <td style={{ textAlign: 'center', padding: '8px' }}>
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        handleStartEdit(player.id);
+                        setPlanScreenMemberId(player.id);
                       }}
-                      title="Edit member profile"
+                      title="Open plan"
                       style={{
-                        padding: '2px 3px',
-                        border: 'none',
-                        background: 'transparent',
-                        color: 'inherit',
+                        padding: '4px 8px',
+                        fontSize: '12px',
                         cursor: 'pointer',
-                        fontSize: '16px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: '4px',
                       }}
                     >
-                      ✏️
+                      Plan
                     </button>
                   </td>
                 )}
@@ -6233,6 +6305,13 @@ const Players: React.FC = () => {
 
       </div>
       {/* End of card */}
+
+      {!isCheckinKiosk && planScreenMemberId != null && (
+        <MemberPlanScreen
+          memberId={planScreenMemberId}
+          onClose={() => setPlanScreenMemberId(null)}
+        />
+      )}
       
       {/* Edit Member Modal */}
       {editingPlayerId && (() => {

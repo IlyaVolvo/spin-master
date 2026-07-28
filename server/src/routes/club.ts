@@ -10,6 +10,14 @@ import {
   notifyAdminsOfCourtesy,
 } from '../payments/courtesy';
 import { resolvePlanForMember, planChargeAmountCents } from '../payments/resolvePlan';
+import {
+  computeFutureReimburseCents,
+  getFutureEntitlement,
+  refreshCurrentEntitlement,
+  serializeEntitlement,
+  endEntitlement,
+} from '../payments/entitlementQueue';
+import { planAllowsMemberPurchase } from '../payments/planPurchaseRules';
 import { computeValidTo } from '../utils/planDuration';
 
 const router = express.Router();
@@ -32,38 +40,11 @@ function isAdminOrOrganizer(req: AuthRequest): boolean {
 }
 
 /**
- * Get the active entitlement for a member.
- * Checks expiration and exhaustion, auto-updates status if needed.
+ * Get the active (CURRENT) entitlement for a member.
+ * Checks expiration and exhaustion, marks ENDED if needed.
  */
 async function getActiveEntitlement(memberId: number) {
-  const entitlement = await prisma.clubEntitlement.findFirst({
-    where: { memberId, active: true },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  if (!entitlement) return null;
-
-  const now = new Date();
-
-  // Check time-based expiration
-  if (entitlement.validTo && entitlement.validTo <= now) {
-    await prisma.clubEntitlement.update({
-      where: { id: entitlement.id },
-      data: { active: false },
-    });
-    return null;
-  }
-
-  // Check visit pack exhaustion
-  if (entitlement.type === 'VISIT_PACK' && entitlement.visitsRemaining !== null && entitlement.visitsRemaining <= 0) {
-    await prisma.clubEntitlement.update({
-      where: { id: entitlement.id },
-      data: { active: false },
-    });
-    return null;
-  }
-
-  return entitlement;
+  return refreshCurrentEntitlement(memberId);
 }
 
 /**
@@ -235,16 +216,20 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
         // Decrement visits remaining
         if (entitlement.visitsRemaining !== null && entitlement.visitsRemaining > 0) {
           dailyPaymentApplied = true;
+          const nextRemaining = entitlement.visitsRemaining - 1;
           await prisma.clubEntitlement.update({
             where: { id: entitlement.id },
-            data: { visitsRemaining: entitlement.visitsRemaining - 1 },
+            data: {
+              visitsRemaining: nextRemaining,
+              ...(nextRemaining <= 0 ? { status: 'ENDED', active: false } : {}),
+            },
           });
           await prisma.clubPayment.create({
             data: {
               memberId,
               amountCents: 0,
               provider: 'manual',
-              purpose: `Visit pack debit (${entitlement.visitsRemaining - 1} remaining)`,
+              purpose: `Visit pack debit (${nextRemaining} remaining)`,
               status: 'SUCCEEDED',
             },
           });
@@ -697,12 +682,13 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'memberId is required' });
     }
 
-    // Check member doesn't already have an active entitlement
-    const existingCount = await prisma.clubEntitlement.count({
-      where: { memberId, active: true },
-    });
-    if (existingCount >= 1) {
-      return res.status(400).json({ error: 'Member already has an active entitlement. Cancel it first or wait for expiration.' });
+    // At most one CURRENT + one FUTURE
+    const current = await refreshCurrentEntitlement(Number(memberId));
+    const future = await getFutureEntitlement(Number(memberId));
+    if (current && future) {
+      return res.status(400).json({
+        error: 'Member already has current and future entitlements',
+      });
     }
 
     // ── Plan-based creation ──
@@ -743,14 +729,18 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
       }
       const finalPrice = basePriceCents - discountAmount;
 
-      const validFrom = new Date();
+      const status = current ? 'FUTURE' : 'CURRENT';
+      const validFrom =
+        status === 'FUTURE' && current?.validTo ? new Date(current.validTo) : new Date();
       let entitlementType: 'MONTHLY' | 'YEARLY' | 'VISIT_PACK';
       let validTo: Date | null = null;
       let visitsRemaining: number | null = null;
+      let visitsTotal: number | null = null;
 
       if (plan.kind === 'VISIT') {
         entitlementType = 'VISIT_PACK';
         visitsRemaining = plan.visitCount || 0;
+        visitsTotal = visitsRemaining;
       } else {
         const unit = plan.durationUnit || 'MONTH';
         const value = plan.durationValue || 1;
@@ -762,14 +752,26 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
         data: {
           memberId,
           type: entitlementType,
+          status,
           active: true,
           validFrom,
           validTo,
           visitsRemaining,
+          visitsTotal,
+          amountPaidCents: finalPrice,
+          familyKey: plan.familyKey,
           planId: plan.id,
           planSegment: plan.segment,
+          label: plan.name,
         },
       });
+
+      if (status === 'FUTURE') {
+        await prisma.member.update({
+          where: { id: Number(memberId) },
+          data: { autoRenewEnabled: false, autoRenewFamilyKey: null },
+        });
+      }
 
       if (finalPrice > 0) {
         await prisma.clubPayment.create({
@@ -797,23 +799,38 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(', ')}` });
     }
 
-    // Apply member's discount
-    const member = await prisma.member.findUnique({ where: { id: memberId }, select: { clubDiscount: true } });
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clubDiscount: true },
+    });
     const discount = member?.clubDiscount || 0;
     const price = pricePaid || 0;
-    const discountAmount = Math.round(price * discount / 100);
+    const discountAmount = Math.round((price * discount) / 100);
     const finalPrice = price - discountAmount;
+
+    const status = current ? 'FUTURE' : 'CURRENT';
+    const validFrom = startsAt ? new Date(startsAt) : new Date();
 
     const entitlement = await prisma.clubEntitlement.create({
       data: {
         memberId,
         type,
+        status,
         active: true,
-        validFrom: startsAt ? new Date(startsAt) : new Date(),
+        validFrom,
         validTo: expiresAt ? new Date(expiresAt) : null,
-        visitsRemaining: type === 'VISIT_PACK' ? (visitsTotal || 0) : null,
+        visitsRemaining: type === 'VISIT_PACK' ? visitsTotal || 0 : null,
+        visitsTotal: type === 'VISIT_PACK' ? visitsTotal || 0 : null,
+        amountPaidCents: finalPrice,
       },
     });
+
+    if (status === 'FUTURE') {
+      await prisma.member.update({
+        where: { id: Number(memberId) },
+        data: { autoRenewEnabled: false, autoRenewFamilyKey: null },
+      });
+    }
 
     if (finalPrice > 0) {
       await prisma.clubPayment.create({
@@ -1410,6 +1427,245 @@ router.post('/cron/reconcile-payments', async (req: Request, res: Response) => {
     res.json(result);
   } catch (error) {
     logger.error('Error reconciling payments', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/club/cron/midnight — promote future entitlements + auto-renew
+ */
+router.post('/cron/midnight', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+
+    const { runClubMidnightJobs } = await import('../payments/midnightJobs');
+    const result = await runClubMidnightJobs({
+      clubDate: typeof req.body?.clubDate === 'string' ? req.body.clubDate : undefined,
+    });
+    res.json(result);
+  } catch (error) {
+    logger.error('Error running club midnight jobs', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Member Plan Screen APIs ─────────────────────────────────────────────────
+
+function canAccessMemberPlan(req: AuthRequest, memberId: number): boolean {
+  if (req.memberId === memberId) return true;
+  return isAdminOrOrganizer(req);
+}
+
+/** GET /api/club/members/:id/plan — current/future/credit/auto-renew summary */
+router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
+  try {
+    const memberId = Number(req.params.id);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'Invalid member id' });
+    }
+    if (!canAccessMemberPlan(req, memberId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        segment: true,
+        purchaseCreditCents: true,
+        autoRenewEnabled: true,
+        autoRenewFamilyKey: true,
+      },
+    });
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    const current = await refreshCurrentEntitlement(memberId);
+    const future = await getFutureEntitlement(memberId);
+    const pendingPayment = await prisma.clubPayment.findFirst({
+      where: { memberId, status: 'PENDING' },
+      orderBy: { recordedAt: 'desc' },
+    });
+
+    const futureReimburseCents = future ? computeFutureReimburseCents(future) : 0;
+    // Auto-renew is incompatible with a queued future plan; clear if still set
+    const effectiveAutoRenew = member.autoRenewEnabled && !future;
+    if (member.autoRenewEnabled && future) {
+      await prisma.member.update({
+        where: { id: memberId },
+        data: { autoRenewEnabled: false, autoRenewFamilyKey: null },
+      });
+    }
+
+    const canPurchase = planAllowsMemberPurchase({
+      hasCurrent: Boolean(current),
+      hasFuture: Boolean(future),
+      autoRenewEnabled: effectiveAutoRenew,
+      hasPendingPayment: Boolean(pendingPayment),
+    });
+
+    res.json({
+      member: {
+        id: member.id,
+        firstName: member.firstName,
+        lastName: member.lastName,
+        email: member.email,
+        segment: member.segment,
+      },
+      current: serializeEntitlement(current),
+      future: serializeEntitlement(future),
+      purchaseCreditCents: member.purchaseCreditCents,
+      autoRenewEnabled: effectiveAutoRenew,
+      autoRenewFamilyKey: effectiveAutoRenew ? member.autoRenewFamilyKey : null,
+      futureReimburseCents,
+      canPurchase,
+      pendingPayment: pendingPayment
+        ? {
+            id: pendingPayment.id,
+            status: pendingPayment.status,
+            amountCents: pendingPayment.amountCents,
+            purpose: pendingPayment.purpose,
+          }
+        : null,
+    });
+  } catch (error) {
+    logger.error('Error getting member plan', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** POST /api/club/members/:id/plan/credit — admin set purchase credit */
+router.post('/members/:id/plan/credit', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdminOrOrganizer(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const memberId = Number(req.params.id);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'Invalid member id' });
+    }
+    const credit = Math.max(0, Math.floor(Number(req.body?.purchaseCreditCents)));
+    if (!Number.isFinite(credit)) {
+      return res.status(400).json({ error: 'purchaseCreditCents is required' });
+    }
+    const member = await prisma.member.update({
+      where: { id: memberId },
+      data: { purchaseCreditCents: credit },
+      select: { id: true, purchaseCreditCents: true },
+    });
+    res.json({ member });
+  } catch (error) {
+    logger.error('Error setting purchase credit', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** POST /api/club/members/:id/plan/reimburse-future — proportional credit + end future */
+router.post('/members/:id/plan/reimburse-future', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdminOrOrganizer(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const memberId = Number(req.params.id);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'Invalid member id' });
+    }
+
+    const future = await getFutureEntitlement(memberId);
+    if (!future) {
+      return res.status(400).json({ error: 'No future entitlement to reimburse' });
+    }
+
+    const creditAdd = computeFutureReimburseCents(future);
+    await endEntitlement(future.id);
+    const member = await prisma.member.update({
+      where: { id: memberId },
+      data: {
+        purchaseCreditCents: { increment: creditAdd },
+      },
+      select: { id: true, purchaseCreditCents: true },
+    });
+
+    res.json({
+      reimbursedCents: creditAdd,
+      endedEntitlementId: future.id,
+      purchaseCreditCents: member.purchaseCreditCents,
+    });
+  } catch (error) {
+    logger.error('Error reimbursing future entitlement', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** PATCH /api/club/members/:id/plan/auto-renew — set/clear auto-renew preference */
+router.patch('/members/:id/plan/auto-renew', async (req: AuthRequest, res: Response) => {
+  try {
+    const memberId = Number(req.params.id);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'Invalid member id' });
+    }
+    if (!canAccessMemberPlan(req, memberId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const enabled = Boolean(req.body?.enabled);
+    let familyKey =
+      typeof req.body?.familyKey === 'string' ? req.body.familyKey.trim() : null;
+
+    if (enabled) {
+      const current = await refreshCurrentEntitlement(memberId);
+      if (!current) {
+        return res.status(400).json({ error: 'Auto-renew requires a current plan' });
+      }
+      const future = await getFutureEntitlement(memberId);
+      if (future) {
+        return res.status(400).json({
+          error: 'Auto-renew cannot be enabled while a future plan is queued',
+        });
+      }
+      if (!familyKey) {
+        const memberExisting = await prisma.member.findUnique({
+          where: { id: memberId },
+          select: { autoRenewFamilyKey: true },
+        });
+        familyKey = memberExisting?.autoRenewFamilyKey || current.familyKey || null;
+      }
+      if (!familyKey) {
+        return res.status(400).json({ error: 'familyKey is required to enable auto-renew' });
+      }
+    }
+
+    const member = await prisma.member.update({
+      where: { id: memberId },
+      data: {
+        autoRenewEnabled: enabled,
+        autoRenewFamilyKey: enabled ? familyKey : null,
+      },
+      select: {
+        id: true,
+        autoRenewEnabled: true,
+        autoRenewFamilyKey: true,
+      },
+    });
+    res.json({ member });
+  } catch (error) {
+    logger.error('Error updating auto-renew', {
       error: error instanceof Error ? error.message : String(error),
     });
     res.status(500).json({ error: 'Internal server error' });

@@ -14,6 +14,8 @@ export interface PlayersSettingsMenuProps {
   setShowStatusColumn: React.Dispatch<React.SetStateAction<boolean>>;
   showGamesColumn: boolean;
   setShowGamesColumn: React.Dispatch<React.SetStateAction<boolean>>;
+  showPlanColumn?: boolean;
+  setShowPlanColumn?: React.Dispatch<React.SetStateAction<boolean>>;
   showAllPlayers: boolean;
   setShowAllPlayers: React.Dispatch<React.SetStateAction<boolean>>;
   showAllRoles: boolean;
@@ -32,6 +34,7 @@ export interface PlayersSettingsMenuProps {
   setImportSendEmail: React.Dispatch<React.SetStateAction<boolean>>;
   tournamentNotificationsEnabled?: boolean;
   onTournamentNotificationsChange?: (enabled: boolean) => void | Promise<void>;
+  onOpenOwnPlan?: () => void;
 }
 
 /**
@@ -49,6 +52,8 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   setShowStatusColumn,
   showGamesColumn,
   setShowGamesColumn,
+  showPlanColumn,
+  setShowPlanColumn,
   showAllPlayers,
   setShowAllPlayers,
   showAllRoles,
@@ -67,6 +72,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   setImportSendEmail,
   tournamentNotificationsEnabled,
   onTournamentNotificationsChange,
+  onOpenOwnPlan,
 }) => {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
@@ -96,7 +102,23 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   }, [showSettingsMenu]);
 
   return (
-  <div style={{ position: 'relative', display: 'inline-block' }} data-settings-menu>
+  <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '6px' }} data-settings-menu>
+    {onOpenOwnPlan && (
+      <button
+        type="button"
+        onClick={onOpenOwnPlan}
+        className="button-filter"
+        style={{
+          padding: '6px 12px',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontSize: '13px',
+        }}
+        title="View and manage your club plan"
+      >
+        Plan
+      </button>
+    )}
     <button
       type="button"
       ref={buttonRef}
@@ -187,6 +209,21 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
           />
           <span>Show Games Column</span>
         </label>
+        {isAdminUser && setShowPlanColumn && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
+            <input
+              type="checkbox"
+              checked={!!showPlanColumn}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setShowPlanColumn(checked);
+                localStorage.setItem('players_showPlanColumn', checked.toString());
+              }}
+              style={{ cursor: 'pointer', margin: 0 }}
+            />
+            <span>Show Plan Column</span>
+          </label>
+        )}
         <div style={{ borderTop: '1px solid #ddd', marginTop: '6px', marginBottom: '6px' }} />
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
           <input

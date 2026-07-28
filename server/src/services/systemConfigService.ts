@@ -115,6 +115,11 @@ export type PaymentsReminderConfig = {
   visitPackVisitsRemaining: number;
 };
 
+export type TestPaymentProviderSettings = {
+  confirmDelayMeanMs: number;
+  confirmDelayStdDevMs: number;
+};
+
 export type PaymentsConfig = {
   /** Active provider plugin id; empty = auto when exactly one usable offered provider. */
   providerId: string;
@@ -123,6 +128,11 @@ export type PaymentsConfig = {
   courtesyGraceDays: number;
   courtesyExtraVisits: number;
   reminders: PaymentsReminderConfig;
+  /** Per-provider settings keyed by provider id. */
+  providers: {
+    test: TestPaymentProviderSettings;
+    [providerId: string]: Record<string, unknown>;
+  };
 };
 
 export type AchievementsPublicAccessConfig = Record<AchievementCategoryId, number>;
@@ -253,6 +263,12 @@ export function getDefaultSystemConfig(): SystemConfig {
         emailEnabled: true,
         periodDaysBeforeExpiry: 14,
         visitPackVisitsRemaining: 2,
+      },
+      providers: {
+        test: {
+          confirmDelayMeanMs: 2500,
+          confirmDelayStdDevMs: 800,
+        },
       },
     },
   };
@@ -591,6 +607,25 @@ function validatePayments(value: unknown): PaymentsConfig {
     Math.floor(Number(config.reminders.visitPackVisitsRemaining) || 0),
   );
   config.notifyAdminsOnCourtesy = Boolean(config.notifyAdminsOnCourtesy);
+
+  if (!isRecord(config.providers)) {
+    config.providers = getDefaultSystemConfig().payments.providers;
+  }
+  const testDefaults = getDefaultSystemConfig().payments.providers.test;
+  const testRaw: Record<string, unknown> = isRecord(config.providers.test)
+    ? config.providers.test
+    : {};
+  config.providers.test = {
+    confirmDelayMeanMs: Math.max(
+      0,
+      Math.floor(Number(testRaw.confirmDelayMeanMs) || testDefaults.confirmDelayMeanMs),
+    ),
+    confirmDelayStdDevMs: Math.max(
+      0,
+      Math.floor(Number(testRaw.confirmDelayStdDevMs) || testDefaults.confirmDelayStdDevMs),
+    ),
+  };
+
   return config;
 }
 

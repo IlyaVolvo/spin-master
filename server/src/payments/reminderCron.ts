@@ -16,7 +16,7 @@ export async function sendPreemptivePaymentReminders(): Promise<{
   }
 
   const entitlements = await prisma.clubEntitlement.findMany({
-    where: { active: true },
+    where: { status: 'CURRENT', active: true },
     include: {
       member: { select: { id: true, email: true, firstName: true, lastName: true } },
     },

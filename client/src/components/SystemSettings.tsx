@@ -331,8 +331,22 @@ function PaymentsSettingsEditor({
 }) {
   const payments = config.payments;
   const [providers, setProviders] = useState<
-    Array<{ id: string; displayName: string; usable: boolean; offered: boolean }>
+    Array<{
+      id: string;
+      displayName: string;
+      usable: boolean;
+      offered: boolean;
+      settingsSchema?: Array<{
+        key: string;
+        label: string;
+        type: 'number' | 'string' | 'boolean';
+        min?: number;
+        hint?: string;
+      }>;
+      settings?: Record<string, unknown>;
+    }>
   >([]);
+  const [configureProviderId, setConfigureProviderId] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -343,8 +357,100 @@ function PaymentsSettingsEditor({
       .catch(() => setProviders([]));
   }, []);
 
+  useEffect(() => {
+    if (!payments.providers) {
+      updateConfig((draft) => {
+        draft.payments.providers = {
+          test: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
+        };
+      });
+    }
+  }, [payments.providers, updateConfig]);
+
   const usableOffered = providers.filter((p) => p.usable && p.offered);
-  const showProviderSelect = usableOffered.length > 1;
+  const showProviderSelect = usableOffered.length >= 1;
+  const configuring = configureProviderId
+    ? providers.find((p) => p.id === configureProviderId)
+    : null;
+
+  if (configuring) {
+    const schema = configuring.settingsSchema || [];
+    const providerSettings =
+      (payments.providers?.[configuring.id] as Record<string, unknown> | undefined) ||
+      configuring.settings ||
+      {};
+
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => setConfigureProviderId(null)}
+          style={{ marginBottom: '12px' }}
+        >
+          ← Back to payment settings
+        </button>
+        <h4 style={{ margin: '0 0 8px' }}>Configure {configuring.displayName}</h4>
+        {schema.length === 0 && (
+          <p style={{ color: '#666', fontSize: '13px' }}>No settings for this provider.</p>
+        )}
+        {schema.map((field) => {
+          if (field.type === 'number') {
+            return (
+              <NumericInput
+                key={field.key}
+                label={field.label}
+                min={field.min ?? 0}
+                value={Number(providerSettings[field.key]) || 0}
+                onChange={(value) =>
+                  updateConfig((draft) => {
+                    if (!draft.payments.providers) {
+                      draft.payments.providers = {
+                        test: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
+                      };
+                    }
+                    draft.payments.providers[configuring.id] = {
+                      ...(draft.payments.providers[configuring.id] || {}),
+                      [field.key]: value,
+                    };
+                  })
+                }
+              />
+            );
+          }
+          return (
+            <FieldRow key={field.key} label={field.label}>
+              <input
+                type="text"
+                value={String(providerSettings[field.key] ?? '')}
+                onChange={(e) =>
+                  updateConfig((draft) => {
+                    if (!draft.payments.providers) {
+                      draft.payments.providers = {
+                        test: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
+                      };
+                    }
+                    draft.payments.providers[configuring.id] = {
+                      ...(draft.payments.providers[configuring.id] || {}),
+                      [field.key]: e.target.value,
+                    };
+                  })
+                }
+                style={valueInputStyle}
+              />
+            </FieldRow>
+          );
+        })}
+        {schema.some((f) => f.hint) && (
+          <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+            {schema
+              .filter((f) => f.hint)
+              .map((f) => f.hint)
+              .join(' · ')}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -375,6 +481,16 @@ function PaymentsSettingsEditor({
           Active provider:{' '}
           <strong>{usableOffered[0]?.displayName || payments.providerId || 'none'}</strong>
         </p>
+      )}
+
+      {usableOffered.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+          {usableOffered.map((p) => (
+            <button key={p.id} type="button" onClick={() => setConfigureProviderId(p.id)}>
+              Configure {p.displayName}
+            </button>
+          ))}
+        </div>
       )}
 
       <NumericInput

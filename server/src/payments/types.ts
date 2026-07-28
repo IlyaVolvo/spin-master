@@ -25,7 +25,7 @@ export type StartCheckoutResult = {
   externalRef: string;
   checkoutUrl?: string;
   instructions?: string;
-  /** When true, provider already invoked confirm (e.g. Test immediate). */
+  /** When true, provider already invoked confirm (legacy / immediate providers). */
   confirmedImmediately?: boolean;
 };
 
@@ -40,6 +40,14 @@ export type ConfirmEvent = {
 export type PaymentProviderInfo = {
   id: string;
   displayName: string;
+};
+
+export type PaymentProviderSettingField = {
+  key: string;
+  label: string;
+  type: 'number' | 'string' | 'boolean';
+  min?: number;
+  hint?: string;
 };
 
 /**
@@ -60,14 +68,23 @@ export interface PaymentProvider {
     externalRef: string | null;
     metadata: unknown;
   }): Promise<ConfirmEvent | null>;
+  /** Optional admin settings form fields for this provider. */
+  getSettingsSchema?(): PaymentProviderSettingField[];
+  getDefaultSettings?(): Record<string, unknown>;
+  validateSettings?(value: unknown): Record<string, unknown>;
 }
 
 export type PaymentMetadata = {
-  kind?: 'courtesy_obligation' | 'checkout';
+  kind?: 'courtesy_obligation' | 'checkout' | 'auto_renew';
   product?: CheckoutProduct;
   familyKey?: string;
   planId?: number;
   planSegment?: string;
   initiatedBy?: PaymentInitiatedBy;
   visitIds?: number[];
+  autoRenew?: boolean;
+  creditAppliedCents?: number;
+  listAmountCents?: number;
+  /** YYYY-MM-DD start for a new TIME CURRENT plan */
+  startDate?: string;
 };

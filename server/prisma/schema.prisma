@@ -62,6 +62,13 @@ model Member {
   // Segment for club plan pricing (e.g. "Regular", "Child", "Senior")
   segment String @default("Regular")
 
+  // Credit applied to the next plan checkout (cents)
+  purchaseCreditCents Int @default(0)
+
+  // Auto-renew: persists until cleared; midnight job renews after prior-day expiry
+  autoRenewEnabled   Boolean @default(false)
+  autoRenewFamilyKey String?
+
   // QR-based authentication token hash
   qrTokenHash String @unique
 
@@ -400,6 +407,12 @@ enum ClubEntitlementType {
   PAY_PER_VISIT_EXTERNAL
 }
 
+enum ClubEntitlementStatus {
+  CURRENT
+  FUTURE
+  ENDED
+}
+
 enum ClubPaymentStatus {
   PENDING
   SUCCEEDED
@@ -436,16 +449,20 @@ model ClubVisit {
 
 // ClubEntitlement: A purchased plan that grants club access
 model ClubEntitlement {
-  id              Int                 @id @default(autoincrement())
+  id              Int                     @id @default(autoincrement())
   memberId        Int
   type            ClubEntitlementType
+  status          ClubEntitlementStatus   @default(CURRENT)
   label           String?
   validFrom       DateTime
-  validTo         DateTime?           // For time-based plans
-  visitsRemaining Int?                // For VISIT_PACK: remaining visits
-  active          Boolean             @default(true)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  validTo         DateTime?               // For time-based plans
+  visitsRemaining Int?                    // For VISIT_PACK: remaining visits
+  visitsTotal     Int?                    // Snapshot at purchase (VISIT packs)
+  amountPaidCents Int                     @default(0)
+  familyKey       String?
+  active          Boolean                 @default(true) // true for CURRENT/FUTURE
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
   // Plan reference
   planId      Int?
@@ -455,6 +472,7 @@ model ClubEntitlement {
   plan     ClubPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
 
   @@index([memberId])
+  @@index([memberId, status])
   @@index([planId])
   @@map("club_entitlements")
 }

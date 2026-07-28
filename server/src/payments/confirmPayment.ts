@@ -1,6 +1,13 @@
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { computeValidTo, type DurationUnit } from '../utils/planDuration';
+import { emitPaymentUpdated } from '../services/socketService';
+import {
+  getCurrentEntitlement,
+  getFutureEntitlement,
+  refreshCurrentEntitlement,
+} from './entitlementQueue';
+import { resolvePlanLabelForProduct, sendPaymentProcessedEmail } from './paymentReceiptEmail';
 import type { ConfirmEvent, CheckoutProduct, PaymentMetadata } from './types';
 
 function asMetadata(value: unknown): PaymentMetadata {
@@ -12,29 +19,30 @@ async function createEntitlementFromProduct(
   memberId: number,
   product: CheckoutProduct | undefined,
   planSegmentFallback: string,
+  amountPaidCents: number,
+  startDateYmd?: string | null,
 ): Promise<void> {
   if (!product) return;
 
-  // Deactivate existing active entitlements before granting new access
-  await prisma.clubEntitlement.updateMany({
-    where: { memberId, active: true },
-    data: { active: false },
-  });
-
   if (product.kind === 'pay_per_visit') {
-    await prisma.clubEntitlement.create({
-      data: {
-        memberId,
-        type: 'PAY_PER_VISIT_EXTERNAL',
-        label: 'Pay per visit',
-        validFrom: new Date(),
-        validTo: null,
-        visitsRemaining: null,
-        active: true,
-        planSegment: planSegmentFallback,
-      },
-    });
-    // Record succeeded per-visit coverage for today (toggleVisit looks for purpose containing per-visit)
+    // PPV remains out of queue redesign scope; grant CURRENT coverage marker
+    const current = await refreshCurrentEntitlement(memberId);
+    if (!current) {
+      await prisma.clubEntitlement.create({
+        data: {
+          memberId,
+          type: 'PAY_PER_VISIT_EXTERNAL',
+          status: 'CURRENT',
+          label: 'Pay per visit',
+          validFrom: new Date(),
+          validTo: null,
+          visitsRemaining: null,
+          amountPaidCents,
+          active: true,
+          planSegment: planSegmentFallback,
+        },
+      });
+    }
     await prisma.clubPayment.create({
       data: {
         memberId,
@@ -54,6 +62,15 @@ async function createEntitlementFromProduct(
   }
 
   const planSegment = product.planSegment || plan.segment || planSegmentFallback;
+  const familyKey = product.familyKey || plan.familyKey;
+
+  const current = await refreshCurrentEntitlement(memberId);
+  const future = await getFutureEntitlement(memberId);
+  if (future) {
+    throw new Error('Member already has a future entitlement; cannot grant another');
+  }
+
+  const status = current ? 'FUTURE' : 'CURRENT';
 
   if (plan.kind === 'VISIT') {
     const visits = Number(plan.visitCount) || 0;
@@ -61,37 +78,58 @@ async function createEntitlementFromProduct(
       data: {
         memberId,
         type: 'VISIT_PACK',
+        status,
         label: plan.name,
         validFrom: new Date(),
         validTo: null,
         visitsRemaining: visits,
+        visitsTotal: visits,
+        amountPaidCents,
+        familyKey,
         active: true,
         planId: plan.id,
         planSegment,
       },
     });
-    return;
+  } else {
+    const unit = (plan.durationUnit || 'MONTH') as DurationUnit;
+    const value = Number(plan.durationValue) || 1;
+    let validFrom: Date;
+    if (status === 'FUTURE' && current?.validTo) {
+      validFrom = new Date(current.validTo);
+    } else if (status === 'CURRENT' && startDateYmd && /^\d{4}-\d{2}-\d{2}$/.test(startDateYmd)) {
+      // Club-local calendar day at noon UTC (stable across DST)
+      validFrom = new Date(`${startDateYmd}T12:00:00.000Z`);
+    } else {
+      validFrom = new Date();
+    }
+    const validTo = computeValidTo(validFrom, unit, value);
+
+    await prisma.clubEntitlement.create({
+      data: {
+        memberId,
+        type: unit === 'YEAR' ? 'YEARLY' : 'MONTHLY',
+        status,
+        label: plan.name,
+        validFrom,
+        validTo,
+        visitsRemaining: null,
+        amountPaidCents,
+        familyKey,
+        active: true,
+        planId: plan.id,
+        planSegment,
+      },
+    });
   }
 
-  // TIME — map to MONTHLY/YEARLY for existing toggleVisit switch
-  const unit = (plan.durationUnit || 'MONTH') as DurationUnit;
-  const value = Number(plan.durationValue) || 1;
-  const validFrom = new Date();
-  const validTo = computeValidTo(validFrom, unit, value);
-
-  await prisma.clubEntitlement.create({
-    data: {
-      memberId,
-      type: unit === 'YEAR' ? 'YEARLY' : 'MONTHLY',
-      label: plan.name,
-      validFrom,
-      validTo,
-      visitsRemaining: null,
-      active: true,
-      planId: plan.id,
-      planSegment,
-    },
-  });
+  // Future plan replaces auto-renew for the current plan
+  if (status === 'FUTURE') {
+    await prisma.member.update({
+      where: { id: memberId },
+      data: { autoRenewEnabled: false, autoRenewFamilyKey: null },
+    });
+  }
 }
 
 /**
@@ -117,17 +155,33 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
   }
 
   if (event.status === 'FAILED') {
-    await prisma.clubPayment.update({
+    const failed = await prisma.clubPayment.update({
       where: { id: payment.id },
       data: { status: 'FAILED' },
+    });
+    emitPaymentUpdated({
+      id: failed.id,
+      memberId: failed.memberId,
+      status: failed.status,
+      amountCents: failed.amountCents,
+      provider: failed.provider,
+      purpose: failed.purpose,
     });
     return { paymentId: payment.id, alreadyProcessed: false };
   }
 
   if (event.status === 'CANCELLED') {
-    await prisma.clubPayment.update({
+    const cancelled = await prisma.clubPayment.update({
       where: { id: payment.id },
       data: { status: 'CANCELLED' },
+    });
+    emitPaymentUpdated({
+      id: cancelled.id,
+      memberId: cancelled.memberId,
+      status: cancelled.status,
+      amountCents: cancelled.amountCents,
+      provider: cancelled.provider,
+      purpose: cancelled.purpose,
     });
     return { paymentId: payment.id, alreadyProcessed: false };
   }
@@ -135,19 +189,53 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
   const meta = asMetadata(payment.metadata);
   const member = await prisma.member.findUnique({
     where: { id: payment.memberId },
-    select: { segment: true },
+    select: {
+      segment: true,
+      purchaseCreditCents: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+    },
   });
+
+  const creditApplied = Math.max(0, Math.floor(Number(meta.creditAppliedCents) || 0));
+  const amountPaid = event.amountCents ?? payment.amountCents;
 
   await prisma.$transaction(async (tx) => {
     await tx.clubPayment.update({
       where: { id: payment.id },
       data: {
         status: 'SUCCEEDED',
-        amountCents: event.amountCents ?? payment.amountCents,
+        amountCents: amountPaid,
         provider: event.providerId,
         externalRef: event.externalRef,
       },
     });
+
+    if (creditApplied > 0) {
+      const currentCredit = member?.purchaseCreditCents ?? 0;
+      await tx.member.update({
+        where: { id: payment.memberId },
+        data: {
+          purchaseCreditCents: Math.max(0, currentCredit - creditApplied),
+        },
+      });
+    }
+
+    if (meta.autoRenew === true && meta.familyKey) {
+      const futureAfter = await getFutureEntitlement(payment.memberId);
+      if (!futureAfter) {
+        await tx.member.update({
+          where: { id: payment.memberId },
+          data: {
+            autoRenewEnabled: true,
+            autoRenewFamilyKey: meta.familyKey,
+          },
+        });
+      }
+    } else if (meta.autoRenew === false) {
+      // leave existing preference unless explicitly clearing via plan API
+    }
 
     const now = new Date();
     await tx.clubVisit.updateMany({
@@ -170,6 +258,8 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
       payment.memberId,
       meta.product,
       meta.planSegment || member?.segment || 'Regular',
+      amountPaid,
+      meta.startDate,
     );
   } catch (err) {
     logger.error('Failed to create entitlement after payment confirm', {
@@ -185,5 +275,38 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
     externalRef: event.externalRef,
   });
 
+  emitPaymentUpdated({
+    id: payment.id,
+    memberId: payment.memberId,
+    status: 'SUCCEEDED',
+    amountCents: amountPaid,
+    provider: event.providerId,
+    purpose: payment.purpose,
+  });
+
+  const email = member?.email?.trim();
+  if (email) {
+    try {
+      const { planLabel, planSegment } = await resolvePlanLabelForProduct(meta.product);
+      await sendPaymentProcessedEmail({
+        to: email,
+        memberName: `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Member',
+        amountPaidCents: amountPaid,
+        creditAppliedCents: creditApplied,
+        listAmountCents:
+          meta.listAmountCents != null ? Number(meta.listAmountCents) : amountPaid + creditApplied,
+        planLabel,
+        planSegment: planSegment || meta.planSegment || member?.segment,
+      });
+    } catch (err) {
+      logger.warn('Payment receipt email failed', {
+        paymentId: payment.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return { paymentId: payment.id, alreadyProcessed: false };
 }
+
+export { getCurrentEntitlement, getFutureEntitlement };

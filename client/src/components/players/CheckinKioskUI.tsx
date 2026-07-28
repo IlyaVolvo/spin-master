@@ -3,6 +3,7 @@ import api from '../../utils/api';
 import { formatPlayerName } from '../../utils/nameFormatter';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
+import { waitForPaymentUpdate } from '../../utils/waitForPaymentUpdate';
 
 export type CheckinMemberStatus = {
   present: boolean;
@@ -364,10 +365,27 @@ export function CheckinPinModal({
     setError('');
     try {
       const res = await api.post('/payments/checkout', { memberId, familyKey, kind: 'plan' });
-      const msg = res.data?.confirmedImmediately
-        ? `${resultMessage} Payment confirmed (${res.data.providerId || 'provider'}).`
-        : `${resultMessage} Checkout started. ${res.data?.instructions || 'Complete payment outside the app.'}`;
-      finish(msg);
+      const paymentId = Number(res.data?.paymentId);
+      if (res.data?.confirmedImmediately) {
+        finish(`${resultMessage} Payment confirmed (${res.data.providerId || 'provider'}).`);
+        return;
+      }
+      if (!paymentId) {
+        finish(`${resultMessage} Checkout started. ${res.data?.instructions || ''}`.trim());
+        return;
+      }
+      setError('');
+      const settled = await waitForPaymentUpdate({
+        paymentId,
+        timeoutMs: 90_000,
+      });
+      if (settled.status === 'SUCCEEDED') {
+        finish(`${resultMessage} Payment confirmed.`);
+      } else if (settled.status === 'PENDING') {
+        finish(`${resultMessage} Payment still pending — plan will update when confirmed.`);
+      } else {
+        setError(`Payment ${settled.status.toLowerCase()}`);
+      }
     } catch (err) {
       setError(getErrorMessage(err, 'Checkout failed'));
     } finally {

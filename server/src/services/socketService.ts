@@ -138,3 +138,25 @@ export function emitMatchUpdate(match: any, tournamentId: number | null) {
   });
 }
 
+/**
+ * Notify clients that a club payment reached a terminal (or updated) status.
+ */
+export function emitPaymentUpdated(payment: {
+  id: number;
+  memberId: number;
+  status: string;
+  amountCents: number;
+  provider?: string | null;
+  purpose?: string | null;
+}) {
+  emitToAll('payment:updated', {
+    id: payment.id,
+    memberId: payment.memberId,
+    status: payment.status,
+    amountCents: payment.amountCents,
+    provider: payment.provider ?? null,
+    purpose: payment.purpose ?? null,
+    timestamp: Date.now(),
+  });
+}
+
