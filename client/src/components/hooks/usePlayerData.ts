@@ -17,6 +17,8 @@ interface Member {
   picture?: string | null;
   phone?: string | null;
   address?: string | null;
+  segment?: string | null;
+  trialEndsOn?: string | null;
   tournamentNotificationsEnabled?: boolean;
   /** null = inherit club default. */
   autoRelinquishPrivileges?: boolean | null;

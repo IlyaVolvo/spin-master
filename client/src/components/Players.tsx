@@ -81,6 +81,7 @@ type PlayerEditBaseline = {
   address: string;
   picture: string;
   segment: string;
+  trialEndsOn: string;
   isActive: boolean;
   tournamentNotificationsEnabled: boolean;
   rolesKey: string;
@@ -143,6 +144,13 @@ function autoRelinquishKeyFromMember(value: boolean | null | undefined): 'defaul
   return 'default';
 }
 
+function trialEndsOnToInputValue(value: string | null | undefined): string {
+  if (!value) return '';
+  // Accept YYYY-MM-DD or ISO datetime
+  const m = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+
 function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
   const bd = member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null;
   return {
@@ -155,6 +163,7 @@ function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
     address: member.address || '',
     picture: member.picture || '',
     segment: (member as any).segment || 'Regular',
+    trialEndsOn: trialEndsOnToInputValue(member.trialEndsOn),
     isActive: member.isActive !== undefined ? member.isActive : true,
     tournamentNotificationsEnabled: Boolean(member.tournamentNotificationsEnabled && member.email),
     rolesKey: [...(member.roles || [])].sort().join(','),
@@ -374,6 +383,7 @@ const Players: React.FC = () => {
   const [editAddress, setEditAddress] = useState('');
   const [editPicture, setEditPicture] = useState('');
   const [editSegment, setEditSegment] = useState('Regular');
+  const [editTrialEndsOn, setEditTrialEndsOn] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editTournamentNotificationsEnabled, setEditTournamentNotificationsEnabled] = useState(false);
   const [editRoles, setEditRoles] = useState<string[]>([]);
@@ -2126,6 +2136,7 @@ const Players: React.FC = () => {
       setEditPhone(member.phone || '');
       setEditAddress(member.address || '');
       setEditSegment((member as any).segment || 'Regular');
+      setEditTrialEndsOn(trialEndsOnToInputValue(member.trialEndsOn));
       setEditPicture(member.picture || '');
       setEditIsActive(member.isActive !== undefined ? member.isActive : true);
       setEditTournamentNotificationsEnabled(Boolean(member.email && member.tournamentNotificationsEnabled));
@@ -2208,6 +2219,7 @@ const Players: React.FC = () => {
     setEditPhone('');
     setEditAddress('');
     setEditSegment('Regular');
+    setEditTrialEndsOn('');
     setEditPicture('');
     setEditIsActive(true);
     setEditTournamentNotificationsEnabled(false);
@@ -2302,6 +2314,7 @@ const Players: React.FC = () => {
         editPhone !== b.phone ||
         editAddress !== b.address ||
         editSegment !== b.segment ||
+        editTrialEndsOn !== b.trialEndsOn ||
         editPicture !== b.picture ||
         editIsActive !== b.isActive ||
         (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
@@ -2310,7 +2323,7 @@ const Players: React.FC = () => {
         editAutoRelinquishKey !== b.autoRelinquishKey
       );
     }
-    if (isAdminUser && editAutoRelinquishKey !== b.autoRelinquishKey) {
+    if (isAdminUser && (editAutoRelinquishKey !== b.autoRelinquishKey || editTrialEndsOn !== b.trialEndsOn)) {
       return true;
     }
     return (
@@ -2451,6 +2464,7 @@ const Players: React.FC = () => {
       if (isAdminUser) {
         updateData.autoRelinquishPrivileges =
           editAutoRelinquishKey === 'always' ? true : editAutoRelinquishKey === 'never' ? false : null;
+        updateData.trialEndsOn = editTrialEndsOn.trim() || null;
       }
       
       // Both admin and regular members can edit these fields
@@ -6610,6 +6624,41 @@ const Players: React.FC = () => {
                                 <option key={cat} value={cat}>{cat}</option>
                               ))}
                             </select>
+                          </div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <label
+                              style={{
+                                display: 'block',
+                                marginBottom: '4px',
+                                fontSize: '13px',
+                                fontWeight: 'bold',
+                                color: !isAdminUser ? '#999' : 'inherit',
+                              }}
+                            >
+                              Trial ends on
+                            </label>
+                            <input
+                              type="date"
+                              value={editTrialEndsOn}
+                              disabled={!isAdminUser}
+                              onChange={(e) => setEditTrialEndsOn(e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
+                                backgroundColor: !isAdminUser ? '#f5f5f5' : 'white',
+                                color: !isAdminUser ? '#999' : 'inherit',
+                                cursor: !isAdminUser ? 'not-allowed' : undefined,
+                              }}
+                            />
+                            <div style={{ marginTop: '4px', fontSize: '12px', color: '#666' }}>
+                              {isAdminUser
+                                ? 'Inclusive last day of free trial access. Clear the date to end trial early. No plan or charge while active.'
+                                : editTrialEndsOn
+                                  ? `Trial access through ${editTrialEndsOn}.`
+                                  : 'No active trial.'}
+                            </div>
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Picture URL</label>

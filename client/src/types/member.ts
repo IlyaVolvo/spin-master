@@ -15,6 +15,8 @@ export interface Member {
   phone?: string | null;
   address?: string | null;
   segment?: string | null;
+  /** Inclusive last day of free trial (YYYY-MM-DD or ISO); admin-managed. */
+  trialEndsOn?: string | null;
   tournamentNotificationsEnabled?: boolean;
   /** Present on session/me payloads when returned by API. */
   hasPassword?: boolean;

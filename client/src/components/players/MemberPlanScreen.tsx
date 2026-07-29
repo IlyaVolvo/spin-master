@@ -47,7 +47,6 @@ type PricedPlan = {
   visitCount: number | null;
   durationUnit: string | null;
   durationValue: number | null;
-  isTrial?: boolean;
 };
 
 type PurchaseLineState = 'idle' | 'pending' | 'confirmed' | 'failed';
@@ -657,7 +656,6 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                   {plans.map((p) => (
                     <option key={p.familyKey} value={p.familyKey}>
                       {p.name}
-                      {p.isTrial ? ' (Trial)' : ''}
                       {` — ${formatMoney(p.chargePreviewCents)}`}
                       {p.creditPreviewCents > 0
                         ? ` (after ${formatMoney(p.creditPreviewCents)} credit)`

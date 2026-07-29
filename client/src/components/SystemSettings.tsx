@@ -207,7 +207,6 @@ const PREDEFINED_SEGMENTS = [
   'Senior',
   'Junior',
   'Child',
-  'Trial',
   'Corporate',
 ];
 

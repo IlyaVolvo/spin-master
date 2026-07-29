@@ -7,6 +7,7 @@ import {
   refreshCurrentEntitlement,
 } from './entitlementQueue';
 import { runMemberCheckout } from './runCheckout';
+import { notifyCompletedTrials } from './memberTrial';
 
 function getClubTimezone(): string {
   return process.env.CLUB_TIMEZONE || 'UTC';
@@ -40,6 +41,8 @@ export async function runClubMidnightJobs(options?: {
   promoted: number;
   autoRenewStarted: number;
   autoRenewErrors: number;
+  trialEndedEmailed: number;
+  trialEndedMarked: number;
 }> {
   const clubDate = options?.clubDate || getClubDate();
   const previousClubDate = addClubDays(clubDate, -1);
@@ -158,7 +161,6 @@ export async function runClubMidnightJobs(options?: {
         familyKey,
         autoRenew: true,
         initiatedBy: 'ADMIN',
-        allowTrial: true,
         // Auto-renew after expiry: current already ended
         skipFutureGuard: false,
       });
@@ -173,6 +175,9 @@ export async function runClubMidnightJobs(options?: {
     }
   }
 
+  // 4) Trial period completed → email (if address exists) once
+  const trialNotify = await notifyCompletedTrials(clubDate);
+
   logger.info('Club midnight jobs completed', {
     clubDate,
     previousClubDate,
@@ -180,6 +185,8 @@ export async function runClubMidnightJobs(options?: {
     promoted,
     autoRenewStarted,
     autoRenewErrors,
+    trialEndedEmailed: trialNotify.emailed,
+    trialEndedMarked: trialNotify.marked,
   });
 
   return {
@@ -189,5 +196,7 @@ export async function runClubMidnightJobs(options?: {
     promoted,
     autoRenewStarted,
     autoRenewErrors,
+    trialEndedEmailed: trialNotify.emailed,
+    trialEndedMarked: trialNotify.marked,
   };
 }

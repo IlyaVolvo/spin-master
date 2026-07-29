@@ -69,6 +69,15 @@ model Member {
   autoRenewEnabled   Boolean @default(false)
   autoRenewFamilyKey String?
 
+  /**
+   * Inclusive last club calendar day of free trial access (date-only, stored UTC noon).
+   * Admin-only; while clubDate <= this day, check-in requires no plan and applies no charge.
+   */
+  trialEndsOn DateTime?
+
+  /** Set when the post-trial notification email was sent (or skipped for no email). */
+  trialExpiryNotifiedAt DateTime?
+
   // QR-based authentication token hash
   qrTokenHash String @unique
 

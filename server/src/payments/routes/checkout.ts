@@ -7,7 +7,6 @@ import { listActivePlanFamilies, resolvePlanForMember, planChargeAmountCents } f
 import { runMemberCheckout } from '../runCheckout';
 import { paymentProviderRegistry } from '../PaymentProviderRegistry';
 import { getPaymentsConfig } from '../../services/systemConfigService';
-import { isTrialPlanFamily } from '../planPurchaseRules';
 import type { PaymentInitiatedBy } from '../types';
 
 const router = express.Router();
@@ -80,12 +79,10 @@ router.get('/plans/for-member/:memberId', authenticate, async (req: AuthRequest,
     const families = await listActivePlanFamilies();
     const plans = [];
     for (const f of families) {
-      if (isTrialPlanFamily(f.familyKey, f.name) && !isAdmin(req)) {
-        continue;
-      }
       try {
         const plan = await resolvePlanForMember(f.familyKey, member.segment);
         const listAmountCents = planChargeAmountCents(plan);
+        if (listAmountCents <= 0) continue;
         plans.push({
           familyKey: f.familyKey,
           name: plan.name,
@@ -102,7 +99,6 @@ router.get('/plans/for-member/:memberId', authenticate, async (req: AuthRequest,
           durationValue: plan.durationValue,
           visitCount: plan.visitCount,
           priceCents: plan.priceCents,
-          isTrial: isTrialPlanFamily(f.familyKey, plan.name),
         });
       } catch {
         // skip families without resolvable row
@@ -192,7 +188,6 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       startDate: typeof req.body?.startDate === 'string' ? req.body.startDate : undefined,
       autoRenew: req.body?.autoRenew === true,
       initiatedBy,
-      allowTrial: isAdmin(req),
     });
 
     res.json(result);

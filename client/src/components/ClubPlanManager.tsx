@@ -66,7 +66,7 @@ function getEmptyForm(defaultSegment = 'Regular'): PlanFormData {
     name: '',
     kind: 'TIME',
     segment: defaultSegment,
-    priceCents: 0,
+    priceCents: 100,
     durationUnit: 'MONTH',
     durationValue: 1,
     visitCount: 10,
@@ -242,6 +242,10 @@ export default function ClubPlanManager() {
   const handleSave = async () => {
     if (!form.name.trim()) { setError('Plan name is required'); return; }
     if (!form.segment.trim()) { setError('Segment is required'); return; }
+    if (!Number.isInteger(form.priceCents) || form.priceCents < 1) {
+      setError('Price must be greater than $0.00');
+      return;
+    }
     if (form.segment !== 'Regular') {
       const familyKey = form.familyKey.trim() || form.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const hasRegular = plans.some(

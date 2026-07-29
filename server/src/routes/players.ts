@@ -1575,6 +1575,7 @@ router.patch('/:id', [
   body('tournamentNotificationsEnabled').optional().isBoolean(),
   body('segment').optional().isString().trim(),
   body('autoRelinquishPrivileges').optional({ nullable: true }).isBoolean(),
+  body('trialEndsOn').optional({ nullable: true }),
 ], async (req: AuthRequest, res: Response) => {
   try {
     if (isKioskMode(req)) {
@@ -1751,6 +1752,32 @@ router.patch('/:id', [
         updateData.autoRelinquishPrivileges = null;
       } else {
         updateData.autoRelinquishPrivileges = Boolean(autoRelinquishPrivileges);
+      }
+    }
+
+    // Trial end date: admin only; null clears trial
+    if (Object.prototype.hasOwnProperty.call(req.body, 'trialEndsOn')) {
+      if (!hasAdminAccess) {
+        return res.status(403).json({ error: 'Only Administrators can set member trial periods.' });
+      }
+      try {
+        const { parseTrialEndsOnInput, trialEndsOnToYmd } = await import('../payments/memberTrial');
+        const nextTrial = parseTrialEndsOnInput(req.body.trialEndsOn);
+        updateData.trialEndsOn = nextTrial;
+        const existingTrial = await prisma.member.findUnique({
+          where: { id: memberId },
+          select: { trialEndsOn: true },
+        });
+        const prevYmd = trialEndsOnToYmd(existingTrial?.trialEndsOn);
+        const nextYmd = trialEndsOnToYmd(nextTrial);
+        if (prevYmd !== nextYmd) {
+          // Reset notification so a new/extended trial can notify again after it ends
+          updateData.trialExpiryNotifiedAt = null;
+        }
+      } catch (err) {
+        return res.status(400).json({
+          error: err instanceof Error ? err.message : 'Invalid trialEndsOn',
+        });
       }
     }
 

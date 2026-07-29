@@ -1,13 +1,3 @@
-/** Trial plan families are admin-only (by familyKey or display name). */
-export function isTrialPlanFamily(
-  familyKey: string | null | undefined,
-  name?: string | null,
-): boolean {
-  const key = (familyKey || '').trim().toLowerCase();
-  const label = (name || '').trim().toLowerCase();
-  return key === 'trial' || key.includes('trial') || label === 'trial' || label.includes('trial');
-}
-
 export function planAllowsMemberPurchase(opts: {
   hasCurrent: boolean;
   hasFuture: boolean;

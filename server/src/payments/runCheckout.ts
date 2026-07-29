@@ -3,7 +3,7 @@ import { logger } from '../utils/logger';
 import { getActivePaymentProvider } from './getActivePaymentProvider';
 import { resolvePlanForMember, planChargeAmountCents } from './resolvePlan';
 import { getFutureEntitlement, refreshCurrentEntitlement } from './entitlementQueue';
-import { isTrialPlanFamily, planAllowsMemberPurchase } from './planPurchaseRules';
+import { planAllowsMemberPurchase } from './planPurchaseRules';
 import type {
   CheckoutProduct,
   PaymentInitiatedBy,
@@ -23,8 +23,6 @@ export type RunCheckoutParams = {
   initiatedBy: PaymentInitiatedBy;
   /** When true, skip FUTURE guard (should not be used for normal purchases). */
   skipFutureGuard?: boolean;
-  /** Caller is an admin (allows Trial plans). */
-  allowTrial?: boolean;
 };
 
 export type RunCheckoutResult = StartCheckoutResult & {
@@ -108,10 +106,10 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
       throw new Error('familyKey is required');
     }
     const plan = await resolvePlanForMember(familyKey, member.segment);
-    if (isTrialPlanFamily(plan.familyKey, plan.name) && !params.allowTrial) {
-      throw new Error('Trial plans can only be purchased by an administrator');
-    }
     listAmountCents = planChargeAmountCents(plan);
+    if (listAmountCents <= 0) {
+      throw new Error('Plan price must be greater than zero');
+    }
     product = {
       kind: 'plan',
       familyKey: plan.familyKey,

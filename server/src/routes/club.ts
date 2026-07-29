@@ -19,6 +19,10 @@ import {
 } from '../payments/entitlementQueue';
 import { planAllowsMemberPurchase } from '../payments/planPurchaseRules';
 import { computeValidTo } from '../utils/planDuration';
+import {
+  isMemberInTrialPeriod,
+  trialEndsOnToYmd,
+} from '../payments/memberTrial';
 
 const router = express.Router();
 
@@ -135,6 +139,32 @@ async function tryCourtesyCheckIn(
   };
 }
 
+async function tryTrialCheckIn(memberId: number, clubDate: string, trialEndsOn: Date) {
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { email: true },
+  });
+  const endYmd = trialEndsOnToYmd(trialEndsOn);
+  const visit = await prisma.clubVisit.create({
+    data: {
+      memberId,
+      clubDate,
+      dailyPaymentApplied: false,
+      isCourtesy: false,
+    },
+  });
+  return {
+    action: 'CHECK_IN' as const,
+    visit,
+    warning: endYmd ? `Trial access until ${endYmd}.` : 'Trial access.',
+    charged: false,
+    entitlement: null,
+    courtesy: false,
+    canPay: Boolean(member?.email),
+    paymentInProgress: false,
+  };
+}
+
 /**
  * Core check-in/check-out logic for a member.
  * Returns the visit and status info.
@@ -184,10 +214,19 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
   let warning: string | null = null;
 
   if (isFirstVisitOfDay) {
+    const memberTrial = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { trialEndsOn: true, email: true },
+    });
+    const onTrial = isMemberInTrialPeriod(memberTrial?.trialEndsOn, clubDate);
+
     // Get active entitlement and apply payment logic
     const entitlement = await getActiveEntitlement(memberId);
 
     if (!entitlement) {
+      if (onTrial && memberTrial?.trialEndsOn) {
+        return tryTrialCheckIn(memberId, clubDate, memberTrial.trialEndsOn);
+      }
       return tryCourtesyCheckIn(
         memberId,
         clubDate,
@@ -233,6 +272,8 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
               status: 'SUCCEEDED',
             },
           });
+        } else if (onTrial && memberTrial?.trialEndsOn) {
+          return tryTrialCheckIn(memberId, clubDate, memberTrial.trialEndsOn);
         } else {
           return tryCourtesyCheckIn(
             memberId,
@@ -255,11 +296,9 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
           },
         });
         if (!todayPayment) {
-          // No courtesy for PPV
-          const member = await prisma.member.findUnique({
-            where: { id: memberId },
-            select: { email: true },
-          });
+          if (onTrial && memberTrial?.trialEndsOn) {
+            return tryTrialCheckIn(memberId, clubDate, memberTrial.trialEndsOn);
+          }
           return {
             action: 'PAYMENT_REQUIRED' as const,
             visit: null,
@@ -267,7 +306,7 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
             charged: false,
             entitlement: null,
             courtesy: false,
-            canPay: Boolean(member?.email),
+            canPay: Boolean(memberTrial?.email),
             paymentInProgress: false,
           };
         }
@@ -975,8 +1014,8 @@ router.post('/admin/plans', async (req: AuthRequest, res: Response) => {
     }
 
     const cents = Number.isInteger(priceCents) ? priceCents : Math.round(Number(priceCents) || 0);
-    if (!Number.isInteger(cents) || cents < 0) {
-      return res.status(400).json({ error: 'priceCents must be a non-negative integer' });
+    if (!Number.isInteger(cents) || cents < 1) {
+      return res.status(400).json({ error: 'priceCents must be an integer greater than 0' });
     }
 
     const siblings = await prisma.clubPlan.findMany({ where: { familyKey } });
@@ -1051,8 +1090,8 @@ router.put('/admin/plans/:id', async (req: AuthRequest, res: Response) => {
       const cents = Number.isInteger(req.body.priceCents)
         ? req.body.priceCents
         : Math.round(Number(req.body.priceCents) || 0);
-      if (!Number.isInteger(cents) || cents < 0) {
-        return res.status(400).json({ error: 'priceCents must be a non-negative integer' });
+      if (!Number.isInteger(cents) || cents < 1) {
+        return res.status(400).json({ error: 'priceCents must be an integer greater than 0' });
       }
       data.priceCents = cents;
     }
