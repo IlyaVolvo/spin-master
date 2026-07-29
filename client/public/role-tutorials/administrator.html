@@ -20,9 +20,17 @@
       <a href="player.html">Player tutorial</a>
       <a href="organizer.html">Organizer tutorial</a>
     </nav>
+    <nav class="scenario-toc" aria-label="On this page">
+      <a href="#sign-in">Sign in</a>
+      <a href="#players-toolbar">Players toolbar</a>
+      <a href="#header-gear">Header gear</a>
+      <a href="#system-settings">System settings</a>
+      <a href="#system-settings-details">Tournament rules</a>
+      <a href="#permissions">Permissions</a>
+    </nav>
   </div>
   <main>
-    <section class="steps">
+    <section class="steps" id="sign-in">
       <h2>1. Sign in</h2>
       <figure class="shot">
         <img src="assets/login.png" width="1280" height="900" alt="Spin Master login form" loading="lazy" decoding="async" />
@@ -30,7 +38,7 @@
       </figure>
     </section>
 
-    <section class="steps">
+    <section class="steps" id="players-toolbar">
       <h2>2. Players page — full administration toolbar</h2>
       <p class="lead" style="margin-top:0"><strong>+ Player</strong> appears for administrators. This demo user does not include Organizer, so <strong>+ Tournament</strong> is not shown.</p>
       <figure class="shot">
@@ -43,7 +51,7 @@
       </figure>
     </section>
 
-    <section class="steps">
+    <section class="steps" id="header-gear">
       <h2>3. Header — system settings (gear)</h2>
       <p class="lead" style="margin-top:0">Administrators get the extra tab that navigates to club / system configuration.</p>
       <figure class="shot">
@@ -52,7 +60,7 @@
       </figure>
     </section>
 
-    <section class="steps">
+    <section class="steps" id="system-settings">
       <h2>4. System settings screen</h2>
       <figure class="shot">
         <img src="assets/admin-system-settings.png" width="1280" height="900" alt="System settings page for branding and configuration" loading="lazy" decoding="async" />
@@ -60,8 +68,22 @@
       </figure>
     </section>
 
-    <section class="steps">
-      <h2>Permissions at a glance</h2>
+    <section class="steps" id="system-settings-details">
+      <h2>5. System settings — tournament rules to know</h2>
+      <div class="scenario-block">
+        <p>Beyond branding, System settings include tournament rule knobs organizers rely on. Notable for stop flows:</p>
+        <ul>
+          <li><strong>Early Complete Min %</strong> (Round Robin) — default minimum share of competitive matches that must be played before an organizer can use Early Completion. Organizers may override this percentage in the stop dialog for a single action.</li>
+          <li>Preregistration date offsets and cancel-reason presets used when creating or cancelling pre-registration listings.</li>
+        </ul>
+        <p class="callout" style="margin-top:0.75rem">
+          Full organizer workflows for Abandon and Early Completion are documented in the <a href="organizer.html#abandon">Organizer tutorial</a>.
+        </p>
+      </div>
+    </section>
+
+    <section class="steps" id="permissions">
+      <h2>6. Permissions at a glance</h2>
       <div class="perms">
         <div class="perm-yes">Add and fully edit any member; manage roles, rating, active status</div>
         <div class="perm-yes">Admin-only member settings (invites, password reset flows where implemented)</div>
