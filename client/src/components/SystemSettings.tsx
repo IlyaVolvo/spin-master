@@ -303,6 +303,7 @@ export default function SystemSettings() {
         <Subsection title="Round Robin">
           <NumericInput label="Min Players" min={2} value={config.tournamentRules.roundRobin.minPlayers} onChange={(value) => updateConfig(draft => { draft.tournamentRules.roundRobin.minPlayers = value; })} />
           <NumericInput label="Max Players" min={2} value={config.tournamentRules.roundRobin.maxPlayers} onChange={(value) => updateConfig(draft => { draft.tournamentRules.roundRobin.maxPlayers = value; })} />
+          <NumericInput label="Early Complete Min %" min={1} max={100} value={config.tournamentRules.roundRobin.earlyCompleteMinPercent} onChange={(value) => updateConfig(draft => { draft.tournamentRules.roundRobin.earlyCompleteMinPercent = value; })} />
         </Subsection>
 
         <Subsection title="Playoff">

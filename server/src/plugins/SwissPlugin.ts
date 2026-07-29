@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import { adjustRatingsForSingleMatch } from '../services/usattRatingService';
 import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
 import { buildActiveModificationEligibility, blockedCorrectionEligibility, buildBasicCorrectionEligibility, scoredMatchIds } from './scoreCorrectionHelpers';
-import { matchHasResult } from '../utils/scoreCorrectionMatchUtils';
+import { matchHasCompetitiveResult, matchHasResult } from '../utils/scoreCorrectionMatchUtils';
 import { ClientHttpError } from '../http/clientHttpError';
 
 interface PlayerStanding {
@@ -204,14 +204,83 @@ export class SwissPlugin extends BaseTournamentPlugin {
 
     // Unplayed matches in current round
     const currentRoundMatches = (tournament.matches || []).filter((m: any) => m.round === currentRound);
-    const unplayed = currentRoundMatches.filter((m: any) => {
-      const hasScore = m.player1Sets > 0 || m.player2Sets > 0;
-      const hasForfeit = m.player1Forfeit || m.player2Forfeit;
-      return !hasScore && !hasForfeit;
-    }).length;
+    const unplayed = currentRoundMatches.filter((m: any) => !matchHasResult(m)).length;
 
     const futureRounds = Math.max(0, totalRounds - currentRound);
     return unplayed + (futureRounds * matchesPerRound);
+  }
+
+  async canEarlyComplete(context: {
+    tournament: any;
+    prisma: any;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<import('./TournamentPlugin').EarlyCompleteEligibility> {
+    const { tournament } = context;
+    if (tournament.status !== 'ACTIVE') {
+      return { supported: true, allowed: false, reason: 'Tournament is not active' };
+    }
+    if (tournament.swissData?.isCompleted) {
+      return { supported: true, allowed: false, reason: 'Swiss tournament is already complete' };
+    }
+    const currentRound = tournament.swissData?.currentRound ?? 0;
+    if (currentRound < 1) {
+      return { supported: true, allowed: false, reason: 'No Swiss rounds have started' };
+    }
+    return { supported: true, allowed: true };
+  }
+
+  async earlyComplete(context: {
+    tournament: any;
+    prisma: any;
+    userId?: number;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<{
+    tournament: any;
+    shouldMarkComplete: boolean;
+    message?: string;
+  }> {
+    const { tournament, prisma } = context;
+    const eligibility = await this.canEarlyComplete({ tournament, prisma });
+    if (!eligibility.allowed) {
+      throw new ClientHttpError(eligibility.reason || 'Early completion not allowed', 400);
+    }
+
+    const currentRound = tournament.swissData.currentRound;
+    const roundMatches = (tournament.matches || []).filter((m: any) => m.round === currentRound);
+    for (const match of roundMatches) {
+      if (!matchHasResult(match)) {
+        await prisma.match.update({
+          where: { id: match.id },
+          data: {
+            player1Sets: 0,
+            player2Sets: 0,
+            player1Forfeit: false,
+            player2Forfeit: false,
+            notPlayed: true,
+          },
+        });
+      }
+    }
+
+    await prisma.swissTournamentData.update({
+      where: { tournamentId: tournament.id },
+      data: { isCompleted: true },
+    });
+
+    const refreshed = await prisma.tournament.findUnique({
+      where: { id: tournament.id },
+      include: {
+        participants: { include: { member: true } },
+        matches: true,
+        swissData: true,
+      },
+    });
+
+    return {
+      tournament: refreshed,
+      shouldMarkComplete: true,
+      message: 'Swiss early-completed; remaining matches in last round marked NP',
+    };
   }
 
   async getSchedule(context: { tournament: any; prisma: any }): Promise<any> {
@@ -241,9 +310,7 @@ export class SwissPlugin extends BaseTournamentPlugin {
 
     // Process completed matches
     for (const match of matches) {
-      const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
-      const hasForfeit = match.player1Forfeit || match.player2Forfeit;
-      if (!hasScore && !hasForfeit) continue;
+      if (!matchHasCompetitiveResult(match)) continue;
 
       const s1 = standingsMap.get(match.member1Id);
       const s2 = match.member2Id ? standingsMap.get(match.member2Id) : null;
@@ -434,11 +501,7 @@ export class SwissPlugin extends BaseTournamentPlugin {
     const roundMatches = (tournament.matches || []).filter((m: any) => m.round === currentRound);
     if (roundMatches.length === 0) return false;
 
-    return roundMatches.every((m: any) => {
-      const hasScore = m.player1Sets > 0 || m.player2Sets > 0;
-      const hasForfeit = m.player1Forfeit || m.player2Forfeit;
-      return hasScore || hasForfeit;
-    });
+    return roundMatches.every((m: any) => matchHasResult(m));
   }
 
   async updateMatch(context: {
@@ -512,6 +575,7 @@ export class SwissPlugin extends BaseTournamentPlugin {
         player2Sets,
         player1Forfeit,
         player2Forfeit,
+        notPlayed: false,
       },
       include: { tournament: true },
     });
@@ -587,6 +651,7 @@ export class SwissPlugin extends BaseTournamentPlugin {
         player2Sets: 0,
         player1Forfeit: false,
         player2Forfeit: false,
+        notPlayed: false,
       },
     });
     return { match: updated, message: 'Swiss result removed' };
@@ -630,14 +695,11 @@ export class SwissPlugin extends BaseTournamentPlugin {
         player2Sets: true,
         player1Forfeit: true,
         player2Forfeit: true,
+        notPlayed: true,
       },
     });
 
-    return roundMatches.length > 0 && roundMatches.every((m: any) => {
-      const hasScore = (m.player1Sets ?? 0) > 0 || (m.player2Sets ?? 0) > 0;
-      const hasForfeit = m.player1Forfeit || m.player2Forfeit;
-      return hasScore || hasForfeit;
-    });
+    return roundMatches.length > 0 && roundMatches.every((m: any) => matchHasResult(m));
   }
 
   async getCorrectionEligibility(context: { tournament: any; prisma: any }): Promise<CorrectionEligibility> {

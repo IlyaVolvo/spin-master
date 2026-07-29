@@ -81,6 +81,9 @@ const buildResultsMatrix = (tournament: any) => {
     } else if (match.player2Forfeit) {
       score1 = 'W';
       score2 = 'L';
+    } else if (match.notPlayed) {
+      score1 = 'NP';
+      score2 = 'NP';
     } else {
       // Regular match with scores
       score1 = `${match.player1Sets} - ${match.player2Sets}`;
@@ -171,8 +174,10 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
       });
     });
 
-    // Calculate stats from matches
+    // Calculate stats from matches (NP contributes neither win nor loss)
     tournament.matches.forEach(match => {
+      if (match.notPlayed) return;
+
       const stats1 = statsMap.get(match.member1Id);
       const stats2 = match.member2Id ? statsMap.get(match.member2Id) : null;
 
@@ -373,6 +378,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                       const cellValue = matrix[p1.member.id][p2.member.id];
                       const isDraw = cellValue === '-';
                       const isEmpty = cellValue === '';
+                      const isNotPlayed = cellValue === 'NP';
                       const matchKey = `${p1.member.id}-${p2.member.id}`;
                       const cellMatch = matchMap[matchKey];
                       const correctable = correctionModeActive && isMatchCorrectable(cellMatch?.id, eligibility);
@@ -383,7 +389,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                         isWin = true;
                       } else if (cellValue === 'L') {
                         isLoss = true;
-                      } else if (!isDraw && !isEmpty && cellValue.includes(' - ')) {
+                      } else if (!isDraw && !isEmpty && !isNotPlayed && cellValue.includes(' - ')) {
                         const parts = cellValue.split(' - ');
                         const left = parseInt(parts[0]);
                         const right = parseInt(parts[1]);
@@ -400,7 +406,9 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                             padding: '8px 12px', 
                             textAlign: 'center',
                             border: '1px solid #ddd',
-                            backgroundColor: isWin ? '#a5d6a7' : isLoss ? '#ef9a9a' : isDraw ? '#e9ecef' : 'white',
+                            backgroundColor: isNotPlayed
+                              ? '#f0f0f0'
+                              : isWin ? '#a5d6a7' : isLoss ? '#ef9a9a' : isDraw ? '#e9ecef' : 'white',
                             fontWeight: isWin || isLoss ? 'bold' : 'normal',
                             color: isWin ? '#1b5e20' : isLoss ? '#b71c1c' : '#333',
                             minWidth: '80px',

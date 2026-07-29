@@ -390,11 +390,20 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       const allComplete = allChildren.every((c: any) => c.status === 'COMPLETED');
       
       if (allComplete) {
-        return { shouldMarkComplete: true };
+        const allCancelled =
+          allChildren.length > 0 && allChildren.every((c: any) => Boolean(c.cancelled));
+        return {
+          shouldMarkComplete: true,
+          ...(allCancelled ? { shouldMarkCancelled: true } : {}),
+        };
       }
     }
     
     return {};
+  }
+
+  async onChildAbandoned(event: ChildTournamentCompletedEvent): Promise<TournamentStateChangeResult> {
+    return this.onChildTournamentCompleted(event);
   }
 
   async getSchedule(context: { tournament: any; prisma: any }): Promise<any> {

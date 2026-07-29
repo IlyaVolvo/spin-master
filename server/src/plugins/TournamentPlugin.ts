@@ -57,6 +57,8 @@ export interface ChildTournamentCompletedEvent {
 
 export interface TournamentStateChangeResult {
   shouldMarkComplete?: boolean;
+  /** When completing a parent because all children were abandoned */
+  shouldMarkCancelled?: boolean;
   shouldCreateFinalTournament?: boolean;
   finalTournamentConfig?: any;
   tournamentCompleted?: boolean;
@@ -67,6 +69,18 @@ export interface CorrectionEligibility {
   allowed: boolean;
   reason?: string;
   correctableMatchIds: number[];
+}
+
+/** Early-completion eligibility exposed to organizers / cancel dialog. */
+export interface EarlyCompleteEligibility {
+  /** False for types that never early-complete (e.g. Playoff) — UI hides the option. */
+  supported: boolean;
+  allowed: boolean;
+  reason?: string;
+  /** Competitive matches played as percent of expected schedule (Round Robin). */
+  playedPercent?: number;
+  /** Threshold used for RR early-complete (system default or pending override). */
+  earlyCompleteMinPercent?: number;
 }
 
 export interface TournamentPlugin {
@@ -130,6 +144,39 @@ export interface TournamentPlugin {
   isComplete(tournament: any): boolean;
   canCancel(tournament: any): boolean;
   canModify(tournament: any): boolean;
+
+  /**
+   * Whether the organizer may early-complete this basic tournament.
+   * Compound parents do not early-complete directly.
+   * `supported: false` means the UI must not offer early completion (e.g. Playoff).
+   */
+  canEarlyComplete?(context: {
+    tournament: any;
+    prisma: any;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<EarlyCompleteEligibility> | EarlyCompleteEligibility;
+
+  /**
+   * Fill remaining unplayed matches as NP (0:0 + notPlayed) and mark tournament complete-ready.
+   * Caller marks COMPLETED / ratings / parent notify.
+   * Optional overrides (e.g. RR min %) are applied and persisted by the plugin when provided.
+   */
+  earlyComplete?(context: {
+    tournament: any;
+    prisma: any;
+    userId?: number;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<{
+    tournament: any;
+    shouldMarkComplete: boolean;
+    message?: string;
+  }>;
+
+  /**
+   * After a child was abandoned (COMPLETED + cancelled), compound parents react
+   * (exclude members, shrink final, complete parent, etc.).
+   */
+  onChildAbandoned?(event: ChildTournamentCompletedEvent): Promise<TournamentStateChangeResult>;
 
   /** Post-completion score correction eligibility for organizers */
   getCorrectionEligibility?(context: {

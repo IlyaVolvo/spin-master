@@ -44,6 +44,7 @@ import {
 } from '../services/scoreCorrectionService';
 import { ensureUniqueTournamentNameInDb } from '../utils/tournamentNameUniqueness';
 import { createPreregistrationFinalizePrisma } from '../utils/preregistrationFinalizePrisma';
+import { matchHasCompetitiveResult } from '../utils/scoreCorrectionMatchUtils';
 
 const router = express.Router();
 
@@ -1691,8 +1692,8 @@ router.post('/matches/create', [
       member2Id,
       player1Sets: finalPlayer1Sets,
       player2Sets: finalPlayer2Sets,
-      player1Forfeit: finalPlayer1Forfeit,
-      player2Forfeit: finalPlayer2Forfeit,
+      player1Forfeit: false,
+      player2Forfeit: false,
       recordedByMemberId: req.memberId,
     });
 
@@ -2140,7 +2141,11 @@ router.patch('/:tournamentId/matches/:matchId', [
             if (parentResult.shouldMarkComplete) {
               completedParentTournamentForNotification = await prisma.tournament.update({
                 where: { id: parentTournament.id },
-                data: { status: 'COMPLETED', recordedAt: new Date() },
+                data: {
+                  status: 'COMPLETED',
+                  recordedAt: new Date(),
+                  ...(parentResult.shouldMarkCancelled ? { cancelled: true } : {}),
+                },
               });
               logger.info('Tournament completed', {
                 tournamentId: parentTournament.id,
@@ -2541,7 +2546,11 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
           if (parentResult?.shouldMarkComplete) {
             await prisma.tournament.update({
               where: { id: parentTournament.id },
-              data: { status: 'COMPLETED', recordedAt: new Date() },
+              data: {
+                status: 'COMPLETED',
+                recordedAt: new Date(),
+                ...(parentResult.shouldMarkCancelled ? { cancelled: true } : {}),
+              },
             });
             logger.info('Tournament completed', {
               tournamentId: parentTournament.id,
@@ -2577,14 +2586,17 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
   }
 });
 
-// Cancel tournament
-// Only Organizers can cancel tournaments
-// For ACTIVE tournaments:
+// Stop tournament: Abandon (cancel) or Early Completion
+// Only Organizers can stop tournaments
+// Abandon for ACTIVE tournaments:
 //   - No played matches → physically deletes the tournament
 //   - One or more played matches → marks as cancelled + COMPLETED, preserves matches
-// For compound tournaments: propagates to all children automatically
+// Early Completion: plugin-gated; fills NP matches and marks COMPLETED (not cancelled)
+// For compound tournaments abandon: propagates to all children automatically
 router.patch('/:id/cancel', [
   body('password').optional().isString().trim(),
+  body('mode').optional().isIn(['abandon', 'earlyComplete']),
+  body('earlyCompleteMinPercent').optional().isInt({ min: 1, max: 100 }),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -2603,13 +2615,23 @@ router.patch('/:id/cancel', [
       return res.status(400).json({ error: 'Invalid tournament ID' });
     }
 
+    const mode = ((req.body as { mode?: string }).mode || 'abandon') as 'abandon' | 'earlyComplete';
+    const earlyCompleteMinPercentRaw = (req.body as { earlyCompleteMinPercent?: number }).earlyCompleteMinPercent;
+    const earlyCompleteOverrides =
+      typeof earlyCompleteMinPercentRaw === 'number'
+        ? { earlyCompleteMinPercent: earlyCompleteMinPercentRaw }
+        : undefined;
+
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: {
         matches: true,
+        participants: { include: { member: true } },
+        swissData: true,
         childTournaments: {
           include: {
             matches: true,
+            participants: { include: { member: true } },
             childTournaments: { include: { matches: true } },
           },
         },
@@ -2624,27 +2646,24 @@ router.patch('/:id/cancel', [
       return res.status(400).json({ error: 'Tournament is already completed' });
     }
 
-    // Check if plugin allows cancellation
     const plugin = tournamentPluginRegistry.get(tournament.type);
-    if (!plugin.canCancel(tournament)) {
-      return res.status(400).json({ error: 'This tournament type cannot be cancelled' });
-    }
 
     // Determine if this is a compound tournament (has children)
     const isCompound = tournament.childTournaments && tournament.childTournaments.length > 0;
 
-    const isPlayedMatch = (match: { player1Sets: number; player2Sets: number; player1Forfeit?: boolean; player2Forfeit?: boolean }) => {
-      const hasScore = (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0;
-      const hasForfeit = !!match.player1Forfeit || !!match.player2Forfeit;
-      return hasScore || hasForfeit;
-    };
+    const isPlayedMatch = (match: {
+      player1Sets: number;
+      player2Sets: number;
+      player1Forfeit?: boolean;
+      player2Forfeit?: boolean;
+      notPlayed?: boolean;
+    }) => matchHasCompetitiveResult(match);
 
     // Count played matches across the tournament (including children for compound)
     let playedMatches = tournament.matches.filter(isPlayedMatch).length;
     if (isCompound) {
       for (const child of tournament.childTournaments) {
         playedMatches += child.matches.filter(isPlayedMatch).length;
-        // Also count grandchildren (e.g. prelim groups under compound)
         if (child.childTournaments) {
           for (const grandchild of (child as any).childTournaments) {
             playedMatches += (grandchild.matches ?? []).filter(isPlayedMatch).length;
@@ -2653,7 +2672,7 @@ router.patch('/:id/cancel', [
       }
     }
 
-    if (playedMatches > 0) {
+    const requirePassword = async () => {
       const currentMemberId = req.memberId || req.member?.id;
       if (!currentMemberId) {
         return res.status(401).json({ error: 'Authentication required' });
@@ -2677,16 +2696,193 @@ router.patch('/:id/cancel', [
       if (!isValidPassword) {
         return res.status(401).json({ error: 'Invalid password confirmation' });
       }
+      return null;
+    };
+
+    // ---------- Early Completion ----------
+    if (mode === 'earlyComplete') {
+      if (isCompound || !plugin.isBasic) {
+        return res.status(400).json({ error: 'Early completion applies only to basic tournaments' });
+      }
+      if (!plugin.canEarlyComplete || !plugin.earlyComplete) {
+        return res.status(400).json({ error: 'Early completion is not supported for this tournament type' });
+      }
+
+      const eligibility = await plugin.canEarlyComplete({
+        tournament,
+        prisma,
+        overrides: earlyCompleteOverrides,
+      });
+      if (!eligibility.supported) {
+        return res.status(400).json({ error: eligibility.reason || 'Early completion is not supported for this tournament type' });
+      }
+      if (!eligibility.allowed) {
+        return res.status(400).json({ error: eligibility.reason || 'Early completion not allowed' });
+      }
+
+      if (playedMatches > 0) {
+        const pwError = await requirePassword();
+        if (pwError) return pwError;
+      }
+
+      await plugin.earlyComplete({
+        tournament,
+        prisma,
+        userId: req.memberId || req.member?.id,
+        overrides: earlyCompleteOverrides,
+      });
+
+      const completedTournament = await prisma.tournament.update({
+        where: { id: tournamentId },
+        data: {
+          status: 'COMPLETED',
+          recordedAt: new Date(),
+          cancelled: false,
+        },
+        include: {
+          participants: { include: { member: true } },
+          matches: true,
+          swissData: true,
+          bracketMatches: { include: { match: true } },
+        },
+      });
+
+      if (plugin.onTournamentCompletionRatingCalculation) {
+        await plugin.onTournamentCompletionRatingCalculation({
+          tournament: completedTournament,
+          prisma,
+        });
+      }
+
+      await recalculateRankings(tournamentId);
+
+      let completedParentTournament: any = null;
+      if (completedTournament.parentTournamentId) {
+        const parentTournament = await prisma.tournament.findUnique({
+          where: { id: completedTournament.parentTournamentId },
+          include: {
+            childTournaments: {
+              include: { participants: { include: { member: true } }, matches: true },
+            },
+            participants: { include: { member: true } },
+            preliminaryConfig: true,
+          },
+        });
+
+        if (parentTournament) {
+          const parentPlugin = tournamentPluginRegistry.get(parentTournament.type);
+          if (parentPlugin.onChildTournamentCompleted) {
+            const parentResult = await parentPlugin.onChildTournamentCompleted({
+              parentTournament,
+              childTournament: completedTournament,
+              prisma,
+            });
+
+            if (parentResult?.shouldMarkComplete) {
+              completedParentTournament = await prisma.tournament.update({
+                where: { id: parentTournament.id },
+                data: {
+                  status: 'COMPLETED',
+                  recordedAt: new Date(),
+                  ...(parentResult.shouldMarkCancelled ? { cancelled: true } : {}),
+                },
+              });
+            }
+          }
+        }
+      }
+
+      await invalidateCacheAfterTournament(tournamentId);
+      emitTournamentStateChanged(completedTournament, 'ACTIVE');
+      emitTournamentUpdate(completedTournament);
+      if (completedParentTournament) {
+        emitTournamentStateChanged(completedParentTournament, 'ACTIVE');
+        emitTournamentUpdate(completedParentTournament);
+        emitCacheInvalidation(completedParentTournament.id);
+      }
+      emitCacheInvalidation(tournamentId);
+
+      const enriched = await enrichTournamentForApi(prisma, completedTournament);
+      return res.json(enriched);
+    }
+
+    // ---------- Abandon (legacy cancel semantics) ----------
+    if (!plugin.canCancel(tournament)) {
+      return res.status(400).json({ error: 'This tournament type cannot be cancelled' });
+    }
+
+    if (playedMatches > 0) {
+      const pwError = await requirePassword();
+      if (pwError) return pwError;
     }
 
     if (playedMatches === 0) {
-      // No played matches anywhere → physically delete the entire tournament tree
-      // Cascade delete handles children, matches, participants, bracket matches, etc.
+      const parentId = tournament.parentTournamentId;
+      let parentSnapshot: any = null;
+      if (parentId) {
+        parentSnapshot = await prisma.tournament.findUnique({
+          where: { id: parentId },
+          include: {
+            childTournaments: {
+              include: { participants: { include: { member: true } }, matches: true },
+            },
+            participants: { include: { member: true } },
+            preliminaryConfig: true,
+          },
+        });
+      }
+
+      const childSnapshot = parentId
+        ? {
+            ...tournament,
+            status: 'COMPLETED',
+            cancelled: true,
+          }
+        : null;
+
       await prisma.tournament.delete({
         where: { id: tournamentId },
       });
 
-      // Invalidate cache and notify clients
+      if (parentSnapshot && childSnapshot) {
+        const parentPlugin = tournamentPluginRegistry.get(parentSnapshot.type);
+        if (parentPlugin.onChildAbandoned) {
+          // Refresh children after delete
+          const refreshedParent = await prisma.tournament.findUnique({
+            where: { id: parentId! },
+            include: {
+              childTournaments: {
+                include: { participants: { include: { member: true } }, matches: true },
+              },
+              participants: { include: { member: true } },
+              preliminaryConfig: true,
+            },
+          });
+          if (refreshedParent) {
+            const parentResult = await parentPlugin.onChildAbandoned({
+              parentTournament: refreshedParent,
+              childTournament: childSnapshot,
+              prisma,
+            });
+            if (parentResult?.shouldMarkComplete) {
+              await prisma.tournament.update({
+                where: { id: refreshedParent.id },
+                data: {
+                  status: 'COMPLETED',
+                  recordedAt: new Date(),
+                  ...(parentResult.shouldMarkCancelled ? { cancelled: true } : {}),
+                },
+              });
+              emitTournamentStateChanged(
+                { ...refreshedParent, status: 'COMPLETED', cancelled: !!parentResult.shouldMarkCancelled },
+                'ACTIVE',
+              );
+              emitCacheInvalidation(refreshedParent.id);
+            }
+          }
+        }
+      }
+
       await invalidateCacheAfterTournament(tournamentId);
       emitTournamentDeleted(tournamentId);
       emitCacheInvalidation(tournamentId);
@@ -2694,17 +2890,15 @@ router.patch('/:id/cancel', [
       return res.json({ message: 'Tournament deleted (no matches were played)', deleted: true });
     }
 
-    // Has matches → cancel (mark as cancelled + COMPLETED)
+    // Has matches → abandon (mark as cancelled + COMPLETED)
     // For compound tournaments: cancel/delete each child first
     if (isCompound) {
       for (const child of tournament.childTournaments) {
-        if (child.status === 'COMPLETED') continue; // already done
+        if (child.status === 'COMPLETED') continue;
 
         if (child.matches.length === 0) {
-          // Child has no matches → delete it
           await prisma.tournament.delete({ where: { id: child.id } });
         } else {
-          // Child has matches → cancel it
           await prisma.tournament.update({
             where: { id: child.id },
             data: { status: 'COMPLETED', cancelled: true },
@@ -2713,10 +2907,9 @@ router.patch('/:id/cancel', [
       }
     }
 
-    // Cancel the root tournament
     const updatedTournament = await prisma.tournament.update({
       where: { id: tournamentId },
-      data: { 
+      data: {
         status: 'COMPLETED',
         cancelled: true,
       },
@@ -2736,10 +2929,53 @@ router.patch('/:id/cancel', [
       },
     });
 
-    // Recalculate rankings for all players (rankings are separate from ratings)
+    // Child abandon → notify parent (not when abandoning a whole parent compound)
+    if (!isCompound && updatedTournament.parentTournamentId) {
+      const parentTournament = await prisma.tournament.findUnique({
+        where: { id: updatedTournament.parentTournamentId },
+        include: {
+          childTournaments: {
+            include: { participants: { include: { member: true } }, matches: true },
+          },
+          participants: { include: { member: true } },
+          preliminaryConfig: true,
+        },
+      });
+
+      if (parentTournament) {
+        const parentPlugin = tournamentPluginRegistry.get(parentTournament.type);
+        if (parentPlugin.onChildAbandoned) {
+          const parentResult = await parentPlugin.onChildAbandoned({
+            parentTournament,
+            childTournament: updatedTournament,
+            prisma,
+          });
+
+          if (parentResult?.shouldMarkComplete) {
+            await prisma.tournament.update({
+              where: { id: parentTournament.id },
+              data: {
+                status: 'COMPLETED',
+                recordedAt: new Date(),
+                ...(parentResult.shouldMarkCancelled ? { cancelled: true } : {}),
+              },
+            });
+            emitTournamentStateChanged(
+              {
+                ...parentTournament,
+                status: 'COMPLETED',
+                cancelled: !!parentResult.shouldMarkCancelled,
+              },
+              'ACTIVE',
+            );
+            emitCacheInvalidation(parentTournament.id);
+          }
+        }
+      }
+    }
+
     await recalculateRankings(tournamentId);
 
-    // Invalidate cache and emit notifications
     await invalidateCacheAfterTournament(tournamentId);
     emitTournamentStateChanged(updatedTournament, 'ACTIVE');
     emitTournamentUpdate(updatedTournament);
@@ -2747,6 +2983,9 @@ router.patch('/:id/cancel', [
 
     res.json(updatedTournament);
   } catch (error) {
+    if (isClientHttpError(error)) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     logger.error('Error cancelling tournament', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
     res.status(500).json({ error: 'Internal server error' });
   }

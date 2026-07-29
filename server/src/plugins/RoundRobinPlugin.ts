@@ -10,7 +10,11 @@ import {
   scoredMatchIds,
   filterCorrectableMatchIdsByMemberDrift,
 } from './scoreCorrectionHelpers';
-import { findRatingDriftReason, matchHasResult } from '../utils/scoreCorrectionMatchUtils';
+import {
+  findRatingDriftReason,
+  matchHasCompetitiveResult,
+  matchHasResult,
+} from '../utils/scoreCorrectionMatchUtils';
 import { duplicateTournamentMatchErrorWithRecordedResult, isDuplicateTournamentMatchError } from '../utils/matchConcurrency';
 import { ClientHttpError } from '../http/clientHttpError';
 
@@ -194,11 +198,157 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
       return 0;
     }
     const expectedMatches = (tournament.participants.length * (tournament.participants.length - 1)) / 2;
-    const playedMatches = tournament.matches?.filter((m: any) => 
-      (m.player1Sets !== null && m.player2Sets !== null) &&
-      (m.player1Sets > 0 || m.player2Sets > 0 || m.player1Forfeit || m.player2Forfeit)
-    ).length || 0;
+    const playedMatches = tournament.matches?.filter((m: any) => matchHasResult(m)).length || 0;
     return Math.max(0, expectedMatches - playedMatches);
+  }
+
+  async canEarlyComplete(context: {
+    tournament: any;
+    prisma: any;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<import('./TournamentPlugin').EarlyCompleteEligibility> {
+    const { tournament, overrides } = context;
+    if (tournament.status !== 'ACTIVE') {
+      return {
+        supported: true,
+        allowed: false,
+        reason: 'Tournament is not active',
+      };
+    }
+    const n = tournament.participants?.length ?? 0;
+    if (n < 2) {
+      return { supported: true, allowed: false, reason: 'Not enough participants' };
+    }
+    const expectedMatches = (n * (n - 1)) / 2;
+    if (expectedMatches <= 0) {
+      return { supported: true, allowed: false, reason: 'No matches expected' };
+    }
+    const competitive = (tournament.matches || []).filter((m: any) => matchHasCompetitiveResult(m)).length;
+    const playedPercent = (competitive / expectedMatches) * 100;
+    const { getTournamentRulesConfig } = require('../services/systemConfigService');
+    const systemMin = getTournamentRulesConfig().roundRobin.earlyCompleteMinPercent;
+    const minPercent =
+      typeof overrides?.earlyCompleteMinPercent === 'number'
+        ? overrides.earlyCompleteMinPercent
+        : systemMin;
+
+    if (competitive >= expectedMatches) {
+      return {
+        supported: true,
+        allowed: false,
+        reason: 'All matches are already played',
+        playedPercent: Math.floor(playedPercent),
+        earlyCompleteMinPercent: minPercent,
+      };
+    }
+    if (playedPercent < minPercent) {
+      return {
+        supported: true,
+        allowed: false,
+        reason: `Need at least ${minPercent}% of matches played (${Math.floor(playedPercent)}% so far)`,
+        playedPercent: Math.floor(playedPercent),
+        earlyCompleteMinPercent: minPercent,
+      };
+    }
+    return {
+      supported: true,
+      allowed: true,
+      playedPercent: Math.floor(playedPercent),
+      earlyCompleteMinPercent: minPercent,
+    };
+  }
+
+  async earlyComplete(context: {
+    tournament: any;
+    prisma: any;
+    userId?: number;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<{
+    tournament: any;
+    shouldMarkComplete: boolean;
+    message?: string;
+  }> {
+    const { tournament, prisma, overrides } = context;
+
+    if (typeof overrides?.earlyCompleteMinPercent === 'number') {
+      const { updateSystemConfig, getTournamentRulesConfig } = require('../services/systemConfigService');
+      const current = getTournamentRulesConfig().roundRobin.earlyCompleteMinPercent;
+      if (overrides.earlyCompleteMinPercent !== current) {
+        await updateSystemConfig({
+          tournamentRules: {
+            roundRobin: {
+              ...getTournamentRulesConfig().roundRobin,
+              earlyCompleteMinPercent: overrides.earlyCompleteMinPercent,
+            },
+          },
+        });
+      }
+    }
+
+    const eligibility = await this.canEarlyComplete({
+      tournament,
+      prisma,
+      overrides,
+    });
+    if (!eligibility.allowed) {
+      throw new ClientHttpError(eligibility.reason || 'Early completion not allowed', 400);
+    }
+
+    const memberIds: number[] = (tournament.participants || []).map((p: any) => p.memberId);
+    const existingByPair = new Map<string, any>();
+    for (const match of tournament.matches || []) {
+      if (!match.member2Id) continue;
+      const key = [match.member1Id, match.member2Id].sort((a: number, b: number) => a - b).join('-');
+      existingByPair.set(key, match);
+    }
+
+    for (let i = 0; i < memberIds.length; i++) {
+      for (let j = i + 1; j < memberIds.length; j++) {
+        const m1 = memberIds[i];
+        const m2 = memberIds[j];
+        const key = [m1, m2].sort((a, b) => a - b).join('-');
+        const existing = existingByPair.get(key);
+        if (!existing) {
+          await prisma.match.create({
+            data: {
+              tournamentId: tournament.id,
+              member1Id: m1,
+              member2Id: m2,
+              player1Sets: 0,
+              player2Sets: 0,
+              player1Forfeit: false,
+              player2Forfeit: false,
+              notPlayed: true,
+            },
+          });
+        } else if (!matchHasResult(existing)) {
+          await prisma.match.update({
+            where: { id: existing.id },
+            data: {
+              player1Sets: 0,
+              player2Sets: 0,
+              player1Forfeit: false,
+              player2Forfeit: false,
+              notPlayed: true,
+            },
+          });
+        }
+      }
+    }
+
+    const refreshed = await prisma.tournament.findUnique({
+      where: { id: tournament.id },
+      include: {
+        participants: { include: { member: true } },
+        matches: true,
+      },
+    });
+
+    return {
+      tournament: refreshed,
+      shouldMarkComplete: true,
+      message: 'Round Robin early-completed; remaining matches marked NP',
+    };
   }
 
   async onMatchCompleted(event: any): Promise<any> {
@@ -286,7 +436,7 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
     let updatedMatch;
     
     if (match) {
-      // Update existing match
+      // Update existing match (clear NP when entering a real result)
       updatedMatch = await prisma.match.update({
         where: { id: matchId },
         data: {
@@ -294,12 +444,12 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
           player2Sets,
           player1Forfeit,
           player2Forfeit,
+          notPlayed: false,
         },
         include: { tournament: true },
       });
     } else {
-      // Create new match — for round robin, all matches are pre-created at tournament creation
-      // This path handles the case where a match needs to be created (legacy support)
+      // Create new match — for round robin, matches are created lazily on first score entry
       try {
         updatedMatch = await prisma.match.create({
           data: {
@@ -310,6 +460,7 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
             player2Sets,
             player1Forfeit,
             player2Forfeit,
+            notPlayed: false,
           },
           include: { tournament: true },
         });

@@ -280,6 +280,25 @@ describe('BaseCompoundTournamentPlugin.onChildTournamentCompleted (no final phas
     expect(result).toEqual({ shouldMarkComplete: true });
   });
 
+  it('returns shouldMarkCancelled when all children are abandoned', async () => {
+    const mockPrisma = {
+      tournament: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 2, status: 'COMPLETED', cancelled: true },
+          { id: 3, status: 'COMPLETED', cancelled: true },
+        ]),
+      },
+    };
+
+    const result = await plugin.onChildAbandoned({
+      parentTournament: { id: 1 },
+      childTournament: { id: 2, cancelled: true },
+      prisma: mockPrisma,
+    });
+
+    expect(result).toEqual({ shouldMarkComplete: true, shouldMarkCancelled: true });
+  });
+
   it('returns empty when not all children are complete', async () => {
     const mockPrisma = {
       tournament: {

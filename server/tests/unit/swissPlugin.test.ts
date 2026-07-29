@@ -175,6 +175,7 @@ describe('SwissPlugin', () => {
           player2Sets: 0,
           player1Forfeit: false,
           player2Forfeit: false,
+          notPlayed: false,
         },
       });
     });
@@ -434,6 +435,7 @@ describe('SwissPlugin', () => {
           player2Sets: 1,
           player1Forfeit: false,
           player2Forfeit: false,
+          notPlayed: false,
         },
         include: { tournament: true },
       });

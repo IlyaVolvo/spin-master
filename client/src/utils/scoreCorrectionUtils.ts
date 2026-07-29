@@ -1,13 +1,28 @@
 import type { CorrectionEligibility, Tournament } from '../types/tournament';
 
+/** Competitive result (score or forfeit). NP alone does not count. */
+export function matchHasCompetitiveResult(match: {
+  player1Sets?: number | null;
+  player2Sets?: number | null;
+  player1Forfeit?: boolean;
+  player2Forfeit?: boolean;
+  notPlayed?: boolean;
+}): boolean {
+  if (match.notPlayed) return false;
+  const hasScore = (match.player1Sets ?? 0) > 0 || (match.player2Sets ?? 0) > 0;
+  return hasScore || Boolean(match.player1Forfeit || match.player2Forfeit);
+}
+
+/** Any recorded outcome including early-complete NP (correctable / schedule filled). */
 export function matchHasResult(match: {
   player1Sets?: number | null;
   player2Sets?: number | null;
   player1Forfeit?: boolean;
   player2Forfeit?: boolean;
+  notPlayed?: boolean;
 }): boolean {
-  const hasScore = (match.player1Sets ?? 0) > 0 || (match.player2Sets ?? 0) > 0;
-  return hasScore || Boolean(match.player1Forfeit || match.player2Forfeit);
+  if (match.notPlayed) return true;
+  return matchHasCompetitiveResult(match);
 }
 
 /** Scored match DB ids from tournament payload (mirrors server ACTIVE eligibility rules). */

@@ -8,6 +8,7 @@ import { RoundRobinPostSelectionFlow } from './RoundRobinPostSelectionFlow';
 import { generateRoundRobinSchedule, calculateStandings, buildResultsMatrix, calculatePlayerStats } from './roundRobinUtils';
 import { buildRoundRobinChildResultsHtml, buildRoundRobinResultsSectionHtml } from './roundRobinResultsPrint';
 import { getSystemConfig } from '../../../utils/systemConfig';
+import { matchHasCompetitiveResult, matchHasResult } from '../../../utils/scoreCorrectionUtils';
 
 // Re-export utility functions for use in other components
 export { generateRoundRobinSchedule, calculateStandings, buildResultsMatrix, calculatePlayerStats } from './roundRobinUtils';
@@ -86,32 +87,63 @@ export const RoundRobinPlugin: TournamentPlugin = {
   },
 
   countPlayedMatches: (tournament) => {
-    // For round robin, count matches that have been played (have scores or forfeits)
-    return tournament.matches.filter(match => {
-      const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
-      const hasForfeit = match.player1Forfeit || match.player2Forfeit;
-      return hasScore || hasForfeit;
-    }).length;
+    return tournament.matches.filter(match => matchHasCompetitiveResult(match)).length;
   },
 
   countNonForfeitedMatches: (tournament) => {
-    // Count matches that were actually played (not forfeited)
     return tournament.matches.filter(match => {
-      const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
-      const notForfeited = !match.player1Forfeit && !match.player2Forfeit;
-      return hasScore && notForfeited;
+      return matchHasCompetitiveResult(match) && !match.player1Forfeit && !match.player2Forfeit;
     }).length;
   },
 
   areAllMatchesPlayed: (tournament) => {
     const n = tournament.participants.length;
     const expectedMatches = (n * (n - 1)) / 2;
-    const playedMatches = tournament.matches.filter(match => {
-      const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
-      const hasForfeit = match.player1Forfeit || match.player2Forfeit;
-      return hasScore || hasForfeit;
-    }).length;
+    const playedMatches = tournament.matches.filter(match => matchHasResult(match)).length;
     return playedMatches >= expectedMatches;
+  },
+
+  getEarlyCompleteDialogHints: (tournament, overrides) => {
+    if (tournament.status !== 'ACTIVE') {
+      return { supported: true, allowed: false, reason: 'Tournament is not active' };
+    }
+    const n = tournament.participants?.length ?? 0;
+    const expected = n < 2 ? 0 : (n * (n - 1)) / 2;
+    if (expected <= 0) {
+      return { supported: true, allowed: false, reason: 'No matches expected' };
+    }
+    const competitive = (tournament.matches ?? []).filter((m) => matchHasCompetitiveResult(m)).length;
+    const playedPercentExact = (competitive / expected) * 100;
+    const playedPercent = Math.floor(playedPercentExact);
+    const minPercent =
+      typeof overrides?.earlyCompleteMinPercent === 'number'
+        ? overrides.earlyCompleteMinPercent
+        : getSystemConfig().tournamentRules.roundRobin.earlyCompleteMinPercent;
+
+    if (competitive >= expected) {
+      return {
+        supported: true,
+        allowed: false,
+        reason: 'All matches are already played',
+        playedPercent,
+        earlyCompleteMinPercent: minPercent,
+      };
+    }
+    if (playedPercentExact < minPercent) {
+      return {
+        supported: true,
+        allowed: false,
+        reason: `Need at least ${minPercent}% of matches played (${playedPercent}% so far)`,
+        playedPercent,
+        earlyCompleteMinPercent: minPercent,
+      };
+    }
+    return {
+      supported: true,
+      allowed: true,
+      playedPercent,
+      earlyCompleteMinPercent: minPercent,
+    };
   },
 
   // Schedule generation

@@ -152,6 +152,38 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
     return {};
   }
 
+  async canEarlyComplete(_context: {
+    tournament: any;
+    prisma: any;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<import('./TournamentPlugin').EarlyCompleteEligibility> {
+    return {
+      supported: false,
+      allowed: false,
+      reason: 'Early completion is not supported for this tournament type',
+    };
+  }
+
+  async earlyComplete(_context: {
+    tournament: any;
+    prisma: any;
+    userId?: number;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<{
+    tournament: any;
+    shouldMarkComplete: boolean;
+    message?: string;
+  }> {
+    throw new Error('Early completion is not supported for this tournament type');
+  }
+
+  async onChildAbandoned?(event: ChildTournamentCompletedEvent): Promise<TournamentStateChangeResult> {
+    if (this.onChildTournamentCompleted) {
+      return this.onChildTournamentCompleted(event);
+    }
+    return {};
+  }
+
   async onMatchRatingCalculation?(context: { tournament: any; match: any; winnerId: number; prisma: any }): Promise<void> {
     // Default implementation - do nothing
   }

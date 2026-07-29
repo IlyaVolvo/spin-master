@@ -4,6 +4,7 @@ import {
 } from './TournamentPlugin';
 import { BaseCompoundTournamentPlugin } from './BaseCompoundTournamentPlugin';
 import { logger } from '../utils/logger';
+import { matchHasCompetitiveResult } from '../utils/scoreCorrectionMatchUtils';
 
 interface GroupStanding {
   memberId: number;
@@ -207,8 +208,10 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
       });
     });
 
-    // Process matches
+    // Process matches (skip NP / unplayed — no W/L contribution)
     roundRobin.matches.forEach((match: any) => {
+      if (!matchHasCompetitiveResult(match)) return;
+
       if (match.player1Forfeit || match.player2Forfeit) {
         if (match.player1Forfeit) {
           const p1 = standings.get(match.member1Id);
@@ -268,9 +271,12 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
     const preliminaryGroups = allChildren.filter((c: any) => this.isPreliminaryGroupChild(c));
     const finalTournament = allChildren.find((c: any) => this.isFinalPhaseChild(c));
     
-    // If final exists and is complete, mark parent as complete
+    // If final exists and is complete, mark parent as complete (cancelled if final abandoned)
     if (finalTournament && finalTournament.status === 'COMPLETED') {
-      return { shouldMarkComplete: true };
+      return {
+        shouldMarkComplete: true,
+        shouldMarkCancelled: finalTournament.cancelled ? true : undefined,
+      };
     }
 
     // If final already exists but not complete, nothing to do
@@ -284,7 +290,7 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
       return {};
     }
 
-    // === All preliminaries are done and no final exists yet — create the final round robin ===
+    const activeGroups = preliminaryGroups.filter((c: any) => !c.cancelled);
 
     // Fetch config from dedicated table
     const config = parentTournament.preliminaryConfig 
@@ -297,11 +303,22 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
       return {};
     }
 
-    const finalRoundRobinSize = config.finalSize;
     const autoQualifiedMemberIds: number[] = config.autoQualifiedMemberIds || [];
+    const maxEligible =
+      autoQualifiedMemberIds.length +
+      activeGroups.reduce((sum: number, g: any) => sum + (g.participants?.length ?? 0), 0);
 
-    // Calculate standings for each group
-    const groupResults: GroupResult[] = preliminaryGroups.map((rr: any) => ({
+    if (maxEligible === 0) {
+      logger.info('All preliminary groups abandoned with no auto-qualified players; abandoning parent', {
+        tournamentId: parentTournament.id,
+      });
+      return { shouldMarkComplete: true, shouldMarkCancelled: true };
+    }
+
+    const finalRoundRobinSize = Math.min(config.finalSize, maxEligible);
+
+    // Calculate standings for each active group
+    const groupResults: GroupResult[] = activeGroups.map((rr: any) => ({
       groupNumber: rr.groupNumber || 0,
       players: this.calculateGroupStandings(rr),
     }));
@@ -324,10 +341,12 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
 
     // 3. Fill remaining slots from 2nd place, then 3rd, etc. — sorted by rating within each place
     let remainingSlots = finalRoundRobinSize - qualifiedMemberIds.length;
-    let placeIndex = 1; // 0-indexed: 1 = 2nd place, 2 = 3rd place, etc.
+    const maxPlayersInGroup = groupResults.length > 0
+      ? Math.max(...groupResults.map(g => g.players.length), 0)
+      : 0;
+    let placeIndex = 1;
 
-    while (remainingSlots > 0 && placeIndex < Math.max(...groupResults.map(g => g.players.length))) {
-      // Collect all players at this place across all groups
+    while (remainingSlots > 0 && placeIndex < maxPlayersInGroup) {
       const candidatesAtPlace: Array<{ memberId: number; rating: number | null; wins: number; setsDiff: number }> = [];
 
       for (const group of groupResults) {
@@ -344,20 +363,26 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
         }
       }
 
-      // Sort candidates by rating (descending)
       candidatesAtPlace.sort((a, b) => {
         const ratingA = a.rating ?? 0;
         const ratingB = b.rating ?? 0;
         return ratingB - ratingA;
       });
 
-      // Take as many as we need (or all if fewer than remaining slots)
       const toTake = Math.min(remainingSlots, candidatesAtPlace.length);
       for (let i = 0; i < toTake; i++) {
         qualifiedMemberIds.push(candidatesAtPlace[i].memberId);
       }
       remainingSlots = finalRoundRobinSize - qualifiedMemberIds.length;
       placeIndex++;
+    }
+
+    if (qualifiedMemberIds.length > finalRoundRobinSize) {
+      qualifiedMemberIds.length = finalRoundRobinSize;
+    }
+
+    if (qualifiedMemberIds.length === 0) {
+      return { shouldMarkComplete: true, shouldMarkCancelled: true };
     }
 
     // Get player data for qualified members
@@ -377,7 +402,6 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
         type: 'ROUND_ROBIN',
         status: 'ACTIVE',
         parentTournamentId: parentTournament.id,
-        // groupNumber is null — this distinguishes the final from preliminary groups
         participants: {
           create: qualifiedPlayers.map((player: any) => ({
             memberId: player.memberId,
@@ -399,11 +423,13 @@ export class PreliminaryWithFinalRoundRobinPlugin extends BaseCompoundTournament
       parentTournamentId: parentTournament.id,
       finalTournamentId: finalRR.id,
       numQualified: qualifiedPlayers.length,
+      configuredFinalSize: config.finalSize,
+      effectiveFinalSize: finalRoundRobinSize,
+      abandonedGroups: preliminaryGroups.length - activeGroups.length,
       autoQualified: autoQualifiedMemberIds.length,
       fromPreliminary: qualifiedPlayers.length - autoQualifiedMemberIds.length,
     });
 
-    // Emit notifications
     const { emitTournamentUpdate, emitCacheInvalidation } = await import('../services/socketService');
     emitTournamentUpdate(finalRR);
     emitCacheInvalidation(parentTournament.id);

@@ -194,7 +194,11 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
               if (parentResult.shouldMarkComplete) {
                 await prisma.tournament.update({
                   where: { id: parentTournament.id },
-                  data: { status: 'COMPLETED', recordedAt: new Date() },
+                  data: {
+                    status: 'COMPLETED',
+                    recordedAt: new Date(),
+                    ...(parentResult.shouldMarkCancelled ? { cancelled: true } : {}),
+                  },
                 });
                 logger.info('Tournament completed', {
                   tournamentId: parentTournament.id,
@@ -228,10 +232,10 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
       bracketMatchId,
       member1Id: newMatch.member1Id,
       member2Id: newMatch.member2Id,
-      player1Sets: newMatch.player1Sets,
-      player2Sets: newMatch.player2Sets,
-      player1Forfeit: !!newMatch.player1Forfeit,
-      player2Forfeit: !!newMatch.player2Forfeit,
+      player1Sets: finalPlayer1Sets,
+      player2Sets: finalPlayer2Sets,
+      player1Forfeit: !!finalPlayer1Forfeit,
+      player2Forfeit: !!finalPlayer2Forfeit,
       recordedByMemberId: req.memberId,
       tournamentCompleted: !!tournamentCompleted,
     });

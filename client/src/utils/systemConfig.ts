@@ -45,6 +45,7 @@ export type SystemConfig = {
     roundRobin: {
       minPlayers: number;
       maxPlayers: number;
+      earlyCompleteMinPercent: number;
     };
     playoff: {
       minPlayers: number;
@@ -120,6 +121,7 @@ const defaultSystemConfig: SystemConfig = {
     roundRobin: {
       minPlayers: 3,
       maxPlayers: 32,
+      earlyCompleteMinPercent: 70,
     },
     playoff: {
       minPlayers: 2,

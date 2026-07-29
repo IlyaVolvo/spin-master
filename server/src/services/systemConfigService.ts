@@ -47,6 +47,7 @@ export type TournamentRulesConfig = {
   roundRobin: {
     minPlayers: number;
     maxPlayers: number;
+    earlyCompleteMinPercent: number;
   };
   playoff: {
     minPlayers: number;
@@ -145,6 +146,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       roundRobin: {
         minPlayers: 3,
         maxPlayers: 32,
+        earlyCompleteMinPercent: 70,
       },
       playoff: {
         minPlayers: 2,
@@ -299,6 +301,12 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
 
   const roundRobinMin = requireInteger(config.roundRobin.minPlayers, 'tournamentRules.roundRobin.minPlayers', 2);
   const roundRobinMax = requireInteger(config.roundRobin.maxPlayers, 'tournamentRules.roundRobin.maxPlayers', roundRobinMin);
+  const earlyCompleteMinPercent = requireInteger(
+    config.roundRobin.earlyCompleteMinPercent,
+    'tournamentRules.roundRobin.earlyCompleteMinPercent',
+    1,
+    100,
+  );
 
   const playoffMin = requireInteger(config.playoff.minPlayers, 'tournamentRules.playoff.minPlayers', 2);
   const seedDivisor = requireInteger(config.playoff.seedDivisor, 'tournamentRules.playoff.seedDivisor', 1);
@@ -314,6 +322,7 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
     roundRobin: {
       minPlayers: roundRobinMin,
       maxPlayers: roundRobinMax,
+      earlyCompleteMinPercent,
     },
     playoff: {
       minPlayers: playoffMin,

@@ -242,6 +242,7 @@ export async function correctCompletedMatchScore(
         player2Sets: params.player2Sets,
         player1Forfeit: params.player1Forfeit,
         player2Forfeit: params.player2Forfeit,
+        notPlayed: false,
       },
     });
     await createRatingHistoryForRoundRobinTournament(params.tournamentId, { ratingReason });
@@ -260,6 +261,7 @@ export async function correctCompletedMatchScore(
       player2Sets: params.player2Sets,
       player1Forfeit: params.player1Forfeit,
       player2Forfeit: params.player2Forfeit,
+      notPlayed: false,
     },
   });
 
@@ -316,6 +318,15 @@ export { assertNoRatingDriftAfterTournament } from '../utils/scoreCorrectionMatc
 export async function attachCorrectionEligibility(tournament: any, prisma: any): Promise<any> {
   const enriched = { ...tournament };
   enriched.correctionEligibility = await getCorrectionEligibility(prisma, enriched);
+  if (enriched.status === 'ACTIVE') {
+    const plugin = tournamentPluginRegistry.get(enriched.type);
+    if (plugin.canEarlyComplete) {
+      enriched.earlyCompleteEligibility = await plugin.canEarlyComplete({
+        tournament: enriched,
+        prisma,
+      });
+    }
+  }
   if (Array.isArray(enriched.childTournaments)) {
     enriched.childTournaments = await Promise.all(
       enriched.childTournaments.map((child: any) => attachCorrectionEligibility(child, prisma)),

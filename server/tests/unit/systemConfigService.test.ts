@@ -76,4 +76,37 @@ describe('systemConfigService', () => {
     expect(prisma.systemConfig.upsert).toHaveBeenCalledTimes(2);
     expect(emitSystemConfigUpdated).toHaveBeenCalledTimes(1);
   });
+
+  it('persists roundRobin.earlyCompleteMinPercent through update and default merge', async () => {
+    (prisma.systemConfig.findUnique as jest.Mock).mockResolvedValue({
+      branding: {},
+      authPolicy: {},
+      preregistration: {},
+      ratingValidation: {},
+      tournamentRules: {
+        roundRobin: { minPlayers: 3, maxPlayers: 32 },
+      },
+      clientRuntime: {},
+      publicAccess: {},
+    });
+
+    await initializeSystemConfig();
+    expect(getSystemConfig().tournamentRules.roundRobin.earlyCompleteMinPercent).toBe(70);
+
+    const updated = await updateSystemConfig({
+      tournamentRules: {
+        roundRobin: {
+          minPlayers: 3,
+          maxPlayers: 32,
+          earlyCompleteMinPercent: 50,
+        },
+      } as any,
+    });
+
+    expect(updated.tournamentRules.roundRobin.earlyCompleteMinPercent).toBe(50);
+    expect(getSystemConfig().tournamentRules.roundRobin.earlyCompleteMinPercent).toBe(50);
+
+    const lastUpsert = (prisma.systemConfig.upsert as jest.Mock).mock.calls.at(-1)[0];
+    expect(lastUpsert.update.tournamentRules.roundRobin.earlyCompleteMinPercent).toBe(50);
+  });
 });
