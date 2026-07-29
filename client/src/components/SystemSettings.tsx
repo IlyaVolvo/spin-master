@@ -325,8 +325,13 @@ export default function SystemSettings() {
 
         <Subsection title="Multi Round Robins">
           <NumericInput label="Min Players" min={2} value={config.tournamentRules.multiRoundRobins.minPlayers} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.minPlayers = value; })} />
-          <NumericInput label="Min Group Size" min={2} value={config.tournamentRules.multiRoundRobins.minGroupSize} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.minGroupSize = value; })} />
-          <NumericInput label="Max Group Size" min={2} value={config.tournamentRules.multiRoundRobins.maxGroupSize} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.maxGroupSize = value; })} />
+          <NumericInput
+            label="Default Size"
+            min={config.tournamentRules.roundRobin.minPlayers}
+            max={config.tournamentRules.roundRobin.maxPlayers}
+            value={config.tournamentRules.multiRoundRobins.defaultSize}
+            onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.defaultSize = value; })}
+          />
         </Subsection>
 
         <Subsection title="Preliminary">

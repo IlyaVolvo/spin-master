@@ -23,9 +23,11 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
   formatPlayerName,
   nameDisplayOrder,
 }) => {
-  const multiRoundRobinRules = getSystemConfig().tournamentRules.multiRoundRobins;
+  const tournamentRules = getSystemConfig().tournamentRules;
+  const multiRoundRobinRules = tournamentRules.multiRoundRobins;
+  const roundRobinRules = tournamentRules.roundRobin;
   const [step, setStep] = useState<Step>('select_group_size');
-  const [groupSize, setGroupSize] = useState<number>(Math.max(4, multiRoundRobinRules.minGroupSize));
+  const [groupSize, setGroupSize] = useState<number>(multiRoundRobinRules.defaultSize);
   const [playerGroups, setPlayerGroups] = useState<number[][]>([]);
   const [draggedPlayer, setDraggedPlayer] = useState<{ playerId: number; fromGroupIndex: number } | null>(null);
   const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null);
@@ -50,8 +52,8 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
       onError(`Need at least ${multiRoundRobinRules.minPlayers} players for Multi Round Robin`);
       return;
     }
-    if (groupSize < multiRoundRobinRules.minGroupSize || groupSize > multiRoundRobinRules.maxGroupSize) {
-      onError(`Group size must be between ${multiRoundRobinRules.minGroupSize} and ${multiRoundRobinRules.maxGroupSize}`);
+    if (groupSize < roundRobinRules.minPlayers || groupSize > roundRobinRules.maxPlayers) {
+      onError(`Group size must be between ${roundRobinRules.minPlayers} and ${roundRobinRules.maxPlayers}`);
       return;
     }
     const groups = rankBasedGroups(selectedPlayerIds, groupSize, (id) => members.find(p => p.id === id));
@@ -133,8 +135,8 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
           <div style={{ marginBottom: '16px' }}>
             <BoundedNumericInput
               label="Players per group:"
-              min={multiRoundRobinRules.minGroupSize}
-              max={multiRoundRobinRules.maxGroupSize}
+              min={roundRobinRules.minPlayers}
+              max={roundRobinRules.maxPlayers}
               value={groupSize}
               allowEmpty={false}
               hintExtra="Players are split by rating: highest rated go to Group 1, next to Group 2, etc."

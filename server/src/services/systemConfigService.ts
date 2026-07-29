@@ -59,8 +59,7 @@ export type TournamentRulesConfig = {
   };
   multiRoundRobins: {
     minPlayers: number;
-    minGroupSize: number;
-    maxGroupSize: number;
+    defaultSize: number;
     minGroups: number;
   };
   preliminary: {
@@ -158,8 +157,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       },
       multiRoundRobins: {
         minPlayers: 6,
-        minGroupSize: 3,
-        maxGroupSize: 12,
+        defaultSize: 4,
         minGroups: 2,
       },
       preliminary: {
@@ -326,15 +324,16 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
       pairByRating: requireBoolean(config.swiss.pairByRating, 'tournamentRules.swiss.pairByRating'),
       maxRoundsDivisor: requireInteger(config.swiss.maxRoundsDivisor, 'tournamentRules.swiss.maxRoundsDivisor', 1),
     },
-    multiRoundRobins: (() => {
-      const minGroupSize = requireInteger(config.multiRoundRobins.minGroupSize, 'tournamentRules.multiRoundRobins.minGroupSize', 2);
-      return {
-        minPlayers: requireInteger(config.multiRoundRobins.minPlayers, 'tournamentRules.multiRoundRobins.minPlayers', 2),
-        minGroupSize,
-        maxGroupSize: requireInteger(config.multiRoundRobins.maxGroupSize, 'tournamentRules.multiRoundRobins.maxGroupSize', minGroupSize),
-        minGroups: requireInteger(config.multiRoundRobins.minGroups, 'tournamentRules.multiRoundRobins.minGroups', 2),
-      };
-    })(),
+    multiRoundRobins: {
+      minPlayers: requireInteger(config.multiRoundRobins.minPlayers, 'tournamentRules.multiRoundRobins.minPlayers', 2),
+      defaultSize: requireInteger(
+        config.multiRoundRobins.defaultSize,
+        'tournamentRules.multiRoundRobins.defaultSize',
+        roundRobinMin,
+        roundRobinMax
+      ),
+      minGroups: requireInteger(config.multiRoundRobins.minGroups, 'tournamentRules.multiRoundRobins.minGroups', 2),
+    },
     preliminary: {
       groupSizeMin,
       groupSizeMax,
