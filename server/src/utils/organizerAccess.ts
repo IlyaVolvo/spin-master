@@ -24,7 +24,7 @@ export async function isOrganizer(req: AuthRequest): Promise<boolean> {
       role => String(role).toUpperCase() === 'ORGANIZER'
     );
     if (hasOrganizerRole) {
-      logger.info('Organizer access granted via session', {
+      logger.debug('Organizer access granted via session', {
         memberId: req.member.id,
         roles: req.member.roles,
       });
@@ -48,7 +48,7 @@ export async function isOrganizer(req: AuthRequest): Promise<boolean> {
           role => String(role).toUpperCase() === 'ORGANIZER'
         );
         if (hasOrganizerRole) {
-          logger.info('Organizer access granted via database lookup', {
+          logger.debug('Organizer access granted via database lookup', {
             memberId: req.memberId,
             roles: member.roles,
           });

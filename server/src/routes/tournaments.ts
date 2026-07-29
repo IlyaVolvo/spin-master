@@ -1002,6 +1002,22 @@ router.post('/:id/finalize-registration', [
     emitTournamentStateChanged(createdTournament, 'PRE_REGISTRATION');
     emitCacheInvalidation(createdTournament.id);
     emitPreregistrationChanged(createdTournament.id);
+
+    logger.info('Tournament finalized from preregistration', {
+      tournamentId: createdTournament.id,
+      name: createdTournament.name,
+      type: createdTournament.type,
+      status: createdTournament.status,
+      participantCount: participantIds.length,
+      participantIds,
+      participants: players.map((p) => ({
+        id: p.id,
+        name: `${p.firstName} ${p.lastName}`.trim(),
+        rating: p.rating ?? null,
+      })),
+      finalizedByMemberId: req.memberId,
+    });
+
     res.json(createdTournament);
   } catch (error) {
     logger.error('Error finalizing tournament registration', { error: error instanceof Error ? error.message : String(error) });
@@ -1347,6 +1363,22 @@ router.post('/', [
       emitPreregistrationChanged(createdTournament.id);
     }
 
+    logger.info('Tournament created', {
+      tournamentId: createdTournament.id,
+      name: createdTournament.name,
+      type: createdTournament.type,
+      status: createdTournament.status,
+      participantCount: participantIds.length,
+      participantIds,
+      participants: players.map((p) => ({
+        id: p.id,
+        name: `${p.firstName} ${p.lastName}`.trim(),
+        rating: p.rating ?? null,
+      })),
+      fromPreregistrationId: preregistrationTournamentId,
+      createdByMemberId: req.memberId,
+    });
+
     res.status(201).json(createdTournament);
   } catch (error) {
     logger.error('Error creating tournament', { error: error instanceof Error ? error.message : String(error) });
@@ -1653,12 +1685,15 @@ router.post('/matches/create', [
     // Emit match update notification
     emitMatchUpdate(match, null);
 
-    logger.info('Standalone match created successfully', { 
+    logger.info('Standalone match created successfully', {
       matchId: match.id,
       member1Id,
       member2Id,
       player1Sets: finalPlayer1Sets,
-      player2Sets: finalPlayer2Sets
+      player2Sets: finalPlayer2Sets,
+      player1Forfeit: finalPlayer1Forfeit,
+      player2Forfeit: finalPlayer2Forfeit,
+      recordedByMemberId: req.memberId,
     });
 
     res.status(201).json({
@@ -2059,6 +2094,19 @@ router.patch('/:tournamentId/matches/:matchId', [
       }
       completedTournamentForNotification = completedTournament;
 
+      logger.info('Tournament completed', {
+        tournamentId: completedTournament.id,
+        name: completedTournament.name,
+        type: completedTournament.type,
+        status: completedTournament.status,
+        parentTournamentId: completedTournament.parentTournamentId,
+        participantCount: completedTournament.participants?.length,
+        matchCount: completedTournament.matches?.length,
+        triggeredBy: 'match_score',
+        triggeringMatchId: updatedMatch.id,
+        completedByMemberId: req.memberId,
+      });
+
       // Calculate completion ratings if plugin supports it
       if (plugin.onTournamentCompletionRatingCalculation) {
         await plugin.onTournamentCompletionRatingCalculation({ tournament: completedTournament, prisma });
@@ -2094,6 +2142,19 @@ router.patch('/:tournamentId/matches/:matchId', [
                 where: { id: parentTournament.id },
                 data: { status: 'COMPLETED', recordedAt: new Date() },
               });
+              logger.info('Tournament completed', {
+                tournamentId: parentTournament.id,
+                name: parentTournament.name,
+                type: parentTournament.type,
+                status: 'COMPLETED',
+                parentTournamentId: parentTournament.parentTournamentId,
+                participantCount: parentTournament.participants?.length,
+                childCount: parentTournament.childTournaments?.length,
+                triggeredBy: 'child_tournament_completed',
+                triggeringChildTournamentId: completedTournament.id,
+                triggeringMatchId: updatedMatch.id,
+                completedByMemberId: req.memberId,
+              });
             }
           }
         }
@@ -2113,6 +2174,37 @@ router.patch('/:tournamentId/matches/:matchId', [
       emitCacheInvalidation(completedParentTournamentForNotification.id);
     }
     emitCacheInvalidation(tournamentId);
+
+    const playerIds = [updatedMatch.member1Id, updatedMatch.member2Id].filter(
+      (id: unknown): id is number => typeof id === 'number'
+    );
+    const matchPlayers = playerIds.length
+      ? await prisma.member.findMany({
+          where: { id: { in: playerIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const nameById = new Map(
+      matchPlayers.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim()] as const)
+    );
+
+    logger.info('Match score updated', {
+      tournamentId,
+      tournamentName: tournament.name,
+      tournamentType: tournament.type,
+      matchId: updatedMatch.id,
+      member1Id: updatedMatch.member1Id,
+      member1Name: updatedMatch.member1Id != null ? nameById.get(updatedMatch.member1Id) ?? null : null,
+      member2Id: updatedMatch.member2Id,
+      member2Name: updatedMatch.member2Id != null ? nameById.get(updatedMatch.member2Id) ?? null : null,
+      player1Sets: updatedMatch.player1Sets,
+      player2Sets: updatedMatch.player2Sets,
+      player1Forfeit: !!updatedMatch.player1Forfeit,
+      player2Forfeit: !!updatedMatch.player2Forfeit,
+      recordedByMemberId: req.memberId,
+      tournamentCompleted: !!completedTournamentForNotification,
+      parentTournamentCompleted: !!completedParentTournamentForNotification,
+    });
 
     res.json(updatedMatch);
   } catch (error) {
@@ -2404,6 +2496,18 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
       },
     });
 
+    logger.info('Tournament completed', {
+      tournamentId: updatedTournament.id,
+      name: updatedTournament.name,
+      type: updatedTournament.type,
+      status: updatedTournament.status,
+      parentTournamentId: updatedTournament.parentTournamentId,
+      participantCount: updatedTournament.participants?.length,
+      matchCount: updatedTournament.matches?.length,
+      triggeredBy: 'manual_complete',
+      completedByMemberId: req.memberId,
+    });
+
     // Recalculate rankings for all players (rankings are separate from ratings)
     await recalculateRankings(tournamentId);
 
@@ -2438,6 +2542,18 @@ router.patch('/:id/complete', async (req: AuthRequest, res) => {
             await prisma.tournament.update({
               where: { id: parentTournament.id },
               data: { status: 'COMPLETED', recordedAt: new Date() },
+            });
+            logger.info('Tournament completed', {
+              tournamentId: parentTournament.id,
+              name: parentTournament.name,
+              type: parentTournament.type,
+              status: 'COMPLETED',
+              parentTournamentId: parentTournament.parentTournamentId,
+              participantCount: parentTournament.participants?.length,
+              childCount: parentTournament.childTournaments?.length,
+              triggeredBy: 'child_tournament_completed',
+              triggeringChildTournamentId: updatedTournament.id,
+              completedByMemberId: req.memberId,
             });
           }
         }

@@ -177,10 +177,10 @@ setIO(io);
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  logger.info('Client connected', { socketId: socket.id });
+  logger.debug('Client connected', { socketId: socket.id });
 
   socket.on('disconnect', () => {
-    logger.info('Client disconnected', { socketId: socket.id });
+    logger.debug('Client disconnected', { socketId: socket.id });
   });
 });
 

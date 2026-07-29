@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
 import { logger } from '../utils/logger';
 import { prisma } from '../index';
 
@@ -20,7 +19,7 @@ export interface AuthRequest extends Request {
 
 // Session-based authentication (for members)
 export const authenticateSession = async (req: Request, res: Response, next: NextFunction) => {
-  logger.info('Checking session authentication', {
+  logger.debug('Checking session authentication', {
     method: req.method,
     path: req.path,
     hasAuthorizationHeader: !!req.headers.authorization,
@@ -32,7 +31,7 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
     (req as AuthRequest).memberId = member.id;
     (req as AuthRequest).member = member;
     (req as AuthRequest).kioskMode = req.session.kioskMode === true;
-    logger.info('Session authentication successful', { 
+    logger.debug('Session authentication successful', {
       memberId: member.id,
       method: req.method,
       path: req.path,
@@ -43,9 +42,9 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
 
   // Fallback to JWT token authentication (for member tokens)
   const token = req.headers.authorization?.split(' ')[1];
-  
+
   if (!token) {
-    logger.warn('No session or token provided', { method: req.method, path: req.path, headers: Object.keys(req.headers) });
+    logger.warn('No session or token provided', { method: req.method, path: req.path });
     return res.status(401).json({
       error: 'Authentication required. Please log in again.',
       code: 'AUTHENTICATION_REQUIRED',
@@ -53,47 +52,19 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
   }
 
   try {
-    // Use the same secret fallback logic as the login route
     const jwtSecret = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
-    const secretSource = process.env.JWT_SECRET ? 'JWT_SECRET' : (process.env.SESSION_SECRET ? 'SESSION_SECRET' : 'default');
-    
-    // Create a hash of the secret for verification without exposing it
-    const secretHash = crypto.createHash('sha256').update(jwtSecret).digest('hex').substring(0, 16);
-    
-    // Also hash the actual env vars to verify they're being read correctly
-    const jwtSecretHash = process.env.JWT_SECRET ? crypto.createHash('sha256').update(process.env.JWT_SECRET).digest('hex').substring(0, 16) : 'NOT_SET';
-    const sessionSecretHash = process.env.SESSION_SECRET ? crypto.createHash('sha256').update(process.env.SESSION_SECRET).digest('hex').substring(0, 16) : 'NOT_SET';
-    const defaultSecretHash = crypto.createHash('sha256').update('secret').digest('hex').substring(0, 16);
-    
-    logger.info('Verifying JWT token', {
-      method: req.method,
-      path: req.path,
-      secretSource: secretSource,
-      jwtSecretSet: !!process.env.JWT_SECRET,
-      sessionSecretSet: !!process.env.SESSION_SECRET,
-      jwtSecretLength: process.env.JWT_SECRET?.length || 0,
-      sessionSecretLength: process.env.SESSION_SECRET?.length || 0,
-      secretLength: jwtSecret.length,
-      secretHash: secretHash, // Hash of secret actually used
-      jwtSecretHash: jwtSecretHash, // Hash of JWT_SECRET env var (if set)
-      sessionSecretHash: sessionSecretHash, // Hash of SESSION_SECRET env var (if set)
-      defaultSecretHash: defaultSecretHash, // Hash of default 'secret'
-      usingDefault: jwtSecret === 'secret',
-      tokenLength: token?.length,
-      tokenPrefix: token?.substring(0, 20) + '...'
-    });
-    
+
     const decoded = jwt.verify(token, jwtSecret) as {
       memberId?: number;
       type?: string;
       kioskMode?: boolean;
     };
-    
+
     // Handle member token
     if (decoded.type === 'member' && decoded.memberId) {
       (req as AuthRequest).memberId = decoded.memberId;
       (req as AuthRequest).kioskMode = decoded.kioskMode === true;
-      
+
       // Try to fetch member data from database to populate req.member
       // This helps with role checks without requiring a database lookup in every route
       try {
@@ -107,7 +78,7 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
             roles: true,
           },
         });
-        
+
         if (member) {
           (req as AuthRequest).member = {
             id: member.id,
@@ -116,16 +87,15 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
             lastName: member.lastName,
             roles: member.roles as string[],
           };
-      logger.info('JWT member authentication successful with member data', { 
-        memberId: decoded.memberId,
-        method: req.method,
-        path: req.path,
-        roles: member.roles,
-        kioskMode: (req as AuthRequest).kioskMode === true,
-        secretSource: secretSource,
-      });
+          logger.debug('JWT member authentication successful', {
+            memberId: decoded.memberId,
+            method: req.method,
+            path: req.path,
+            roles: member.roles,
+            kioskMode: (req as AuthRequest).kioskMode === true,
+          });
         } else {
-          logger.warn('JWT member authentication successful but member not found in database', { 
+          logger.warn('JWT member authentication successful but member not found in database', {
             memberId: decoded.memberId,
             method: req.method,
             path: req.path,
@@ -138,13 +108,7 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
           memberId: decoded.memberId,
         });
       }
-      
-      logger.info('JWT member authentication successful', { 
-        memberId: decoded.memberId,
-        method: req.method,
-        path: req.path,
-        secretSource: secretSource,
-      });
+
       return next();
     }
 
@@ -155,30 +119,14 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorName = error instanceof Error ? error.name : typeof error;
-    const jwtSecret = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
-    const secretSource = process.env.JWT_SECRET ? 'JWT_SECRET' : (process.env.SESSION_SECRET ? 'SESSION_SECRET' : 'default');
     const isExpired = errorName === 'TokenExpiredError';
-    
-    // Create a hash of the secret for verification without exposing it
-    const secretHash = crypto.createHash('sha256').update(jwtSecret).digest('hex').substring(0, 16);
-    
+
     logger.warn('JWT token verification failed', {
       error: errorMessage,
       errorName,
       method: req.method,
       path: req.path,
-      hasToken: !!token,
-      tokenLength: token?.length,
-      tokenPrefix: token?.substring(0, 30) + '...',
-      secretSource: secretSource,
-      jwtSecretSet: !!process.env.JWT_SECRET,
-      sessionSecretSet: !!process.env.SESSION_SECRET,
-      secretLength: jwtSecret.length,
-      secretHash: secretHash, // Hash to verify same secret is used
-      usingDefault: jwtSecret === 'secret',
-      diagnostic: isExpired
-        ? 'JWT token expired'
-        : 'Token was signed with a different secret than the one used for verification. Compare secretHash between token creation and verification logs.'
+      diagnostic: isExpired ? 'JWT token expired' : 'Invalid token',
     });
     return res.status(401).json({
       error: isExpired
@@ -192,5 +140,3 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
 
 // Legacy authenticate function (for backward compatibility)
 export const authenticate = authenticateSession;
-
-

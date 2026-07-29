@@ -20,7 +20,7 @@ import {
   parseBirthDateFromCsvValue,
 } from '../utils/memberValidation';
 import { looksLikePlayersCsvHeaderRow, playersCsvCanonicalHeadersForParse } from '../utils/playersCsvLayout';
-import { stripSensitiveMemberFields } from '../utils/memberSerialization';
+import { stripSensitiveMemberFields, memberAuditLogFields, memberChangedFieldsAudit } from '../utils/memberSerialization';
 import { generateScorePin, normalizeScorePin, validateScorePinFormat } from '../utils/scorePin';
 import { isKioskMode } from '../utils/kioskMode';
 import { isAdmin as sharedIsAdmin } from '../utils/adminAccess';
@@ -1166,6 +1166,12 @@ router.post('/', [
 
       const memberWithoutPassword = stripSensitiveMemberFields(member);
 
+      logger.info('Member created', {
+        ...memberAuditLogFields(member),
+        createdByMemberId: req.memberId,
+        passwordResetEmailSent: false,
+      });
+
       emitToAll('player:created', {
         player: memberWithoutPassword,
         timestamp: Date.now(),
@@ -1240,6 +1246,12 @@ router.post('/', [
     await createInitialRatingHistoryEntry(member.id, member.rating);
 
     const memberWithoutPassword = stripSensitiveMemberFields(member);
+
+    logger.info('Member created', {
+      ...memberAuditLogFields(member),
+      createdByMemberId: req.memberId,
+      passwordResetEmailSent: true,
+    });
 
     emitToAll('player:created', {
       player: memberWithoutPassword,
@@ -1596,6 +1608,11 @@ router.patch('/:id', [
         birthDate: true,
         gender: true,
         isActive: true,
+        phone: true,
+        address: true,
+        picture: true,
+        tournamentNotificationsEnabled: true,
+        autoRelinquishPrivileges: true,
       },
     });
 
@@ -1849,13 +1866,24 @@ router.patch('/:id', [
     }
 
     const memberWithoutPassword = stripSensitiveMemberFields(updatedMember);
-    
+
+    logger.info('Member updated', {
+      memberId,
+      name: `${updatedMember.firstName} ${updatedMember.lastName}`.trim(),
+      updatedByMemberId: req.memberId,
+      changes: memberChangedFieldsAudit(
+        updateData,
+        existingMember as Record<string, unknown>,
+        updatedMember as Record<string, unknown>
+      ),
+    });
+
     // Emit socket notification for player update
     emitToAll('player:updated', {
       player: memberWithoutPassword,
       timestamp: Date.now(),
     });
-    
+
     res.json(memberWithoutPassword);
   } catch (error) {
     logger.error('Error updating member', { error: error instanceof Error ? error.message : String(error), memberId: req.params.id });

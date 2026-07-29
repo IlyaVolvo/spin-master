@@ -183,7 +183,12 @@ export class TournamentEventService {
         where: { id: tournament.id },
         data: { status: 'COMPLETED' },
       });
-      logger.info(`Tournament ${tournament.id} marked as COMPLETED`);
+      logger.info(`Tournament marked as COMPLETED`, {
+        tournamentId: tournament.id,
+        name: tournament.name,
+        type: tournament.type,
+        triggeredBy: 'tournament_event_service',
+      });
     }
 
     // Create final tournament (for compound tournaments)

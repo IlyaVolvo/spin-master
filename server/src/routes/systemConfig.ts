@@ -17,6 +17,18 @@ router.get('/system-config', authenticate, requireAdmin, (_req: AuthRequest, res
 router.patch('/system-config', authenticate, requireAdmin, async (req: AuthRequest, res) => {
   try {
     const config = await updateSystemConfig(req.body);
+    logger.info('System configuration updated', {
+      updatedByMemberId: req.memberId,
+      patchKeys: Object.keys(req.body || {}),
+      branding: config.branding,
+      authPolicy: {
+        minimumPasswordLength: config.authPolicy.minimumPasswordLength,
+        pinLength: config.authPolicy.pinLength,
+        autoRelinquishPrivileges: config.authPolicy.autoRelinquishPrivileges,
+        autoRelinquishIdleMinutes: config.authPolicy.autoRelinquishIdleMinutes,
+      },
+      tournamentRules: config.tournamentRules,
+    });
     res.json(config);
   } catch (error) {
     logger.warn('System configuration update rejected', {

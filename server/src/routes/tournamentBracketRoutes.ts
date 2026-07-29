@@ -150,6 +150,20 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
       });
 
       if (completedTournament) {
+        logger.info('Tournament completed', {
+          tournamentId: completedTournament.id,
+          name: completedTournament.name,
+          type: completedTournament.type,
+          status: completedTournament.status,
+          parentTournamentId: completedTournament.parentTournamentId,
+          participantCount: completedTournament.participants?.length,
+          matchCount: completedTournament.matches?.length,
+          triggeredBy: 'bracket_match_score',
+          triggeringBracketMatchId: bracketMatchId,
+          triggeringMatchId: newMatch.id,
+          completedByMemberId: req.memberId,
+        });
+
         if (plugin.onTournamentCompletionRatingCalculation) {
           await plugin.onTournamentCompletionRatingCalculation({ tournament: completedTournament, prisma });
         }
@@ -182,6 +196,19 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
                   where: { id: parentTournament.id },
                   data: { status: 'COMPLETED', recordedAt: new Date() },
                 });
+                logger.info('Tournament completed', {
+                  tournamentId: parentTournament.id,
+                  name: parentTournament.name,
+                  type: parentTournament.type,
+                  status: 'COMPLETED',
+                  parentTournamentId: parentTournament.parentTournamentId,
+                  participantCount: parentTournament.participants?.length,
+                  childCount: parentTournament.childTournaments?.length,
+                  triggeredBy: 'child_tournament_completed',
+                  triggeringChildTournamentId: completedTournament.id,
+                  triggeringMatchId: newMatch.id,
+                  completedByMemberId: req.memberId,
+                });
               }
             }
           }
@@ -192,6 +219,22 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
     await invalidateCacheAfterTournament(tournamentId);
     emitMatchUpdate(newMatch, tournamentId);
     emitCacheInvalidation(tournamentId);
+
+    logger.info('Match score updated', {
+      tournamentId,
+      tournamentName: tournamentForRating.name,
+      tournamentType: tournamentForRating.type,
+      matchId: newMatch.id,
+      bracketMatchId,
+      member1Id: newMatch.member1Id,
+      member2Id: newMatch.member2Id,
+      player1Sets: newMatch.player1Sets,
+      player2Sets: newMatch.player2Sets,
+      player1Forfeit: !!newMatch.player1Forfeit,
+      player2Forfeit: !!newMatch.player2Forfeit,
+      recordedByMemberId: req.memberId,
+      tournamentCompleted: !!tournamentCompleted,
+    });
 
     res.status(201).json(newMatch);
   } catch (error) {
