@@ -6319,23 +6319,31 @@ const Players: React.FC = () => {
                       </button>
                       {!isCheckinKiosk && (
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             setPlanScreenMemberId(player.id);
                           }}
                           title="Member plan"
+                          aria-label="Open plan"
                           style={{
-                            padding: '2px 6px',
-                            border: '1px solid #ccc',
-                            background: '#fff',
-                            color: '#333',
+                            padding: '2px 3px',
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'inherit',
                             cursor: 'pointer',
-                            fontSize: '11px',
+                            fontSize: '16px',
+                            fontWeight: 700,
+                            lineHeight: 1,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                             borderRadius: '4px',
+                            minWidth: '22px',
                           }}
                         >
-                          Plan
+                          $
                         </button>
                       )}
                     </div>
@@ -6351,13 +6359,24 @@ const Players: React.FC = () => {
                         setPlanScreenMemberId(player.id);
                       }}
                       title="Open plan"
+                      aria-label="Open plan"
                       style={{
-                        padding: '4px 8px',
-                        fontSize: '12px',
+                        padding: '2px 3px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'inherit',
                         cursor: 'pointer',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '4px',
+                        minWidth: '22px',
                       }}
                     >
-                      Plan
+                      $
                     </button>
                   </td>
                 )}
