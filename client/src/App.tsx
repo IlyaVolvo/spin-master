@@ -966,7 +966,7 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const showTournamentsTab = !kioskMode || kioskKind === 'browse';
   const kioskBannerText =
     kioskKind === 'checkin'
-      ? 'KIOSK MODE — Club check-in / check-out. Use your score PIN on your row.'
+      ? 'KIOSK MODE — Club check-in / check-out. Find your name, then enter your PIN.'
       : kioskKind === 'tournamentScore'
         ? 'KIOSK MODE — Tournament score entry. Enter match scores with participant PINs.'
         : 'KIOSK MODE — Browse. View players, tournaments, statistics, and history.';

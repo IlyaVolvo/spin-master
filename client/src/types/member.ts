@@ -24,6 +24,8 @@ export interface Member {
   hasPassword?: boolean;
   /** null = inherit club default; only meaningful for Organizer/Admin. */
   autoRelinquishPrivileges?: boolean | null;
+  /** Admin roster only (`/players/all-members`): current plan status for $ indicator. */
+  planIndicator?: 'active' | 'expiring_soon' | 'none';
 }
 
 export interface SimilarName {

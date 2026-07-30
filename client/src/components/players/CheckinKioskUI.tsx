@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../utils/api';
-import { formatPlayerName } from '../../utils/nameFormatter';
+import { formatPlayerName, type NameDisplayOrder } from '../../utils/nameFormatter';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
 
@@ -28,13 +28,6 @@ type PinToggleResponse = {
   paymentInProgress?: boolean;
   entitlement?: EntitlementSummary;
   member?: { firstName: string; lastName: string };
-};
-
-type PresentMember = {
-  memberId: number;
-  firstName: string;
-  lastName: string;
-  lastCheckInAt: string;
 };
 
 function formatEntitlementLine(entitlement: EntitlementSummary): string | null {
@@ -105,10 +98,9 @@ export async function fetchCheckinTodayStatus(): Promise<CheckinStatusMap> {
 
 type CheckinKioskBannerProps = {
   presentCount: number;
-  onOpenPresent: () => void;
 };
 
-export function CheckinKioskBanner({ presentCount, onOpenPresent }: CheckinKioskBannerProps) {
+export function CheckinKioskBanner({ presentCount }: CheckinKioskBannerProps) {
   return (
     <div
       style={{
@@ -128,129 +120,184 @@ export function CheckinKioskBanner({ presentCount, onOpenPresent }: CheckinKiosk
           Club check-in / check-out
         </div>
         <div style={{ fontSize: '13px', color: '#2e7d32', marginTop: '2px' }}>
-          Find your name, then enter your score PIN.
+          Find your name, then enter your PIN.
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onOpenPresent}
-        style={{
-          padding: '8px 14px',
-          fontSize: '14px',
-          fontWeight: 700,
-          backgroundColor: '#27ae60',
-          color: 'white',
-          border: 'none',
-          borderRadius: '6px',
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Present ({presentCount})
-      </button>
+      <div style={{ fontWeight: 700, fontSize: '14px', color: '#1b5e20', whiteSpace: 'nowrap' }}>
+        Present: {presentCount}
+      </div>
     </div>
   );
 }
 
-type PresentPopupProps = {
-  open: boolean;
-  onClose: () => void;
+type PresentPanelMember = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  rating: number | null;
 };
 
-export function CheckinPresentPopup({ open, onClose }: PresentPopupProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [present, setPresent] = useState<PresentMember[]>([]);
-  const [visitedTodayIds, setVisitedTodayIds] = useState<Set<number>>(new Set());
-  const [presentCount, setPresentCount] = useState(0);
+type CheckinPresentPanelProps = {
+  members: PresentPanelMember[];
+  statusByMember: CheckinStatusMap;
+  nameDisplayOrder: NameDisplayOrder;
+};
 
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .get('/club/kiosk/present')
-      .then((res) => {
-        if (cancelled) return;
-        setPresent(Array.isArray(res.data?.present) ? res.data.present : []);
-        setPresentCount(Number(res.data?.presentCount) || 0);
-        const ids = Array.isArray(res.data?.visitedTodayIds) ? res.data.visitedTodayIds : [];
-        setVisitedTodayIds(new Set(ids.map((id: unknown) => Number(id)).filter((n: number) => Number.isInteger(n))));
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(getErrorMessage(err, 'Failed to load present members'));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+export function CheckinPresentPanel({
+  members,
+  statusByMember,
+  nameDisplayOrder,
+}: CheckinPresentPanelProps) {
+  const [sortBy, setSortBy] = useState<'name' | 'rating'>('name');
+  const [collapsed, setCollapsed] = useState(false);
+
+  const present = useMemo(() => {
+    const list = members.filter((m) => statusByMember[m.id]?.present === true);
+    const sorted = [...list];
+    if (sortBy === 'rating') {
+      sorted.sort((a, b) => {
+        const ar = a.rating;
+        const br = b.rating;
+        if (ar == null && br == null) {
+          return formatPlayerName(a.firstName, a.lastName, nameDisplayOrder).localeCompare(
+            formatPlayerName(b.firstName, b.lastName, nameDisplayOrder),
+          );
+        }
+        if (ar == null) return 1;
+        if (br == null) return -1;
+        if (br !== ar) return br - ar;
+        return formatPlayerName(a.firstName, a.lastName, nameDisplayOrder).localeCompare(
+          formatPlayerName(b.firstName, b.lastName, nameDisplayOrder),
+        );
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
-  if (!open) return null;
+    } else {
+      sorted.sort((a, b) =>
+        formatPlayerName(a.firstName, a.lastName, nameDisplayOrder).localeCompare(
+          formatPlayerName(b.firstName, b.lastName, nameDisplayOrder),
+        ),
+      );
+    }
+    return sorted;
+  }, [members, statusByMember, sortBy, nameDisplayOrder]);
 
   return (
     <div
       style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.45)',
-        zIndex: 20000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
+        marginBottom: '12px',
+        padding: '12px 14px',
+        border: '1px solid #d8e8f0',
+        borderRadius: '6px',
+        background: '#f8fbff',
       }}
-      onClick={onClose}
     >
       <div
-        className="card"
-        style={{ maxWidth: '480px', width: '100%', margin: 0, maxHeight: '80vh', overflow: 'auto' }}
-        onClick={(e) => e.stopPropagation()}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          marginBottom: collapsed ? 0 : '8px',
+          flexWrap: 'wrap',
+        }}
       >
-        <h3 style={{ marginTop: 0 }}>Present now ({presentCount})</h3>
-        <p style={{ color: '#666', fontSize: '13px', marginTop: 0 }}>
-          Sorted by last check-in today. ✓ means checked in at least once today.
-        </p>
-        {loading && <div style={{ color: '#666' }}>Loading…</div>}
-        {error && <div style={{ color: '#c0392b', marginBottom: '10px' }}>{error}</div>}
-        {!loading && !error && present.length === 0 && (
-          <div style={{ color: '#666' }}>No one is checked in right now.</div>
-        )}
-        {!loading && present.length > 0 && (
-          <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 16px' }}>
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            fontWeight: 700,
+            fontSize: '14px',
+            color: '#17324d',
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: '12px', color: '#1a5276' }}>
+            {collapsed ? '▶' : '▼'}
+          </span>
+          Checked in now ({present.length})
+        </button>
+        {!collapsed ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <span style={{ color: '#666' }}>Sort:</span>
+            <button
+              type="button"
+              onClick={() => setSortBy('name')}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '4px',
+                border: sortBy === 'name' ? '1px solid #1a5276' : '1px solid #ccc',
+                background: sortBy === 'name' ? '#d6eaf8' : '#fff',
+                fontWeight: sortBy === 'name' ? 700 : 500,
+                cursor: 'pointer',
+                color: '#17324d',
+              }}
+            >
+              Name
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy('rating')}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '4px',
+                border: sortBy === 'rating' ? '1px solid #1a5276' : '1px solid #ccc',
+                background: sortBy === 'rating' ? '#d6eaf8' : '#fff',
+                fontWeight: sortBy === 'rating' ? 700 : 500,
+                cursor: 'pointer',
+                color: '#17324d',
+              }}
+            >
+              Rating
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {!collapsed ? (
+        present.length === 0 ? (
+          <div style={{ fontSize: '13px', color: '#888' }}>No one is checked in right now.</div>
+        ) : (
+          <ul
+            style={{
+              listStyle: 'none',
+              padding: 0,
+              margin: 0,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: '4px 16px',
+              maxHeight: '180px',
+              overflowY: 'auto',
+            }}
+          >
             {present.map((m) => (
               <li
-                key={m.memberId}
+                key={m.id}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '8px 0',
-                  borderBottom: '1px solid #eee',
-                  fontSize: '14px',
+                  gap: '8px',
+                  padding: '4px 0',
+                  fontSize: '13px',
+                  color: '#17324d',
+                  borderBottom: '1px solid #eef3f7',
                 }}
               >
-                <span>
-                  {visitedTodayIds.has(m.memberId) ? '✓ ' : ''}
-                  {formatPlayerName(m.firstName, m.lastName)}
+                <span style={{ fontWeight: 600 }}>
+                  {formatPlayerName(m.firstName, m.lastName, nameDisplayOrder)}
                 </span>
-                <span style={{ color: '#888', fontSize: '12px' }}>
-                  {m.lastCheckInAt ? new Date(m.lastCheckInAt).toLocaleTimeString() : ''}
+                <span style={{ color: '#666', whiteSpace: 'nowrap' }}>
+                  {m.rating != null ? m.rating : '—'}
                 </span>
               </li>
             ))}
           </ul>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
+        )
+      ) : null}
     </div>
   );
 }
@@ -263,7 +310,6 @@ type PinModalProps = {
   onClose: () => void;
   onSuccess: (message: string) => void;
 };
-
 
 export function CheckinPinModal({
   memberId,
@@ -297,7 +343,7 @@ export function CheckinPinModal({
 
   const submit = async () => {
     if (!scorePin.trim()) {
-      setError('Enter your score PIN');
+      setError('Enter your PIN');
       return;
     }
     setLoading(true);
@@ -352,7 +398,7 @@ export function CheckinPinModal({
           <>
             <h3 style={{ marginTop: 0 }}>{label}</h3>
             <p style={{ color: '#555', fontSize: '14px' }}>
-              {memberName} — enter score PIN
+              {memberName} — enter your PIN
               {pinLength ? ` (${pinLength} digits)` : ''}
             </p>
             {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
@@ -369,7 +415,7 @@ export function CheckinPinModal({
                   void submit();
                 }
               }}
-              placeholder="Score PIN"
+              placeholder="PIN"
               style={{ width: '100%', padding: '10px', marginBottom: '16px', boxSizing: 'border-box', fontSize: '18px' }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>

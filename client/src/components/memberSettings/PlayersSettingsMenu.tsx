@@ -14,8 +14,6 @@ export interface PlayersSettingsMenuProps {
   setShowStatusColumn: React.Dispatch<React.SetStateAction<boolean>>;
   showGamesColumn: boolean;
   setShowGamesColumn: React.Dispatch<React.SetStateAction<boolean>>;
-  showPlanColumn?: boolean;
-  setShowPlanColumn?: React.Dispatch<React.SetStateAction<boolean>>;
   showAllPlayers: boolean;
   setShowAllPlayers: React.Dispatch<React.SetStateAction<boolean>>;
   showAllRoles: boolean;
@@ -53,8 +51,6 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   setShowStatusColumn,
   showGamesColumn,
   setShowGamesColumn,
-  showPlanColumn,
-  setShowPlanColumn,
   showAllPlayers,
   setShowAllPlayers,
   showAllRoles,
@@ -195,21 +191,6 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
           />
           <span>Show Games Column</span>
         </label>
-        {isAdminUser && setShowPlanColumn && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
-            <input
-              type="checkbox"
-              checked={!!showPlanColumn}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                setShowPlanColumn(checked);
-                localStorage.setItem('players_showPlanColumn', checked.toString());
-              }}
-              style={{ cursor: 'pointer', margin: 0 }}
-            />
-            <span>Show Plan Column</span>
-          </label>
-        )}
         <div style={{ borderTop: '1px solid #ddd', marginTop: '6px', marginBottom: '6px' }} />
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: '4px', fontSize: '13px' }}>
           <input

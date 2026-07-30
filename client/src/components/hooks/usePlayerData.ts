@@ -23,6 +23,7 @@ interface Member {
   tournamentNotificationsEnabled?: boolean;
   /** null = inherit club default. */
   autoRelinquishPrivileges?: boolean | null;
+  planIndicator?: 'active' | 'expiring_soon' | 'none';
 }
 
 // Module-level cache to persist across component mounts/unmounts
@@ -59,9 +60,14 @@ export function usePlayerData({ setError }: UsePlayerDataParams) {
     }
   };
 
-  // Initial fetch or use cache
+  // Initial fetch or use cache. Admins need planIndicator on every row — refetch if cache is stale.
   useEffect(() => {
-    if (membersCache.data !== null) {
+    const cacheMissingPlanIndicator =
+      isAdmin() &&
+      membersCache.data !== null &&
+      membersCache.data.some((m) => m.planIndicator == null);
+
+    if (membersCache.data !== null && !cacheMissingPlanIndicator) {
       setMembers(membersCache.data);
       setLoading(false);
     } else {
@@ -93,7 +99,12 @@ export function usePlayerData({ setError }: UsePlayerDataParams) {
       if (membersCache.data) {
         const index = membersCache.data.findIndex(p => p.id === data.player.id);
         if (index !== -1) {
-          membersCache.data[index] = data.player;
+          const prev = membersCache.data[index];
+          membersCache.data[index] = {
+            ...data.player,
+            // Socket payloads omit planIndicator; keep last known roster status
+            planIndicator: data.player.planIndicator ?? prev.planIndicator,
+          };
         } else {
           // Player not in cache, add it
           membersCache.data.push(data.player);

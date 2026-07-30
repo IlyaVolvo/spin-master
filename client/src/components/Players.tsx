@@ -9,7 +9,7 @@ import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../u
 import { getMember, setMember, isOrganizer, isAdmin, isKioskMode, getKioskKind } from '../utils/auth';
 import {
   CheckinKioskBanner,
-  CheckinPresentPopup,
+  CheckinPresentPanel,
   CheckinPinModal,
   CheckinRowButton,
   fetchCheckinTodayStatus,
@@ -76,6 +76,33 @@ const PLAYERS_MUTED = '#5a6570';
 const PLAYERS_DISABLED_CONTROL = '#7f8c8d';
 const PLAYERS_INACTIVE_NAME = '#4a5568';
 const PLAYERS_DISABLED_OPACITY = 0.82;
+
+const PLAN_INDICATOR_TITLE: Record<'active' | 'expiring_soon' | 'none', string> = {
+  active: 'Current plan in effect — open plan',
+  expiring_soon: 'Plan expiring soon (no future plan) — open plan',
+  none: 'No current plan — open plan',
+};
+
+const PLAN_INDICATOR_UNKNOWN_TITLE = 'Plan status unknown — open plan';
+
+type PlanIndicatorStyle = { background: string; color: string };
+
+function planIndicatorButtonStyle(
+  indicator: 'active' | 'expiring_soon' | 'none' | null,
+): PlanIndicatorStyle {
+  if (indicator === 'none') {
+    return { background: '#c62828', color: '#fff' };
+  }
+  if (indicator === 'expiring_soon') {
+    return { background: '#f9a825', color: '#212121' };
+  }
+  // active or unknown: neutral $
+  return { background: 'transparent', color: 'inherit' };
+}
+
+function planIndicatorOf(member: Member): 'active' | 'expiring_soon' | 'none' | null {
+  return member.planIndicator ?? null;
+}
 
 type PlayerEditBaseline = {
   firstName: string;
@@ -196,7 +223,6 @@ const Players: React.FC = () => {
   const isUserOrganizer = isOrganizer();
   const isCheckinKiosk = isKioskMode() && getKioskKind() === 'checkin';
   const [checkinStatusByMember, setCheckinStatusByMember] = useState<CheckinStatusMap>({});
-  const [showCheckinPresent, setShowCheckinPresent] = useState(false);
   const [checkinPinTarget, setCheckinPinTarget] = useState<{
     memberId: number;
     memberName: string;
@@ -244,7 +270,6 @@ const Players: React.FC = () => {
   const [showStatusColumn, setShowStatusColumn] = useState(false);
   const [showActionsColumn, setShowActionsColumn] = useState(false);
   const [showGamesColumn, setShowGamesColumn] = useState(false);
-  const [showPlanColumn, setShowPlanColumn] = useState(false);
   const [planScreenMemberId, setPlanScreenMemberId] = useState<number | null>(null);
   const [gamesTimePeriod, setGamesTimePeriod] = useState<'today' | 'week' | 'month' | 'custom' | 'all'>('month');
   const [gamesCustomStartDate, setGamesCustomStartDate] = useState<Date | null>(null);
@@ -481,7 +506,6 @@ const Players: React.FC = () => {
     const savedShowStatusColumn = localStorage.getItem('players_showStatusColumn');
     const savedShowActionsColumn = localStorage.getItem('players_showActionsColumn');
     const savedShowGamesColumn = localStorage.getItem('players_showGamesColumn');
-    const savedShowPlanColumn = localStorage.getItem('players_showPlanColumn');
     const savedGamesTimePeriod = localStorage.getItem('players_gamesTimePeriod');
     const savedGamesCustomStartDate = localStorage.getItem('players_gamesCustomStartDate');
     const savedGamesCustomEndDate = localStorage.getItem('players_gamesCustomEndDate');
@@ -512,9 +536,6 @@ const Players: React.FC = () => {
     if (savedShowActionsColumn === 'true') setShowActionsColumn(true);
     if (savedShowGamesColumn === 'true') {
       setShowGamesColumn(true);
-    }
-    if (savedShowPlanColumn === 'true' && isAdmin()) {
-      setShowPlanColumn(true);
     }
     if (savedGamesTimePeriod && ['today', 'week', 'month', 'custom', 'all'].includes(savedGamesTimePeriod)) {
       setGamesTimePeriod(savedGamesTimePeriod as 'today' | 'week' | 'month' | 'custom' | 'all');
@@ -3444,8 +3465,6 @@ const Players: React.FC = () => {
                 setShowStatusColumn={setShowStatusColumn}
                 showGamesColumn={showGamesColumn}
                 setShowGamesColumn={setShowGamesColumn}
-                showPlanColumn={showPlanColumn}
-                setShowPlanColumn={setShowPlanColumn}
                 showAllPlayers={showAllPlayers}
                 setShowAllPlayers={setShowAllPlayers}
                 showAllRoles={showAllRoles}
@@ -4371,10 +4390,16 @@ const Players: React.FC = () => {
         </div>
 
         {isCheckinKiosk && (
-          <CheckinKioskBanner
-            presentCount={Object.values(checkinStatusByMember).filter((s) => s.present).length}
-            onOpenPresent={() => setShowCheckinPresent(true)}
-          />
+          <>
+            <CheckinKioskBanner
+              presentCount={Object.values(checkinStatusByMember).filter((s) => s.present).length}
+            />
+            <CheckinPresentPanel
+              members={members}
+              statusByMember={checkinStatusByMember}
+              nameDisplayOrder={nameDisplayOrder}
+            />
+          </>
         )}
 
         {showAddForm && (
@@ -5918,11 +5943,6 @@ const Players: React.FC = () => {
                   Edit
                 </th>
               )}
-              {isAdmin() && showPlanColumn && !isCheckinKiosk && (
-                <th style={{ textAlign: 'center', backgroundColor: '#f8f9fa', padding: '12px' }}>
-                  Plan
-                </th>
-              )}
               {isCheckinKiosk && (
                 <th style={{ textAlign: 'center', backgroundColor: '#f8f9fa', padding: '12px' }}>
                   Check-in
@@ -6325,7 +6345,13 @@ const Players: React.FC = () => {
                       >
                         ✏️
                       </button>
-                      {!isCheckinKiosk && (
+                      {!isCheckinKiosk && (() => {
+                        const indicator = planIndicatorOf(player);
+                        const { background, color } = planIndicatorButtonStyle(indicator);
+                        const title = indicator
+                          ? PLAN_INDICATOR_TITLE[indicator]
+                          : PLAN_INDICATOR_UNKNOWN_TITLE;
+                        return (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -6333,17 +6359,17 @@ const Players: React.FC = () => {
                             e.stopPropagation();
                             setPlanScreenMemberId(player.id);
                           }}
-                          title="Member plan"
-                          aria-label="Open plan"
+                          title={title}
+                          aria-label={title}
                           style={{
-                            padding: '2px 3px',
+                            padding: '2px 5px',
                             border: 'none',
-                            background: 'transparent',
-                            color: 'inherit',
+                            background,
+                            color,
                             cursor: 'pointer',
                             fontSize: '16px',
                             fontWeight: 700,
-                            lineHeight: 1,
+                            lineHeight: 1.2,
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -6353,39 +6379,9 @@ const Players: React.FC = () => {
                         >
                           $
                         </button>
-                      )}
+                        );
+                      })()}
                     </div>
-                  </td>
-                )}
-                {isAdmin() && showPlanColumn && !isCheckinKiosk && (
-                  <td style={{ textAlign: 'center', padding: '8px' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setPlanScreenMemberId(player.id);
-                      }}
-                      title="Open plan"
-                      aria-label="Open plan"
-                      style={{
-                        padding: '2px 3px',
-                        border: 'none',
-                        background: 'transparent',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        lineHeight: 1,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: '4px',
-                        minWidth: '22px',
-                      }}
-                    >
-                      $
-                    </button>
                   </td>
                 )}
                 {isCheckinKiosk && (
@@ -6423,7 +6419,10 @@ const Players: React.FC = () => {
       {!isCheckinKiosk && planScreenMemberId != null && (
         <MemberPlanScreen
           memberId={planScreenMemberId}
-          onClose={() => setPlanScreenMemberId(null)}
+          onClose={() => {
+            setPlanScreenMemberId(null);
+            void fetchMembers();
+          }}
         />
       )}
       
@@ -7686,7 +7685,6 @@ const Players: React.FC = () => {
         </div>
       )}
 
-      <CheckinPresentPopup open={showCheckinPresent} onClose={() => setShowCheckinPresent(false)} />
       {checkinPinTarget && (
         <CheckinPinModal
           memberId={checkinPinTarget.memberId}

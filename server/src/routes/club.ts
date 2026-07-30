@@ -1700,6 +1700,94 @@ router.get('/admin/members/search', async (req: AuthRequest, res: Response) => {
   }
 });
 
+/** GET /api/club/admin/payments — all payments, newest first; optional member name filter `q` */
+router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
+    const nameFilters = tokens.map((token) => ({
+      OR: [
+        { firstName: { contains: token, mode: 'insensitive' as const } },
+        { lastName: { contains: token, mode: 'insensitive' as const } },
+      ],
+    }));
+
+    const payments = await prisma.clubPayment.findMany({
+      where:
+        nameFilters.length > 0
+          ? {
+              member: {
+                AND: nameFilters,
+              },
+            }
+          : undefined,
+      orderBy: { recordedAt: 'desc' },
+      take: 500,
+      include: {
+        member: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+      },
+    });
+
+    res.json({
+      payments: payments.map((p) => {
+        const meta =
+          p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+            ? (p.metadata as Record<string, unknown>)
+            : {};
+        const creditFromMeta =
+          typeof meta.creditAppliedCents === 'number' && Number.isFinite(meta.creditAppliedCents)
+            ? Math.max(0, Math.floor(meta.creditAppliedCents))
+            : 0;
+        const listFromMeta =
+          typeof meta.listAmountCents === 'number' && Number.isFinite(meta.listAmountCents)
+            ? Math.max(0, Math.floor(meta.listAmountCents))
+            : null;
+        const creditAppliedCents =
+          p.creditAppliedCents > 0 ? p.creditAppliedCents : creditFromMeta;
+        const listAmountCents =
+          p.listAmountCents > 0
+            ? p.listAmountCents
+            : listFromMeta != null
+              ? listFromMeta
+              : p.amountCents + creditAppliedCents;
+        const product =
+          meta.product && typeof meta.product === 'object' && !Array.isArray(meta.product)
+            ? (meta.product as Record<string, unknown>)
+            : null;
+        const planLabel =
+          (typeof meta.familyKey === 'string' && meta.familyKey.trim()) ||
+          (product && typeof product.familyKey === 'string' && product.familyKey.trim()) ||
+          null;
+
+        return {
+          id: p.id,
+          memberId: p.memberId,
+          memberName: `${p.member.firstName} ${p.member.lastName}`.trim(),
+          amountCents: p.amountCents,
+          listAmountCents,
+          creditAppliedCents,
+          purpose: p.purpose,
+          planLabel,
+          provider: p.provider,
+          status: p.status,
+          recordedAt: p.recordedAt.toISOString(),
+        };
+      }),
+    });
+  } catch (error) {
+    logger.error('Error listing club payments', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 /** GET /api/club/admin/payments/pending — Admin cash (default) pending queue */
 router.get('/admin/payments/pending', async (req: AuthRequest, res: Response) => {
   try {

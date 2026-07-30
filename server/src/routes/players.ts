@@ -26,6 +26,7 @@ import { isKioskMode } from '../utils/kioskMode';
 import { isAdmin as sharedIsAdmin } from '../utils/adminAccess';
 import { isOrganizer as sharedIsOrganizer } from '../utils/organizerAccess';
 import { getPaymentsConfig } from '../services/systemConfigService';
+import { computePlanIndicator, type PlanIndicator } from '../payments/planIndicator';
 
 const router = express.Router();
 const importUpload = multer({ storage: multer.memoryStorage() });
@@ -855,8 +856,43 @@ router.get('/all-members', async (req: AuthRequest, res) => {
       ],
     });
 
+    const entitlements = await prisma.clubEntitlement.findMany({
+      where: {
+        status: { in: ['CURRENT', 'FUTURE'] },
+        memberId: { in: members.map((m) => m.id) },
+      },
+      select: {
+        memberId: true,
+        status: true,
+        type: true,
+        validTo: true,
+        visitsRemaining: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const currentByMember = new Map<number, (typeof entitlements)[number]>();
+    const futureMemberIds = new Set<number>();
+    for (const ent of entitlements) {
+      if (ent.status === 'FUTURE') {
+        futureMemberIds.add(ent.memberId);
+      } else if (ent.status === 'CURRENT' && !currentByMember.has(ent.memberId)) {
+        currentByMember.set(ent.memberId, ent);
+      }
+    }
+
+    const reminders = getPaymentsConfig().reminders;
     const membersWithoutPassword = members.map((member: any) => {
-      return stripSensitiveMemberFields(member);
+      const current = currentByMember.get(member.id) ?? null;
+      const planIndicator: PlanIndicator = computePlanIndicator(
+        current,
+        futureMemberIds.has(member.id),
+        reminders,
+      );
+      return {
+        ...stripSensitiveMemberFields(member),
+        planIndicator,
+      };
     });
 
     res.json(membersWithoutPassword);
