@@ -4,11 +4,6 @@ import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { getClubPlansConfig, updateSystemConfig, getPaymentsConfig } from '../services/systemConfigService';
 import { scorePinsEqual } from '../utils/scorePin';
-import {
-  evaluateCourtesy,
-  ensureCourtesyObligation,
-  notifyAdminsOfCourtesy,
-} from '../payments/courtesy';
 import { resolvePlanForMember, planChargeAmountCents } from '../payments/resolvePlan';
 import {
   computeFutureReimburseCents,
@@ -26,6 +21,8 @@ import {
 } from '../payments/memberTrial';
 import { confirmPayment } from '../payments/confirmPayment';
 import { emitPaymentUpdated } from '../services/socketService';
+import { getExpiryWarning } from '../payments/checkInReminders';
+import { createTrialVisit, resolveFirstVisitOfDay } from '../payments/checkInAccess';
 
 const router = express.Router();
 
@@ -56,120 +53,6 @@ function isAdmin(req: AuthRequest): boolean {
  */
 async function getActiveEntitlement(memberId: number) {
   return refreshCurrentEntitlement(memberId);
-}
-
-/**
- * Build an expiry warning message if the entitlement is near expiration.
- * Returns null if no warning needed.
- */
-function getExpiryWarning(entitlement: {
-  type: string;
-  validTo: Date | null;
-  visitsRemaining: number | null;
-}): string | null {
-  const reminders = getPaymentsConfig().reminders;
-  if (!reminders.checkInBannerEnabled) return null;
-
-  if (entitlement.type === 'VISIT_PACK') {
-    if (
-      entitlement.visitsRemaining !== null &&
-      entitlement.visitsRemaining <= reminders.visitPackVisitsRemaining
-    ) {
-      return `Only ${entitlement.visitsRemaining} visit(s) remaining on your plan.`;
-    }
-  } else if (entitlement.validTo) {
-    const daysLeft = Math.ceil((entitlement.validTo.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= reminders.periodDaysBeforeExpiry) {
-      return `Your plan expires in ${daysLeft} day(s).`;
-    }
-  }
-
-  return null;
-}
-
-async function tryCourtesyCheckIn(
-  memberId: number,
-  clubDate: string,
-  paymentRequiredMessage: string,
-) {
-  const member = await prisma.member.findUnique({
-    where: { id: memberId },
-    select: { firstName: true, lastName: true, email: true },
-  });
-  const canPay = Boolean(member?.email);
-
-  const courtesy = await evaluateCourtesy(memberId);
-  if (!courtesy.allowed) {
-    return {
-      action: 'PAYMENT_REQUIRED' as const,
-      visit: null,
-      warning: courtesy.message || paymentRequiredMessage,
-      charged: false,
-      entitlement: null,
-      courtesy: false,
-      canPay,
-      paymentInProgress: false,
-    };
-  }
-
-  const visit = await prisma.clubVisit.create({
-    data: {
-      memberId,
-      clubDate,
-      dailyPaymentApplied: false,
-      isCourtesy: true,
-    },
-  });
-  await ensureCourtesyObligation(memberId, visit.id);
-
-  const memberName = member ? `${member.firstName} ${member.lastName}`.trim() : `Member ${memberId}`;
-  await notifyAdminsOfCourtesy({
-    memberId,
-    memberName,
-    message: courtesy.message,
-  });
-
-  const pending = await prisma.clubPayment.findFirst({
-    where: { memberId, status: 'PENDING' },
-    orderBy: { recordedAt: 'desc' },
-  });
-
-  return {
-    action: 'CHECK_IN' as const,
-    visit,
-    warning: courtesy.message,
-    charged: false,
-    entitlement: null,
-    courtesy: true,
-    canPay,
-    paymentInProgress: Boolean(pending?.externalRef),
-  };
-}
-
-async function tryTrialCheckIn(memberId: number, clubDate: string, trialEndsOn: Date) {
-  const member = await prisma.member.findUnique({
-    where: { id: memberId },
-    select: { email: true },
-  });
-  const endYmd = trialEndsOnToYmd(trialEndsOn);
-  const visit = await prisma.clubVisit.create({
-    data: {
-      memberId,
-      clubDate,
-      dailyPaymentApplied: false,
-      isCourtesy: false,
-    },
-  });
-  return {
-    action: 'CHECK_IN' as const,
-    visit,
-    warning: endYmd ? `Trial access until ${endYmd}.` : 'Trial access.',
-    charged: false,
-    entitlement: null,
-    courtesy: false,
-    canPay: Boolean(member?.email),
-    paymentInProgress: false,
-  };
 }
 
 /**
@@ -225,104 +108,68 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
       where: { id: memberId },
       select: { trialEndsOn: true, email: true },
     });
-    const onTrial = isMemberInTrialPeriod(memberTrial?.trialEndsOn, clubDate);
 
-    // Get active entitlement and apply payment logic
     const entitlement = await getActiveEntitlement(memberId);
-
-    if (!entitlement) {
-      if (onTrial && memberTrial?.trialEndsOn) {
-        return tryTrialCheckIn(memberId, clubDate, memberTrial.trialEndsOn);
-      }
-      return tryCourtesyCheckIn(
-        memberId,
-        clubDate,
-        'No active plan. Please purchase a plan or contact staff.',
-      );
-    }
-
-    // Check entitlement type
-    switch (entitlement.type) {
-      case 'YEARLY':
-      case 'MONTHLY':
-        // Time-based: covered for the day, record zero-amount ledger
-        dailyPaymentApplied = true;
-        await prisma.clubPayment.create({
-          data: {
-            memberId,
-            amountCents: 0,
-            provider: 'manual',
-            purpose: `Covered visit (${entitlement.type})`,
-            status: 'SUCCEEDED',
-          },
-        });
-        break;
-
-      case 'VISIT_PACK':
-        // Decrement visits remaining
-        if (entitlement.visitsRemaining !== null && entitlement.visitsRemaining > 0) {
-          dailyPaymentApplied = true;
-          const nextRemaining = entitlement.visitsRemaining - 1;
-          await prisma.clubEntitlement.update({
-            where: { id: entitlement.id },
-            data: {
-              visitsRemaining: nextRemaining,
-              ...(nextRemaining <= 0 ? { status: 'ENDED', active: false } : {}),
-            },
-          });
-          await prisma.clubPayment.create({
-            data: {
-              memberId,
-              amountCents: 0,
-              provider: 'manual',
-              purpose: `Visit pack debit (${nextRemaining} remaining)`,
-              status: 'SUCCEEDED',
-            },
-          });
-        } else if (onTrial && memberTrial?.trialEndsOn) {
-          return tryTrialCheckIn(memberId, clubDate, memberTrial.trialEndsOn);
-        } else {
-          return tryCourtesyCheckIn(
-            memberId,
-            clubDate,
-            'Visit pack exhausted. Please purchase a new plan.',
-          );
-        }
-        break;
-
-      case 'PAY_PER_VISIT_EXTERNAL':
-        // Check if staff has already recorded payment for today
-        const todayPayment = await prisma.clubPayment.findFirst({
-          where: {
-            memberId,
-            status: 'SUCCEEDED',
-            recordedAt: {
-              gte: new Date(clubDate + 'T00:00:00'),
-            },
-            purpose: { contains: 'per-visit' },
-          },
-        });
-        if (!todayPayment) {
-          if (onTrial && memberTrial?.trialEndsOn) {
-            return tryTrialCheckIn(memberId, clubDate, memberTrial.trialEndsOn);
+    const outcome = await resolveFirstVisitOfDay({
+      memberId,
+      clubDate,
+      entitlement: entitlement
+        ? {
+            id: entitlement.id,
+            type: entitlement.type,
+            visitsRemaining: entitlement.visitsRemaining,
           }
-          return {
-            action: 'PAYMENT_REQUIRED' as const,
-            visit: null,
-            warning: 'Per-visit payment required. Please pay at the front desk or start checkout.',
-            charged: false,
-            entitlement: null,
-            courtesy: false,
-            canPay: Boolean(memberTrial?.email),
-            paymentInProgress: false,
-          };
-        }
-        dailyPaymentApplied = true;
-        break;
+        : null,
+      trialEndsOn: memberTrial?.trialEndsOn,
+      memberEmail: memberTrial?.email,
+    });
+
+    if (outcome.kind === 'trial') {
+      const visit = await createTrialVisit(memberId, clubDate);
+      return {
+        action: 'CHECK_IN' as const,
+        visit,
+        warning: outcome.warning,
+        charged: false,
+        entitlement: null,
+        courtesy: false,
+        canPay: outcome.canPay,
+        paymentInProgress: false,
+      };
     }
 
-    // Build expiry warning
-    const refreshedEntitlement = await prisma.clubEntitlement.findUnique({ where: { id: entitlement.id } });
+    if (outcome.kind === 'courtesy') {
+      const visit = await prisma.clubVisit.findUnique({ where: { id: outcome.visitId } });
+      return {
+        action: 'CHECK_IN' as const,
+        visit,
+        warning: outcome.warning,
+        charged: false,
+        entitlement: null,
+        courtesy: true,
+        canPay: outcome.canPay,
+        paymentInProgress: outcome.paymentInProgress,
+      };
+    }
+
+    if (outcome.kind === 'payment_required') {
+      return {
+        action: 'PAYMENT_REQUIRED' as const,
+        visit: null,
+        warning: outcome.warning,
+        charged: false,
+        entitlement: null,
+        courtesy: false,
+        canPay: outcome.canPay,
+        paymentInProgress: false,
+      };
+    }
+
+    // covered
+    dailyPaymentApplied = true;
+    const refreshedEntitlement = await prisma.clubEntitlement.findUnique({
+      where: { id: outcome.entitlementId },
+    });
     if (refreshedEntitlement) {
       warning = getExpiryWarning(refreshedEntitlement);
     }
