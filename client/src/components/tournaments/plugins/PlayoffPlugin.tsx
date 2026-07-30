@@ -107,6 +107,12 @@ export const PlayoffPlugin: TournamentPlugin = {
   name: 'Playoff/Bracket',
   description: 'Single or double elimination tournament bracket',
 
+  getEarlyCompleteDialogHints: () => ({
+    supported: false,
+    allowed: false,
+    reason: 'Playoffs cannot be early-completed',
+  }),
+
   getCreationFlow: (): TournamentCreationFlow => ({
     minPlayers: getSystemConfig().tournamentRules.playoff.minPlayers,
     maxPlayers: -1,

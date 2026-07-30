@@ -289,6 +289,14 @@ export class PlayoffPlugin extends BaseTournamentPlugin {
     return true;
   }
 
+  async canEarlyComplete(_context: {
+    tournament: any;
+    prisma: any;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<import('./TournamentPlugin').EarlyCompleteEligibility> {
+    return { supported: false, allowed: false, reason: 'Playoffs cannot be early-completed' };
+  }
+
   matchesRemaining(tournament: any): number {
     if (!tournament.bracketMatches || tournament.bracketMatches.length === 0) {
       return 0;

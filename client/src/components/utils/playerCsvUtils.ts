@@ -104,10 +104,12 @@ export interface CsvDownloadResult {
   reason?: 'cancelled' | 'unsupported' | 'failed';
 }
 
-export async function downloadCsv(csvContent: string, filename: string): Promise<CsvDownloadResult> {
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-
-  // Full save functionality (name + location) requires File System Access API.
+async function downloadBlob(
+  blob: Blob,
+  filename: string,
+  description: string,
+  accept: Record<string, string[]>,
+): Promise<CsvDownloadResult> {
   const saveFilePicker = (window as any).showSaveFilePicker;
   if (typeof saveFilePicker !== 'function') {
     return { saved: false, reason: 'unsupported' };
@@ -116,12 +118,7 @@ export async function downloadCsv(csvContent: string, filename: string): Promise
   try {
     const handle = await saveFilePicker({
       suggestedName: filename,
-      types: [
-        {
-          description: 'CSV files',
-          accept: { 'text/csv': ['.csv'] },
-        },
-      ],
+      types: [{ description, accept }],
     });
 
     const writable = await handle.createWritable();
@@ -134,6 +131,18 @@ export async function downloadCsv(csvContent: string, filename: string): Promise
     }
     return { saved: false, reason: 'failed' };
   }
+}
+
+export async function downloadCsv(csvContent: string, filename: string): Promise<CsvDownloadResult> {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  return downloadBlob(blob, filename, 'CSV files', { 'text/csv': ['.csv'] });
+}
+
+export async function downloadJson(data: unknown, filename: string): Promise<CsvDownloadResult> {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: 'application/json;charset=utf-8;',
+  });
+  return downloadBlob(blob, filename, 'JSON files', { 'application/json': ['.json'] });
 }
 
 // ─── CSV Import Parsing ─────────────────────────────────────────────────────

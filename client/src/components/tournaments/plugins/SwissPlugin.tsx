@@ -119,6 +119,7 @@ export const SwissPlugin: TournamentPlugin = {
 
   countPlayedMatches: (tournament) => {
     return tournament.matches.filter(match => {
+      if (match.notPlayed) return false;
       const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
       const hasForfeit = match.player1Forfeit || match.player2Forfeit;
       return hasScore || hasForfeit;
@@ -127,10 +128,25 @@ export const SwissPlugin: TournamentPlugin = {
 
   countNonForfeitedMatches: (tournament) => {
     return tournament.matches.filter(match => {
+      if (match.notPlayed) return false;
       const hasScore = match.player1Sets > 0 || match.player2Sets > 0;
       const notForfeited = !match.player1Forfeit && !match.player2Forfeit;
       return hasScore && notForfeited;
     }).length;
+  },
+
+  getEarlyCompleteDialogHints: (tournament) => {
+    if (tournament.status !== 'ACTIVE') {
+      return { supported: true, allowed: false, reason: 'Tournament is not active' };
+    }
+    if (tournament.swissData?.isCompleted) {
+      return { supported: true, allowed: false, reason: 'Swiss tournament is already complete' };
+    }
+    const currentRound = tournament.swissData?.currentRound ?? 0;
+    if (currentRound < 1) {
+      return { supported: true, allowed: false, reason: 'No Swiss rounds have started' };
+    }
+    return { supported: true, allowed: true };
   },
 };
 

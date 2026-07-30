@@ -63,6 +63,7 @@ export type TournamentRulesConfig = {
   roundRobin: {
     minPlayers: number;
     maxPlayers: number;
+    earlyCompleteMinPercent: number;
   };
   playoff: {
     minPlayers: number;
@@ -75,8 +76,7 @@ export type TournamentRulesConfig = {
   };
   multiRoundRobins: {
     minPlayers: number;
-    minGroupSize: number;
-    maxGroupSize: number;
+    defaultSize: number;
     minGroups: number;
   };
   /** Settings for PRELIMINARY_WITH_FINAL_ROUND_ROBIN */
@@ -200,6 +200,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       roundRobin: {
         minPlayers: 3,
         maxPlayers: 32,
+        earlyCompleteMinPercent: 70,
       },
       playoff: {
         minPlayers: 2,
@@ -212,8 +213,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       },
       multiRoundRobins: {
         minPlayers: 6,
-        minGroupSize: 3,
-        maxGroupSize: 12,
+        defaultSize: 4,
         minGroups: 2,
       },
       preliminaryWithFinalRoundRobin: {
@@ -433,6 +433,12 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
 
   const roundRobinMin = requireInteger(config.roundRobin.minPlayers, 'tournamentRules.roundRobin.minPlayers', 2);
   const roundRobinMax = requireInteger(config.roundRobin.maxPlayers, 'tournamentRules.roundRobin.maxPlayers', roundRobinMin);
+  const earlyCompleteMinPercent = requireInteger(
+    config.roundRobin.earlyCompleteMinPercent,
+    'tournamentRules.roundRobin.earlyCompleteMinPercent',
+    1,
+    100,
+  );
 
   const playoffMin = requireInteger(config.playoff.minPlayers, 'tournamentRules.playoff.minPlayers', 2);
   const seedDivisor = requireInteger(config.playoff.seedDivisor, 'tournamentRules.playoff.seedDivisor', 1);
@@ -462,6 +468,7 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
     roundRobin: {
       minPlayers: roundRobinMin,
       maxPlayers: roundRobinMax,
+      earlyCompleteMinPercent,
     },
     playoff: {
       minPlayers: playoffMin,
@@ -472,15 +479,16 @@ function validateTournamentRules(value: unknown): TournamentRulesConfig {
       pairByRating: requireBoolean(config.swiss.pairByRating, 'tournamentRules.swiss.pairByRating'),
       maxRoundsDivisor: requireInteger(config.swiss.maxRoundsDivisor, 'tournamentRules.swiss.maxRoundsDivisor', 1),
     },
-    multiRoundRobins: (() => {
-      const minGroupSize = requireInteger(config.multiRoundRobins.minGroupSize, 'tournamentRules.multiRoundRobins.minGroupSize', 2);
-      return {
-        minPlayers: requireInteger(config.multiRoundRobins.minPlayers, 'tournamentRules.multiRoundRobins.minPlayers', 2),
-        minGroupSize,
-        maxGroupSize: requireInteger(config.multiRoundRobins.maxGroupSize, 'tournamentRules.multiRoundRobins.maxGroupSize', minGroupSize),
-        minGroups: requireInteger(config.multiRoundRobins.minGroups, 'tournamentRules.multiRoundRobins.minGroups', 2),
-      };
-    })(),
+    multiRoundRobins: {
+      minPlayers: requireInteger(config.multiRoundRobins.minPlayers, 'tournamentRules.multiRoundRobins.minPlayers', 2),
+      defaultSize: requireInteger(
+        config.multiRoundRobins.defaultSize,
+        'tournamentRules.multiRoundRobins.defaultSize',
+        roundRobinMin,
+        roundRobinMax
+      ),
+      minGroups: requireInteger(config.multiRoundRobins.minGroups, 'tournamentRules.multiRoundRobins.minGroups', 2),
+    },
     preliminaryWithFinalRoundRobin: {
       ...rrPrelim,
       finalRoundRobinSizeDefault: requireInteger(

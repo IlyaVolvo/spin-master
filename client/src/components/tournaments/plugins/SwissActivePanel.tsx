@@ -73,6 +73,7 @@ interface RoundMatchRow {
   player1Forfeit: boolean;
   player2Forfeit: boolean;
   completed: boolean;
+  notPlayed: boolean;
 }
 
 interface DisplayRoundMatch extends RoundMatchRow {
@@ -132,7 +133,14 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         player2Sets: m.player2Sets,
         player1Forfeit: m.player1Forfeit || false,
         player2Forfeit: m.player2Forfeit || false,
-        completed: (m.player1Sets > 0 || m.player2Sets > 0 || m.player1Forfeit || (m.player2Forfeit || false)),
+        completed: Boolean(
+          m.notPlayed ||
+          m.player1Sets > 0 ||
+          m.player2Sets > 0 ||
+          m.player1Forfeit ||
+          (m.player2Forfeit || false)
+        ),
+        notPlayed: Boolean(m.notPlayed),
       }));
   }, [tournament.matches, currentRound]);
   const currentRoundComplete = currentRoundMatches.length > 0 && currentRoundMatches.every(match => match.completed);
@@ -153,8 +161,9 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
       });
     });
 
-    // Process all completed matches
+    // Process all completed matches (NP adds no points)
     tournament.matches.forEach(match => {
+      if (match.notPlayed) return;
       const hasScore = (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0;
       const hasForfeit = match.player1Forfeit || match.player2Forfeit;
       if (!hasScore && !hasForfeit) return;
@@ -449,7 +458,7 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
         <td>${idx + 1}</td>
         <td>${p1Name}${p1Rating ? `<span class="rating">(${p1Rating})</span>` : ''}<span class="pts">[${p1Pts}]</span></td>
         <td><span class="pts">[${p2Pts}]</span>${p2Name}${p2Rating ? `<span class="rating">(${p2Rating})</span>` : ''}</td>
-        <td class="score">${isPlayed ? (match.player1Forfeit ? 'FF' : match.player2Forfeit ? 'FF' : `${match.player1Sets}:${match.player2Sets}`) : ''}</td>
+        <td class="score">${isPlayed ? (match.notPlayed ? 'NP' : match.player1Forfeit ? 'FF' : match.player2Forfeit ? 'FF' : `${match.player1Sets}:${match.player2Sets}`) : ''}</td>
       </tr>`;
     }).join('');
 
@@ -629,11 +638,11 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
                       <span style={{
                         fontWeight: 'bold', fontSize: '14px', color: '#333',
                         whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: '4px',
-                        backgroundColor: p1Forfeit || p2Forfeit ? '#f8d7da' : '#e8f5e9',
+                        backgroundColor: match.notPlayed ? '#f0f0f0' : p1Forfeit || p2Forfeit ? '#f8d7da' : '#e8f5e9',
                       }}>
                         {correctable && <span style={correctionPencilStyle} aria-hidden="true">✏️</span>}
-                        {p1Forfeit ? 'FF' : p2Forfeit ? 'W' : `${p1Sets} - ${p2Sets}`}
-                        {p1Forfeit ? '' : p2Forfeit ? ' (FF)' : ''}
+                        {match.notPlayed ? 'NP' : p1Forfeit ? 'FF' : p2Forfeit ? 'W' : `${p1Sets} - ${p2Sets}`}
+                        {match.notPlayed ? '' : p1Forfeit ? '' : p2Forfeit ? ' (FF)' : ''}
                       </span>
                     ) : (
                       <button

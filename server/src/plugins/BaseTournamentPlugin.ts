@@ -60,9 +60,7 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
     additionalData?: Record<string, any>;
   }): Promise<Tournament> {
     const { tournamentId, name, participantIds, players, prisma, additionalData } = context;
-    
-    logger.info('Modifying tournament', { tournamentId, name, participantCount: participantIds.length });
-    
+
     // Get existing tournament to verify it can be modified
     const existingTournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
@@ -71,20 +69,33 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
         matches: true,
       },
     });
-    
+
     if (!existingTournament) {
       throw new Error('Tournament not found');
     }
-    
+
     if (!this.canModify(existingTournament)) {
       throw new Error('Tournament cannot be modified - matches have already been played');
     }
-    
+
+    logger.info('Modifying tournament', {
+      tournamentId,
+      name,
+      type: existingTournament.type,
+      participantCount: participantIds.length,
+      participantIds,
+      participants: players.map((p: any) => ({
+        id: p.id,
+        name: `${p.firstName} ${p.lastName}`.trim(),
+        rating: p.rating ?? null,
+      })),
+    });
+
     // Delete existing participants (they'll be recreated)
     await prisma.tournamentParticipant.deleteMany({
       where: { tournamentId },
     });
-    
+
     // Update tournament with new data
     const updatedTournament = await prisma.tournament.update({
       where: { id: tournamentId },
@@ -107,9 +118,14 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
         matches: true,
       },
     });
-    
-    logger.info('Tournament modified successfully', { tournamentId, newParticipantCount: participantIds.length });
-    
+
+    logger.info('Tournament modified successfully', {
+      tournamentId,
+      name: updatedTournament.name,
+      type: updatedTournament.type,
+      participantCount: participantIds.length,
+    });
+
     return updatedTournament;
   }
 
@@ -133,6 +149,38 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
 
   async onChildTournamentCompleted?(event: ChildTournamentCompletedEvent): Promise<TournamentStateChangeResult> {
     // Default implementation - do nothing
+    return {};
+  }
+
+  async canEarlyComplete(_context: {
+    tournament: any;
+    prisma: any;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<import('./TournamentPlugin').EarlyCompleteEligibility> {
+    return {
+      supported: false,
+      allowed: false,
+      reason: 'Early completion is not supported for this tournament type',
+    };
+  }
+
+  async earlyComplete(_context: {
+    tournament: any;
+    prisma: any;
+    userId?: number;
+    overrides?: { earlyCompleteMinPercent?: number };
+  }): Promise<{
+    tournament: any;
+    shouldMarkComplete: boolean;
+    message?: string;
+  }> {
+    throw new Error('Early completion is not supported for this tournament type');
+  }
+
+  async onChildAbandoned?(event: ChildTournamentCompletedEvent): Promise<TournamentStateChangeResult> {
+    if (this.onChildTournamentCompleted) {
+      return this.onChildTournamentCompleted(event);
+    }
     return {};
   }
 

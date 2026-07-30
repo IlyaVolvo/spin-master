@@ -832,6 +832,7 @@ export default function SystemSettings() {
         >
           <NumericInput label="Min Players" min={2} value={config.tournamentRules.roundRobin.minPlayers} onChange={(value) => updateConfig(draft => { draft.tournamentRules.roundRobin.minPlayers = value; })} />
           <NumericInput label="Max Players" min={2} value={config.tournamentRules.roundRobin.maxPlayers} onChange={(value) => updateConfig(draft => { draft.tournamentRules.roundRobin.maxPlayers = value; })} />
+          <NumericInput label="Early Complete Min %" min={1} max={100} value={config.tournamentRules.roundRobin.earlyCompleteMinPercent} onChange={(value) => updateConfig(draft => { draft.tournamentRules.roundRobin.earlyCompleteMinPercent = value; })} />
         </ExpandableSubsection>
 
         <ExpandableSubsection
@@ -869,8 +870,13 @@ export default function SystemSettings() {
           onToggle={toggleTournamentRule}
         >
           <NumericInput label="Min Players" min={2} value={config.tournamentRules.multiRoundRobins.minPlayers} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.minPlayers = value; })} />
-          <NumericInput label="Min Group Size" min={2} value={config.tournamentRules.multiRoundRobins.minGroupSize} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.minGroupSize = value; })} />
-          <NumericInput label="Max Group Size" min={2} value={config.tournamentRules.multiRoundRobins.maxGroupSize} onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.maxGroupSize = value; })} />
+          <NumericInput
+            label="Default Size"
+            min={config.tournamentRules.roundRobin.minPlayers}
+            max={config.tournamentRules.roundRobin.maxPlayers}
+            value={config.tournamentRules.multiRoundRobins.defaultSize}
+            onChange={(value) => updateConfig(draft => { draft.tournamentRules.multiRoundRobins.defaultSize = value; })}
+          />
         </ExpandableSubsection>
 
         <ExpandableSubsection

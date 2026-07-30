@@ -115,6 +115,16 @@ function collectTournamentAndChildIds(tournament: Tournament): number[] {
   return ids;
 }
 
+/** Find a tournament (parent or nested child) by id within a tree. */
+function findTournamentInTree(root: Tournament, id: number): Tournament | null {
+  if (root.id === id) return root;
+  for (const child of root.childTournaments ?? []) {
+    const found = findTournamentInTree(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
 function ScoreCorrectionModeToggle({
   active,
   onChange,
@@ -316,8 +326,17 @@ const TournamentDetailPage: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [activeSectionCollapsed, setActiveSectionCollapsed] = useState<boolean>(false);
   const [completedSectionCollapsed, setCompletedSectionCollapsed] = useState<boolean>(false);
-  const [showCancelConfirmation, setShowCancelConfirmation] = useState<{ tournamentId: number; matchCount: number } | null>(null);
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState<{
+    tournamentId: number;
+    matchCount: number;
+    earlyCompleteSupported: boolean;
+    earlyCompleteAllowed: boolean;
+    earlyCompleteReason?: string;
+    playedPercent?: number;
+    earlyCompleteMinPercent?: number;
+  } | null>(null);
   const [cancelPassword, setCancelPassword] = useState<string>('');
+  const [cancelEarlyCompleteMinPercent, setCancelEarlyCompleteMinPercent] = useState<number | null>(null);
   const [cancelPasswordErrorModal, setCancelPasswordErrorModal] = useState<string | null>(null);
   const [matchResultAlreadyEnteredModal, setMatchResultAlreadyEnteredModal] = useState<string | null>(null);
   const [systemConfig, setSystemConfig] = useState(() => getSystemConfig());
@@ -435,7 +454,7 @@ const TournamentDetailPage: React.FC = () => {
     if (type === 'complete') {
       return 'Complete Tournament: Marks the tournament as completed. All matches must be finished. Rankings will be recalculated.';
     } else if (type === 'cancel') {
-      return 'Cancel Tournament: Stops the tournament. If matches were played, they are preserved. If no matches were played, the tournament is removed.';
+      return 'Abandon Tournament: Stops the tournament. If matches were played, they are preserved. If no matches were played, the tournament is removed. Early Completion may also be available.';
     }
     return '';
   };
@@ -686,16 +705,34 @@ const TournamentDetailPage: React.FC = () => {
       saveLastStage(stageFromTournamentStatus(tournament.status));
       saveShouldRestoreDetail(true);
 
-      const idsToExpand = collectTournamentAndChildIds(tournament);
-      setExpandedDetails(prev => {
-        const next = new Set(prev);
-        for (const id of idsToExpand) next.add(id);
+      const idsInTree = collectTournamentAndChildIds(tournament);
+      const idSet = new Set(idsInTree);
+      // First load: expand everything. Later refreshes: keep collapse state; only expand newly appeared children.
+      setExpandedDetails((prev) => {
+        if (prev.size === 0) {
+          return new Set(idsInTree);
+        }
+        const next = new Set<number>();
+        for (const id of prev) {
+          if (idSet.has(id)) next.add(id);
+        }
+        for (const id of idsInTree) {
+          if (!prev.has(id)) next.add(id);
+        }
         return next;
       });
-      setSelectedTournament(tournament);
-      setPreregistrationSectionCollapsed(false);
-      setActiveSectionCollapsed(false);
-      setCompletedSectionCollapsed(false);
+      setSelectedTournament((prev) => {
+        if (prev) {
+          const stillThere = findTournamentInTree(tournament, prev.id);
+          if (stillThere) return stillThere;
+        }
+        return tournament;
+      });
+      if (!silent) {
+        setPreregistrationSectionCollapsed(false);
+        setActiveSectionCollapsed(false);
+        setCompletedSectionCollapsed(false);
+      }
 
       setError('');
     } catch (err: unknown) {
@@ -722,6 +759,37 @@ const TournamentDetailPage: React.FC = () => {
     [fetchData]
   );
 
+  // Coalesce match+tournament callback refreshes (and near-simultaneous local events).
+  const silentRefreshTimerRef = useRef<number | null>(null);
+  const scheduleSilentRefresh = useCallback(() => {
+    if (silentRefreshTimerRef.current != null) {
+      window.clearTimeout(silentRefreshTimerRef.current);
+    }
+    silentRefreshTimerRef.current = window.setTimeout(() => {
+      silentRefreshTimerRef.current = null;
+      void fetchDataPreservingScroll().catch((err) => {
+        console.error('Error during silent tournament refresh', err);
+      });
+    }, 50);
+  }, [fetchDataPreservingScroll]);
+
+  // Child match socket events use the child tournament id; keep the open tree ids here.
+  const openTreeIdsRef = useRef<Set<number>>(new Set([tournamentId]));
+  useEffect(() => {
+    const root = activeTournaments[0] ?? tournaments[0];
+    openTreeIdsRef.current = new Set(
+      root ? collectTournamentAndChildIds(root) : [tournamentId],
+    );
+  }, [activeTournaments, tournaments, tournamentId]);
+
+  useEffect(() => {
+    return () => {
+      if (silentRefreshTimerRef.current != null) {
+        window.clearTimeout(silentRefreshTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     void fetchData();
 
@@ -735,7 +803,8 @@ const TournamentDetailPage: React.FC = () => {
       if (eventTournamentId == null || !Number.isFinite(eventTournamentId)) {
         return true;
       }
-      return eventTournamentId === tournamentId;
+      if (eventTournamentId === tournamentId) return true;
+      return openTreeIdsRef.current.has(eventTournamentId);
     };
 
     // Coalesce paired emits (e.g. tournament:updated + cache:invalidate) into one silent refresh.
@@ -1321,21 +1390,53 @@ const TournamentDetailPage: React.FC = () => {
     }
   };
 
-  const handleCancelTournament = async (tournamentId: number, password?: string) => {
-    const tournament = activeTournaments.find(t => t.id === tournamentId);
-    if (!tournament) return;
-
+  const handleCancelTournament = async (
+    cancelledTournamentId: number,
+    mode: 'abandon' | 'earlyComplete',
+    password?: string,
+  ) => {
     setError('');
     setSuccess('');
 
+    const target = findActiveTournamentById(cancelledTournamentId);
+    const parentId = (target as { parentTournamentId?: number | null } | undefined)?.parentTournamentId ?? null;
+    const stayingOnParentDetail = parentId != null && parentId === tournamentId;
+
     try {
-      await api.patch(`/tournaments/${tournamentId}/cancel`, {
+      await api.patch(`/tournaments/${cancelledTournamentId}/cancel`, {
         password,
+        mode,
+        ...(mode === 'earlyComplete' && cancelEarlyCompleteMinPercent != null
+          ? { earlyCompleteMinPercent: cancelEarlyCompleteMinPercent }
+          : {}),
       });
 
       setShowCancelConfirmation(null);
       setCancelPassword('');
+      setCancelEarlyCompleteMinPercent(null);
       setSelectedTournament(null);
+
+      if (stayingOnParentDetail) {
+        try {
+          const refreshed = await api.get(`/tournaments/${parentId}`);
+          if (refreshed.data?.status === 'COMPLETED') {
+            saveShouldRestoreDetail(false);
+            navigate('/tournaments');
+            return;
+          }
+          await fetchData();
+          setSuccess(
+            mode === 'earlyComplete'
+              ? 'Sub-tournament early-completed'
+              : 'Sub-tournament abandoned',
+          );
+        } catch {
+          saveShouldRestoreDetail(false);
+          navigate('/tournaments');
+        }
+        return;
+      }
+
       saveShouldRestoreDetail(false);
       navigate('/tournaments');
     } catch (err: unknown) {
@@ -1350,26 +1451,46 @@ const TournamentDetailPage: React.FC = () => {
         return;
       }
 
-      setError(apiError || 'Failed to cancel tournament');
+      setError(apiError || (mode === 'earlyComplete' ? 'Failed to early-complete tournament' : 'Failed to abandon tournament'));
     }
   };
 
+  const findActiveTournamentById = (tournamentId: number): Tournament | undefined => {
+    for (const t of activeTournaments) {
+      if (t.id === tournamentId) return t;
+      for (const child of t.childTournaments ?? []) {
+        if (child.id === tournamentId) return child;
+        for (const grandchild of child.childTournaments ?? []) {
+          if (grandchild.id === tournamentId) return grandchild;
+        }
+      }
+    }
+    return undefined;
+  };
+
   const handleShowCancelConfirmation = (tournamentId: number) => {
-    const tournament = activeTournaments.find(t => t.id === tournamentId);
+    const tournament = findActiveTournamentById(tournamentId);
     if (!tournament) return;
 
-    const isPlayedMatch = (match: { player1Sets: number; player2Sets: number; player1Forfeit?: boolean; player2Forfeit?: boolean }) => {
+    const isPlayedMatch = (match: {
+      player1Sets: number;
+      player2Sets: number;
+      player1Forfeit?: boolean;
+      player2Forfeit?: boolean;
+      notPlayed?: boolean;
+    }) => {
+      if (match.notPlayed) return false;
       const hasScore = (match.player1Sets || 0) > 0 || (match.player2Sets || 0) > 0;
       const hasForfeit = !!match.player1Forfeit || !!match.player2Forfeit;
       return hasScore || hasForfeit;
     };
 
     // Count played matches (including children for compound tournaments)
-    let matchCount = tournament.matches.filter(isPlayedMatch).length;
+    let matchCount = (tournament.matches ?? []).filter(isPlayedMatch).length;
     if (tournament.childTournaments) {
       for (const child of tournament.childTournaments) {
         matchCount += (child.matches ?? []).filter(isPlayedMatch).length;
-        const grandChildren = (child as any).childTournaments;
+        const grandChildren = child.childTournaments;
         if (grandChildren) {
           for (const grandchild of grandChildren) {
             matchCount += (grandchild.matches ?? []).filter(isPlayedMatch).length;
@@ -1378,7 +1499,22 @@ const TournamentDetailPage: React.FC = () => {
       }
     }
 
-    setShowCancelConfirmation({ tournamentId, matchCount });
+    const plugin = tournamentPluginRegistry.get(tournament.type as TournamentType);
+    const hints = plugin.getEarlyCompleteDialogHints?.(tournament) ?? {
+      supported: false,
+      allowed: false,
+    };
+    const minPercent = hints.earlyCompleteMinPercent;
+    setShowCancelConfirmation({
+      tournamentId,
+      matchCount,
+      earlyCompleteSupported: hints.supported,
+      earlyCompleteAllowed: hints.allowed,
+      earlyCompleteReason: hints.reason,
+      playedPercent: hints.playedPercent,
+      earlyCompleteMinPercent: minPercent,
+    });
+    setCancelEarlyCompleteMinPercent(typeof minPercent === 'number' ? minPercent : null);
     setCancelPassword('');
     setCancelPasswordErrorModal(null);
   };
@@ -1386,6 +1522,7 @@ const TournamentDetailPage: React.FC = () => {
   const closeCancelConfirmation = () => {
     setShowCancelConfirmation(null);
     setCancelPassword('');
+    setCancelEarlyCompleteMinPercent(null);
     setCancelPasswordErrorModal(null);
   };
 
@@ -1914,7 +2051,9 @@ const TournamentDetailPage: React.FC = () => {
                                     marginLeft: '10px',
                                     padding: '12px',
                                     border: '1px solid #ccc',
-                                    borderLeft: `4px solid ${child.status === 'COMPLETED' ? '#27ae60' : '#3498db'}`,
+                                    borderLeft: `4px solid ${
+                                      child.cancelled ? '#c0392b' : child.status === 'COMPLETED' ? '#27ae60' : '#3498db'
+                                    }`,
                                     borderRadius: '4px',
                                     backgroundColor: 'white',
                                   }}
@@ -1925,10 +2064,18 @@ const TournamentDetailPage: React.FC = () => {
                                       <strong style={{ fontSize: '15px' }}>{child.name || `Sub-tournament ${child.id}`}</strong>
                                       <span style={{
                                         fontSize: '11px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '3px',
-                                        backgroundColor: child.status === 'COMPLETED' ? '#d4edda' : '#cce5ff',
-                                        color: child.status === 'COMPLETED' ? '#155724' : '#004085',
+                                        backgroundColor: child.cancelled
+                                          ? '#f8d7da'
+                                          : child.status === 'COMPLETED'
+                                            ? '#d4edda'
+                                            : '#cce5ff',
+                                        color: child.cancelled
+                                          ? '#721c24'
+                                          : child.status === 'COMPLETED'
+                                            ? '#155724'
+                                            : '#004085',
                                       }}>
-                                        {child.status}
+                                        {child.cancelled ? 'ABANDONED' : child.status}
                                       </span>
                                       {child.groupNumber && (
                                         <span style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>
@@ -1944,7 +2091,7 @@ const TournamentDetailPage: React.FC = () => {
                                   </div>
 
                                   {/* Child action buttons */}
-                                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <ExpandCollapseButton
                                       isExpanded={expandedDetails.has(child.id)}
                                       onToggle={() => {
@@ -1977,6 +2124,27 @@ const TournamentDetailPage: React.FC = () => {
                                       expandedText="▲ Hide Participants"
                                       collapsedText="▼ Show Participants"
                                     />
+                                    {child.status === 'ACTIVE' && isUserOrganizer && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleShowCancelConfirmation(child.id)}
+                                        title="Abandon or early-complete this sub-tournament"
+                                        style={{
+                                          padding: '4px 8px',
+                                          border: 'none',
+                                          background: 'transparent',
+                                          cursor: 'pointer',
+                                          fontSize: '14px',
+                                          color: '#e74c3c',
+                                          marginLeft: 'auto',
+                                        }}
+                                      >
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+                                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                      </button>
+                                    )}
                                   </div>
 
                                   {/* Child participants */}
@@ -1992,7 +2160,9 @@ const TournamentDetailPage: React.FC = () => {
                                       {child.status === 'COMPLETED'
                                         ? childPlugin.createCompletedPanel({
                                             tournament: child as any,
-                                            onTournamentUpdate: (updated) => { fetchData(); },
+                                            onTournamentUpdate: () => {
+                                              scheduleSilentRefresh();
+                                            },
                                             onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
                                             isExpanded: true,
@@ -2000,9 +2170,11 @@ const TournamentDetailPage: React.FC = () => {
                                           })
                                         : childPlugin.createActivePanel({
                                             tournament: child as any,
-                                            onTournamentUpdate: (updated) => { fetchData(); },
+                                            onTournamentUpdate: () => {
+                                              scheduleSilentRefresh();
+                                            },
                                             onMatchUpdate: () => {
-                                              void fetchDataPreservingScroll();
+                                              scheduleSilentRefresh();
                                             },
                                             onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
@@ -2022,7 +2194,9 @@ const TournamentDetailPage: React.FC = () => {
                                         onPrintSchedule: childHasPrintableSchedule(child)
                                           ? () => handlePrintSchedule(child, tournament.name)
                                           : undefined,
-                                        onTournamentUpdate: (updated) => { fetchData(); },
+                                        onTournamentUpdate: () => {
+                                          scheduleSilentRefresh();
+                                        },
                                         onError: (err) => handleTournamentError(err),
                                         onSuccess: (msg) => { console.log(msg); },
                                       })}
@@ -2885,7 +3059,9 @@ const TournamentDetailPage: React.FC = () => {
                                         marginLeft: '10px',
                                         padding: '12px',
                                         border: '1px solid #ccc',
-                                        borderLeft: `4px solid ${child.status === 'COMPLETED' ? '#27ae60' : '#3498db'}`,
+                                        borderLeft: `4px solid ${
+                                          child.cancelled ? '#c0392b' : child.status === 'COMPLETED' ? '#27ae60' : '#3498db'
+                                        }`,
                                         borderRadius: '4px',
                                         backgroundColor: 'white',
                                       }}
@@ -2896,10 +3072,18 @@ const TournamentDetailPage: React.FC = () => {
                                           <strong style={{ fontSize: '15px' }}>{child.name || `Sub-tournament ${child.id}`}</strong>
                                           <span style={{
                                             fontSize: '11px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '3px',
-                                            backgroundColor: child.status === 'COMPLETED' ? '#d4edda' : '#cce5ff',
-                                            color: child.status === 'COMPLETED' ? '#155724' : '#004085',
+                                            backgroundColor: child.cancelled
+                                              ? '#f8d7da'
+                                              : child.status === 'COMPLETED'
+                                                ? '#d4edda'
+                                                : '#cce5ff',
+                                            color: child.cancelled
+                                              ? '#721c24'
+                                              : child.status === 'COMPLETED'
+                                                ? '#155724'
+                                                : '#004085',
                                           }}>
-                                            {child.status}
+                                            {child.cancelled ? 'ABANDONED' : child.status}
                                           </span>
                                           {child.groupNumber && (
                                             <span style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>
@@ -2947,7 +3131,9 @@ const TournamentDetailPage: React.FC = () => {
                                         <div style={{ marginTop: '5px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
                                           {childPlugin.createCompletedPanel({
                                             tournament: child as any,
-                                            onTournamentUpdate: (updated) => { fetchData(); },
+                                            onTournamentUpdate: () => {
+                                              scheduleSilentRefresh();
+                                            },
                                             onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
                                             isExpanded: true,
@@ -3204,7 +3390,7 @@ const TournamentDetailPage: React.FC = () => {
             boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
           }}>
             <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#e74c3c' }}>
-              Dangerous Operation: Cancel Tournament
+              Dangerous Operation: Stop Tournament
             </h3>
             {showCancelConfirmation.matchCount > 0 ? (
               <>
@@ -3214,11 +3400,34 @@ const TournamentDetailPage: React.FC = () => {
                 <p style={{ marginBottom: '10px' }}>
                   This tournament has <strong>{showCancelConfirmation.matchCount}</strong> completed {showCancelConfirmation.matchCount === 1 ? 'match' : 'matches'}.
                 </p>
-                <p style={{ marginBottom: '20px' }}>
-                  Cancelling will move the tournament to completed status and preserve all match results and rating changes.
+                <p style={{ marginBottom: '12px' }}>
+                  <strong>Abandon</strong> stops the tournament and preserves played results (cancelled).
+                  {showCancelConfirmation.earlyCompleteSupported ? (
+                    <>
+                      {' '}<strong>Early Completion</strong> finishes remaining matches as NP and marks the tournament completed normally.
+                    </>
+                  ) : null}
                 </p>
+                {(() => {
+                  const cancelTarget = findActiveTournamentById(showCancelConfirmation.tournamentId);
+                  const children = cancelTarget?.childTournaments ?? [];
+                  if (children.length === 0) return null;
+                  const completedCount = children.filter((c) => c.status === 'COMPLETED' && !c.cancelled).length;
+                  const abandonedCount = children.filter((c) => c.cancelled).length;
+                  const activeCount = children.filter((c) => c.status === 'ACTIVE').length;
+                  if (completedCount === 0 && abandonedCount === 0) return null;
+                  return (
+                    <p style={{ marginBottom: '12px', fontSize: '13px', color: '#555' }}>
+                      Abandoning this compound tournament leaves finished groups as completed
+                      {completedCount > 0 ? ` (${completedCount})` : ''}
+                      {abandonedCount > 0 ? `, keeps abandoned groups (${abandonedCount})` : ''}
+                      {activeCount > 0 ? `, and stops unfinished groups (${activeCount})` : ''}.
+                      The parent is marked abandoned.
+                    </p>
+                  );
+                })()}
                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#444', fontWeight: 'bold' }}>
-                  Enter your password to confirm cancellation:
+                  Enter your password to confirm:
                 </label>
                 <input
                   ref={cancelPasswordInputRef}
@@ -3239,49 +3448,186 @@ const TournamentDetailPage: React.FC = () => {
               </>
             ) : (
               <p style={{ marginBottom: '20px' }}>
-                This tournament has no matches played. It will be permanently removed.
+                This tournament has no matches played. Abandoning will permanently remove it.
               </p>
             )}
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={closeCancelConfirmation}
-                style={{
-                  padding: '10px 20px',
-                  border: '2px solid #27ae60',
-                  borderRadius: '4px',
-                  backgroundColor: 'white',
-                  color: '#27ae60',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold',
-                }}
-              >
-                Keep Tournament Active
-              </button>
-              <button
-                onClick={async () => {
-                  if (showCancelConfirmation) {
-                    await handleCancelTournament(
-                      showCancelConfirmation.tournamentId,
-                      showCancelConfirmation.matchCount > 0 ? cancelPassword : undefined,
-                    );
-                  }
-                }}
-                disabled={showCancelConfirmation.matchCount > 0 && cancelPassword.trim() === ''}
-                style={{
-                  padding: '10px 20px',
-                  border: 'none',
-                  borderRadius: '4px',
-                  backgroundColor: showCancelConfirmation.matchCount > 0 && cancelPassword.trim() === '' ? '#f1a9a0' : '#e74c3c',
-                  color: 'white',
-                  cursor: showCancelConfirmation.matchCount > 0 && cancelPassword.trim() === '' ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold',
-                }}
-              >
-                Cancel Tournament
-              </button>
-            </div>
+            {(() => {
+              const passwordOk = showCancelConfirmation.matchCount === 0 || cancelPassword.trim() !== '';
+              const tournament = findActiveTournamentById(showCancelConfirmation.tournamentId);
+              const plugin = tournament
+                ? tournamentPluginRegistry.get(tournament.type as TournamentType)
+                : null;
+              const overrideMin =
+                typeof cancelEarlyCompleteMinPercent === 'number'
+                  ? cancelEarlyCompleteMinPercent
+                  : showCancelConfirmation.earlyCompleteMinPercent;
+              const liveHints = tournament && plugin?.getEarlyCompleteDialogHints
+                ? plugin.getEarlyCompleteDialogHints(
+                    tournament,
+                    typeof overrideMin === 'number' ? { earlyCompleteMinPercent: overrideMin } : undefined,
+                  )
+                : null;
+              const hasMinPercentControl =
+                typeof (liveHints?.earlyCompleteMinPercent ?? showCancelConfirmation.earlyCompleteMinPercent) === 'number';
+              const playedPercent = liveHints?.playedPercent ?? showCancelConfirmation.playedPercent ?? 0;
+              const effectiveMinPercent = overrideMin ?? 0;
+              // Gate only on early-complete rules (local min-% override can unlock). Password is checked on click.
+              const earlyGateOk = Boolean(
+                showCancelConfirmation.earlyCompleteSupported
+                && (liveHints ? liveHints.allowed : (
+                  hasMinPercentControl
+                    ? playedPercent < 100 && playedPercent >= effectiveMinPercent
+                    : showCancelConfirmation.earlyCompleteAllowed
+                )),
+              );
+              const earlyBlockedReason = !earlyGateOk
+                ? (liveHints?.reason
+                  ?? (hasMinPercentControl
+                    ? (playedPercent >= 100
+                      ? 'All matches are already played'
+                      : `Need at least ${effectiveMinPercent}% of matches played (${playedPercent}% so far)`)
+                    : (showCancelConfirmation.earlyCompleteReason || 'Early completion is not available')))
+                : undefined;
+
+              return (
+                <>
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={closeCancelConfirmation}
+                      style={{
+                        padding: '10px 20px',
+                        border: '2px solid #27ae60',
+                        borderRadius: '4px',
+                        backgroundColor: 'white',
+                        color: '#27ae60',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      Keep Tournament Active
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (showCancelConfirmation) {
+                          await handleCancelTournament(
+                            showCancelConfirmation.tournamentId,
+                            'abandon',
+                            showCancelConfirmation.matchCount > 0 ? cancelPassword : undefined,
+                          );
+                        }
+                      }}
+                      disabled={!passwordOk}
+                      style={{
+                        padding: '10px 20px',
+                        border: 'none',
+                        borderRadius: '4px',
+                        backgroundColor: !passwordOk ? '#f1a9a0' : '#e74c3c',
+                        color: 'white',
+                        cursor: !passwordOk ? 'not-allowed' : 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      Abandon
+                    </button>
+                  </div>
+                  {showCancelConfirmation.earlyCompleteSupported ? (
+                    <div
+                      style={{
+                        marginTop: '12px',
+                        paddingTop: '12px',
+                        borderTop: '1px solid #e8eef3',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: '10px',
+                          justifyContent: 'flex-end',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {hasMinPercentControl ? (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#444', marginRight: 'auto' }}>
+                            <span style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>Min played %</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={cancelEarlyCompleteMinPercent ?? showCancelConfirmation.earlyCompleteMinPercent ?? 70}
+                              onChange={(e) => {
+                                const n = parseInt(e.target.value, 10);
+                                if (Number.isFinite(n)) {
+                                  setCancelEarlyCompleteMinPercent(Math.min(100, Math.max(1, n)));
+                                }
+                              }}
+                              title="Overrides the system Round Robin early-complete threshold"
+                              style={{
+                                width: '72px',
+                                padding: '8px 10px',
+                                border: '1px solid #d0d7de',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                              }}
+                            />
+                            <span style={{ color: '#666', fontSize: '12px' }}>
+                              (played {playedPercent}%)
+                            </span>
+                          </label>
+                        ) : null}
+                        <button
+                          onClick={async () => {
+                            if (!showCancelConfirmation || !earlyGateOk) return;
+                            if (!passwordOk) {
+                              setCancelPasswordErrorModal('Enter your password to confirm early completion.');
+                              requestAnimationFrame(() => cancelPasswordInputRef.current?.focus());
+                              return;
+                            }
+                            await handleCancelTournament(
+                              showCancelConfirmation.tournamentId,
+                              'earlyComplete',
+                              showCancelConfirmation.matchCount > 0 ? cancelPassword : undefined,
+                            );
+                          }}
+                          disabled={!earlyGateOk}
+                          title={
+                            earlyGateOk
+                              ? (passwordOk
+                                ? 'Mark remaining matches as NP and complete the tournament'
+                                : 'Enter password above, then confirm early completion')
+                              : earlyBlockedReason
+                          }
+                          style={{
+                            padding: '10px 20px',
+                            border: 'none',
+                            borderRadius: '4px',
+                            backgroundColor: !earlyGateOk ? '#c5c5c5' : '#2980b9',
+                            color: 'white',
+                            cursor: !earlyGateOk ? 'not-allowed' : 'pointer',
+                            fontSize: '14px',
+                            fontWeight: 'bold',
+                            opacity: !earlyGateOk ? 0.75 : 1,
+                          }}
+                        >
+                          Early Completion
+                        </button>
+                      </div>
+                      {!earlyGateOk && earlyBlockedReason ? (
+                        <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#888', textAlign: 'right' }}>
+                          {earlyBlockedReason}
+                        </p>
+                      ) : earlyGateOk && !passwordOk ? (
+                        <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#888', textAlign: 'right' }}>
+                          Enter password above to confirm early completion
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

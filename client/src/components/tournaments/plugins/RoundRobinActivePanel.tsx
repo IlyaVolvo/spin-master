@@ -123,6 +123,9 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
       } else if (match.player2Forfeit) {
         score1 = 'W';
         score2 = 'L';
+      } else if (match.notPlayed) {
+        score1 = 'NP';
+        score2 = 'NP';
       } else {
         // Regular match with scores
         score1 = `${match.player1Sets} - ${match.player2Sets}`;
@@ -353,6 +356,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                     const isDiagonal = participant1.member.id === participant2.member.id;
                     const hasScore = score && score !== '';
                     const isForfeit = score === 'W' || score === 'L';
+                    const isNotPlayed = score === 'NP';
                     const match = matchMap[`${participant1.member.id}-${participant2.member.id}`];
                     const correctable = correctionModeActive && isMatchCorrectable(match?.id, eligibility);
                     const cellStyle: React.CSSProperties = {
@@ -371,9 +375,11 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
                       ...(correctable ? correctableCellOutlineStyle : {}),
                     };
 
-                    // Highlight winner (higher score or W) for played matches
+                    // Highlight winner (higher score or W) for played matches; NP is neutral
                     if (!isDiagonal && hasScore) {
-                      if (isForfeit) {
+                      if (isNotPlayed) {
+                        cellStyle.backgroundColor = '#f0f0f0';
+                      } else if (isForfeit) {
                         if (score === 'W') {
                           cellStyle.backgroundColor = '#a5d6a7';
                         } else {
@@ -464,7 +470,7 @@ export const RoundRobinActivePanel: React.FC<TournamentActiveProps> = ({
             </tbody>
           </table>
           <p style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
-            Progress: {tournament.matches.filter(m => m.player1Sets > 0 || m.player2Sets > 0 || m.player1Forfeit || m.player2Forfeit).length} / {(participants.length * (participants.length - 1)) / 2} matches played
+            Progress: {tournament.matches.filter(m => !m.notPlayed && (m.player1Sets > 0 || m.player2Sets > 0 || m.player1Forfeit || m.player2Forfeit)).length} / {(participants.length * (participants.length - 1)) / 2} matches played
             <span style={{ color: '#e67e22', marginLeft: '10px' }}>
               ⚠️ All matches must be played before completing tournament
             </span>

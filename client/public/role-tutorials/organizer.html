@@ -30,9 +30,15 @@
       <a href="#multi-rr-setup">Multi RR</a>
       <a href="#prelim-rr-final">Prelim + RR final</a>
       <a href="#prelim-playoff-final">Prelim + Playoff</a>
+      <a href="#swiss-setup">Swiss</a>
       <a href="#prereg">Pre-registration</a>
       <a href="#modify">Modify</a>
       <a href="#repeat">Repeat</a>
+      <a href="#day-of">Day-of: scores &amp; print</a>
+      <a href="#abandon">Abandon</a>
+      <a href="#early-complete">Early Completion</a>
+      <a href="#compound-stop">Compound stop</a>
+      <a href="#score-correction">Score correction</a>
       <a href="#permissions">Permissions</a>
     </nav>
   </div>
@@ -136,7 +142,7 @@
         <ol>
           <li>On <strong>Players</strong>, click <strong>+ Tournament</strong>.</li>
           <li>In the modal, optionally set the name, choose the format, leave <strong>Pre-registration mode</strong> unchecked, then click <strong>Next</strong>.</li>
-          <li>Complete <strong>Players selection</strong> (see <a href="#player-selection">§7</a>), then the format-specific <strong>Configuration</strong> wizard (§8–11 for the compound formats covered here; Round Robin and Swiss follow the same staging pattern with their own fields).</li>
+          <li>Complete <strong>Players selection</strong> (see <a href="#player-selection">§7</a>), then the format-specific <strong>Configuration</strong> wizard (§8–12 for the formats covered here; Round Robin follows the same staging pattern with its own fields).</li>
           <li>Confirm and create. On success you are taken to <strong>Tournaments</strong> to run matches, print schedules, complete the event, etc.</li>
         </ol>
         <h4>Cancel / back navigation</h4>
@@ -215,8 +221,22 @@
       </div>
     </section>
 
+    <section class="steps" id="swiss-setup">
+      <h2>12. Swiss — configuration</h2>
+      <div class="scenario-block">
+        <ol>
+          <li>After player selection, choose how many <strong>rounds</strong> the Swiss event will run (within the system min/max).</li>
+          <li>Review the roster and round count, then create. The app builds pairings round by round as results come in.</li>
+          <li>Submit uses <code>type: SWISS</code> with the selected participants and round configuration in <code>additionalData</code>.</li>
+        </ol>
+        <p class="callout" style="margin-top:0.75rem">
+          Swiss supports <a href="#early-complete">Early Completion</a> only after at least one round has started. Playoff brackets never early-complete.
+        </p>
+      </div>
+    </section>
+
     <section class="steps" id="prereg">
-      <h2>12. Scenario B — Pre-registration, finalize, cancel</h2>
+      <h2>13. Scenario B — Pre-registration, finalize, cancel</h2>
       <div class="scenario-block">
         <h3>B1 — Open registration before the event exists</h3>
         <ol>
@@ -236,7 +256,7 @@
     </section>
 
     <section class="steps" id="modify">
-      <h2>13. Scenario C — Modify an existing tournament</h2>
+      <h2>14. Scenario C — Modify an existing tournament</h2>
       <div class="scenario-block">
         <p>On <strong>Tournaments</strong>, eligible events show <strong>✏️ Modify</strong> for organizers while the structure is still changeable (for example, compound tournaments hide modify once results exist on child events).</p>
         <ol>
@@ -247,20 +267,154 @@
     </section>
 
     <section class="steps" id="repeat">
-      <h2>14. Scenario D — Repeat a past setup</h2>
+      <h2>15. Scenario D — Repeat a past setup</h2>
       <div class="scenario-block">
         <p>Completed or reference tournaments expose <strong>🔄 Repeat</strong> for organizers. That starts a <em>new</em> creation on <strong>Players</strong> with the same <strong>type</strong>, <strong>name</strong>, and <strong>participant list</strong> copied forward so you can tweak the roster or title before running the configuration step again.</p>
         <p>Repeat is intended for recurring club nights; it does not delete or alter the original tournament record.</p>
       </div>
     </section>
 
+    <section class="steps" id="day-of">
+      <h2>16. Scenario E — Day-of: scores, schedule, print</h2>
+      <div class="scenario-block">
+        <ol>
+          <li>Open the active tournament from <strong>Tournaments</strong> (detail view).</li>
+          <li>Expand a basic event (or a child group under a compound parent) to see the active panel — round-robin matrix, Swiss round, or playoff bracket.</li>
+          <li>Enter set scores (or a forfeit). Password / score-PIN rules follow club kiosk settings when enabled.</li>
+          <li>Use <strong>Show Schedule</strong> / print controls to print pairings. Compound parents can print schedules for all child groups when available.</li>
+          <li>When every competitive match is decided, the tournament moves to <strong>COMPLETED</strong> automatically (or you use <a href="#early-complete">Early Completion</a> / <a href="#abandon">Abandon</a> to stop early).</li>
+        </ol>
+        <p class="callout" style="margin-top:0.75rem">
+          Results that were never played but filled by Early Completion show as <strong>NP</strong> (not played). NP does not award wins, losses, or rating changes.
+        </p>
+      </div>
+    </section>
+
+    <section class="steps" id="abandon">
+      <h2>17. Scenario F — Abandon a tournament</h2>
+      <div class="scenario-block">
+        <h3>When to use Abandon</h3>
+        <p>Stop an active event without treating unfinished matches as real results. Abandon is always available to organizers on active basic tournaments and on compound parents / children (via the red × stop control).</p>
+        <h3>How to abandon</h3>
+        <ol>
+          <li>On the tournament detail page, click the red × (stop) control in the header (or on a child group for compound events).</li>
+          <li>In the <strong>Stop Tournament</strong> dialog, choose <strong>Abandon</strong> (first row).</li>
+          <li>If any competitive matches were already played, confirm with your account <strong>password</strong>.</li>
+        </ol>
+        <h3>What happens</h3>
+        <ul>
+          <li><strong>No competitive matches played</strong> — the tournament is <em>deleted</em> (removed from the list). Under a compound parent, that child disappears from the parent’s children.</li>
+          <li><strong>Some matches already played</strong> — the tournament is kept as <strong>COMPLETED</strong> with a cancelled / abandoned flag. Played results stay; unfinished matches are not filled as NP.</li>
+          <li>Abandoned events can be filtered on the Tournaments list with the <strong>Cancelled</strong> filter control.</li>
+        </ul>
+        <p class="callout" style="margin-top:0.75rem">
+          Abandon is not the same as Early Completion. Abandon marks the event cancelled; Early Completion finishes the event as a normal completion with NP for remaining matches.
+        </p>
+      </div>
+    </section>
+
+    <section class="steps" id="early-complete">
+      <h2>18. Scenario G — Early Completion</h2>
+      <div class="scenario-block">
+        <h3>When to use Early Completion</h3>
+        <p>End a basic tournament early while still counting it as <strong>completed</strong> (not cancelled). Remaining unplayed matches are filled as <strong>0:0</strong> with <strong>NP</strong> (not played).</p>
+        <h3>Who supports it</h3>
+        <table class="tutorial-table" aria-label="Early Completion by format">
+          <thead>
+            <tr>
+              <th>Format</th>
+              <th>Early Completion</th>
+              <th>Gate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Round Robin (standalone or child group)</td>
+              <td>Yes</td>
+              <td>Played competitive matches must reach at least the configured <strong>min played %</strong> (system default, overridable in the dialog).</td>
+            </tr>
+            <tr>
+              <td>Swiss</td>
+              <td>Yes</td>
+              <td>Allowed after a round has started; fills the current round with NP and does not generate further rounds.</td>
+            </tr>
+            <tr>
+              <td>Playoff / Bracket</td>
+              <td>No</td>
+              <td>Early Completion is hidden; use Abandon if you must stop.</td>
+            </tr>
+            <tr>
+              <td>Compound parent (Multi RR, Preliminary, …)</td>
+              <td>No on the parent</td>
+              <td>Early-complete each <em>basic child</em> that supports it, or Abandon the parent / children.</td>
+            </tr>
+          </tbody>
+        </table>
+        <h3>How to early-complete</h3>
+        <ol>
+          <li>Open the stop dialog (red ×) on an eligible basic tournament.</li>
+          <li>If the Early Completion row is enabled, optionally adjust <strong>Min played %</strong> for Round Robin, then enter your password and confirm <strong>Early Completion</strong>.</li>
+          <li>If the gate is not met, the Early Completion control stays disabled and shows the reason (for example, not enough matches played).</li>
+        </ol>
+        <h3>Effects</h3>
+        <ul>
+          <li>Tournament status → <strong>COMPLETED</strong> (not cancelled).</li>
+          <li>Unplayed matches → NP; no W/L points or rating from those rows.</li>
+          <li>Under a compound parent, the child completion notifies the parent (may build a final stage or complete the parent when all children are done).</li>
+        </ul>
+        <p class="callout" style="margin-top:0.75rem">
+          Administrators set the club default <strong>Early Complete Min %</strong> under System settings → tournament rules (Round Robin). Organizers can override that value in the stop dialog for a single early-complete action.
+        </p>
+      </div>
+    </section>
+
+    <section class="steps" id="compound-stop">
+      <h2>19. Scenario H — Stopping compound tournaments</h2>
+      <div class="scenario-block">
+        <h3>Stop one group (child)</h3>
+        <ol>
+          <li>On the parent detail page, each ACTIVE child group has its own red × control.</li>
+          <li>Abandon or Early Complete that child with the same rules as a standalone basic event.</li>
+          <li>After a child stop, you stay on the parent page if the parent is still active. An unstarted abandoned child is deleted and removed from the list; an abandoned child with results shows as <strong>ABANDONED</strong>.</li>
+        </ol>
+        <h3>Stop the whole compound (parent)</h3>
+        <ol>
+          <li>Use the parent’s red × and choose <strong>Abandon</strong>.</li>
+          <li>Finished children that already completed normally stay completed. Unfinished children are abandoned or deleted (if nothing was played). The parent is marked abandoned.</li>
+          <li>This is the explicit way to end a compound event even when some groups already finished — the app does not auto-abandon the parent just because a final would be small.</li>
+        </ol>
+        <h3>Inheritance</h3>
+        <ul>
+          <li>If <strong>every</strong> child is abandoned (or deleted as unstarted), the parent becomes abandoned when the cascade finishes.</li>
+          <li>Preliminary formats skip abandoned groups when building a final and may shrink the final field to who remains eligible.</li>
+          <li>Multi Round Robin completes the parent when all children are done; the parent is cancelled only if every child was abandoned.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="steps" id="score-correction">
+      <h2>20. Scenario I — Score correction</h2>
+      <div class="scenario-block">
+        <p>After results exist, organizers can enable <strong>score correction</strong> mode on the tournament detail page (active and/or completed sections, where the toggle appears).</p>
+        <ol>
+          <li>Turn on correction mode for the section you need.</li>
+          <li>Click a correctable score cell (pencil / outline) to reopen the match editor.</li>
+          <li>Save the corrected score, or clear the result if the flow allows. Correcting an NP early-complete row clears the not-played flag when a real score is entered.</li>
+        </ol>
+        <p class="callout" style="margin-top:0.75rem">
+          Correction eligibility depends on tournament status and type (for example, cancelled tournaments block correction). Follow on-screen banners when a match cannot be changed.
+        </p>
+      </div>
+    </section>
+
     <section class="steps" id="permissions">
-      <h2>15. Permissions at a glance</h2>
+      <h2>21. Permissions at a glance</h2>
       <div class="perms">
         <div class="perm-yes">Everything a Player can do</div>
         <div class="perm-yes">Create and manage tournaments and preregistration</div>
+        <div class="perm-yes">Abandon or Early Complete active tournaments (and child groups) per format rules</div>
         <div class="perm-yes">Record standalone matches for any two active players without opponent password</div>
-        <div class="perm-yes">Edit tournament match results across the event as implemented in the app</div>
+        <div class="perm-yes">Edit / correct tournament match results across the event as implemented in the app</div>
         <div class="perm-no">Add members or change roles / admin-only profile fields</div>
         <div class="perm-no">System settings (Administrator)</div>
       </div>

@@ -97,8 +97,10 @@ export const SwissCompletedPanel: React.FC<TournamentCompletedProps> = ({
       });
     });
 
-    // Calculate statistics from matches
+    // Calculate statistics from matches (NP adds no points)
     tournament.matches.forEach(match => {
+      if (match.notPlayed) return;
+
       const player1Result = results.find(r => r.memberId === match.member1Id);
       const player2Result = match.member2Id ? results.find(r => r.memberId === match.member2Id) : null;
 
@@ -319,10 +321,12 @@ export const SwissCompletedPanel: React.FC<TournamentCompletedProps> = ({
               <tbody>
                 {tournament.matches
                   .filter(m => m.round === lastRound)
-                  .filter(m => (m.player1Sets || 0) > 0 || (m.player2Sets || 0) > 0 || m.player1Forfeit || m.player2Forfeit)
+                  .filter(m => m.notPlayed || (m.player1Sets || 0) > 0 || (m.player2Sets || 0) > 0 || m.player1Forfeit || m.player2Forfeit)
                   .map((match) => {
                     const correctable = correctionModeActive && isMatchCorrectable(match.id, eligibility);
-                    const scoreLabel = match.player1Forfeit || match.player2Forfeit
+                    const scoreLabel = match.notPlayed
+                      ? 'NP'
+                      : match.player1Forfeit || match.player2Forfeit
                       ? 'FF'
                       : `${match.player1Sets} - ${match.player2Sets}`;
                     return (

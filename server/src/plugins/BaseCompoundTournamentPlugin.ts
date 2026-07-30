@@ -50,8 +50,6 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
   }): Promise<any> {
     const { tournamentId, name, participantIds, players, prisma, additionalData } = context;
 
-    logger.info('Modifying compound tournament', { tournamentId, name, participantCount: participantIds.length });
-
     // 1. Fetch existing tournament with children
     const existingTournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
@@ -71,6 +69,20 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     if (!this.canModify(existingTournament)) {
       throw new Error('Tournament cannot be modified - matches have already been played in child tournaments');
     }
+
+    logger.info('Modifying compound tournament', {
+      tournamentId,
+      name,
+      type: existingTournament.type,
+      participantCount: participantIds.length,
+      participantIds,
+      participants: players.map((p: any) => ({
+        id: p.id,
+        name: `${p.firstName} ${p.lastName}`.trim(),
+        rating: p.rating ?? null,
+      })),
+      groupCount: Array.isArray(additionalData?.groups) ? additionalData.groups.length : undefined,
+    });
 
     // 2. Delete all child tournament data (order matters for FK constraints)
     const childIds = (existingTournament.childTournaments || []).map((c: any) => c.id);
@@ -147,7 +159,13 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       },
     });
 
-    logger.info('Compound tournament modified successfully', { tournamentId, childCount: result?.childTournaments?.length });
+    logger.info('Compound tournament modified successfully', {
+      tournamentId,
+      name: result?.name,
+      type: result?.type,
+      childCount: result?.childTournaments?.length,
+      participantCount: result?.participants?.length,
+    });
 
     return result;
   }
@@ -372,11 +390,20 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       const allComplete = allChildren.every((c: any) => c.status === 'COMPLETED');
       
       if (allComplete) {
-        return { shouldMarkComplete: true };
+        const allCancelled =
+          allChildren.length > 0 && allChildren.every((c: any) => Boolean(c.cancelled));
+        return {
+          shouldMarkComplete: true,
+          ...(allCancelled ? { shouldMarkCancelled: true } : {}),
+        };
       }
     }
     
     return {};
+  }
+
+  async onChildAbandoned(event: ChildTournamentCompletedEvent): Promise<TournamentStateChangeResult> {
+    return this.onChildTournamentCompleted(event);
   }
 
   async getSchedule(context: { tournament: any; prisma: any }): Promise<any> {

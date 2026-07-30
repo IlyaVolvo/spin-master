@@ -30,6 +30,8 @@ export interface PlayersSettingsMenuProps {
   supportsFullSaveDialog: boolean;
   onExportPlayers: () => void;
   onImportPlayers: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onExportClubArchive: () => void;
+  onImportClubArchive: (event: React.ChangeEvent<HTMLInputElement>) => void;
   importSendEmail: boolean;
   setImportSendEmail: React.Dispatch<React.SetStateAction<boolean>>;
   tournamentNotificationsEnabled?: boolean;
@@ -68,6 +70,8 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   supportsFullSaveDialog,
   onExportPlayers,
   onImportPlayers,
+  onExportClubArchive,
+  onImportClubArchive,
   importSendEmail,
   setImportSendEmail,
   tournamentNotificationsEnabled,
@@ -354,6 +358,39 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
                     />
                     Send invitation email
                   </label>
+                  <div style={{ borderTop: '1px solid #ddd', marginTop: '4px', paddingTop: '6px' }}>
+                    <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px', lineHeight: 1.3 }}>
+                      Club archive (members + completed tournaments)
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onExportClubArchive}
+                      disabled={isExportDisabled}
+                      className="button-3d"
+                      style={exportButtonStyle}
+                      title={
+                        supportsFullSaveDialog
+                          ? 'Export club archive JSON'
+                          : 'Full Save As (name + location) is not supported in Safari. Use Chrome/Edge.'
+                      }
+                    >
+                      Export archive
+                    </button>
+                    <label
+                      className="button-3d"
+                      style={{ ...importButtonStyle, marginTop: '6px', display: 'block' }}
+                      title="Import club archive into an empty tournament database"
+                    >
+                      Import archive
+                      <input
+                        type="file"
+                        accept=".json,application/json"
+                        onChange={onImportClubArchive}
+                        disabled={isDisabled}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  </div>
                 </>
               );
             })()}

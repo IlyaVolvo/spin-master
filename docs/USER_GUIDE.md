@@ -323,12 +323,28 @@ Organizers and Admins can:
 - record forfeits where supported
 - save or correct results
 
+### Abandon
+Organizers can stop an active tournament with **Abandon** (red × → Abandon):
+- If no competitive matches were played, the tournament is **deleted** (child groups under a compound parent disappear from that parent).
+- If matches were played, the tournament is kept as **COMPLETED** and marked cancelled/abandoned; played results are preserved.
+- Compound parents can be abandoned even when some children already completed; unfinished children are abandoned or deleted.
+
+### Early Completion
+For supported **basic** formats (Round Robin, Swiss — not Playoff), organizers can **Early Complete**:
+- Remaining unplayed matches become **NP** (0:0, not played): no wins/losses/rating from those rows.
+- The tournament is **COMPLETED** normally (not cancelled).
+- Round Robin requires a minimum played % (system setting **Early Complete Min %**, overridable in the stop dialog).
+- Swiss is allowed after a round has started; no further rounds are generated.
+- Compound **parents** are not early-completed directly; early-complete eligible children, or abandon the parent.
+
 ### Tournament progress
 As results are entered, the app updates:
 - played match counts
 - standings or bracket advancement
 - tournament completion status
 - rating-related data when applicable
+
+NP rows from Early Completion appear in completed views but do not count as competitive results.
 
 ## 13) Repeating or modifying a tournament
 

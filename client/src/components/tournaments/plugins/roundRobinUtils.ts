@@ -131,8 +131,10 @@ export function calculatePlayerStats(tournament: Tournament): Map<number, Player
     });
   });
 
-  // Calculate stats from matches
+  // Calculate stats from matches (NP contributes neither win nor loss)
   tournament.matches.forEach(match => {
+    if (match.notPlayed) return;
+
     const stats1 = statsMap.get(match.member1Id);
     const stats2 = match.member2Id ? statsMap.get(match.member2Id) : null;
 

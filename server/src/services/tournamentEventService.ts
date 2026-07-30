@@ -181,9 +181,18 @@ export class TournamentEventService {
     if (result.shouldMarkComplete) {
       await prisma.tournament.update({
         where: { id: tournament.id },
-        data: { status: 'COMPLETED' },
+        data: {
+          status: 'COMPLETED',
+          ...(result.shouldMarkCancelled ? { cancelled: true } : {}),
+        },
       });
-      logger.info(`Tournament ${tournament.id} marked as COMPLETED`);
+      logger.info(`Tournament marked as COMPLETED`, {
+        tournamentId: tournament.id,
+        name: tournament.name,
+        type: tournament.type,
+        cancelled: !!result.shouldMarkCancelled,
+        triggeredBy: 'tournament_event_service',
+      });
     }
 
     // Create final tournament (for compound tournaments)

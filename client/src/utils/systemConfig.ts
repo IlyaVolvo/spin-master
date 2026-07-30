@@ -45,6 +45,7 @@ export type SystemConfig = {
     roundRobin: {
       minPlayers: number;
       maxPlayers: number;
+      earlyCompleteMinPercent: number;
     };
     playoff: {
       minPlayers: number;
@@ -57,8 +58,7 @@ export type SystemConfig = {
     };
     multiRoundRobins: {
       minPlayers: number;
-      minGroupSize: number;
-      maxGroupSize: number;
+      defaultSize: number;
       minGroups: number;
     };
     preliminaryWithFinalRoundRobin: {
@@ -151,6 +151,7 @@ const defaultSystemConfig: SystemConfig = {
     roundRobin: {
       minPlayers: 3,
       maxPlayers: 32,
+      earlyCompleteMinPercent: 70,
     },
     playoff: {
       minPlayers: 2,
@@ -163,8 +164,7 @@ const defaultSystemConfig: SystemConfig = {
     },
     multiRoundRobins: {
       minPlayers: 6,
-      minGroupSize: 3,
-      maxGroupSize: 12,
+      defaultSize: 4,
       minGroups: 2,
     },
     preliminaryWithFinalRoundRobin: {

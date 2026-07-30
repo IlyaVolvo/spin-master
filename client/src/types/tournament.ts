@@ -69,6 +69,7 @@ export interface Match {
   player2Sets: number;
   player1Forfeit?: boolean;
   player2Forfeit?: boolean;
+  notPlayed?: boolean;
   createdAt?: string;
   updatedAt?: string;
   round?: number | null; // Used for round-robin scheduling
@@ -133,6 +134,27 @@ export interface CorrectionEligibility {
   correctableMatchIds: number[];
 }
 
+export interface EarlyCompleteEligibility {
+  /** False for types that never early-complete (e.g. Playoff) — UI hides the option. */
+  supported: boolean;
+  allowed: boolean;
+  reason?: string;
+  /** Competitive matches played as percent of expected schedule (Round Robin). */
+  playedPercent?: number;
+  /** Threshold used for RR early-complete (system default). */
+  earlyCompleteMinPercent?: number;
+}
+
+/** Client-side hints for the stop-dialog Early Completion row (gating + optional override). */
+export interface EarlyCompleteDialogHints {
+  supported: boolean;
+  allowed: boolean;
+  reason?: string;
+  playedPercent?: number;
+  /** When set, dialog shows an editable min-% that can unlock Early Completion. */
+  earlyCompleteMinPercent?: number;
+}
+
 // Tournament Interface
 // Main tournament entity supporting both basic and compound tournament types
 // Basic tournaments have participants and matches directly
@@ -162,6 +184,7 @@ export interface Tournament {
   groupNumber?: number | null; // For round-robin groups in compound tournaments
   childTournaments?: Tournament[]; // Child tournaments for compound types
   correctionEligibility?: CorrectionEligibility;
+  earlyCompleteEligibility?: EarlyCompleteEligibility;
   // Preliminary tournament configuration (both RR final and Playoff final)
   preliminaryConfig?: PreliminaryConfig | null;
 }
@@ -235,6 +258,16 @@ export interface TournamentPlugin {
   countPlayedMatches?: (tournament: Tournament) => number;
   countNonForfeitedMatches?: (tournament: Tournament) => number;
   areAllMatchesPlayed?: (tournament: Tournament) => boolean;
+
+  /**
+   * Stop-dialog Early Completion row. Return supported:false (or omit) to hide.
+   * When supported but not allowed, the option stays visible and greyed until gating
+   * (or a local override such as min %) is met.
+   */
+  getEarlyCompleteDialogHints?: (
+    tournament: Tournament,
+    overrides?: { earlyCompleteMinPercent?: number },
+  ) => EarlyCompleteDialogHints;
 
   // Schedule generation
   generateSchedule?: (tournament: Tournament) => any[];

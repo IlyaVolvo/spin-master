@@ -44,7 +44,7 @@ import {
   toggleRangeInSelection,
   toggleRangeInSelectionSet,
 } from '../utils/shiftRangeSelection';
-import { generatePlayersCsv, downloadCsv } from './utils/playerCsvUtils';
+import { generatePlayersCsv, downloadCsv, downloadJson } from './utils/playerCsvUtils';
 import {
   matchesCache,
   matchCountsCache,
@@ -1740,6 +1740,72 @@ const Players: React.FC = () => {
         message: errorMessage,
         importValidation: data?.importValidation,
       });
+      event.target.value = '';
+    }
+  };
+
+  const handleExportClubArchive = async () => {
+    try {
+      setError('');
+      setSuccess('');
+      const response = await api.get('/club-archive/export', { timeout: 120000 });
+      const archive = response.data;
+      const saveResult = await downloadJson(
+        archive,
+        `club_archive_${new Date().toISOString().split('T')[0]}.json`,
+      );
+      if (!saveResult.saved) {
+        if (saveResult.reason === 'unsupported') {
+          setError(
+            'Full Save As is not supported in this browser. Use a Chromium browser (Chrome/Edge) on localhost or HTTPS.',
+          );
+        } else if (saveResult.reason === 'failed') {
+          setError('Failed to save club archive. Please try again.');
+        }
+        return;
+      }
+      const tournamentCount = Array.isArray(archive?.tournaments) ? archive.tournaments.length : 0;
+      const memberCount = Array.isArray(archive?.members) ? archive.members.length : 0;
+      setSuccess(
+        `Exported club archive (${memberCount} members, ${tournamentCount} completed tournament(s))`,
+      );
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to export club archive');
+    }
+  };
+
+  const handleImportClubArchive = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const confirmed = window.confirm(
+      'Import club archive into this database?\n\n' +
+        'Requires no existing tournaments or matches. Members are created or matched by email. ' +
+        'Ratings from the archive become the trusted club ratings. Passwords are not restored.',
+    );
+    if (!confirmed) {
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      setError('');
+      setSuccess('');
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await api.post('/club-archive/import', formData, {
+        timeout: 300000,
+      });
+      const r = response.data;
+      setSuccess(
+        `Club archive imported: ${r.membersCreated} members created, ${r.membersUpdated} updated, ` +
+          `${r.tournamentsCreated} tournaments, ${r.matchesCreated} matches` +
+          (r.standaloneMatchesCreated ? `, ${r.standaloneMatchesCreated} standalone matches` : ''),
+      );
+      await fetchMembers();
+      event.target.value = '';
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to import club archive');
       event.target.value = '';
     }
   };
@@ -5833,6 +5899,8 @@ const Players: React.FC = () => {
                   supportsFullSaveDialog={supportsFullSaveDialog}
                   onExportPlayers={handleExportPlayers}
                   onImportPlayers={handleImportPlayers}
+                  onExportClubArchive={handleExportClubArchive}
+                  onImportClubArchive={handleImportClubArchive}
                   importSendEmail={importSendEmail}
                   setImportSendEmail={setImportSendEmail}
                   tournamentNotificationsEnabled={tournamentNotificationsEnabled}

@@ -5,6 +5,7 @@ import {
 import { BaseCompoundTournamentPlugin } from './BaseCompoundTournamentPlugin';
 import { createPlayoffBracketWithPositions } from '../services/playoffBracketService';
 import { logger } from '../utils/logger';
+import { matchHasCompetitiveResult } from '../utils/scoreCorrectionMatchUtils';
 
 interface GroupStanding {
   memberId: number;
@@ -221,8 +222,10 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       });
     });
 
-    // Process matches
+    // Process matches (skip NP / unplayed — no W/L contribution)
     roundRobin.matches.forEach((match: any) => {
+      if (!matchHasCompetitiveResult(match)) return;
+
       if (match.player1Forfeit || match.player2Forfeit) {
         if (match.player1Forfeit) {
           const p1 = standings.get(match.member1Id);
@@ -281,9 +284,12 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
     const preliminaryGroups = allChildren.filter((c: any) => this.isPreliminaryGroupChild(c));
     const finalTournament = allChildren.find((c: any) => this.isFinalPhaseChild(c));
     
-    // If final exists and is complete, mark parent as complete
+    // If final exists and is complete, mark parent as complete (cancelled if final abandoned)
     if (finalTournament && finalTournament.status === 'COMPLETED') {
-      return { shouldMarkComplete: true };
+      return {
+        shouldMarkComplete: true,
+        shouldMarkCancelled: finalTournament.cancelled ? true : undefined,
+      };
     }
 
     // If final already exists but not complete, nothing to do
@@ -297,7 +303,8 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       return {};
     }
 
-    // === All preliminaries are done and no final exists yet — create the playoff ===
+    // Exclude abandoned groups from qualification
+    const activeGroups = preliminaryGroups.filter((c: any) => !c.cancelled);
 
     // Fetch config from dedicated table
     const config = parentTournament.preliminaryConfig 
@@ -310,12 +317,23 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       return {};
     }
 
-    const playoffBracketSize = config.finalSize;
     const autoQualifiedMemberIds: number[] = config.autoQualifiedMemberIds || [];
     const qualifiersPerGroup = Math.max(1, Number(config.qualifiersPerGroup) || 1);
+    const maxEligible =
+      autoQualifiedMemberIds.length +
+      activeGroups.reduce((sum: number, g: any) => sum + (g.participants?.length ?? 0), 0);
 
-    // Calculate standings for each group
-    const groupResults: GroupResult[] = preliminaryGroups.map((rr: any) => ({
+    if (maxEligible === 0) {
+      logger.info('All preliminary groups abandoned with no auto-qualified players; abandoning parent', {
+        tournamentId: parentTournament.id,
+      });
+      return { shouldMarkComplete: true, shouldMarkCancelled: true };
+    }
+
+    const playoffBracketSize = Math.min(config.finalSize, maxEligible);
+
+    // Calculate standings for each active group
+    const groupResults: GroupResult[] = activeGroups.map((rr: any) => ({
       groupNumber: rr.groupNumber || 0,
       players: this.calculateGroupStandings(rr),
     }));
@@ -325,7 +343,6 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
     // 1. Prequalified players
     // 2. Top N finishers from each group (N = qualifiersPerGroup)
     // 3. Fill remaining from next places (sorted by rating desc), then next place, etc.
-
     const qualifiedMemberIds: number[] = [];
 
     // 1. Add prequalified players first
@@ -343,9 +360,12 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
 
     // 3. Fill remaining slots from next places — sorted by rating within each place
     let remainingSlots = playoffBracketSize - qualifiedMemberIds.length;
+    const maxPlayersInGroup = groupResults.length > 0
+      ? Math.max(...groupResults.map(g => g.players.length), 0)
+      : 0;
     let placeIndex = qualifiersPerGroup;
 
-    while (remainingSlots > 0 && placeIndex < Math.max(...groupResults.map(g => g.players.length), 0)) {
+    while (remainingSlots > 0 && placeIndex < maxPlayersInGroup) {
       // Collect all players at this place across all groups
       const candidatesAtPlace: Array<{ memberId: number; rating: number | null }> = [];
 
@@ -377,17 +397,24 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       placeIndex++;
     }
 
+    // Cap to shrunk bracket size (in case auto-qualified alone exceeded)
+    if (qualifiedMemberIds.length > playoffBracketSize) {
+      qualifiedMemberIds.length = playoffBracketSize;
+    }
+
+    if (qualifiedMemberIds.length === 0) {
+      return { shouldMarkComplete: true, shouldMarkCancelled: true };
+    }
+
     // === Seeding ===
-    // Build seeded list with metadata for ordering
     const allParentParticipants = parentTournament.participants || [];
     
-    // Determine each qualified player's group standing info
     const playerInfoMap = new Map<number, { place: number; rating: number | null; isPrequalified: boolean }>();
     
     for (const memberId of autoQualifiedMemberIds) {
       const participant = allParentParticipants.find((p: any) => p.memberId === memberId);
       playerInfoMap.set(memberId, {
-        place: 0, // Prequalified = highest seed priority
+        place: 0,
         rating: participant?.playerRatingAtTime ?? null,
         isPrequalified: true,
       });
@@ -410,7 +437,6 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
     const seededIds: number[] = [];
     const restIds: number[] = [];
 
-    // Prequalified players sorted by rating desc
     const prequalified = autoQualifiedMemberIds
       .filter(id => qualifiedMemberIds.includes(id))
       .map(id => ({ id, rating: playerInfoMap.get(id)?.rating ?? 0 }))
@@ -442,21 +468,20 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       }
     }
 
-    // Shuffle the rest randomly
     for (let i = restIds.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [restIds[i], restIds[j]] = [restIds[j], restIds[i]];
     }
 
-    // Build bracket positions using standard seeding pattern:
-    // Seed 1 vs Seed N, Seed 2 vs Seed N-1, etc.
-    // Seeded players get top seeds, rest fill remaining positions
     const allSeeded = [...seededIds, ...restIds];
     const bracketPositions: number[] = [];
     const numPlayers = allSeeded.length;
-    for (let i = 0; i < numPlayers / 2; i++) {
+    for (let i = 0; i < Math.floor(numPlayers / 2); i++) {
       bracketPositions.push(allSeeded[i]);
       bracketPositions.push(allSeeded[numPlayers - 1 - i]);
+    }
+    if (numPlayers % 2 === 1) {
+      bracketPositions.push(allSeeded[Math.floor(numPlayers / 2)]);
     }
 
     // Create playoff tournament as child of parent
@@ -478,7 +503,6 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       },
     });
 
-    // Create bracket — no BYEs since bracket size = number of qualified players
     await createPlayoffBracketWithPositions(
       playoffTournament.id,
       qualifiedMemberIds,
@@ -489,11 +513,12 @@ export class PreliminaryWithFinalPlayoffPlugin extends BaseCompoundTournamentPlu
       parentTournamentId: parentTournament.id,
       playoffTournamentId: playoffTournament.id,
       numQualified: qualifiedMemberIds.length,
-      bracketSize: playoffBracketSize,  // = config.finalSize
+      bracketSize: playoffBracketSize,
+      configuredFinalSize: config.finalSize,
+      abandonedGroups: preliminaryGroups.length - activeGroups.length,
       prequalified: autoQualifiedMemberIds.length,
     });
 
-    // Emit notifications
     const { emitTournamentUpdate, emitCacheInvalidation } = await import('../services/socketService');
     emitTournamentUpdate(playoffTournament);
     emitCacheInvalidation(parentTournament.id);

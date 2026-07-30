@@ -2,15 +2,30 @@ import { ClientHttpError } from '../http/clientHttpError';
 
 type RatingWatermark = { timestamp: Date; id: number };
 
+/** Competitive result (score or forfeit). NP alone does not count. */
+export function matchHasCompetitiveResult(match: {
+  player1Sets?: number | null;
+  player2Sets?: number | null;
+  player1Forfeit?: boolean;
+  player2Forfeit?: boolean;
+  notPlayed?: boolean;
+}): boolean {
+  if (match.notPlayed) return false;
+  const hasScore = (match.player1Sets ?? 0) > 0 || (match.player2Sets ?? 0) > 0;
+  const hasForfeit = Boolean(match.player1Forfeit || match.player2Forfeit);
+  return hasScore || hasForfeit;
+}
+
+/** Any recorded outcome including early-complete NP (correctable / schedule filled). */
 export function matchHasResult(match: {
   player1Sets?: number | null;
   player2Sets?: number | null;
   player1Forfeit?: boolean;
   player2Forfeit?: boolean;
+  notPlayed?: boolean;
 }): boolean {
-  const hasScore = (match.player1Sets ?? 0) > 0 || (match.player2Sets ?? 0) > 0;
-  const hasForfeit = Boolean(match.player1Forfeit || match.player2Forfeit);
-  return hasScore || hasForfeit;
+  if (match.notPlayed) return true;
+  return matchHasCompetitiveResult(match);
 }
 
 export function childHasPlayedMatches(child: { matches?: any[] }): boolean {
