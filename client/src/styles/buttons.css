@@ -71,7 +71,7 @@ button.success:hover {
 .button-3d:disabled {
   transform: translateY(0);
   box-shadow: none;
-  opacity: 0.6;
+  opacity: 0.82;
   cursor: not-allowed;
 }
 

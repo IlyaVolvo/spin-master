@@ -71,6 +71,12 @@ import './tournaments/plugins';
 // matchesCache, matchCountsCache, updateMatchCountsCache, removeMatchFromCache
 // are imported from ./utils/matchCacheUtils
 
+/** Readable muted tokens — keep disabled/inactive distinction without washing out text. */
+const PLAYERS_MUTED = '#5a6570';
+const PLAYERS_DISABLED_CONTROL = '#7f8c8d';
+const PLAYERS_INACTIVE_NAME = '#4a5568';
+const PLAYERS_DISABLED_OPACITY = 0.82;
+
 type PlayerEditBaseline = {
   firstName: string;
   lastName: string;
@@ -607,14 +613,14 @@ const Players: React.FC = () => {
       style.textContent = `
         @keyframes pulse {
           0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
+          50% { opacity: 0.75; }
         }
         .progress-step-current {
           animation: pulse 1.5s ease-in-out infinite;
         }
         @keyframes selectPlayersFlash {
           0%, 100% { opacity: 1; }
-          50% { opacity: 0.2; }
+          50% { opacity: 0.55; }
         }
         .select-players-hint {
           animation: selectPlayersFlash 3s ease-in-out infinite;
@@ -2407,14 +2413,19 @@ const Players: React.FC = () => {
         editAutoRelinquishKey !== b.autoRelinquishKey
       );
     }
-    if (isAdminUser && (editAutoRelinquishKey !== b.autoRelinquishKey || editTrialEndsOn !== b.trialEndsOn || editOnlinePayConsent !== b.onlinePayConsent)) {
+    if (
+      isAdminUser &&
+      (editAutoRelinquishKey !== b.autoRelinquishKey ||
+        editTrialEndsOn !== b.trialEndsOn ||
+        editOnlinePayConsent !== b.onlinePayConsent ||
+        editSegment !== b.segment)
+    ) {
       return true;
     }
     return (
       editEmail !== b.email ||
       editPhone !== b.phone ||
       editAddress !== b.address ||
-      editSegment !== b.segment ||
       editPicture !== b.picture ||
       editOnlinePayConsent !== b.onlinePayConsent ||
       (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
@@ -2461,6 +2472,7 @@ const Players: React.FC = () => {
           birthMs !== b.birthDateMs ||
           editPhone !== b.phone ||
           editAddress !== b.address ||
+          editSegment !== b.segment ||
           editPicture !== b.picture ||
           editIsActive !== b.isActive ||
           (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
@@ -2550,6 +2562,7 @@ const Players: React.FC = () => {
         updateData.autoRelinquishPrivileges =
           editAutoRelinquishKey === 'always' ? true : editAutoRelinquishKey === 'never' ? false : null;
         updateData.trialEndsOn = editTrialEndsOn.trim() || null;
+        updateData.segment = editSegment || 'Regular';
       }
       if (editEmail.trim()) {
         updateData.onlinePayConsent = editOnlinePayConsent;
@@ -2562,7 +2575,6 @@ const Players: React.FC = () => {
       updateData.tournamentNotificationsEnabled = Boolean(editEmail.trim() && editTournamentNotificationsEnabled);
       updateData.phone = editPhone.trim() || null;
       updateData.address = editAddress.trim() || null;
-      updateData.segment = editSegment || 'Regular';
       updateData.picture = editPicture.trim() || null;
 
       const hadPendingPin = hasPendingScorePinChange();
@@ -3579,7 +3591,7 @@ const Players: React.FC = () => {
                                   />
                                   <span style={{ 
                                     fontSize: '12px', 
-                                    color: isCompleted ? '#2c3e50' : isCurrent ? '#3498db' : '#999',
+                                    color: isCompleted ? '#2c3e50' : isCurrent ? '#3498db' : PLAYERS_MUTED,
                                     fontWeight: isCurrent ? 'bold' : 'normal'
                                   }}>
                                     {step.name}
@@ -3648,7 +3660,7 @@ const Players: React.FC = () => {
               <div style={{ 
                 padding: '10px', 
                 textAlign: 'center', 
-                color: '#999',
+                color: PLAYERS_MUTED,
                 fontStyle: 'italic',
                 fontSize: '12px',
                 backgroundColor: 'white',
@@ -3992,14 +4004,13 @@ const Players: React.FC = () => {
                       disabled={selectedPlayersForMatch.length !== 2}
                       style={{
                         padding: '8px 16px',
-                        backgroundColor: selectedPlayersForMatch.length !== 2 ? '#95a5a6' : '#27ae60',
+                        backgroundColor: selectedPlayersForMatch.length !== 2 ? PLAYERS_DISABLED_CONTROL : '#27ae60',
                         color: 'white',
                         border: 'none',
                         borderRadius: '4px',
                         cursor: selectedPlayersForMatch.length !== 2 ? 'not-allowed' : 'pointer',
                         fontSize: '14px',
                         fontWeight: 'bold',
-                        opacity: selectedPlayersForMatch.length !== 2 ? 0.7 : 1,
                       }}
                     >
                       Enter Score
@@ -4057,7 +4068,7 @@ const Players: React.FC = () => {
                         justifyContent: 'center',
                         fontWeight: 'bold',
                         minWidth: '32px',
-                        opacity: (isCreatingTournament && tournamentCreationStep === 'player_selection' && !filtersCollapsed) ? 0.5 : 1
+                        opacity: (isCreatingTournament && tournamentCreationStep === 'player_selection' && !filtersCollapsed) ? PLAYERS_DISABLED_OPACITY : 1
                       }}
                       title={
                         isCreatingTournament && tournamentCreationStep === 'player_selection' && !filtersCollapsed
@@ -4146,14 +4157,13 @@ const Players: React.FC = () => {
                             disabled={invalid}
                             style={{
                               padding: '8px 16px',
-                              backgroundColor: invalid ? '#95a5a6' : '#27ae60',
+                              backgroundColor: invalid ? PLAYERS_DISABLED_CONTROL : '#27ae60',
                               color: 'white',
                               border: 'none',
                               borderRadius: '4px',
                               cursor: invalid ? 'not-allowed' : 'pointer',
                               fontSize: '14px',
                               fontWeight: 'bold',
-                              opacity: invalid ? 0.7 : 1,
                             }}
                           >
                             Continue
@@ -4241,10 +4251,9 @@ const Players: React.FC = () => {
                   onClick={handleViewStatistics}
                   disabled={selectedPlayersForStats.length === 0}
                   style={selectedPlayersForStats.length === 0 ? {
-                    backgroundColor: '#95a5a6',
+                    backgroundColor: PLAYERS_DISABLED_CONTROL,
                     color: '#fff',
                     cursor: 'not-allowed',
-                    opacity: 0.7,
                     fontSize: '13px',
                     padding: '6px 12px',
                     border: 'none',
@@ -4311,10 +4320,9 @@ const Players: React.FC = () => {
                   onClick={handleViewHistory}
                   disabled={selectedPlayerForHistory === null}
                   style={selectedPlayerForHistory === null ? {
-                    backgroundColor: '#95a5a6',
+                    backgroundColor: PLAYERS_DISABLED_CONTROL,
                     color: '#fff',
                     cursor: 'not-allowed',
-                      opacity: 0.7,
                       fontSize: '13px',
                       padding: '6px 12px',
                       border: 'none',
@@ -5027,7 +5035,7 @@ const Players: React.FC = () => {
                     padding: '8px 16px',
                     borderRadius: '4px',
                     cursor: selectedPlayersForExport.size === 0 ? 'not-allowed' : 'pointer',
-                    opacity: selectedPlayersForExport.size === 0 ? 0.7 : 1,
+                    opacity: selectedPlayersForExport.size === 0 ? PLAYERS_DISABLED_OPACITY : 1,
                   }}
                 >
                   Export Selected ({selectedPlayersForExport.size})
@@ -5436,7 +5444,7 @@ const Players: React.FC = () => {
                               padding: '8px',
                               borderRadius: '4px',
                               backgroundColor: isSelected ? '#e8f4f8' : 'transparent',
-                              opacity: wouldLeaveNone ? 0.5 : 1,
+                              opacity: wouldLeaveNone ? PLAYERS_DISABLED_OPACITY : 1,
                             }}>
                               <input
                                 type="checkbox"
@@ -5474,7 +5482,7 @@ const Players: React.FC = () => {
                   cursor: hasActiveFilters() ? 'pointer' : 'not-allowed',
                   whiteSpace: 'nowrap',
                   height: 'fit-content',
-                  opacity: hasActiveFilters() ? 1 : 0.6,
+                  opacity: hasActiveFilters() ? 1 : PLAYERS_DISABLED_OPACITY,
                 }}
                 title="Clear all filters"
               >
@@ -5777,7 +5785,7 @@ const Players: React.FC = () => {
                         <div 
                           style={{
                             fontSize: '10px',
-                            color: gamesCustomStartDate && gamesCustomEndDate ? '#666' : '#999',
+                            color: PLAYERS_MUTED,
                             cursor: 'pointer',
                             textDecoration: gamesCustomStartDate && gamesCustomEndDate ? 'underline' : 'none',
                             fontStyle: gamesCustomStartDate && gamesCustomEndDate ? 'normal' : 'italic',
@@ -6023,7 +6031,7 @@ const Players: React.FC = () => {
                   <th style={{ 
                     textAlign: 'center', 
                     fontWeight: 'bold', 
-                    color: selectedPlayer.rating !== null ? '#2c3e50' : '#95a5a6',
+                    color: selectedPlayer.rating !== null ? '#2c3e50' : PLAYERS_MUTED,
                     padding: '12px',
                     backgroundColor: '#e8f5e9',
                     borderBottom: '2px solid #4caf50'
@@ -6175,7 +6183,7 @@ const Players: React.FC = () => {
                         opacity: (
                           (isRecordingMatch && !isUserOrganizer && player.id === currentMember?.id) ||
                           (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id))
-                        ) ? 0.5 : 1
+                        ) ? PLAYERS_DISABLED_OPACITY : 1
                       }}
                     />
                   </td>
@@ -6236,7 +6244,7 @@ const Players: React.FC = () => {
                         </button>
                       </>
                     )}
-                    <span style={{ color: player.isActive ? '#000' : '#666', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                    <span style={{ color: player.isActive ? '#000' : PLAYERS_INACTIVE_NAME, display: 'flex', alignItems: 'center', gap: '2px' }}>
                       {editingTournamentId && existingParticipantIds.has(player.id) && (
                         <span style={{ 
                           fontSize: '10px', 
@@ -6284,7 +6292,7 @@ const Players: React.FC = () => {
                     {calculateAge(player.birthDate) !== null ? calculateAge(player.birthDate) : '-'}
                   </td>
                 )}
-                <td style={{ textAlign: 'center', fontWeight: 'bold', color: player.rating !== null ? '#2c3e50' : '#95a5a6' }}>
+                <td style={{ textAlign: 'center', fontWeight: 'bold', color: player.rating !== null ? '#2c3e50' : PLAYERS_MUTED }}>
                   {player.rating !== null ? player.rating : '-'}
                 </td>
                   {showGamesColumn && (
@@ -6515,7 +6523,7 @@ const Players: React.FC = () => {
                               marginBottom: '4px', 
                               fontSize: '13px', 
                               fontWeight: 'bold',
-                              color: !canEditRestrictedProfileFields ? '#999' : 'inherit'
+                              color: !canEditRestrictedProfileFields ? PLAYERS_MUTED : 'inherit'
                             }}>First Name *</label>
                             <input
                               type="text"
@@ -6528,10 +6536,9 @@ const Players: React.FC = () => {
                                 padding: '8px', 
                                 border: `1px solid ${editFieldTouched.firstName && editFieldErrors.firstName ? '#e74c3c' : '#ddd'}`, 
                                 borderRadius: '4px',
-                                backgroundColor: !canEditRestrictedProfileFields ? '#f5f5f5' : 'white',
-                                color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
-                                cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text',
-                                opacity: !canEditRestrictedProfileFields ? 0.7 : 1
+                                backgroundColor: !canEditRestrictedProfileFields ? '#f0f2f4' : 'white',
+                                color: !canEditRestrictedProfileFields ? PLAYERS_MUTED : 'inherit',
+                                cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text'
                               }}
                               autoFocus={canEditRestrictedProfileFields || undefined}
                             />
@@ -6543,7 +6550,7 @@ const Players: React.FC = () => {
                               marginBottom: '4px', 
                               fontSize: '13px', 
                               fontWeight: 'bold',
-                              color: !canEditRestrictedProfileFields ? '#999' : 'inherit'
+                              color: !canEditRestrictedProfileFields ? PLAYERS_MUTED : 'inherit'
                             }}>Last Name *</label>
                             <input
                               type="text"
@@ -6556,10 +6563,9 @@ const Players: React.FC = () => {
                                 padding: '8px', 
                                 border: `1px solid ${editFieldTouched.lastName && editFieldErrors.lastName ? '#e74c3c' : '#ddd'}`, 
                                 borderRadius: '4px',
-                                backgroundColor: !canEditRestrictedProfileFields ? '#f5f5f5' : 'white',
-                                color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
-                                cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text',
-                                opacity: !canEditRestrictedProfileFields ? 0.7 : 1
+                                backgroundColor: !canEditRestrictedProfileFields ? '#f0f2f4' : 'white',
+                                color: !canEditRestrictedProfileFields ? PLAYERS_MUTED : 'inherit',
+                                cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text'
                               }}
                             />
                             {editFieldTouched.lastName && editFieldErrors.lastName && <span className="field-error">{editFieldErrors.lastName}</span>}
@@ -6594,7 +6600,7 @@ const Players: React.FC = () => {
                                       alignItems: 'center',
                                       gap: '8px',
                                       cursor: hasEditEmail ? 'pointer' : 'not-allowed',
-                                      color: hasEditEmail ? 'inherit' : '#999',
+                                      color: hasEditEmail ? 'inherit' : PLAYERS_MUTED,
                                       fontSize: '13px',
                                       fontWeight: 'bold',
                                     }}
@@ -6624,7 +6630,7 @@ const Players: React.FC = () => {
                               marginBottom: '4px', 
                               fontSize: '13px', 
                               fontWeight: 'bold',
-                              color: !isAdminUser ? '#999' : 'inherit'
+                              color: !isAdminUser ? PLAYERS_MUTED : 'inherit'
                             }}>Gender</label>
                             <select
                               value={editGender}
@@ -6636,10 +6642,9 @@ const Players: React.FC = () => {
                                 padding: '8px', 
                                 border: `1px solid ${editFieldTouched.gender && editFieldErrors.gender ? '#e74c3c' : '#ddd'}`, 
                                 borderRadius: '4px',
-                                backgroundColor: !isAdminUser ? '#f5f5f5' : 'white',
-                                color: !isAdminUser ? '#999' : 'inherit',
-                                cursor: !isAdminUser ? 'not-allowed' : 'pointer',
-                                opacity: !isAdminUser ? 0.7 : 1
+                                backgroundColor: !isAdminUser ? '#f0f2f4' : 'white',
+                                color: !isAdminUser ? PLAYERS_MUTED : 'inherit',
+                                cursor: !isAdminUser ? 'not-allowed' : 'pointer'
                               }}
                             >
                               <option value="NOT_SPECIFIED">Not specified</option>
@@ -6655,11 +6660,10 @@ const Players: React.FC = () => {
                               marginBottom: '4px', 
                               fontSize: '13px', 
                               fontWeight: 'bold',
-                              color: !allowBirthDateInput ? '#999' : 'inherit'
+                              color: !allowBirthDateInput ? PLAYERS_MUTED : 'inherit'
                             }}>Birth Date</label>
                             <div style={{ 
                               width: '100%',
-                              opacity: !allowBirthDateInput ? 0.7 : 1,
                               pointerEvents: !allowBirthDateInput ? 'none' : 'auto'
                             }}>
                               <DatePicker
@@ -6706,11 +6710,30 @@ const Players: React.FC = () => {
                             />
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
-                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Segment</label>
+                            <label
+                              style={{
+                                display: 'block',
+                                marginBottom: '4px',
+                                fontSize: '13px',
+                                fontWeight: 'bold',
+                                color: !isAdminUser ? PLAYERS_MUTED : 'inherit',
+                              }}
+                            >
+                              Segment
+                            </label>
                             <select
                               value={editSegment}
+                              disabled={!isAdminUser}
                               onChange={(e) => setEditSegment(e.target.value)}
-                              style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
+                                backgroundColor: !isAdminUser ? '#f0f2f4' : 'white',
+                                color: !isAdminUser ? PLAYERS_MUTED : 'inherit',
+                                cursor: !isAdminUser ? 'not-allowed' : 'pointer'
+                              }}
                             >
                               {segmentNames.map((cat) => (
                                 <option key={cat} value={cat}>{cat}</option>
@@ -6724,7 +6747,7 @@ const Players: React.FC = () => {
                                 marginBottom: '4px',
                                 fontSize: '13px',
                                 fontWeight: 'bold',
-                                color: !isAdminUser ? '#999' : 'inherit',
+                                color: !isAdminUser ? PLAYERS_MUTED : 'inherit',
                               }}
                             >
                               Trial ends on
@@ -6739,8 +6762,8 @@ const Players: React.FC = () => {
                                 padding: '8px',
                                 border: '1px solid #ddd',
                                 borderRadius: '4px',
-                                backgroundColor: !isAdminUser ? '#f5f5f5' : 'white',
-                                color: !isAdminUser ? '#999' : 'inherit',
+                                backgroundColor: !isAdminUser ? '#f0f2f4' : 'white',
+                                color: !isAdminUser ? PLAYERS_MUTED : 'inherit',
                                 cursor: !isAdminUser ? 'not-allowed' : undefined,
                               }}
                             />
@@ -6797,7 +6820,7 @@ const Players: React.FC = () => {
                                 gap: '8px',
                                 cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'pointer',
                                 fontSize: '13px',
-                                color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
+                                color: !canEditRestrictedProfileFields ? PLAYERS_MUTED : 'inherit',
                               }}
                             >
                               <input
@@ -6836,10 +6859,9 @@ const Players: React.FC = () => {
                         }}
                         inputStyle={{
                           border: `1px solid ${editFieldTouched.rating && editFieldErrors.rating ? '#e74c3c' : '#ddd'}`,
-                          backgroundColor: !canEditRestrictedProfileFields ? '#f5f5f5' : 'white',
-                          color: !canEditRestrictedProfileFields ? '#999' : 'inherit',
+                          backgroundColor: !canEditRestrictedProfileFields ? '#f0f2f4' : 'white',
+                          color: !canEditRestrictedProfileFields ? PLAYERS_MUTED : 'inherit',
                           cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'text',
-                          opacity: !canEditRestrictedProfileFields ? 0.7 : 1,
                           padding: '8px',
                         }}
                       />
@@ -6857,7 +6879,7 @@ const Players: React.FC = () => {
                     <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>Roles</h5>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {['PLAYER', 'COACH', 'ORGANIZER', 'ADMIN'].map((role) => (
-                        <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'pointer', fontSize: '13px', color: !canEditRestrictedProfileFields ? '#999' : 'inherit' }}>
+                        <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: !canEditRestrictedProfileFields ? 'not-allowed' : 'pointer', fontSize: '13px', color: !canEditRestrictedProfileFields ? PLAYERS_MUTED : 'inherit' }}>
                           <input
                             type="checkbox"
                             checked={editRoles.includes(role)}
@@ -7101,8 +7123,8 @@ const Players: React.FC = () => {
                                             padding: '6px',
                                             border: '1px solid #ddd',
                                             borderRadius: '4px',
-                                            backgroundColor: !isCurrentPasswordVerified ? '#f5f5f5' : 'white',
-                                            color: !isCurrentPasswordVerified ? '#999' : 'inherit',
+                                            backgroundColor: !isCurrentPasswordVerified ? '#f0f2f4' : 'white',
+                                            color: !isCurrentPasswordVerified ? PLAYERS_MUTED : 'inherit',
                                             cursor: !isCurrentPasswordVerified ? 'not-allowed' : 'text',
                                           }}
                                           placeholder="Enter new password (min 6 characters)"
@@ -7121,8 +7143,8 @@ const Players: React.FC = () => {
                                             padding: '6px',
                                             border: '1px solid #ddd',
                                             borderRadius: '4px',
-                                            backgroundColor: !isCurrentPasswordVerified ? '#f5f5f5' : 'white',
-                                            color: !isCurrentPasswordVerified ? '#999' : 'inherit',
+                                            backgroundColor: !isCurrentPasswordVerified ? '#f0f2f4' : 'white',
+                                            color: !isCurrentPasswordVerified ? PLAYERS_MUTED : 'inherit',
                                             cursor: !isCurrentPasswordVerified ? 'not-allowed' : 'text',
                                           }}
                                           placeholder="Confirm new password"
@@ -7136,7 +7158,7 @@ const Players: React.FC = () => {
                                           style={{
                                             fontSize: '12px',
                                             padding: '6px 12px',
-                                            opacity: !isCurrentPasswordVerified || isValidatingCurrentPassword ? 0.65 : 1,
+                                            opacity: !isCurrentPasswordVerified || isValidatingCurrentPassword ? PLAYERS_DISABLED_OPACITY : 1,
                                             cursor: !isCurrentPasswordVerified || isValidatingCurrentPassword ? 'not-allowed' : 'pointer',
                                           }}
                                         >
@@ -7255,7 +7277,7 @@ const Players: React.FC = () => {
                   style={{
                     fontSize: '13px',
                     padding: '8px 16px',
-                    opacity: editCanSave ? 1 : 0.55,
+                    opacity: editCanSave ? 1 : PLAYERS_DISABLED_OPACITY,
                     cursor: editCanSave ? 'pointer' : 'not-allowed',
                   }}
                 >

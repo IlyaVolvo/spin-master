@@ -1744,7 +1744,12 @@ router.patch('/:id', [
     if (phone !== undefined) updateData.phone = phone || null;
     if (address !== undefined) updateData.address = address || null;
     if (picture !== undefined) updateData.picture = picture || null;
-    if (segment !== undefined) updateData.segment = segment || 'Regular';
+    if (segment !== undefined) {
+      if (!hasAdminAccess) {
+        return res.status(403).json({ error: 'Only Administrators can change segment.' });
+      }
+      updateData.segment = segment || 'Regular';
+    }
     if (tournamentNotificationsEnabled !== undefined) {
       if (!isCurrentMember && !hasAdminAccess) {
         return res.status(403).json({ error: 'Only the member themselves or Admins can change tournament notification settings' });
