@@ -36,7 +36,6 @@ export interface PlayersSettingsMenuProps {
   setImportSendEmail: React.Dispatch<React.SetStateAction<boolean>>;
   tournamentNotificationsEnabled?: boolean;
   onTournamentNotificationsChange?: (enabled: boolean) => void | Promise<void>;
-  onOpenOwnPlan?: () => void;
 }
 
 /**
@@ -76,7 +75,6 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   setImportSendEmail,
   tournamentNotificationsEnabled,
   onTournamentNotificationsChange,
-  onOpenOwnPlan,
 }) => {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
@@ -106,23 +104,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   }, [showSettingsMenu]);
 
   return (
-  <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '6px' }} data-settings-menu>
-    {onOpenOwnPlan && (
-      <button
-        type="button"
-        onClick={onOpenOwnPlan}
-        className="button-filter"
-        style={{
-          padding: '6px 12px',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          fontSize: '13px',
-        }}
-        title="View and manage your club plan"
-      >
-        Plan
-      </button>
-    )}
+  <div style={{ position: 'relative', display: 'inline-block' }} data-settings-menu>
     <button
       type="button"
       ref={buttonRef}

@@ -3,7 +3,6 @@ import api from '../../utils/api';
 import { formatPlayerName } from '../../utils/nameFormatter';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
-import { waitForPaymentUpdate } from '../../utils/waitForPaymentUpdate';
 
 export type CheckinMemberStatus = {
   present: boolean;
@@ -265,7 +264,6 @@ type PinModalProps = {
   onSuccess: (message: string) => void;
 };
 
-type PlanOption = { familyKey: string; name: string; kind: string };
 
 export function CheckinPinModal({
   memberId,
@@ -279,11 +277,8 @@ export function CheckinPinModal({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [pinLength, setPinLength] = useState(() => getSystemConfig().authPolicy.pinLength);
-  const [phase, setPhase] = useState<'pin' | 'pay_offer' | 'pick_plan'>('pin');
+  const [phase, setPhase] = useState<'pin' | 'pay_offer'>('pin');
   const [resultMessage, setResultMessage] = useState('');
-  const [canPay, setCanPay] = useState(false);
-  const [plans, setPlans] = useState<PlanOption[]>([]);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -311,9 +306,8 @@ export function CheckinPinModal({
       const res = await api.post('/club/pin-toggle', { memberId, scorePin: scorePin.trim() });
       const data = res.data as PinToggleResponse;
       const message = formatPinToggleMessage(data);
-      if (data.canPay || data.courtesy) {
+      if (data.canPay || data.courtesy || data.action === 'PAYMENT_REQUIRED') {
         setResultMessage(message);
-        setCanPay(data.canPay === true);
         setPhase('pay_offer');
       } else {
         finish(message);
@@ -323,73 +317,13 @@ export function CheckinPinModal({
       if (axiosErr.response?.status === 402 && axiosErr.response.data) {
         const data = axiosErr.response.data;
         const message = formatPinToggleMessage(data);
-        if (data.canPay) {
-          setResultMessage(message);
-          setCanPay(true);
-          setPhase('pay_offer');
-        } else {
-          setError(message);
-        }
+        setResultMessage(message);
+        setPhase('pay_offer');
       } else {
         setError(getErrorMessage(err, 'Check-in failed'));
       }
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadPlansAndPay = async () => {
-    setCheckoutLoading(true);
-    setError('');
-    try {
-      const res = await api.get('/payments/plans');
-      const list = Array.isArray(res.data?.plans) ? res.data.plans : [];
-      setPlans(
-        list.map((p: { familyKey: string; name: string; kind: string }) => ({
-          familyKey: p.familyKey,
-          name: p.name,
-          kind: p.kind,
-        })),
-      );
-      setPhase('pick_plan');
-    } catch (err) {
-      // Plans endpoint may require auth — kiosk session should work
-      setError(getErrorMessage(err, 'Could not load plans'));
-    } finally {
-      setCheckoutLoading(false);
-    }
-  };
-
-  const startCheckout = async (familyKey: string) => {
-    setCheckoutLoading(true);
-    setError('');
-    try {
-      const res = await api.post('/payments/checkout', { memberId, familyKey, kind: 'plan' });
-      const paymentId = Number(res.data?.paymentId);
-      if (res.data?.confirmedImmediately) {
-        finish(`${resultMessage} Payment confirmed (${res.data.providerId || 'provider'}).`);
-        return;
-      }
-      if (!paymentId) {
-        finish(`${resultMessage} Checkout started. ${res.data?.instructions || ''}`.trim());
-        return;
-      }
-      setError('');
-      const settled = await waitForPaymentUpdate({
-        paymentId,
-        timeoutMs: 90_000,
-      });
-      if (settled.status === 'SUCCEEDED') {
-        finish(`${resultMessage} Payment confirmed.`);
-      } else if (settled.status === 'PENDING') {
-        finish(`${resultMessage} Payment still pending — plan will update when confirmed.`);
-      } else {
-        setError(`Payment ${settled.status.toLowerCase()}`);
-      }
-    } catch (err) {
-      setError(getErrorMessage(err, 'Checkout failed'));
-    } finally {
-      setCheckoutLoading(false);
     }
   };
 
@@ -407,7 +341,7 @@ export function CheckinPinModal({
         justifyContent: 'center',
         padding: '20px',
       }}
-      onClick={() => !loading && !checkoutLoading && onClose()}
+      onClick={() => !loading && onClose()}
     >
       <div
         className="card"
@@ -455,60 +389,15 @@ export function CheckinPinModal({
             <p style={{ fontSize: '14px', color: '#333' }}>{resultMessage}</p>
             {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
             <p style={{ fontSize: '13px', color: '#666' }}>
-              {canPay
-                ? 'Pay now with an active plan, or defer and settle later.'
-                : 'Add an email on the member profile to enable payment.'}
+              Purchases cannot be started from check-in. Use the Plan page after a full login, or ask an
+              administrator to record cash payment.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {canPay && (
-                <button
-                  type="button"
-                  className="success"
-                  disabled={checkoutLoading}
-                  onClick={() => void loadPlansAndPay()}
-                >
-                  {checkoutLoading ? '…' : 'Pay now'}
-                </button>
-              )}
               <button
                 type="button"
-                disabled={checkoutLoading}
-                onClick={() => finish(resultMessage + (canPay ? ' Payment deferred.' : ''))}
+                onClick={() => finish(resultMessage + ' Settle via Plan page or staff.')}
               >
-                {canPay ? 'Defer payment' : 'OK'}
-              </button>
-            </div>
-          </>
-        )}
-
-        {phase === 'pick_plan' && (
-          <>
-            <h3 style={{ marginTop: 0 }}>Choose a plan</h3>
-            {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '50vh', overflow: 'auto' }}>
-              {plans.length === 0 && <div style={{ color: '#666' }}>No active plans configured.</div>}
-              {plans.map((p) => (
-                <button
-                  key={p.familyKey}
-                  type="button"
-                  disabled={checkoutLoading}
-                  onClick={() => void startCheckout(p.familyKey)}
-                  style={{
-                    padding: '10px 12px',
-                    textAlign: 'left',
-                    border: '1px solid #ccc',
-                    borderRadius: '6px',
-                    background: '#fff',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {p.name} <span style={{ color: '#888', fontSize: '12px' }}>({p.kind})</span>
-                </button>
-              ))}
-            </div>
-            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setPhase('pay_offer')} disabled={checkoutLoading}>
-                Back
+                OK
               </button>
             </div>
           </>

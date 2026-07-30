@@ -78,6 +78,9 @@ model Member {
   /** Set when the post-trial notification email was sent (or skipped for no email). */
   trialExpiryNotifiedAt DateTime?
 
+  /** Member must opt in (and have email) before online/automatic checkout is offered. */
+  onlinePayConsent Boolean @default(false)
+
   // QR-based authentication token hash
   qrTokenHash String @unique
 
@@ -489,16 +492,18 @@ model ClubEntitlement {
 
 // ClubPayment: Ledger-only payment record (provider = plugin id string, e.g. "test", "manual")
 model ClubPayment {
-  id          Int               @id @default(autoincrement())
-  memberId    Int
-  amountCents Int               @default(0)
-  currency    String            @default("USD")
-  provider    String            @default("manual")
-  externalRef String?
-  status      ClubPaymentStatus
-  purpose     String
-  metadata    Json?
-  recordedAt  DateTime          @default(now())
+  id                 Int               @id @default(autoincrement())
+  memberId           Int
+  amountCents        Int               @default(0) // Cash/online charged (after credit)
+  listAmountCents    Int               @default(0) // Plan/list price before credit
+  creditAppliedCents Int               @default(0) // Purchase credit applied to this payment
+  currency           String            @default("USD")
+  provider           String            @default("manual")
+  externalRef        String?
+  status             ClubPaymentStatus
+  purpose            String
+  metadata           Json?
+  recordedAt         DateTime          @default(now())
 
   member          Member      @relation(fields: [memberId], references: [id], onDelete: Restrict)
   courtesyVisits  ClubVisit[]

@@ -94,6 +94,7 @@ export type SystemConfig = {
   };
   payments: {
     providerId: string;
+    defaultOnlinePayConsent: boolean;
     adminNotifyEmails: string[];
     notifyAdminsOnCourtesy: boolean;
     courtesyGraceDays: number;
@@ -202,6 +203,7 @@ const defaultSystemConfig: SystemConfig = {
   },
   payments: {
     providerId: '',
+    defaultOnlinePayConsent: false,
     adminNotifyEmails: [],
     notifyAdminsOnCourtesy: true,
     courtesyGraceDays: 7,

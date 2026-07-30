@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Suspense, useSyncExternalStore } from 'react';
+import { useState, useEffect, useRef, Suspense, useSyncExternalStore, type CSSProperties } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -21,6 +21,7 @@ const Statistics = lazyWithReload(() => import('./components/Statistics'));
 const History = lazyWithReload(() => import('./components/History'));
 const TournamentRegistrationLink = lazyWithReload(() => import('./components/TournamentRegistrationLink'));
 const SystemSettings = lazyWithReload(() => import('./components/SystemSettings'));
+const PaymentsAdmin = lazyWithReload(() => import('./components/PaymentsAdmin'));
 const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
 const PublicResultsLatestPage = lazyWithReload(() =>
   import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsLatestPage })),
@@ -89,7 +90,7 @@ function AuthRedirect() {
   
   useEffect(() => {
     if (isRoleTutorialsPath(location.pathname)) return;
-    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings'];
+    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings', '/payments'];
     const isTournamentDetail = /^\/tournaments\/\d+$/.test(location.pathname);
     if (location.pathname.startsWith('/tournaments/') && !isTournamentDetail) {
       navigate('/tournaments', { replace: true });
@@ -440,6 +441,7 @@ function AppRoutes({
                       <Route path="/statistics" element={<Statistics />} />
                       <Route path="/history" element={<History />} />
                       <Route path="/system-settings" element={<SystemSettings />} />
+                      <Route path="/payments" element={<PaymentsAdmin />} />
                     </Routes>
                   </Suspense>
                 </ErrorBoundary>
@@ -638,10 +640,26 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const isPlayersActive = location.pathname === '/players';
   const isTournamentsActive = location.pathname === '/tournaments' || location.pathname.startsWith('/tournaments/');
   const isSettingsActive = location.pathname === '/system-settings';
+  const isPaymentsActive = location.pathname === '/payments';
   const isAchievementsActive =
     location.pathname === '/public' ||
     location.pathname === '/public/' ||
     location.pathname.startsWith('/public/achievements');
+
+  // Shared sizing for header icon controls (💰 ⚙ $ ⚙️) so they align uniformly.
+  // Vertical padding matches Players/Tournaments tab rhythm (10 / 12).
+  const headerIconControlSize: CSSProperties = {
+    padding: '10px 12px 12px 12px',
+    minWidth: '44px',
+    height: '44px',
+    fontSize: '16px',
+    lineHeight: 1,
+    boxSizing: 'border-box',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+  };
   
   // Format roles as comma-separated first letters
   const formatRoles = (roles: string[]): string => {
@@ -934,6 +952,14 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     navigate('/system-settings', { replace: true });
   };
 
+  const handlePaymentsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/payments', { replace: true });
+  };
+
   const hasPendingPreregistrations = pendingPreregistrationCount > 0;
   const isAdminUser = !kioskMode && isAdmin();
   const showPlayersTab = !kioskMode || kioskKind === 'browse' || kioskKind === 'checkin';
@@ -1082,48 +1108,86 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           </a>
           )}
           {isAdminUser ? (
-            <a
-              className="app-header-tab"
-              href="/system-settings"
-              onClick={handleSettingsClick}
-              title="System settings"
-              aria-label="System settings"
-              style={{
-                color: isSettingsActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
-                textDecoration: 'none',
-                padding: '8px 11px 10px 11px',
-                background: isSettingsActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
-                borderTopLeftRadius: '8px',
-                borderTopRightRadius: '8px',
-                border: isSettingsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-                borderBottom: isSettingsActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
-                transition: 'all 0.2s',
-                fontSize: '15px',
-                fontWeight: isSettingsActive ? '600' : '500',
-                cursor: 'pointer',
-                position: 'relative',
-                zIndex: isSettingsActive ? 10 : 1,
-                boxShadow: isSettingsActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-                marginBottom: isSettingsActive ? '0' : '1px',
-                marginLeft: '18px',
-                minWidth: '34px',
-                textAlign: 'center'
-              }}
-              onMouseEnter={(e) => {
-                if (!isSettingsActive) {
-                  e.currentTarget.style.color = 'white';
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isSettingsActive) {
-                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                }
-              }}
-            >
-              ⚙
-            </a>
+            <>
+              <a
+                className="app-header-tab"
+                href="/payments"
+                onClick={handlePaymentsClick}
+                title="Payments"
+                aria-label="Payments"
+                style={{
+                  ...headerIconControlSize,
+                  color: isPaymentsActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
+                  textDecoration: 'none',
+                  background: isPaymentsActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+                  borderTopLeftRadius: '8px',
+                  borderTopRightRadius: '8px',
+                  border: isPaymentsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+                  borderBottom: isPaymentsActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
+                  transition: 'all 0.2s',
+                  fontWeight: isPaymentsActive ? '600' : '500',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  zIndex: isPaymentsActive ? 10 : 1,
+                  boxShadow: isPaymentsActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+                  marginBottom: isPaymentsActive ? '0' : '1px',
+                  marginLeft: '18px',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isPaymentsActive) {
+                    e.currentTarget.style.color = 'white';
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isPaymentsActive) {
+                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                  }
+                }}
+              >
+                💰
+              </a>
+              <a
+                className="app-header-tab"
+                href="/system-settings"
+                onClick={handleSettingsClick}
+                title="System settings"
+                aria-label="System settings"
+                style={{
+                  ...headerIconControlSize,
+                  color: isSettingsActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
+                  textDecoration: 'none',
+                  background: isSettingsActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+                  borderTopLeftRadius: '8px',
+                  borderTopRightRadius: '8px',
+                  border: isSettingsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+                  borderBottom: isSettingsActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
+                  transition: 'all 0.2s',
+                  fontWeight: isSettingsActive ? '600' : '500',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  zIndex: isSettingsActive ? 10 : 1,
+                  boxShadow: isSettingsActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+                  marginBottom: isSettingsActive ? '0' : '1px',
+                  marginLeft: '8px',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSettingsActive) {
+                    e.currentTarget.style.color = 'white';
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSettingsActive) {
+                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                  }
+                }}
+              >
+                ⚙
+              </a>
+            </>
           ) : null}
         </div>
         <h1
@@ -1234,38 +1298,76 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           {userName && (
             <>
               {!kioskMode && (
-              <button
-                onClick={() => {
-                  const member = getMember();
-                  if (member) {
-                    clearAllScrollPositions();
-                    clearAllUIStates();
-                    window.scrollTo(0, 0);
-                    navigate('/players', { 
-                      state: { editOwnProfile: true, memberId: member.id },
-                      replace: false 
-                    });
-                  }
-                }}
-                title="Edit your profile"
-                style={{
-                  padding: '8px 12px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '16px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}
-              >
-                ⚙️
-              </button>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const member = getMember();
+                      if (member) {
+                        clearAllScrollPositions();
+                        clearAllUIStates();
+                        window.scrollTo(0, 0);
+                        navigate('/players', {
+                          state: { openOwnPlan: true, memberId: member.id },
+                          replace: false,
+                        });
+                      }
+                    }}
+                    title="View and manage your club plan"
+                    aria-label="View and manage your club plan"
+                    style={{
+                      ...headerIconControlSize,
+                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                      transition: 'background-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                    }}
+                  >
+                    $
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const member = getMember();
+                      if (member) {
+                        clearAllScrollPositions();
+                        clearAllUIStates();
+                        window.scrollTo(0, 0);
+                        navigate('/players', {
+                          state: { editOwnProfile: true, memberId: member.id },
+                          replace: false,
+                        });
+                      }
+                    }}
+                    title="Edit your profile"
+                    style={{
+                      ...headerIconControlSize,
+                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                    }}
+                  >
+                    ⚙️
+                  </button>
+                </div>
               )}
             <span style={{ 
               color: 'white',

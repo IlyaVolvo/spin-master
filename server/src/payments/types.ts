@@ -85,6 +85,10 @@ export type PaymentMetadata = {
   autoRenew?: boolean;
   creditAppliedCents?: number;
   listAmountCents?: number;
-  /** YYYY-MM-DD start for a new TIME CURRENT plan */
+  /** YYYY-MM-DD start for a new TIME CURRENT plan (or FUTURE when forced) */
   startDate?: string;
+  /** When true, grant as FUTURE even with no CURRENT (e.g. trial purchase). */
+  forceFuture?: boolean;
+  /** Checkout method used to start this payment. */
+  paymentMethod?: 'cash' | 'online';
 };

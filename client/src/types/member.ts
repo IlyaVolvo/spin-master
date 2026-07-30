@@ -17,6 +17,8 @@ export interface Member {
   segment?: string | null;
   /** Inclusive last day of free trial (YYYY-MM-DD or ISO); admin-managed. */
   trialEndsOn?: string | null;
+  /** Consent to use online/automatic payment (requires email). */
+  onlinePayConsent?: boolean;
   tournamentNotificationsEnabled?: boolean;
   /** Present on session/me payloads when returned by API. */
   hasPassword?: boolean;

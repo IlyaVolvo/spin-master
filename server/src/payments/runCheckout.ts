@@ -1,9 +1,14 @@
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
-import { getActivePaymentProvider } from './getActivePaymentProvider';
+import { getActivePaymentProvider, getCashPaymentProvider } from './getActivePaymentProvider';
 import { resolvePlanForMember, planChargeAmountCents } from './resolvePlan';
 import { getFutureEntitlement, refreshCurrentEntitlement } from './entitlementQueue';
 import { planAllowsMemberPurchase } from './planPurchaseRules';
+import {
+  isMemberInTrialPeriod,
+  trialEndsOnToYmd,
+  trialPlanStartYmd,
+} from './memberTrial';
 import type {
   CheckoutProduct,
   PaymentInitiatedBy,
@@ -11,18 +16,22 @@ import type {
   StartCheckoutResult,
 } from './types';
 
+export type CheckoutMethod = 'cash' | 'online';
+
 export type RunCheckoutParams = {
   memberId: number;
   kind?: 'plan' | 'pay_per_visit';
   familyKey?: string;
   amountCents?: number;
   clubDate?: string;
-  /** YYYY-MM-DD first day for a new TIME plan (CURRENT only). */
+  /** YYYY-MM-DD first day for a new TIME plan (CURRENT only, or FUTURE when forced). */
   startDate?: string;
   autoRenew?: boolean;
   initiatedBy: PaymentInitiatedBy;
   /** When true, skip FUTURE guard (should not be used for normal purchases). */
   skipFutureGuard?: boolean;
+  /** cash = desk PENDING; online = active PSP. */
+  method?: CheckoutMethod;
 };
 
 export type RunCheckoutResult = StartCheckoutResult & {
@@ -30,7 +39,14 @@ export type RunCheckoutResult = StartCheckoutResult & {
   listAmountCents: number;
   creditAppliedCents: number;
   amountCents: number;
+  method: CheckoutMethod;
 };
+
+function clubTodayYmd(): string {
+  return new Date().toLocaleDateString('en-CA', {
+    timeZone: process.env.CLUB_TIMEZONE || 'UTC',
+  });
+}
 
 /**
  * Shared checkout used by HTTP route and midnight auto-renew.
@@ -46,6 +62,9 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
       segment: true,
       isActive: true,
       purchaseCreditCents: true,
+      onlinePayConsent: true,
+      trialEndsOn: true,
+      autoRenewEnabled: true,
     },
   });
 
@@ -53,51 +72,66 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     throw new Error('Member not found');
   }
 
-  if (!member.email || !member.email.trim()) {
-    throw new Error('Member must have an email address to pay');
+  const hasEmail = Boolean(member.email?.trim());
+  const hasConsent = member.onlinePayConsent === true;
+  let method: CheckoutMethod =
+    params.method === 'cash' || params.method === 'online'
+      ? params.method
+      : hasEmail && hasConsent
+        ? 'online'
+        : 'cash';
+
+  if (method === 'online') {
+    if (!hasEmail) {
+      throw new Error('Online payment requires a member email address');
+    }
+    if (!hasConsent) {
+      throw new Error('Online payment requires member consent to pay online');
+    }
   }
 
   if (!params.skipFutureGuard) {
     const future = await getFutureEntitlement(member.id);
     if (future) {
-      throw new Error('Member already has a future plan; purchase is blocked until it starts or is reimbursed');
+      throw new Error(
+        'Member already has a future plan; purchase is blocked until it starts or is reimbursed',
+      );
     }
   }
 
   const current = await refreshCurrentEntitlement(member.id);
-  const memberFlags = await prisma.member.findUnique({
-    where: { id: member.id },
-    select: { autoRenewEnabled: true },
-  });
   if (
     !params.skipFutureGuard &&
     !planAllowsMemberPurchase({
       hasCurrent: Boolean(current),
       hasFuture: false,
-      autoRenewEnabled: Boolean(memberFlags?.autoRenewEnabled),
+      autoRenewEnabled: Boolean(member.autoRenewEnabled),
     })
   ) {
     throw new Error('Purchase is disabled while auto-renew is enabled for the current plan');
   }
 
+  const todayYmd = clubTodayYmd();
+  const inTrial = isMemberInTrialPeriod(member.trialEndsOn, todayYmd);
+
   let product: CheckoutProduct;
   let listAmountCents: number;
   let purpose: string;
   let startDateForMetadata: string | undefined;
+  let forceFuture = false;
 
   const kind = params.kind === 'pay_per_visit' ? 'pay_per_visit' : 'plan';
 
   if (kind === 'pay_per_visit') {
+    if (inTrial) {
+      throw new Error('Pay per visit is not available during a trial; purchase a future plan instead');
+    }
     listAmountCents = Number(params.amountCents);
     if (!Number.isInteger(listAmountCents) || listAmountCents < 0) {
       throw new Error('amountCents is required for pay_per_visit');
     }
     const clubDate =
-      typeof params.clubDate === 'string' && params.clubDate
-        ? params.clubDate
-        : new Date().toLocaleDateString('en-CA', {
-            timeZone: process.env.CLUB_TIMEZONE || 'UTC',
-          });
+      typeof params.clubDate === 'string' && params.clubDate ? params.clubDate : todayYmd;
     product = { kind: 'pay_per_visit', amountCents: listAmountCents, clubDate };
     purpose = `Pay per visit ${clubDate}`;
   } else {
@@ -118,10 +152,15 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     };
     purpose = `Plan purchase: ${plan.name} (${plan.segment})`;
 
-    // New TIME CURRENT plan: selectable first day (YYYY-MM-DD), default today
-    if (plan.kind === 'TIME' && !current) {
-      const clubTz = process.env.CLUB_TIMEZONE || 'UTC';
-      const todayYmd = new Date().toLocaleDateString('en-CA', { timeZone: clubTz });
+    if (inTrial) {
+      forceFuture = true;
+      const trialStart = trialPlanStartYmd(member.trialEndsOn);
+      if (!trialStart) {
+        throw new Error('Trial end date is required to purchase a future plan during trial');
+      }
+      startDateForMetadata = trialStart;
+      purpose = `${purpose} [future after trial ${trialEndsOnToYmd(member.trialEndsOn)}]`;
+    } else if (plan.kind === 'TIME' && !current) {
       const startDate =
         typeof params.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(params.startDate.trim())
           ? params.startDate.trim()
@@ -130,6 +169,9 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
         throw new Error('Plan start date cannot be before today');
       }
       startDateForMetadata = startDate;
+    } else if (plan.kind === 'TIME' && current) {
+      // FUTURE after current — validFrom set from current.validTo on confirm
+      forceFuture = false;
     }
   }
 
@@ -165,7 +207,9 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     autoRenew: params.autoRenew === true,
     creditAppliedCents,
     listAmountCents,
+    paymentMethod: method,
     ...(startDateForMetadata ? { startDate: startDateForMetadata } : {}),
+    ...(forceFuture ? { forceFuture: true } : {}),
   };
 
   if (payment) {
@@ -173,6 +217,8 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
       where: { id: payment.id },
       data: {
         amountCents,
+        listAmountCents,
+        creditAppliedCents,
         purpose,
         metadata,
       },
@@ -182,6 +228,8 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
       data: {
         memberId: member.id,
         amountCents,
+        listAmountCents,
+        creditAppliedCents,
         purpose,
         status: 'PENDING',
         provider: 'manual',
@@ -197,7 +245,7 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     });
   }
 
-  const provider = getActivePaymentProvider();
+  const provider = method === 'cash' ? getCashPaymentProvider() : getActivePaymentProvider();
   const result = await provider.startCheckout({
     memberId: member.id,
     memberEmail: member.email,
@@ -214,8 +262,10 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     paymentId: payment.id,
     memberId: member.id,
     providerId: provider.id,
+    method,
     amountCents,
     creditAppliedCents,
+    forceFuture,
   });
 
   return {
@@ -225,5 +275,6 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     listAmountCents,
     creditAppliedCents,
     amountCents,
+    method,
   };
 }

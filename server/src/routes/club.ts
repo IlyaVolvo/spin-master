@@ -22,7 +22,10 @@ import { computeValidTo } from '../utils/planDuration';
 import {
   isMemberInTrialPeriod,
   trialEndsOnToYmd,
+  trialPlanStartYmd,
 } from '../payments/memberTrial';
+import { confirmPayment } from '../payments/confirmPayment';
+import { emitPaymentUpdated } from '../services/socketService';
 
 const router = express.Router();
 
@@ -41,6 +44,10 @@ function getClubDate(date: Date = new Date()): string {
 function isAdminOrOrganizer(req: AuthRequest): boolean {
   const roles = req.member?.roles || [];
   return roles.includes('ADMIN') || roles.includes('ORGANIZER');
+}
+
+function isAdmin(req: AuthRequest): boolean {
+  return (req.member?.roles || []).includes('ADMIN');
 }
 
 /**
@@ -1525,6 +1532,8 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
         purchaseCreditCents: true,
         autoRenewEnabled: true,
         autoRenewFamilyKey: true,
+        onlinePayConsent: true,
+        trialEndsOn: true,
       },
     });
     if (!member) return res.status(404).json({ error: 'Member not found' });
@@ -1534,6 +1543,23 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
     const pendingPayment = await prisma.clubPayment.findFirst({
       where: { memberId, status: 'PENDING' },
       orderBy: { recordedAt: 'desc' },
+    });
+
+    const paymentHistory = await prisma.clubPayment.findMany({
+      where: { memberId },
+      orderBy: { recordedAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        recordedAt: true,
+        amountCents: true,
+        listAmountCents: true,
+        creditAppliedCents: true,
+        status: true,
+        provider: true,
+        purpose: true,
+        metadata: true,
+      },
     });
 
     const futureReimburseCents = future ? computeFutureReimburseCents(future) : 0;
@@ -1553,6 +1579,13 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
       hasPendingPayment: Boolean(pendingPayment),
     });
 
+    const clubDate = getClubDate();
+    const inTrial = isMemberInTrialPeriod(member.trialEndsOn, clubDate);
+    const trialEndsOnYmd = trialEndsOnToYmd(member.trialEndsOn);
+    const hasEmail = Boolean(member.email?.trim());
+    const onlinePayConsent = member.onlinePayConsent === true;
+    const effectiveCanPayOnline = hasEmail && onlinePayConsent;
+
     res.json({
       member: {
         id: member.id,
@@ -1568,14 +1601,54 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
       autoRenewFamilyKey: effectiveAutoRenew ? member.autoRenewFamilyKey : null,
       futureReimburseCents,
       canPurchase,
+      onlinePayConsent,
+      effectiveCanPayOnline,
+      inTrial,
+      trialEndsOn: trialEndsOnYmd,
+      trialPlanStartsOn: inTrial ? trialPlanStartYmd(member.trialEndsOn) : null,
       pendingPayment: pendingPayment
         ? {
             id: pendingPayment.id,
             status: pendingPayment.status,
             amountCents: pendingPayment.amountCents,
+            listAmountCents: pendingPayment.listAmountCents,
+            creditAppliedCents: pendingPayment.creditAppliedCents,
             purpose: pendingPayment.purpose,
+            provider: pendingPayment.provider,
           }
         : null,
+      payments: paymentHistory.map((p) => {
+        const meta =
+          p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+            ? (p.metadata as Record<string, unknown>)
+            : {};
+        const creditFromMeta =
+          typeof meta.creditAppliedCents === 'number' && Number.isFinite(meta.creditAppliedCents)
+            ? Math.max(0, Math.floor(meta.creditAppliedCents))
+            : 0;
+        const listFromMeta =
+          typeof meta.listAmountCents === 'number' && Number.isFinite(meta.listAmountCents)
+            ? Math.max(0, Math.floor(meta.listAmountCents))
+            : null;
+        const creditAppliedCents =
+          p.creditAppliedCents > 0 ? p.creditAppliedCents : creditFromMeta;
+        const listAmountCents =
+          p.listAmountCents > 0
+            ? p.listAmountCents
+            : listFromMeta != null
+              ? listFromMeta
+              : p.amountCents + creditAppliedCents;
+        return {
+          id: p.id,
+          recordedAt: p.recordedAt.toISOString(),
+          amountCents: p.amountCents,
+          listAmountCents,
+          creditAppliedCents,
+          status: p.status,
+          provider: p.provider,
+          purpose: p.purpose,
+        };
+      }),
     });
   } catch (error) {
     logger.error('Error getting member plan', {
@@ -1668,6 +1741,18 @@ router.patch('/members/:id/plan/auto-renew', async (req: AuthRequest, res: Respo
       typeof req.body?.familyKey === 'string' ? req.body.familyKey.trim() : null;
 
     if (enabled) {
+      const memberCheck = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: { email: true, onlinePayConsent: true },
+      });
+      if (!memberCheck?.email?.trim()) {
+        return res.status(400).json({ error: 'Auto-renew requires a member email address' });
+      }
+      if (!memberCheck.onlinePayConsent) {
+        return res.status(400).json({
+          error: 'Auto-renew requires consent to pay online',
+        });
+      }
       const current = await refreshCurrentEntitlement(memberId);
       if (!current) {
         return res.status(400).json({ error: 'Auto-renew requires a current plan' });
@@ -1705,6 +1790,240 @@ router.patch('/members/:id/plan/auto-renew', async (req: AuthRequest, res: Respo
     res.json({ member });
   } catch (error) {
     logger.error('Error updating auto-renew', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** GET /api/club/admin/members/search?q= — Admin locate members by name or ID */
+router.get('/admin/members/search', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (q.length < 1) {
+      return res.json({ members: [] });
+    }
+
+    const asId = /^\d+$/.test(q) ? Number(q) : NaN;
+    const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
+    const nameFilters = tokens.map((token) => ({
+      OR: [
+        { firstName: { contains: token, mode: 'insensitive' as const } },
+        { lastName: { contains: token, mode: 'insensitive' as const } },
+      ],
+    }));
+
+    const members = await prisma.member.findMany({
+      where: {
+        OR: [
+          ...(Number.isInteger(asId) && asId > 0 ? [{ id: asId }] : []),
+          ...(nameFilters.length > 0 ? [{ AND: nameFilters }] : []),
+        ],
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        isActive: true,
+        segment: true,
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      take: 40,
+    });
+
+    res.json({
+      members: members.map((m) => ({
+        id: m.id,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        email: m.email,
+        isActive: m.isActive,
+        segment: m.segment,
+      })),
+    });
+  } catch (error) {
+    logger.error('Error searching members for payments admin', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** GET /api/club/admin/payments/pending — Admin cash (default) pending queue */
+router.get('/admin/payments/pending', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const providerFilter =
+      typeof req.query.provider === 'string' && req.query.provider.trim()
+        ? req.query.provider.trim()
+        : 'cash';
+
+    const payments = await prisma.clubPayment.findMany({
+      where: {
+        status: 'PENDING',
+        ...(providerFilter === 'all' ? {} : { provider: providerFilter }),
+      },
+      orderBy: { recordedAt: 'asc' },
+      take: 100,
+      include: {
+        member: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+      },
+    });
+
+    res.json({
+      payments: payments.map((p) => {
+        const meta =
+          p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+            ? (p.metadata as Record<string, unknown>)
+            : {};
+        const creditFromMeta =
+          typeof meta.creditAppliedCents === 'number' && Number.isFinite(meta.creditAppliedCents)
+            ? Math.max(0, Math.floor(meta.creditAppliedCents))
+            : 0;
+        const listFromMeta =
+          typeof meta.listAmountCents === 'number' && Number.isFinite(meta.listAmountCents)
+            ? Math.max(0, Math.floor(meta.listAmountCents))
+            : null;
+        const creditAppliedCents =
+          p.creditAppliedCents > 0 ? p.creditAppliedCents : creditFromMeta;
+        const listAmountCents =
+          p.listAmountCents > 0
+            ? p.listAmountCents
+            : listFromMeta != null
+              ? listFromMeta
+              : p.amountCents + creditAppliedCents;
+        const startDate =
+          typeof meta.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(meta.startDate.trim())
+            ? meta.startDate.trim()
+            : null;
+        const product =
+          meta.product && typeof meta.product === 'object' && !Array.isArray(meta.product)
+            ? (meta.product as Record<string, unknown>)
+            : null;
+        const planLabel =
+          (typeof meta.familyKey === 'string' && meta.familyKey.trim()) ||
+          (product && typeof product.familyKey === 'string' && product.familyKey.trim()) ||
+          null;
+
+        return {
+          id: p.id,
+          memberId: p.memberId,
+          memberName: `${p.member.firstName} ${p.member.lastName}`.trim(),
+          amountCents: p.amountCents,
+          listAmountCents,
+          creditAppliedCents,
+          purpose: p.purpose,
+          planLabel,
+          effectiveDate: startDate,
+          provider: p.provider,
+          status: p.status,
+          recordedAt: p.recordedAt.toISOString(),
+          externalRef: p.externalRef,
+        };
+      }),
+    });
+  } catch (error) {
+    logger.error('Error listing pending payments', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** POST /api/club/admin/payments/:id/clear — Admin clears PENDING cash */
+router.post('/admin/payments/:id/clear', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const paymentId = Number(req.params.id);
+    if (!Number.isInteger(paymentId) || paymentId < 1) {
+      return res.status(400).json({ error: 'Invalid payment id' });
+    }
+
+    const payment = await prisma.clubPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+    if (payment.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Payment is not pending' });
+    }
+    if (payment.provider !== 'cash') {
+      return res.status(400).json({ error: 'Only cash payments can be cleared here' });
+    }
+    if (!payment.externalRef) {
+      return res.status(400).json({ error: 'Payment is missing external reference' });
+    }
+
+    const result = await confirmPayment({
+      providerId: 'cash',
+      externalRef: payment.externalRef,
+      status: 'SUCCEEDED',
+      amountCents: payment.amountCents,
+      raw: { clearedByAdminId: req.memberId },
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    logger.error('Error clearing cash payment', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** POST /api/club/admin/payments/:id/cancel — Admin cancels PENDING cash */
+router.post('/admin/payments/:id/cancel', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const paymentId = Number(req.params.id);
+    if (!Number.isInteger(paymentId) || paymentId < 1) {
+      return res.status(400).json({ error: 'Invalid payment id' });
+    }
+
+    const payment = await prisma.clubPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+    if (payment.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Payment is not pending' });
+    }
+    if (payment.provider !== 'cash') {
+      return res.status(400).json({ error: 'Only cash payments can be cancelled here' });
+    }
+
+    if (payment.externalRef) {
+      await confirmPayment({
+        providerId: 'cash',
+        externalRef: payment.externalRef,
+        status: 'CANCELLED',
+        amountCents: payment.amountCents,
+        raw: { cancelledByAdminId: req.memberId },
+      });
+    } else {
+      const cancelled = await prisma.clubPayment.update({
+        where: { id: payment.id },
+        data: { status: 'CANCELLED' },
+      });
+      emitPaymentUpdated({
+        id: cancelled.id,
+        memberId: cancelled.memberId,
+        status: 'CANCELLED',
+        amountCents: cancelled.amountCents,
+        provider: cancelled.provider,
+        purpose: cancelled.purpose,
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    logger.error('Error cancelling cash payment', {
       error: error instanceof Error ? error.message : String(error),
     });
     res.status(500).json({ error: 'Internal server error' });

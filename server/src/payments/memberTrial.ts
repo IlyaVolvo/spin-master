@@ -29,6 +29,21 @@ export function isMemberInTrialPeriod(
   return end != null && clubDateYmd <= end;
 }
 
+/** Add calendar days to a YYYY-MM-DD string. */
+export function addDaysToYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** First club day after an inclusive trial end date. */
+export function trialPlanStartYmd(trialEndsOn: Date | null | undefined): string | null {
+  const end = trialEndsOnToYmd(trialEndsOn);
+  if (!end) return null;
+  return addDaysToYmd(end, 1);
+}
+
 export async function sendTrialEndedEmail(opts: {
   to: string;
   memberName: string;

@@ -148,21 +148,26 @@ router.get('/:paymentId', authenticate, async (req: AuthRequest, res: Response) 
 
 /**
  * POST /api/payments/checkout
- * Body: { memberId?, familyKey?, kind?: 'plan'|'pay_per_visit', amountCents?, autoRenew? }
+ * Body: { memberId?, familyKey?, kind?, amountCents?, autoRenew?, method?: 'cash'|'online', startDate? }
  */
 router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    if (req.kioskMode === true) {
+      return res.status(403).json({
+        error:
+          'Purchases cannot be started from kiosk / check-in PIN. Use the Plan page after full login, or ask an administrator.',
+      });
+    }
+
     const bodyMemberId =
       req.body?.memberId != null ? Number(req.body.memberId) : NaN;
-    const isKioskCheckin = req.kioskMode === true && req.kioskKind === 'checkin';
     const adminOnBehalf =
       isAdmin(req) && Number.isInteger(bodyMemberId) && bodyMemberId !== req.memberId;
 
-    const initiatedBy: PaymentInitiatedBy =
-      adminOnBehalf || isKioskCheckin ? 'ADMIN' : 'MEMBER';
+    const initiatedBy: PaymentInitiatedBy = adminOnBehalf ? 'ADMIN' : 'MEMBER';
 
     let targetMemberId: number;
-    if (adminOnBehalf || isKioskCheckin) {
+    if (adminOnBehalf) {
       if (!Number.isInteger(bodyMemberId) || bodyMemberId < 1) {
         return res.status(400).json({ error: 'memberId is required' });
       }
@@ -179,6 +184,10 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       return res.status(403).json({ error: 'Cannot pay for another member' });
     }
 
+    const methodRaw = req.body?.method;
+    const method =
+      methodRaw === 'cash' || methodRaw === 'online' ? methodRaw : undefined;
+
     const result = await runMemberCheckout({
       memberId: targetMemberId,
       kind: req.body?.kind === 'pay_per_visit' ? 'pay_per_visit' : 'plan',
@@ -188,6 +197,7 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       startDate: typeof req.body?.startDate === 'string' ? req.body.startDate : undefined,
       autoRenew: req.body?.autoRenew === true,
       initiatedBy,
+      method,
     });
 
     res.json(result);
@@ -195,7 +205,13 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
     const message = error instanceof Error ? error.message : 'Checkout failed';
     logger.error('Checkout failed', { error: message });
     const status =
-      message.includes('future plan') || message.includes('familyKey') || message.includes('email')
+      message.includes('future plan') ||
+      message.includes('familyKey') ||
+      message.includes('email') ||
+      message.includes('consent') ||
+      message.includes('trial') ||
+      message.includes('Online payment') ||
+      message.includes('Pay per visit')
         ? 400
         : 500;
     res.status(status).json({ error: message });

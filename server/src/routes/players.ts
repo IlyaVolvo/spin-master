@@ -25,6 +25,7 @@ import { generateScorePin, normalizeScorePin, validateScorePinFormat } from '../
 import { isKioskMode } from '../utils/kioskMode';
 import { isAdmin as sharedIsAdmin } from '../utils/adminAccess';
 import { isOrganizer as sharedIsOrganizer } from '../utils/organizerAccess';
+import { getPaymentsConfig } from '../services/systemConfigService';
 
 const router = express.Router();
 const importUpload = multer({ storage: multer.memoryStorage() });
@@ -1155,6 +1156,7 @@ router.post('/', [
           address: address ? address.trim() : null,
           picture: picture ? picture.trim() : null,
           segment: segment || 'Regular',
+          onlinePayConsent: false,
           qrTokenHash: generateQrTokenHash(),
         scorePin: generateScorePin(),
           autoRelinquishPrivileges:
@@ -1212,6 +1214,7 @@ router.post('/', [
         address: address ? address.trim() : null,
         picture: picture ? picture.trim() : null,
         segment: segment || 'Regular',
+        onlinePayConsent: getPaymentsConfig().defaultOnlinePayConsent === true,
         qrTokenHash: generateQrTokenHash(),
         scorePin: generateScorePin(),
         autoRelinquishPrivileges:
@@ -1588,6 +1591,7 @@ router.patch('/:id', [
   body('segment').optional().isString().trim(),
   body('autoRelinquishPrivileges').optional({ nullable: true }).isBoolean(),
   body('trialEndsOn').optional({ nullable: true }),
+  body('onlinePayConsent').optional().isBoolean(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     if (isKioskMode(req)) {
@@ -1750,6 +1754,25 @@ router.patch('/:id', [
       updateData.tournamentNotificationsEnabled = Boolean(tournamentNotificationsEnabled && finalEmail);
     } else if (Object.prototype.hasOwnProperty.call(updateData, 'email') && !updateData.email) {
       updateData.tournamentNotificationsEnabled = false;
+      updateData.onlinePayConsent = false;
+    }
+
+    // Online pay consent: only with email; member self or admin
+    if (Object.prototype.hasOwnProperty.call(req.body, 'onlinePayConsent')) {
+      if (!isCurrentMember && !hasAdminAccess) {
+        return res.status(403).json({
+          error: 'Only the member themselves or Admins can change online pay consent',
+        });
+      }
+      const finalEmail =
+        Object.prototype.hasOwnProperty.call(updateData, 'email')
+          ? updateData.email
+          : existingMember.email;
+      if (!finalEmail) {
+        updateData.onlinePayConsent = false;
+      } else {
+        updateData.onlinePayConsent = Boolean(req.body.onlinePayConsent);
+      }
     }
     
     // Roles can only be changed by Admins

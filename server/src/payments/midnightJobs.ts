@@ -117,6 +117,7 @@ export async function runClubMidnightJobs(options?: {
       id: true,
       autoRenewFamilyKey: true,
       email: true,
+      onlinePayConsent: true,
     },
   });
 
@@ -153,6 +154,11 @@ export async function runClubMidnightJobs(options?: {
       autoRenewErrors += 1;
       continue;
     }
+    if (!member.onlinePayConsent) {
+      logger.warn('Auto-renew skipped: member has no online pay consent', { memberId: member.id });
+      autoRenewErrors += 1;
+      continue;
+    }
 
     try {
       await runMemberCheckout({
@@ -161,6 +167,7 @@ export async function runClubMidnightJobs(options?: {
         familyKey,
         autoRenew: true,
         initiatedBy: 'ADMIN',
+        method: 'online',
         // Auto-renew after expiry: current already ended
         skipFutureGuard: false,
       });

@@ -123,6 +123,8 @@ export type TestPaymentProviderSettings = {
 export type PaymentsConfig = {
   /** Active provider plugin id; empty = auto when exactly one usable offered provider. */
   providerId: string;
+  /** Applied when creating new members; consent is OFF by default. */
+  defaultOnlinePayConsent: boolean;
   adminNotifyEmails: string[];
   notifyAdminsOnCourtesy: boolean;
   courtesyGraceDays: number;
@@ -254,6 +256,7 @@ export function getDefaultSystemConfig(): SystemConfig {
     },
     payments: {
       providerId: '',
+      defaultOnlinePayConsent: false,
       adminNotifyEmails: [],
       notifyAdminsOnCourtesy: true,
       courtesyGraceDays: 7,
@@ -593,6 +596,7 @@ function validatePayments(value: unknown): PaymentsConfig {
   if (typeof config.providerId !== 'string') {
     throw new Error('payments.providerId must be a string');
   }
+  config.defaultOnlinePayConsent = Boolean(config.defaultOnlinePayConsent);
   if (!Array.isArray(config.adminNotifyEmails)) {
     throw new Error('payments.adminNotifyEmails must be an array');
   }

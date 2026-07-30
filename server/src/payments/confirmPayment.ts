@@ -21,6 +21,7 @@ async function createEntitlementFromProduct(
   planSegmentFallback: string,
   amountPaidCents: number,
   startDateYmd?: string | null,
+  forceFuture?: boolean,
 ): Promise<void> {
   if (!product) return;
 
@@ -70,17 +71,23 @@ async function createEntitlementFromProduct(
     throw new Error('Member already has a future entitlement; cannot grant another');
   }
 
-  const status = current ? 'FUTURE' : 'CURRENT';
+  const status: 'CURRENT' | 'FUTURE' = forceFuture || current ? 'FUTURE' : 'CURRENT';
 
   if (plan.kind === 'VISIT') {
     const visits = Number(plan.visitCount) || 0;
+    const validFrom =
+      status === 'FUTURE' && startDateYmd && /^\d{4}-\d{2}-\d{2}$/.test(startDateYmd)
+        ? new Date(`${startDateYmd}T12:00:00.000Z`)
+        : status === 'FUTURE' && current?.validTo
+          ? new Date(current.validTo)
+          : new Date();
     await prisma.clubEntitlement.create({
       data: {
         memberId,
         type: 'VISIT_PACK',
         status,
         label: plan.name,
-        validFrom: new Date(),
+        validFrom,
         validTo: null,
         visitsRemaining: visits,
         visitsTotal: visits,
@@ -95,7 +102,9 @@ async function createEntitlementFromProduct(
     const unit = (plan.durationUnit || 'MONTH') as DurationUnit;
     const value = Number(plan.durationValue) || 1;
     let validFrom: Date;
-    if (status === 'FUTURE' && current?.validTo) {
+    if (status === 'FUTURE' && startDateYmd && /^\d{4}-\d{2}-\d{2}$/.test(startDateYmd)) {
+      validFrom = new Date(`${startDateYmd}T12:00:00.000Z`);
+    } else if (status === 'FUTURE' && current?.validTo) {
       validFrom = new Date(current.validTo);
     } else if (status === 'CURRENT' && startDateYmd && /^\d{4}-\d{2}-\d{2}$/.test(startDateYmd)) {
       // Club-local calendar day at noon UTC (stable across DST)
@@ -198,7 +207,21 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
     },
   });
 
-  const creditApplied = Math.max(0, Math.floor(Number(meta.creditAppliedCents) || 0));
+  const creditFromMeta = Math.max(0, Math.floor(Number(meta.creditAppliedCents) || 0));
+  const creditApplied = Math.max(
+    0,
+    Number(payment.creditAppliedCents) > 0 ? payment.creditAppliedCents : creditFromMeta,
+  );
+  const listFromMeta =
+    meta.listAmountCents != null ? Math.max(0, Math.floor(Number(meta.listAmountCents) || 0)) : null;
+  const listAmountCents = Math.max(
+    0,
+    Number(payment.listAmountCents) > 0
+      ? payment.listAmountCents
+      : listFromMeta != null
+        ? listFromMeta
+        : (event.amountCents ?? payment.amountCents) + creditApplied,
+  );
   const amountPaid = event.amountCents ?? payment.amountCents;
 
   await prisma.$transaction(async (tx) => {
@@ -207,6 +230,8 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
       data: {
         status: 'SUCCEEDED',
         amountCents: amountPaid,
+        listAmountCents,
+        creditAppliedCents: creditApplied,
         provider: event.providerId,
         externalRef: event.externalRef,
       },
@@ -260,6 +285,7 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
       meta.planSegment || member?.segment || 'Regular',
       amountPaid,
       meta.startDate,
+      meta.forceFuture === true,
     );
   } catch (err) {
     logger.error('Failed to create entitlement after payment confirm', {
@@ -293,8 +319,7 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
         memberName: `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Member',
         amountPaidCents: amountPaid,
         creditAppliedCents: creditApplied,
-        listAmountCents:
-          meta.listAmountCents != null ? Number(meta.listAmountCents) : amountPaid + creditApplied,
+        listAmountCents,
         planLabel,
         planSegment: planSegment || meta.planSegment || member?.segment,
       });

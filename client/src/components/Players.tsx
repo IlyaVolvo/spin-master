@@ -82,6 +82,7 @@ type PlayerEditBaseline = {
   picture: string;
   segment: string;
   trialEndsOn: string;
+  onlinePayConsent: boolean;
   isActive: boolean;
   tournamentNotificationsEnabled: boolean;
   rolesKey: string;
@@ -164,6 +165,7 @@ function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
     picture: member.picture || '',
     segment: (member as any).segment || 'Regular',
     trialEndsOn: trialEndsOnToInputValue(member.trialEndsOn),
+    onlinePayConsent: Boolean(member.onlinePayConsent),
     isActive: member.isActive !== undefined ? member.isActive : true,
     tournamentNotificationsEnabled: Boolean(member.tournamentNotificationsEnabled && member.email),
     rolesKey: [...(member.roles || [])].sort().join(','),
@@ -384,6 +386,7 @@ const Players: React.FC = () => {
   const [editPicture, setEditPicture] = useState('');
   const [editSegment, setEditSegment] = useState('Regular');
   const [editTrialEndsOn, setEditTrialEndsOn] = useState('');
+  const [editOnlinePayConsent, setEditOnlinePayConsent] = useState(false);
   const [editIsActive, setEditIsActive] = useState(true);
   const [editTournamentNotificationsEnabled, setEditTournamentNotificationsEnabled] = useState(false);
   const [editRoles, setEditRoles] = useState<string[]>([]);
@@ -560,6 +563,18 @@ const Players: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.editOwnProfile, location.state?.memberId, members.length, editingPlayerId]);
+
+  // Handle open own plan from header $ button (near member name / personal Settings)
+  useEffect(() => {
+    if (location.state?.openOwnPlan === true && location.state?.memberId) {
+      setPlanScreenMemberId(location.state.memberId as number);
+      navigate('/players', {
+        state: { ...location.state, openOwnPlan: false },
+        replace: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.openOwnPlan, location.state?.memberId]);
 
   // Tournament modification, repeat, and auto-expand filters effects are handled by useTournamentCreation hook
 
@@ -2203,6 +2218,7 @@ const Players: React.FC = () => {
       setEditAddress(member.address || '');
       setEditSegment((member as any).segment || 'Regular');
       setEditTrialEndsOn(trialEndsOnToInputValue(member.trialEndsOn));
+      setEditOnlinePayConsent(Boolean(member.onlinePayConsent));
       setEditPicture(member.picture || '');
       setEditIsActive(member.isActive !== undefined ? member.isActive : true);
       setEditTournamentNotificationsEnabled(Boolean(member.email && member.tournamentNotificationsEnabled));
@@ -2286,6 +2302,7 @@ const Players: React.FC = () => {
     setEditAddress('');
     setEditSegment('Regular');
     setEditTrialEndsOn('');
+    setEditOnlinePayConsent(false);
     setEditPicture('');
     setEditIsActive(true);
     setEditTournamentNotificationsEnabled(false);
@@ -2381,6 +2398,7 @@ const Players: React.FC = () => {
         editAddress !== b.address ||
         editSegment !== b.segment ||
         editTrialEndsOn !== b.trialEndsOn ||
+        editOnlinePayConsent !== b.onlinePayConsent ||
         editPicture !== b.picture ||
         editIsActive !== b.isActive ||
         (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
@@ -2389,7 +2407,7 @@ const Players: React.FC = () => {
         editAutoRelinquishKey !== b.autoRelinquishKey
       );
     }
-    if (isAdminUser && (editAutoRelinquishKey !== b.autoRelinquishKey || editTrialEndsOn !== b.trialEndsOn)) {
+    if (isAdminUser && (editAutoRelinquishKey !== b.autoRelinquishKey || editTrialEndsOn !== b.trialEndsOn || editOnlinePayConsent !== b.onlinePayConsent)) {
       return true;
     }
     return (
@@ -2398,6 +2416,7 @@ const Players: React.FC = () => {
       editAddress !== b.address ||
       editSegment !== b.segment ||
       editPicture !== b.picture ||
+      editOnlinePayConsent !== b.onlinePayConsent ||
       (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
       (playerEditBaselineRef.current?.birthDateMs == null && birthMs !== b.birthDateMs)
     );
@@ -2531,6 +2550,11 @@ const Players: React.FC = () => {
         updateData.autoRelinquishPrivileges =
           editAutoRelinquishKey === 'always' ? true : editAutoRelinquishKey === 'never' ? false : null;
         updateData.trialEndsOn = editTrialEndsOn.trim() || null;
+      }
+      if (editEmail.trim()) {
+        updateData.onlinePayConsent = editOnlinePayConsent;
+      } else {
+        updateData.onlinePayConsent = false;
       }
       
       // Both admin and regular members can edit these fields
@@ -3375,16 +3399,6 @@ const Players: React.FC = () => {
                         + Match
                       </button>
                     )}
-                    {currentMember && !isKioskMode() && (
-                      <button
-                        onClick={() => setPlanScreenMemberId(currentMember.id)}
-                        className="button-3d"
-                        style={buttonStyle}
-                        title="View and manage your club plan"
-                      >
-                        Plan
-                      </button>
-                    )}
                     {hasButtonsBeforeSeparator && (
                       <span style={{ color: '#666', fontSize: '16px', margin: '0 4px', fontWeight: 'bold' }}>|</span>
                     )}
@@ -3405,8 +3419,44 @@ const Players: React.FC = () => {
           {isCheckinKiosk && (
             <div style={{ flex: '1 1 auto' }} />
           )}
-          {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
+            {!isCheckinKiosk && (
+              <PlayersSettingsMenu
+                showSettingsMenu={showSettingsMenu}
+                setShowSettingsMenu={setShowSettingsMenu}
+                showIdColumn={showIdColumn}
+                setShowIdColumn={setShowIdColumn}
+                showAgeColumn={showAgeColumn}
+                setShowAgeColumn={setShowAgeColumn}
+                showStatusColumn={showStatusColumn}
+                setShowStatusColumn={setShowStatusColumn}
+                showGamesColumn={showGamesColumn}
+                setShowGamesColumn={setShowGamesColumn}
+                showPlanColumn={showPlanColumn}
+                setShowPlanColumn={setShowPlanColumn}
+                showAllPlayers={showAllPlayers}
+                setShowAllPlayers={setShowAllPlayers}
+                showAllRoles={showAllRoles}
+                setShowAllRoles={setShowAllRoles}
+                nameDisplayOrder={nameDisplayOrder}
+                setNameDisplayOrderState={setNameDisplayOrderState}
+                fetchMatches={fetchMatches}
+                fetchMembers={fetchMembers}
+                isAdminUser={isAdmin()}
+                isSelectingForStats={isSelectingForStats}
+                isSelectingForHistory={isSelectingForHistory}
+                supportsFullSaveDialog={supportsFullSaveDialog}
+                onExportPlayers={handleExportPlayers}
+                onImportPlayers={handleImportPlayers}
+                onExportClubArchive={handleExportClubArchive}
+                onImportClubArchive={handleImportClubArchive}
+                importSendEmail={importSendEmail}
+                setImportSendEmail={setImportSendEmail}
+                tournamentNotificationsEnabled={tournamentNotificationsEnabled}
+                onTournamentNotificationsChange={currentMember ? handleTournamentNotificationsChange : undefined}
+              />
+            )}
+            {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
               <button
                 onClick={async () => {
                   // Clear all caches
@@ -3436,8 +3486,8 @@ const Players: React.FC = () => {
               >
                 ↻
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
         
         {/* Tournament Information Box */}
@@ -5870,52 +5920,7 @@ const Players: React.FC = () => {
                   Check-in
                 </th>
               )}
-              {!isCheckinKiosk && (
-              <th style={{ textAlign: 'right', paddingRight: '10px', backgroundColor: '#f8f9fa' }}>
-                <PlayersSettingsMenu
-                  showSettingsMenu={showSettingsMenu}
-                  setShowSettingsMenu={setShowSettingsMenu}
-                  showIdColumn={showIdColumn}
-                  setShowIdColumn={setShowIdColumn}
-                  showAgeColumn={showAgeColumn}
-                  setShowAgeColumn={setShowAgeColumn}
-                  showStatusColumn={showStatusColumn}
-                  setShowStatusColumn={setShowStatusColumn}
-                  showGamesColumn={showGamesColumn}
-                  setShowGamesColumn={setShowGamesColumn}
-                  showPlanColumn={showPlanColumn}
-                  setShowPlanColumn={setShowPlanColumn}
-                  showAllPlayers={showAllPlayers}
-                  setShowAllPlayers={setShowAllPlayers}
-                  showAllRoles={showAllRoles}
-                  setShowAllRoles={setShowAllRoles}
-                  nameDisplayOrder={nameDisplayOrder}
-                  setNameDisplayOrderState={setNameDisplayOrderState}
-                  fetchMatches={fetchMatches}
-                  fetchMembers={fetchMembers}
-                  isAdminUser={isAdmin()}
-                  isSelectingForStats={isSelectingForStats}
-                  isSelectingForHistory={isSelectingForHistory}
-                  supportsFullSaveDialog={supportsFullSaveDialog}
-                  onExportPlayers={handleExportPlayers}
-                  onImportPlayers={handleImportPlayers}
-                  onExportClubArchive={handleExportClubArchive}
-                  onImportClubArchive={handleImportClubArchive}
-                  importSendEmail={importSendEmail}
-                  setImportSendEmail={setImportSendEmail}
-                  tournamentNotificationsEnabled={tournamentNotificationsEnabled}
-                  onTournamentNotificationsChange={currentMember ? handleTournamentNotificationsChange : undefined}
-                  onOpenOwnPlan={
-                    currentMember
-                      ? () => setPlanScreenMemberId(currentMember.id)
-                      : undefined
-                  }
-                />
-              </th>
-              )}
-              {isCheckinKiosk && (
-                <th style={{ backgroundColor: '#f8f9fa', padding: '12px' }} />
-              )}
+              <th style={{ backgroundColor: '#f8f9fa', padding: '12px' }} />
             </tr>
           </thead>
           {/* Sticky selected player row for history selection - appears right under header */}
@@ -6728,6 +6733,29 @@ const Players: React.FC = () => {
                                   : 'No active trial.'}
                             </div>
                           </div>
+                          {Boolean(editEmail.trim()) && (
+                            <div style={{ gridColumn: '1 / -1' }}>
+                              <label
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  fontSize: '13px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={editOnlinePayConsent}
+                                  onChange={(e) => setEditOnlinePayConsent(e.target.checked)}
+                                />
+                                <span style={{ fontWeight: 'bold' }}>Consent to pay online</span>
+                              </label>
+                              <div style={{ marginTop: '4px', fontSize: '12px', color: '#666' }}>
+                                Required for automatic/online checkout. Off by default.
+                              </div>
+                            </div>
+                          )}
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Picture URL</label>
                             <input

@@ -33,7 +33,30 @@ type PlanSummary = {
   autoRenewFamilyKey: string | null;
   futureReimburseCents: number;
   canPurchase: boolean;
-  pendingPayment: { id: number; status: string; amountCents: number; purpose: string } | null;
+  onlinePayConsent?: boolean;
+  effectiveCanPayOnline?: boolean;
+  inTrial?: boolean;
+  trialEndsOn?: string | null;
+  trialPlanStartsOn?: string | null;
+  pendingPayment: {
+    id: number;
+    status: string;
+    amountCents: number;
+    listAmountCents?: number;
+    creditAppliedCents?: number;
+    purpose: string;
+    provider?: string;
+  } | null;
+  payments?: Array<{
+    id: number;
+    recordedAt: string;
+    amountCents: number;
+    listAmountCents?: number;
+    creditAppliedCents?: number;
+    status: string;
+    provider: string;
+    purpose: string;
+  }>;
 };
 
 type PricedPlan = {
@@ -178,6 +201,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   /** Which plan row reflects the in-flight / last purchase outcome */
   const [statusTarget, setStatusTarget] = useState<'current' | 'future' | null>(null);
   const [startDate, setStartDate] = useState(todayYmdLocal);
+  const [payMethod, setPayMethod] = useState<'cash' | 'online'>('cash');
   const paymentAbortRef = useRef<AbortController | null>(null);
   const closedRef = useRef(false);
 
@@ -226,13 +250,15 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       setSummary(nextSummary);
       setPlans(nextPlans);
       setCreditDraft(String((nextSummary.purchaseCreditCents || 0) / 100));
+      setPayMethod(nextSummary.effectiveCanPayOnline ? 'online' : 'cash');
       setSelectedFamilyKey((prev) => {
         if (prev && nextPlans.some((p) => p.familyKey === prev)) return prev;
         return nextPlans[0]?.familyKey || '';
       });
       if (opts?.applyPendingHighlight && nextSummary.pendingPayment) {
         setPurchaseLineState('pending');
-        setStatusTarget(nextSummary.current ? 'future' : 'current');
+        const pendingAsFuture = Boolean(nextSummary.current) || Boolean(nextSummary.inTrial);
+        setStatusTarget(pendingAsFuture ? 'future' : 'current');
         setPurchaseLineLabel(
           `${nextSummary.pendingPayment.purpose || 'Payment'} · ${formatMoney(nextSummary.pendingPayment.amountCents)} (pending)`,
         );
@@ -256,11 +282,20 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   );
 
   const hasCurrent = Boolean(summary?.current);
+  const inTrial = summary?.inTrial === true;
   const canPurchase = summary?.canPurchase === true;
   const blockReason = summary ? purchaseBlockReason(summary) : null;
-  const actionLabel = hasCurrent ? 'Extend for Future' : 'Purchase';
+  const actionLabel = inTrial
+    ? 'Purchase for after trial'
+    : hasCurrent
+      ? 'Extend for Future'
+      : 'Purchase';
+  const trialStartsOn = summary?.trialPlanStartsOn || null;
+  const trialEndsOnLabel = summary?.trialEndsOn || null;
   const showStartDate =
-    !hasCurrent && selectedPlan?.kind === 'TIME' && canPurchase;
+    !hasCurrent && !inTrial && selectedPlan?.kind === 'TIME' && canPurchase;
+  const canPayOnline = summary?.effectiveCanPayOnline === true;
+  const hasEmail = Boolean(summary?.member.email?.trim());
 
   useEffect(() => {
     if (showStartDate && !startDate) {
@@ -268,13 +303,38 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
     }
   }, [showStartDate, startDate]);
 
+  useEffect(() => {
+    if (!canPayOnline && payMethod === 'online') {
+      setPayMethod('cash');
+    }
+  }, [canPayOnline, payMethod]);
+
+  const saveOnlineConsent = async (enabled: boolean) => {
+    if (!hasEmail) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.patch(`/players/${memberId}`, { onlinePayConsent: enabled });
+      await load({ silent: true });
+      setMessage(enabled ? 'Online pay consent saved' : 'Online pay consent cleared');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to update consent'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const purchase = async () => {
     if (!summary || !selectedPlan || !canPurchase) return;
+    if (payMethod === 'online' && !canPayOnline) {
+      setError('Online payment requires email and consent');
+      return;
+    }
     if (showStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
       setError('Choose a valid plan start date');
       return;
     }
-    const target: 'current' | 'future' = hasCurrent ? 'future' : 'current';
+    const target: 'current' | 'future' = hasCurrent || inTrial ? 'future' : 'current';
     setStatusTarget(target);
     setBusy(true);
     setError('');
@@ -291,13 +351,26 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         memberId,
         familyKey: selectedPlan.familyKey,
         kind: 'plan',
-        autoRenew: summary.autoRenewEnabled,
+        method: payMethod,
+        autoRenew: summary.autoRenewEnabled && payMethod === 'online',
         ...(showStartDate ? { startDate } : {}),
       });
       const paymentId = Number(res.data?.paymentId);
       if (!paymentId) {
         throw new Error('No payment id returned');
       }
+
+      if (payMethod === 'cash' || res.data?.providerId === 'cash') {
+        if (closedRef.current || abort.signal.aborted) return;
+        setPurchaseLineState('pending');
+        setPurchaseLineLabel(
+          `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (awaiting admin)`,
+        );
+        setMessage('Cash payment recorded as pending. An administrator must clear it.');
+        await load({ silent: true });
+        return;
+      }
+
       const settled = await waitForPaymentUpdate({
         paymentId,
         timeoutMs: 90_000,
@@ -383,6 +456,10 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
     if (!summary?.current) return;
     if (enabled && summary.future) {
       setError('Auto-renew cannot be enabled while a future plan is queued');
+      return;
+    }
+    if (enabled && !summary.effectiveCanPayOnline) {
+      setError('Auto-renew requires email and consent to pay online');
       return;
     }
     setBusy(true);
@@ -479,6 +556,55 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
               {' · '}
               Credit: {formatMoney(summary.purchaseCreditCents)}
             </p>
+            {inTrial && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  background: '#eaf2f8',
+                  border: '1px solid #a9cce3',
+                  color: '#1a5276',
+                  fontSize: '13px',
+                  lineHeight: 1.45,
+                }}
+              >
+                <strong style={{ display: 'block', marginBottom: '4px' }}>Trial in effect</strong>
+                Free trial
+                {trialEndsOnLabel ? ` through ${trialEndsOnLabel}` : ''}. Any plan you buy now is queued
+                as a <strong>future plan</strong> and will only take effect
+                {trialStartsOn ? (
+                  <>
+                    {' '}
+                    starting <strong>{trialStartsOn}</strong> (the day after trial ends)
+                  </>
+                ) : (
+                  ' after the trial period ends'
+                )}
+                . It does not start while the trial is still active.
+              </div>
+            )}
+
+            {hasEmail && (
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '12px',
+                  fontSize: '13px',
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={summary.onlinePayConsent === true}
+                  disabled={busy}
+                  onChange={(e) => void saveOnlineConsent(e.target.checked)}
+                />
+                I consent to pay online
+              </label>
+            )}
 
             <section style={{ marginTop: '14px' }}>
               <h4 style={{ margin: '0 0 6px' }}>Current plan</h4>
@@ -501,20 +627,22 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                       gap: '6px',
                       flexShrink: 0,
                       marginTop: '1px',
-                      cursor: busy || summary.future ? 'not-allowed' : 'pointer',
+                      cursor: busy || summary.future || !summary.effectiveCanPayOnline ? 'not-allowed' : 'pointer',
                       fontSize: '13px',
-                      opacity: summary.future ? 0.55 : 1,
+                      opacity: summary.future || !summary.effectiveCanPayOnline ? 0.55 : 1,
                     }}
                     title={
                       summary.future
                         ? 'Auto-renew is unavailable while a future plan is queued'
-                        : 'Auto-renew this plan when it ends'
+                        : !summary.effectiveCanPayOnline
+                          ? 'Auto-renew requires email and online pay consent'
+                          : 'Auto-renew this plan when it ends'
                     }
                   >
                     <input
                       type="checkbox"
                       checked={summary.autoRenewEnabled && !summary.future}
-                      disabled={busy || Boolean(summary.future)}
+                      disabled={busy || Boolean(summary.future) || !summary.effectiveCanPayOnline}
                       onChange={(e) => void toggleAutoRenew(e.target.checked)}
                     />
                     Auto-renew
@@ -603,7 +731,14 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
             )}
 
             <section style={{ marginTop: '18px' }}>
-              <h4 style={{ margin: '0 0 6px' }}>{hasCurrent ? 'Extend for Future' : 'Purchase'}</h4>
+              <h4 style={{ margin: '0 0 6px' }}>{actionLabel}</h4>
+              {inTrial && (
+                <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#1a5276', fontWeight: 600 }}>
+                  This plan will be in effect after the trial
+                  {trialStartsOn ? ` (from ${trialStartsOn})` : ' ends'}
+                  {trialEndsOnLabel ? ` — trial ends ${trialEndsOnLabel}` : ''}.
+                </p>
+              )}
               {blockReason && (
                 <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#a65b00' }}>{blockReason}</p>
               )}
@@ -687,8 +822,50 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                       {' · '}priced for segment {selectedPlan.segment}
                       {' · '}list {formatMoney(selectedPlan.listAmountCents)}
                     </span>
+                    {inTrial && (
+                      <span style={{ display: 'block', marginTop: '6px', fontWeight: 600, color: '#1a5276' }}>
+                        Takes effect after trial
+                        {trialStartsOn ? ` on ${trialStartsOn}` : ''}.
+                      </span>
+                    )}
                   </p>
                 )}
+
+                <div style={{ marginBottom: '10px', fontSize: '13px' }}>
+                  <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Payment method</span>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginRight: '14px' }}>
+                    <input
+                      type="radio"
+                      name="payMethod"
+                      checked={payMethod === 'cash'}
+                      disabled={busy || !canPurchase}
+                      onChange={() => setPayMethod('cash')}
+                    />
+                    Cash (admin clears)
+                  </label>
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      opacity: canPayOnline ? 1 : 0.5,
+                    }}
+                    title={
+                      canPayOnline
+                        ? 'Pay with the active online provider'
+                        : 'Requires email and online pay consent'
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name="payMethod"
+                      checked={payMethod === 'online'}
+                      disabled={busy || !canPurchase || !canPayOnline}
+                      onChange={() => setPayMethod('online')}
+                    />
+                    Pay online
+                  </label>
+                </div>
 
                 {showStartDate && (
                   <label style={{ display: 'block', fontSize: '13px', marginBottom: '10px' }}>
@@ -750,9 +927,43 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                       ? 'Failed — retry'
                       : purchasePanelTone === 'confirmed'
                         ? 'Purchased'
-                        : actionLabel}
+                        : `${actionLabel} · ${payMethod === 'cash' ? 'Cash' : 'Online'}`}
                 </button>
               </div>
+            </section>
+
+            <section style={{ marginTop: '18px' }}>
+              <h4 style={{ margin: '0 0 6px' }}>Payment history</h4>
+              {!summary.payments || summary.payments.length === 0 ? (
+                <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>No payments yet.</p>
+              ) : (
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                  {summary.payments.map((p) => (
+                    <li
+                      key={p.id}
+                      style={{
+                        padding: '8px 0',
+                        borderBottom: '1px solid #eee',
+                        fontSize: '13px',
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>
+                        {formatMoney(p.amountCents)} cash · {p.status}
+                        <span style={{ fontWeight: 400, color: '#666' }}> · {p.provider}</span>
+                      </div>
+                      <div style={{ color: '#555' }}>{p.purpose || '—'}</div>
+                      <div style={{ color: '#666', fontSize: '12px' }}>
+                        Amount {formatMoney(p.listAmountCents ?? p.amountCents + (p.creditAppliedCents ?? 0))}
+                        {' · '}
+                        Credit {formatMoney(p.creditAppliedCents ?? 0)}
+                      </div>
+                      <div style={{ color: '#888', fontSize: '12px' }}>
+                        {new Date(p.recordedAt).toLocaleString()}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           </>
         )}
