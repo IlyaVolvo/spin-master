@@ -10,6 +10,7 @@ import session from 'express-session';
 import { Server } from 'socket.io';
 import { requestLogger } from './middleware/requestLogger';
 import authRoutes from './routes/auth';
+import clubArchiveRoutes from './routes/clubArchive';
 import matchRoutes from './routes/matches';
 import playerRoutes from './routes/players';
 import systemConfigRoutes from './routes/systemConfig';
@@ -124,6 +125,7 @@ logger.debug('Session middleware configured', {
 app.use('/api', systemConfigRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
+app.use('/api/club-archive', clubArchiveRoutes);
 app.use('/api/tournaments', tournamentBracketRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/matches', matchRoutes);
