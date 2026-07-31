@@ -8,8 +8,7 @@ import { formatPlayerName, getNameDisplayOrder, setNameDisplayOrder, NameDisplay
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
 import { getMember, setMember, isOrganizer, isAdmin, isKioskMode, getKioskKind } from '../utils/auth';
 import {
-  CheckinKioskBanner,
-  CheckinPresentPanel,
+  CheckinKioskToolbar,
   CheckinPinModal,
   CheckinRowButton,
   fetchCheckinTodayStatus,
@@ -223,6 +222,9 @@ const Players: React.FC = () => {
   const isUserOrganizer = isOrganizer();
   const isCheckinKiosk = isKioskMode() && getKioskKind() === 'checkin';
   const [checkinStatusByMember, setCheckinStatusByMember] = useState<CheckinStatusMap>({});
+  const [presentOnly, setPresentOnly] = useState<boolean>(() => {
+    return localStorage.getItem('players_presentOnly') === 'true';
+  });
   const [checkinPinTarget, setCheckinPinTarget] = useState<{
     memberId: number;
     memberName: string;
@@ -2059,6 +2061,11 @@ const Players: React.FC = () => {
         return selectedStatuses.includes(getPlayerStatusKey(p));
       });
     }
+
+    // Check-in kiosk: optionally show only currently present members
+    if (isCheckinKiosk && presentOnly) {
+      filtered = filtered.filter(p => checkinStatusByMember[p.id]?.present === true);
+    }
     
     const hasBirthDateKey = (m: Member): boolean =>
       m.birthDate != null && String(m.birthDate).trim() !== '';
@@ -3313,6 +3320,28 @@ const Players: React.FC = () => {
     return filtered;
   }, [members, showAllRoles, nameFilter, minRating, maxRating, minAge, maxAge, showAllPlayers, selectedRoles, selectedStatuses]);
 
+  const toggleFiltersCollapsed = () => {
+    const newState = !filtersCollapsed;
+    setFiltersCollapsed(newState);
+    localStorage.setItem('players_filtersCollapsed', String(newState));
+  };
+
+  const refreshAllData = async () => {
+    // Clear all caches
+    membersCache.data = null;
+    membersCache.lastFetch = 0;
+    matchesCache.data = null;
+    matchesCache.lastFetch = 0;
+    matchCountsCache.clear();
+
+    // Refetch everything
+    await fetchMembers();
+    await fetchMatches();
+    if (showAllRoles && isAdmin()) {
+      await fetchMembers();
+    }
+  };
+
   if (loading) {
     return <div className="card">Loading...</div>;
   }
@@ -3335,13 +3364,9 @@ const Players: React.FC = () => {
         }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto' }}>
-            {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
+            {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && !isCheckinKiosk && (
               <button
-                onClick={() => {
-                  const newState = !filtersCollapsed;
-                  setFiltersCollapsed(newState);
-                  localStorage.setItem('players_filtersCollapsed', String(newState));
-                }}
+                onClick={toggleFiltersCollapsed}
                 style={{
                   padding: '5px 10px',
                   fontSize: '13px',
@@ -3487,23 +3512,9 @@ const Players: React.FC = () => {
                 onTournamentNotificationsChange={currentMember ? handleTournamentNotificationsChange : undefined}
               />
             )}
-            {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && (
+            {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && !isCheckinKiosk && (
               <button
-                onClick={async () => {
-                  // Clear all caches
-                  membersCache.data = null;
-                  membersCache.lastFetch = 0;
-                  matchesCache.data = null;
-                  matchesCache.lastFetch = 0;
-                  matchCountsCache.clear();
-                  
-                  // Refetch everything
-                  await fetchMembers();
-                  await fetchMatches();
-                  if (showAllRoles && isAdmin()) {
-                    await fetchMembers();
-                  }
-                }}
+                onClick={() => { void refreshAllData(); }}
                 className="button-filter"
                 style={{
                   padding: '6px 12px',
@@ -4389,19 +4400,6 @@ const Players: React.FC = () => {
           </div>
         </div>
 
-        {isCheckinKiosk && (
-          <>
-            <CheckinKioskBanner
-              presentCount={Object.values(checkinStatusByMember).filter((s) => s.present).length}
-            />
-            <CheckinPresentPanel
-              members={members}
-              statusByMember={checkinStatusByMember}
-              nameDisplayOrder={nameDisplayOrder}
-            />
-          </>
-        )}
-
         {showAddForm && (
           <AddPlayerModal
             onClose={() => {
@@ -5087,6 +5085,26 @@ const Players: React.FC = () => {
           </div>
         )}
 
+        <div style={isCheckinKiosk ? { marginTop: '4px' } : undefined}>
+          {isCheckinKiosk && (
+            <CheckinKioskToolbar
+              presentCount={Object.values(checkinStatusByMember).filter((s) => s.present).length}
+              presentOnly={presentOnly}
+              onPresentOnlyChange={(next) => {
+                setPresentOnly(next);
+                localStorage.setItem('players_presentOnly', String(next));
+              }}
+              filtersCollapsed={filtersCollapsed}
+              onToggleFiltersCollapsed={toggleFiltersCollapsed}
+              onRefresh={() => {
+                void refreshAllData();
+                fetchCheckinTodayStatus()
+                  .then(setCheckinStatusByMember)
+                  .catch(() => {});
+              }}
+            />
+          )}
+          <div>
         <div style={{ marginBottom: '0px' }}>
           {!filtersCollapsed && (
           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -6412,6 +6430,8 @@ const Players: React.FC = () => {
         </table>
         </div>
         {/* End of table section */}
+          </div>
+        </div>
 
       </div>
       {/* End of card */}

@@ -252,7 +252,7 @@ Mark each: Pass / Fail / Skip. Prefer **UI** unless the DB recipe is listed.
 | C10 | Low visit pack | Banner “Only N visit(s) remaining” | `visitsRemaining` ≤ threshold |
 | C11 | Banner disabled in Payments settings | No banner | — |
 | C12 | PPV member without today’s per-visit payment | PAYMENT_REQUIRED | Entitlement type `PAY_PER_VISIT_EXTERNAL` |
-| C13 | Auto-checkout cron | Open visits closed `closedBy=AUTO` | Leave open visit; `POST .../cron/auto-checkout` |
+| C13 | Auto-checkout cron / startup (**SHELVED**) | N/A until re-enabled — cron returns 503; no startup run | Keep open visits as-is; skip this case for now |
 
 ### D. Notifications
 
@@ -332,4 +332,4 @@ POST /api/club/cron/reconcile-payments
 POST /api/club/cron/auto-checkout
 ```
 
-Body for auto-checkout may include `{ "clubDate": "YYYY-MM-DD" }` (defaults to previous club day).
+**Shelved:** auto-checkout is disabled (startup + cron return `503` / no-op). Code remains in `server/src/payments/autoCheckout.ts` for later. When re-enabled: body may include `{ "clubDate": "YYYY-MM-DD" }` for a single-day run; omit body to close all open visits with `clubDate` strictly before today’s club-local date.

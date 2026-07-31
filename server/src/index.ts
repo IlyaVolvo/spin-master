@@ -209,6 +209,18 @@ if (require.main === module) {
     logger.error('Cache initialization failed', { error: error instanceof Error ? error.message : String(error) });
   });
 
+  // SHELVED: auto-checkout on startup (re-enable with cron route when ready)
+  // import('./payments/autoCheckout')
+  //   .then(({ runAutoCheckout }) => runAutoCheckout())
+  //   .then((result) => {
+  //     logger.info('Startup auto-checkout finished', result);
+  //   })
+  //   .catch((error) => {
+  //     logger.error('Startup auto-checkout failed', {
+  //       error: error instanceof Error ? error.message : String(error),
+  //     });
+  //   });
+
   // Listen on all interfaces (0.0.0.0) for production, localhost for development
   const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
   httpServer.listen(PORT, host, () => {

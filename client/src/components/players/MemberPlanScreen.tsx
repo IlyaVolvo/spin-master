@@ -948,7 +948,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                       }}
                     >
                       <div style={{ fontWeight: 600 }}>
-                        {formatMoney(p.amountCents)} cash · {p.status}
+                        {formatMoney(p.amountCents)} cash · {p.status === 'SUCCEEDED' ? 'PAID' : p.status}
                         <span style={{ fontWeight: 400, color: '#666' }}> · {p.provider}</span>
                       </div>
                       <div style={{ color: '#555' }}>{p.purpose || '—'}</div>

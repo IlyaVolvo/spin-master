@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '../../utils/api';
-import { formatPlayerName, type NameDisplayOrder } from '../../utils/nameFormatter';
+import { formatPlayerName } from '../../utils/nameFormatter';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
 
@@ -96,208 +96,126 @@ export async function fetchCheckinTodayStatus(): Promise<CheckinStatusMap> {
   return map;
 }
 
-type CheckinKioskBannerProps = {
+type CheckinKioskToolbarProps = {
   presentCount: number;
+  presentOnly: boolean;
+  onPresentOnlyChange: (next: boolean) => void;
+  filtersCollapsed?: boolean;
+  onToggleFiltersCollapsed?: () => void;
+  onRefresh?: () => void;
 };
 
-export function CheckinKioskBanner({ presentCount }: CheckinKioskBannerProps) {
+export function CheckinKioskToolbar({
+  presentCount,
+  presentOnly,
+  onPresentOnlyChange,
+  filtersCollapsed = false,
+  onToggleFiltersCollapsed,
+  onRefresh,
+}: CheckinKioskToolbarProps) {
   return (
     <div
       style={{
         display: 'flex',
+        gap: '8px',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '12px',
-        padding: '10px 14px',
         marginBottom: '10px',
-        background: '#e8f5e9',
-        border: '1px solid #a5d6a7',
-        borderRadius: '6px',
+        position: 'relative',
+        minHeight: '36px',
       }}
     >
-      <div>
-        <div style={{ fontWeight: 700, fontSize: '15px', color: '#1b5e20' }}>
-          Club check-in / check-out
-        </div>
-        <div style={{ fontSize: '13px', color: '#2e7d32', marginTop: '2px' }}>
-          Find your name, then enter your PIN.
-        </div>
-      </div>
-      <div style={{ fontWeight: 700, fontSize: '14px', color: '#1b5e20', whiteSpace: 'nowrap' }}>
-        Present: {presentCount}
-      </div>
-    </div>
-  );
-}
-
-type PresentPanelMember = {
-  id: number;
-  firstName: string;
-  lastName: string;
-  rating: number | null;
-};
-
-type CheckinPresentPanelProps = {
-  members: PresentPanelMember[];
-  statusByMember: CheckinStatusMap;
-  nameDisplayOrder: NameDisplayOrder;
-};
-
-export function CheckinPresentPanel({
-  members,
-  statusByMember,
-  nameDisplayOrder,
-}: CheckinPresentPanelProps) {
-  const [sortBy, setSortBy] = useState<'name' | 'rating'>('name');
-  const [collapsed, setCollapsed] = useState(false);
-
-  const present = useMemo(() => {
-    const list = members.filter((m) => statusByMember[m.id]?.present === true);
-    const sorted = [...list];
-    if (sortBy === 'rating') {
-      sorted.sort((a, b) => {
-        const ar = a.rating;
-        const br = b.rating;
-        if (ar == null && br == null) {
-          return formatPlayerName(a.firstName, a.lastName, nameDisplayOrder).localeCompare(
-            formatPlayerName(b.firstName, b.lastName, nameDisplayOrder),
-          );
-        }
-        if (ar == null) return 1;
-        if (br == null) return -1;
-        if (br !== ar) return br - ar;
-        return formatPlayerName(a.firstName, a.lastName, nameDisplayOrder).localeCompare(
-          formatPlayerName(b.firstName, b.lastName, nameDisplayOrder),
-        );
-      });
-    } else {
-      sorted.sort((a, b) =>
-        formatPlayerName(a.firstName, a.lastName, nameDisplayOrder).localeCompare(
-          formatPlayerName(b.firstName, b.lastName, nameDisplayOrder),
-        ),
-      );
-    }
-    return sorted;
-  }, [members, statusByMember, sortBy, nameDisplayOrder]);
-
-  return (
-    <div
-      style={{
-        marginBottom: '12px',
-        padding: '12px 14px',
-        border: '1px solid #d8e8f0',
-        borderRadius: '6px',
-        background: '#f8fbff',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-          marginBottom: collapsed ? 0 : '8px',
-          flexWrap: 'wrap',
-        }}
-      >
+      {onToggleFiltersCollapsed && (
         <button
           type="button"
-          onClick={() => setCollapsed((v) => !v)}
-          aria-expanded={!collapsed}
+          onClick={onToggleFiltersCollapsed}
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'none',
-            border: 'none',
-            padding: 0,
+            padding: '5px 10px',
+            fontSize: '13px',
+            backgroundColor: '#e8e8e8',
+            color: '#333',
+            border: '1px solid #ddd',
+            borderRadius: '4px',
             cursor: 'pointer',
-            fontWeight: 700,
-            fontSize: '14px',
-            color: '#17324d',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 'bold',
+            minWidth: '32px',
+            zIndex: 1,
+          }}
+          title={filtersCollapsed ? 'Expand filters' : 'Collapse filters'}
+        >
+          {filtersCollapsed ? '▼' : '▲'}
+        </button>
+      )}
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '16px',
+            fontWeight: 600,
+            color: '#333',
+            letterSpacing: 'normal',
+            textTransform: 'none',
           }}
         >
-          <span aria-hidden="true" style={{ fontSize: '12px', color: '#1a5276' }}>
-            {collapsed ? '▶' : '▼'}
-          </span>
-          Checked in now ({present.length})
-        </button>
-        {!collapsed ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
-            <span style={{ color: '#666' }}>Sort:</span>
-            <button
-              type="button"
-              onClick={() => setSortBy('name')}
-              style={{
-                padding: '4px 10px',
-                borderRadius: '4px',
-                border: sortBy === 'name' ? '1px solid #1a5276' : '1px solid #ccc',
-                background: sortBy === 'name' ? '#d6eaf8' : '#fff',
-                fontWeight: sortBy === 'name' ? 700 : 500,
-                cursor: 'pointer',
-                color: '#17324d',
-              }}
-            >
-              Name
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortBy('rating')}
-              style={{
-                padding: '4px 10px',
-                borderRadius: '4px',
-                border: sortBy === 'rating' ? '1px solid #1a5276' : '1px solid #ccc',
-                background: sortBy === 'rating' ? '#d6eaf8' : '#fff',
-                fontWeight: sortBy === 'rating' ? 700 : 500,
-                cursor: 'pointer',
-                color: '#17324d',
-              }}
-            >
-              Rating
-            </button>
-          </div>
-        ) : null}
+          {presentCount} player{presentCount !== 1 ? 's' : ''} in attendance
+        </div>
+        <label
+          htmlFor="presentOnlyFilter"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 10px',
+            fontWeight: 'bold',
+            fontSize: '13px',
+            backgroundColor: presentOnly ? '#d6eaf8' : '#e8e8e8',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            border: presentOnly ? '1px solid #1a5276' : '1px solid transparent',
+            boxSizing: 'border-box',
+          }}
+        >
+          <input
+            id="presentOnlyFilter"
+            type="checkbox"
+            checked={presentOnly}
+            onChange={(e) => onPresentOnlyChange(e.target.checked)}
+            style={{ margin: 0, width: '16px', height: '16px', cursor: 'pointer' }}
+          />
+          Present
+        </label>
       </div>
-      {!collapsed ? (
-        present.length === 0 ? (
-          <div style={{ fontSize: '13px', color: '#888' }}>No one is checked in right now.</div>
-        ) : (
-          <ul
-            style={{
-              listStyle: 'none',
-              padding: 0,
-              margin: 0,
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-              gap: '4px 16px',
-              maxHeight: '180px',
-              overflowY: 'auto',
-            }}
-          >
-            {present.map((m) => (
-              <li
-                key={m.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  padding: '4px 0',
-                  fontSize: '13px',
-                  color: '#17324d',
-                  borderBottom: '1px solid #eef3f7',
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>
-                  {formatPlayerName(m.firstName, m.lastName, nameDisplayOrder)}
-                </span>
-                <span style={{ color: '#666', whiteSpace: 'nowrap' }}>
-                  {m.rating != null ? m.rating : '—'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )
-      ) : null}
+      {onRefresh && (
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="button-filter"
+          style={{
+            marginLeft: 'auto',
+            padding: '6px 12px',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            zIndex: 1,
+          }}
+          title="Refresh all data from server"
+        >
+          ↻
+        </button>
+      )}
     </div>
   );
 }

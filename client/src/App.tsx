@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Suspense, useSyncExternalStore, type CSSProperties } from 'react';
+import { useState, useEffect, useRef, Suspense, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -22,6 +22,7 @@ const History = lazyWithReload(() => import('./components/History'));
 const TournamentRegistrationLink = lazyWithReload(() => import('./components/TournamentRegistrationLink'));
 const SystemSettings = lazyWithReload(() => import('./components/SystemSettings'));
 const PaymentsAdmin = lazyWithReload(() => import('./components/PaymentsAdmin'));
+const AttendanceLogAdmin = lazyWithReload(() => import('./components/AttendanceLogAdmin'));
 const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
 const PublicResultsLatestPage = lazyWithReload(() =>
   import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsLatestPage })),
@@ -90,7 +91,7 @@ function AuthRedirect() {
   
   useEffect(() => {
     if (isRoleTutorialsPath(location.pathname)) return;
-    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings', '/payments'];
+    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings', '/payments', '/attendance-log'];
     const isTournamentDetail = /^\/tournaments\/\d+$/.test(location.pathname);
     if (location.pathname.startsWith('/tournaments/') && !isTournamentDetail) {
       navigate('/tournaments', { replace: true });
@@ -416,35 +417,37 @@ function AppRoutes({
             <>
               <AuthRedirect />
               <div className="container">
-                <Header onLogout={handleLogout} clubName={clubName} />
-                <ErrorBoundary>
-                  <Suspense
-                    fallback={
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                          height: '50vh',
-                          fontSize: '18px',
-                        }}
-                      >
-                        Loading...
-                      </div>
-                    }
-                  >
-                    <Routes>
-                      <Route path="/" element={<Navigate to="/players" replace />} />
-                      <Route path="/players" element={<Players />} />
-                      <Route path="/tournaments" element={<Tournaments />} />
-                      <Route path="/tournaments/:id" element={<TournamentDetailGate />} />
-                      <Route path="/statistics" element={<Statistics />} />
-                      <Route path="/history" element={<History />} />
-                      <Route path="/system-settings" element={<SystemSettings />} />
-                      <Route path="/payments" element={<PaymentsAdmin />} />
-                    </Routes>
-                  </Suspense>
-                </ErrorBoundary>
+                <Header onLogout={handleLogout} clubName={clubName}>
+                  <ErrorBoundary>
+                    <Suspense
+                      fallback={
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            height: '50vh',
+                            fontSize: '18px',
+                          }}
+                        >
+                          Loading...
+                        </div>
+                      }
+                    >
+                      <Routes>
+                        <Route path="/" element={<Navigate to="/players" replace />} />
+                        <Route path="/players" element={<Players />} />
+                        <Route path="/tournaments" element={<Tournaments />} />
+                        <Route path="/tournaments/:id" element={<TournamentDetailGate />} />
+                        <Route path="/statistics" element={<Statistics />} />
+                        <Route path="/history" element={<History />} />
+                        <Route path="/system-settings" element={<SystemSettings />} />
+                        <Route path="/payments" element={<PaymentsAdmin />} />
+                        <Route path="/attendance-log" element={<AttendanceLogAdmin />} />
+                      </Routes>
+                    </Suspense>
+                  </ErrorBoundary>
+                </Header>
               </div>
 
               {showPasswordReset && (
@@ -618,7 +621,15 @@ function PasswordResetModal({ onPasswordChanged }: { onPasswordChanged: () => vo
   );
 }
 
-function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string | null }) {
+function Header({
+  onLogout,
+  clubName,
+  children,
+}: {
+  onLogout: () => void;
+  clubName: string | null;
+  children?: ReactNode;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const systemConfig = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
@@ -633,6 +644,8 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const [restoreError, setRestoreError] = useState('');
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [pendingPreregistrationCount, setPendingPreregistrationCount] = useState(0);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const adminMenuRef = useRef<HTMLDivElement | null>(null);
   const autoRelinquishIdleTimerRef = useRef<number | null>(null);
   const autoRelinquishIdleCleanupRef = useRef<(() => void) | null>(null);
   const changesetId = (import.meta.env.VITE_CHANGESET_ID || 'devbuild').slice(0, 7);
@@ -641,12 +654,26 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   const isTournamentsActive = location.pathname === '/tournaments' || location.pathname.startsWith('/tournaments/');
   const isSettingsActive = location.pathname === '/system-settings';
   const isPaymentsActive = location.pathname === '/payments';
+  const isAttendanceActive = location.pathname === '/attendance-log';
+  const paymentsTab = new URLSearchParams(location.search).get('tab');
+  const isPlansActive = isPaymentsActive && paymentsTab === 'plans';
+  const isPaymentsListActive = isPaymentsActive && !isPlansActive;
+  const isAdminSectionActive = isSettingsActive || isPaymentsActive || isAttendanceActive;
+  const adminMenuLabel = isSettingsActive
+    ? 'System Configuration'
+    : isPlansActive
+      ? 'Payment Plans'
+      : isAttendanceActive
+        ? 'Attendance Log'
+        : isPaymentsListActive
+          ? 'Payment Log'
+          : 'Admin';
   const isAchievementsActive =
     location.pathname === '/public' ||
     location.pathname === '/public/' ||
     location.pathname.startsWith('/public/achievements');
 
-  // Shared sizing for header icon controls (💰 ⚙ $ ⚙️) so they align uniformly.
+  // Shared sizing for header icon controls ($ ⚙️) so they align uniformly.
   // Vertical padding matches Players/Tournaments tab rhythm (10 / 12).
   const headerIconControlSize: CSSProperties = {
     padding: '10px 12px 12px 12px',
@@ -944,21 +971,63 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
     navigate('/tournaments', { replace: true });
   };
 
-  const handleSettingsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
+  const handleSettingsClick = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    setAdminMenuOpen(false);
     clearAllScrollPositions();
     clearAllUIStates();
     window.scrollTo(0, 0);
     navigate('/system-settings', { replace: true });
   };
 
-  const handlePaymentsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
+  const handlePaymentsClick = (e?: React.MouseEvent, tab: 'payments' | 'plans' = 'payments') => {
+    e?.preventDefault();
+    setAdminMenuOpen(false);
     clearAllScrollPositions();
     clearAllUIStates();
     window.scrollTo(0, 0);
-    navigate('/payments', { replace: true });
+    navigate(tab === 'plans' ? '/payments?tab=plans' : '/payments', { replace: true });
   };
+
+  const handleAttendanceClick = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    setAdminMenuOpen(false);
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/attendance-log', { replace: true });
+  };
+
+  useEffect(() => {
+    if (!adminMenuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (adminMenuRef.current && target && !adminMenuRef.current.contains(target)) {
+        setAdminMenuOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAdminMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [adminMenuOpen]);
+
+  const adminMenuItems = [
+    { id: 'payment-log' as const, label: 'Payment Log' },
+    { id: 'attendance-log' as const, label: 'Attendance Log' },
+    { id: 'plans' as const, label: 'Payment Plans' },
+    { id: 'settings' as const, label: 'System Configuration' },
+  ];
+  const adminMenuLongestLabel = adminMenuItems.reduce(
+    (longest, item) => (item.label.length > longest.length ? item.label : longest),
+    'Admin',
+  );
+  const adminMenuTriggerMinWidth = `calc(${adminMenuLongestLabel.length + 2}ch + 24px)`;
 
   const hasPendingPreregistrations = pendingPreregistrationCount > 0;
   const isAdminUser = !kioskMode && isAdmin();
@@ -973,79 +1042,65 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
   
   return (
     <>
-    {kioskMode && (
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 10001,
-          background: '#c0392b',
-          color: 'white',
-          textAlign: 'center',
-          padding: '10px 16px',
-          fontWeight: 700,
-          fontSize: '16px',
-          letterSpacing: '0.02em',
-          boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-        }}
-      >
-        {kioskBannerText}
-        <button
-          type="button"
-          onClick={() => { setShowRestoreModal(true); setRestoreError(''); setRestorePassword(''); }}
-          style={{
-            marginLeft: '16px',
-            padding: '6px 12px',
-            border: '1px solid rgba(255,255,255,0.8)',
-            background: 'rgba(255,255,255,0.15)',
-            color: 'white',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          Restore privileges
-        </button>
-      </div>
-    )}
     <div className="header" style={{
       position: 'sticky',
-      top: kioskMode ? 48 : 0,
+      top: 0,
       zIndex: 10000,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+      ...(kioskMode ? { marginBottom: '10px' } : {})
     }}>
       <div
         className="app-header-row"
         style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'space-between',
         width: '100%',
         gap: '15px'
       }}>
-        <div className="app-header-tabs" style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginBottom: '-1px', flexShrink: 0 }}>
+        <div
+          className="app-header-tabs"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: '6px',
+            flexShrink: 0,
+          }}
+        >
+          {/* Match changeset line height so nav aligns with $, Settings, name, Logout */}
+          <span
+            aria-hidden="true"
+            style={{
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              letterSpacing: '0.08em',
+              lineHeight: 1,
+              visibility: 'hidden',
+              paddingRight: '2px',
+            }}
+          >
+            {changesetId}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
           {showPlayersTab && (
           <a 
             className="app-header-tab"
             href="/players" 
             onClick={handlePlayersClick} 
             style={{ 
+              ...headerIconControlSize,
+              minWidth: 'auto',
+              padding: '10px 18px 12px 18px',
               color: isPlayersActive ? '#333' : 'rgba(255, 255, 255, 0.8)', 
               textDecoration: 'none', 
-              padding: '10px 24px 12px 24px', 
               background: isPlayersActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
-              borderTopLeftRadius: '8px',
-              borderTopRightRadius: '8px',
+              borderRadius: '8px',
               border: isPlayersActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-              borderBottom: isPlayersActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
               transition: 'all 0.2s', 
-              fontSize: '16px', 
               fontWeight: isPlayersActive ? '600' : '500', 
               cursor: 'pointer',
-              position: 'relative',
-              zIndex: isPlayersActive ? 10 : 1,
-              boxShadow: isPlayersActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-              marginBottom: isPlayersActive ? '0' : '1px'
+              boxShadow: isPlayersActive ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
             }} 
             onMouseEnter={(e) => {
               if (!isPlayersActive) {
@@ -1069,22 +1124,18 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
             href="/tournaments" 
             onClick={handleTournamentsClick} 
             style={{ 
+              ...headerIconControlSize,
+              minWidth: 'auto',
+              padding: '10px 18px 12px 18px',
               color: hasPendingPreregistrations ? '#c0392b' : (isTournamentsActive ? '#333' : 'rgba(255, 255, 255, 0.8)'),
               textDecoration: 'none', 
-              padding: '10px 24px 12px 24px', 
               background: hasPendingPreregistrations ? '#fdecea' : (isTournamentsActive ? 'white' : 'rgba(255, 255, 255, 0.15)'),
-              borderTopLeftRadius: '8px',
-              borderTopRightRadius: '8px',
+              borderRadius: '8px',
               border: isTournamentsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-              borderBottom: isTournamentsActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
               transition: 'all 0.2s', 
-              fontSize: '16px', 
               fontWeight: isTournamentsActive ? '600' : '500', 
               cursor: 'pointer',
-              position: 'relative',
-              zIndex: isTournamentsActive ? 10 : 1,
-              boxShadow: isTournamentsActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-              marginBottom: isTournamentsActive ? '0' : '1px'
+              boxShadow: isTournamentsActive ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
             }} 
             onMouseEnter={(e) => {
               if (!isTournamentsActive) {
@@ -1108,87 +1159,128 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           </a>
           )}
           {isAdminUser ? (
-            <>
-              <a
+            <div ref={adminMenuRef} style={{ position: 'relative', marginLeft: '18px' }}>
+              <button
+                type="button"
                 className="app-header-tab"
-                href="/payments"
-                onClick={handlePaymentsClick}
-                title="Payments"
-                aria-label="Payments"
+                aria-haspopup="menu"
+                aria-expanded={adminMenuOpen}
+                onClick={() => setAdminMenuOpen((open) => !open)}
                 style={{
                   ...headerIconControlSize,
-                  color: isPaymentsActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
-                  textDecoration: 'none',
-                  background: isPaymentsActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
-                  borderTopLeftRadius: '8px',
-                  borderTopRightRadius: '8px',
-                  border: isPaymentsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-                  borderBottom: isPaymentsActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
-                  transition: 'all 0.2s',
-                  fontWeight: isPaymentsActive ? '600' : '500',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  zIndex: isPaymentsActive ? 10 : 1,
-                  boxShadow: isPaymentsActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-                  marginBottom: isPaymentsActive ? '0' : '1px',
-                  marginLeft: '18px',
+                  minWidth: adminMenuTriggerMinWidth,
+                  width: adminMenuTriggerMinWidth,
+                  padding: '10px 12px 12px 12px',
+                  justifyContent: 'space-between',
+                  gap: '6px',
+                  color: isAdminSectionActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
+                  background: isAdminSectionActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
+                  borderRadius: '8px',
+                  border: isAdminSectionActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+                  fontWeight: isAdminSectionActive ? '600' : '500',
+                  boxShadow: isAdminSectionActive ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+                  whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={(e) => {
-                  if (!isPaymentsActive) {
+                  if (!isAdminSectionActive) {
                     e.currentTarget.style.color = 'white';
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (!isPaymentsActive) {
+                  if (!isAdminSectionActive) {
                     e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
                   }
                 }}
               >
-                💰
-              </a>
-              <a
-                className="app-header-tab"
-                href="/system-settings"
-                onClick={handleSettingsClick}
-                title="System settings"
-                aria-label="System settings"
-                style={{
-                  ...headerIconControlSize,
-                  color: isSettingsActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
-                  textDecoration: 'none',
-                  background: isSettingsActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
-                  borderTopLeftRadius: '8px',
-                  borderTopRightRadius: '8px',
-                  border: isSettingsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-                  borderBottom: isSettingsActive ? '1px solid white' : '1px solid rgba(255, 255, 255, 0.2)',
-                  transition: 'all 0.2s',
-                  fontWeight: isSettingsActive ? '600' : '500',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  zIndex: isSettingsActive ? 10 : 1,
-                  boxShadow: isSettingsActive ? '0 -2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-                  marginBottom: isSettingsActive ? '0' : '1px',
-                  marginLeft: '8px',
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSettingsActive) {
-                    e.currentTarget.style.color = 'white';
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSettingsActive) {
-                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                  }
-                }}
-              >
-                ⚙
-              </a>
-            </>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{adminMenuLabel}</span>
+                <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>
+                  ▾
+                </span>
+              </button>
+              {adminMenuOpen ? (
+                <div
+                  role="menu"
+                  aria-label="Admin pages"
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    marginTop: '4px',
+                    minWidth: '100%',
+                    width: 'max-content',
+                    background: 'white',
+                    border: '1px solid rgba(0, 0, 0, 0.12)',
+                    borderRadius: '8px',
+                    boxShadow: '0 8px 20px rgba(0, 0, 0, 0.18)',
+                    zIndex: 10050,
+                    overflow: 'hidden',
+                    padding: '4px 0',
+                  }}
+                >
+                  {(
+                    [
+                      { id: 'payment-log' as const, label: 'Payment Log', active: isPaymentsListActive },
+                      { id: 'attendance-log' as const, label: 'Attendance Log', active: isAttendanceActive },
+                      { id: 'separator' as const, label: '', active: false },
+                      { id: 'plans' as const, label: 'Payment Plans', active: isPlansActive },
+                      { id: 'settings' as const, label: 'System Configuration', active: isSettingsActive },
+                    ] as const
+                  ).map((item) => {
+                    if (item.id === 'separator') {
+                      return (
+                        <div
+                          key="separator"
+                          role="separator"
+                          style={{
+                            height: '1px',
+                            background: '#d8e8f0',
+                            margin: '6px 10px',
+                          }}
+                        />
+                      );
+                    }
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          if (item.id === 'settings') handleSettingsClick();
+                          else if (item.id === 'attendance-log') handleAttendanceClick();
+                          else if (item.id === 'plans') handlePaymentsClick(undefined, 'plans');
+                          else handlePaymentsClick(undefined, 'payments');
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '10px 14px',
+                          border: 'none',
+                          background: item.active ? '#eaf4fb' : 'transparent',
+                          color: item.active ? '#155b78' : '#17324d',
+                          fontWeight: item.active ? 700 : 600,
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!item.active) e.currentTarget.style.background = '#f5f8fb';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = item.active ? '#eaf4fb' : 'transparent';
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
           ) : null}
+          </div>
         </div>
         <h1
           className="app-header-title"
@@ -1199,7 +1291,9 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           alignItems: 'center',
           justifyContent: 'center',
           gap: '14px',
-          flex: 1
+          flex: 1,
+          // Skip changeset line so logo sits on the same band as nav / $ / Logout
+          paddingTop: '17px',
         }}>
           <div className="app-header-logo-wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
             <span className="app-header-paddle">🏓</span>
@@ -1294,156 +1388,214 @@ function Header({ onLogout, clubName }: { onLogout: () => void; clubName: string
           }}>
             {changesetId}
           </span>
-          <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-          {userName && (
-            <>
-              {!kioskMode && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const member = getMember();
-                      if (member) {
-                        clearAllScrollPositions();
-                        clearAllUIStates();
-                        window.scrollTo(0, 0);
-                        navigate('/players', {
-                          state: { openOwnPlan: true, memberId: member.id },
-                          replace: false,
-                        });
-                      }
-                    }}
-                    title="View and manage your club plan"
-                    aria-label="View and manage your club plan"
-                    style={{
-                      ...headerIconControlSize,
-                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontWeight: 700,
-                      transition: 'background-color 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                    }}
-                  >
-                    $
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const member = getMember();
-                      if (member) {
-                        clearAllScrollPositions();
-                        clearAllUIStates();
-                        window.scrollTo(0, 0);
-                        navigate('/players', {
-                          state: { editOwnProfile: true, memberId: member.id },
-                          replace: false,
-                        });
-                      }
-                    }}
-                    title="Edit your profile"
-                    style={{
-                      ...headerIconControlSize,
-                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      transition: 'background-color 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                    }}
-                  >
-                    ⚙️
-                  </button>
-                </div>
-              )}
-            <span style={{ 
-              color: 'white',
-              fontSize: '16px',
-              fontWeight: '500',
-              padding: '8px 12px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              borderRadius: '4px'
-            }}>
-              {userName}
-                {userRoles.length > 0 && !kioskMode && (
-                  <span style={{ 
-                    fontSize: '12px',
-                    fontWeight: 'normal',
-                    marginLeft: '4px',
-                    opacity: 0.9
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              gap: '14px',
+            }}
+          >
+            <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {userName && (
+                <>
+                  {!kioskMode && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const member = getMember();
+                          if (member) {
+                            clearAllScrollPositions();
+                            clearAllUIStates();
+                            window.scrollTo(0, 0);
+                            navigate('/players', {
+                              state: { openOwnPlan: true, memberId: member.id },
+                              replace: false,
+                            });
+                          }
+                        }}
+                        title="View and manage your club plan"
+                        aria-label="View and manage your club plan"
+                        style={{
+                          ...headerIconControlSize,
+                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          transition: 'background-color 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                        }}
+                      >
+                        $
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const member = getMember();
+                          if (member) {
+                            clearAllScrollPositions();
+                            clearAllUIStates();
+                            window.scrollTo(0, 0);
+                            navigate('/players', {
+                              state: { editOwnProfile: true, memberId: member.id },
+                              replace: false,
+                            });
+                          }
+                        }}
+                        title="Edit your profile"
+                        style={{
+                          ...headerIconControlSize,
+                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          transition: 'background-color 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                        }}
+                      >
+                        ⚙️
+                      </button>
+                    </div>
+                  )}
+                  <span style={{
+                    ...headerIconControlSize,
+                    color: 'white',
+                    fontWeight: '500',
+                    padding: '10px 12px 12px 12px',
+                    minWidth: 'auto',
+                    height: '44px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '4px',
+                    whiteSpace: 'nowrap',
                   }}>
-                    ({formatRoles(userRoles)})
+                    {userName}
+                    {userRoles.length > 0 && !kioskMode && (
+                      <span style={{
+                        fontSize: '12px',
+                        fontWeight: 'normal',
+                        marginLeft: '4px',
+                        opacity: 0.9
+                      }}>
+                        ({formatRoles(userRoles)})
+                      </span>
+                    )}
+                    {kioskMode && (
+                      <span style={{ fontSize: '12px', marginLeft: '6px', opacity: 0.95 }}>
+                        (Kiosk{kioskKind ? `: ${kioskKind}` : ''})
+                      </span>
+                    )}
                   </span>
-                )}
-                {kioskMode && (
-                  <span style={{ fontSize: '12px', marginLeft: '6px', opacity: 0.95 }}>
-                    (Kiosk{kioskKind ? `: ${kioskKind}` : ''})
-                  </span>
-                )}
-            </span>
-            </>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
-            {!kioskMode && (
-              <button onClick={onLogout} style={{ 
-                padding: '8px 16px',
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'background-color 0.2s'
-              }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}>
-                Logout
-              </button>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-              {!kioskMode ? <PlayersKioskEntryButton /> : null}
-              {showAchievementsLink ? (
+                </>
+              )}
+              {!kioskMode && (
                 <button
-                  type="button"
-                  className="app-header-public-link"
-                  onClick={() => {
-                    clearAllScrollPositions();
-                    clearAllUIStates();
-                    window.scrollTo(0, 0);
-                    navigate('/public');
-                  }}
+                  onClick={onLogout}
                   style={{
-                    padding: '2px 8px',
-                    fontSize: '11px',
-                    fontWeight: isAchievementsActive ? 700 : 500,
-                    lineHeight: 1.2,
-                    color: isAchievementsActive ? '#fff' : 'rgba(255, 255, 255, 0.75)',
-                    background: isAchievementsActive ? 'rgba(255, 255, 255, 0.22)' : 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.35)',
+                    ...headerIconControlSize,
+                    minWidth: 'auto',
+                    padding: '10px 16px 12px 16px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: 'white',
+                    border: 'none',
                     borderRadius: '4px',
                     cursor: 'pointer',
-                    whiteSpace: 'nowrap',
+                    fontWeight: 500,
+                    transition: 'background-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
                   }}
                 >
-                  Public
+                  Logout
                 </button>
-              ) : null}
+              )}
             </div>
-          </div>
+            {(!kioskMode || showAchievementsLink) ? (
+              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                {!kioskMode ? <PlayersKioskEntryButton /> : null}
+                {showAchievementsLink ? (
+                  <button
+                    type="button"
+                    className="app-header-public-link"
+                    onClick={() => {
+                      clearAllScrollPositions();
+                      clearAllUIStates();
+                      window.scrollTo(0, 0);
+                      navigate('/public');
+                    }}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '11px',
+                      fontWeight: isAchievementsActive ? 700 : 500,
+                      lineHeight: 1.2,
+                      color: isAchievementsActive ? '#fff' : 'rgba(255, 255, 255, 0.75)',
+                      background: isAchievementsActive ? 'rgba(255, 255, 255, 0.22)' : 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.35)',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Public
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
+      {kioskMode && (
+        <div
+          style={{
+            background: '#c0392b',
+            color: 'white',
+            textAlign: 'center',
+            padding: '8px 16px',
+            marginTop: '8px',
+            borderRadius: '6px',
+            fontWeight: 700,
+            fontSize: '16px',
+            letterSpacing: '0.02em',
+          }}
+        >
+          {kioskBannerText}
+          <button
+            type="button"
+            onClick={() => { setShowRestoreModal(true); setRestoreError(''); setRestorePassword(''); }}
+            style={{
+              marginLeft: '16px',
+              padding: '6px 12px',
+              border: '1px solid rgba(255,255,255,0.8)',
+              background: 'rgba(255,255,255,0.15)',
+              color: 'white',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Restore privileges
+          </button>
+        </div>
+      )}
     </div>
+    {children}
     {showRestoreModal && (
       <div
         style={{

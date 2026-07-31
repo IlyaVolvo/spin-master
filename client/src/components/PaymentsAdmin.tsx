@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { isAdmin } from '../utils/auth';
 import {
   loadAdminSystemConfig,
@@ -9,7 +10,6 @@ import {
 import { getErrorMessage } from '../utils/errorHandler';
 import ClubPlanManager from './ClubPlanManager';
 import { CourtesyVisitsAdmin } from './CourtesyVisitsAdmin';
-import { PendingCashPaymentsAdmin } from './PendingCashPaymentsAdmin';
 import { PaymentsMemberLookup } from './PaymentsMemberLookup';
 import { BoundedNumericInput } from './BoundedNumericInput';
 import api from '../utils/api';
@@ -510,14 +510,15 @@ function PaymentsSettingsEditor({
 }
 
 export default function PaymentsAdmin() {
-  const [tab, setTab] = useState<PaymentsTab>('payments');
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab: PaymentsTab = tabParam === 'plans' ? 'plans' : 'payments';
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [dirty, setDirty] = useState(false);
-  const [openMemberId, setOpenMemberId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -590,53 +591,14 @@ export default function PaymentsAdmin() {
 
   return (
     <div style={{ paddingBottom: showSaveBar ? '88px' : '16px' }}>
-      <div style={{ marginBottom: '16px' }}>
-        <h2 style={{ margin: 0 }}>Payments</h2>
-        <p style={{ margin: '6px 0 0', color: '#666' }}>
-          Configure plans on Plans. Locate members and manage cash on Payments.
-        </p>
-      </div>
-
-      <div
-        role="tablist"
-        aria-label="Payments sections"
-        style={{
-          display: 'flex',
-          gap: '2px',
-          marginBottom: '16px',
-          borderBottom: '1px solid #d8e8f0',
-        }}
-      >
-        {([
-          { id: 'plans' as const, label: 'Plans' },
-          { id: 'payments' as const, label: 'Payments' },
-        ]).map((item) => {
-          const active = tab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(item.id)}
-              style={{
-                padding: '10px 16px',
-                border: active ? '1px solid #d8e8f0' : '1px solid transparent',
-                borderBottom: active ? '1px solid #fff' : '1px solid transparent',
-                marginBottom: '-1px',
-                borderTopLeftRadius: '8px',
-                borderTopRightRadius: '8px',
-                background: active ? '#fff' : 'transparent',
-                color: active ? '#155b78' : '#3c7890',
-                fontWeight: active ? 700 : 600,
-                cursor: 'pointer',
-              }}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
+      {tab === 'plans' ? (
+        <div style={{ marginBottom: '16px' }}>
+          <h2 style={{ margin: 0 }}>Payment Plans</h2>
+          <p style={{ margin: '6px 0 0', color: '#666' }}>
+            Configure segments, club plans, courtesy settings, and related payment options.
+          </p>
+        </div>
+      ) : null}
 
       {error ? <div className="error-message" style={{ marginBottom: '16px' }}>{error}</div> : null}
       {message && tab === 'plans' ? (
@@ -668,21 +630,7 @@ export default function PaymentsAdmin() {
           </Subsection>
         </>
       ) : (
-        <>
-          <Subsection title="Cash Payment Queue">
-            <PendingCashPaymentsAdmin
-              onOpenMember={(memberId) => {
-                setOpenMemberId(memberId);
-              }}
-            />
-          </Subsection>
-          <Subsection title="Member Payments">
-            <PaymentsMemberLookup
-              openMemberId={openMemberId}
-              onOpenMemberConsumed={() => setOpenMemberId(null)}
-            />
-          </Subsection>
-        </>
+        <PaymentsMemberLookup />
       )}
 
       {showSaveBar ? (

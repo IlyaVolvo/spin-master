@@ -460,7 +460,7 @@ router.get('/kiosk/present', async (req: AuthRequest, res: Response) => {
         memberId: true,
         checkInAt: true,
         checkOutAt: true,
-        member: { select: { id: true, firstName: true, lastName: true } },
+        member: { select: { id: true, firstName: true, lastName: true, rating: true } },
       },
       orderBy: { checkInAt: 'desc' },
     });
@@ -468,7 +468,13 @@ router.get('/kiosk/present', async (req: AuthRequest, res: Response) => {
     const visitedTodayIds = Array.from(new Set(visits.map((v) => v.memberId)));
     const openByMember = new Map<
       number,
-      { memberId: number; firstName: string; lastName: string; lastCheckInAt: string }
+      {
+        memberId: number;
+        firstName: string;
+        lastName: string;
+        rating: number | null;
+        lastCheckInAt: string;
+      }
     >();
 
     for (const visit of visits) {
@@ -478,6 +484,7 @@ router.get('/kiosk/present', async (req: AuthRequest, res: Response) => {
         memberId: visit.member.id,
         firstName: visit.member.firstName,
         lastName: visit.member.lastName,
+        rating: visit.member.rating ?? null,
         lastCheckInAt: visit.checkInAt.toISOString(),
       });
     }
@@ -1185,9 +1192,10 @@ router.get('/admin/plan-price-suggestion', async (req: AuthRequest, res: Respons
 
 /**
  * POST /api/club/cron/auto-checkout
- * Closes all open visits for a given club date.
+ * SHELVED — implementation remains in payments/autoCheckout.ts; not run for now.
+ * Closes stale open visits (clubDate < today club-local), or a single day when body.clubDate is set.
  * Protected by x-club-cron-secret header.
- * Body (optional): { "clubDate": "YYYY-MM-DD" } — defaults to previous club-local day.
+ * Body (optional): { "clubDate": "YYYY-MM-DD" } — targeted single-day run; omit for all stale open visits.
  */
 router.post('/cron/auto-checkout', async (req: Request, res: Response) => {
   try {
@@ -1198,28 +1206,10 @@ router.post('/cron/auto-checkout', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Invalid cron secret' });
     }
 
-    // Default to previous club-local day
-    let targetDate = req.body?.clubDate;
-    if (!targetDate) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      targetDate = getClubDate(yesterday);
-    }
-
-    // Close all open visits for the target date
-    const result = await prisma.clubVisit.updateMany({
-      where: {
-        clubDate: targetDate,
-        checkOutAt: null,
-      },
-      data: {
-        checkOutAt: new Date(),
-        closedBy: 'AUTO',
-      },
+    return res.status(503).json({
+      error: 'Auto-checkout is shelved',
+      shelved: true,
     });
-
-    logger.info('Auto-checkout completed', { clubDate: targetDate, closedCount: result.count });
-    res.json({ clubDate: targetDate, closedCount: result.count });
   } catch (error) {
     logger.error('Error during auto-checkout', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
@@ -1700,14 +1690,26 @@ router.get('/admin/members/search', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** GET /api/club/admin/payments — all payments, newest first; optional member name filter `q` */
-router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
+/** GET /api/club/admin/visits — attendance log, newest first; optional `q`, `from`, `to` (YYYY-MM-DD), `present=1` */
+router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const parseYmd = (raw: unknown): string | null => {
+      if (typeof raw !== 'string') return null;
+      const t = raw.trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+    };
+    const dateFrom = parseYmd(req.query.from);
+    const dateTo = parseYmd(req.query.to);
+    const onlyPresent =
+      req.query.present === '1' ||
+      req.query.present === 'true' ||
+      req.query.onlyPresent === '1' ||
+      req.query.onlyPresent === 'true';
     const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
     const nameFilters = tokens.map((token) => ({
       OR: [
@@ -1716,15 +1718,101 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
       ],
     }));
 
-    const payments = await prisma.clubPayment.findMany({
-      where:
-        nameFilters.length > 0
+    const clubDateFilter =
+      dateFrom || dateTo
+        ? {
+            ...(dateFrom ? { gte: dateFrom } : {}),
+            ...(dateTo ? { lte: dateTo } : {}),
+          }
+        : undefined;
+
+    const visits = await prisma.clubVisit.findMany({
+      where: {
+        ...(onlyPresent ? { checkOutAt: null } : {}),
+        ...(clubDateFilter ? { clubDate: clubDateFilter } : {}),
+        ...(nameFilters.length > 0
           ? {
               member: {
                 AND: nameFilters,
               },
             }
-          : undefined,
+          : {}),
+      },
+      orderBy: { checkInAt: 'desc' },
+      take: 500,
+      include: {
+        member: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+      },
+    });
+
+    res.json({
+      visits: visits.map((v) => ({
+        id: v.id,
+        memberId: v.memberId,
+        memberName: `${v.member.firstName} ${v.member.lastName}`.trim(),
+        clubDate: v.clubDate,
+        checkInAt: v.checkInAt.toISOString(),
+        checkOutAt: v.checkOutAt ? v.checkOutAt.toISOString() : null,
+        closedBy: v.closedBy,
+        isCourtesy: v.isCourtesy,
+        dailyPaymentApplied: v.dailyPaymentApplied,
+        courtesyClearedAt: v.courtesyClearedAt ? v.courtesyClearedAt.toISOString() : null,
+      })),
+    });
+  } catch (error) {
+    logger.error('Error listing club visits', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** GET /api/club/admin/payments — all payments, newest first; optional `q`, `from`, `to` (YYYY-MM-DD) */
+router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const parseYmd = (raw: unknown): string | null => {
+      if (typeof raw !== 'string') return null;
+      const t = raw.trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+    };
+    const dateFrom = parseYmd(req.query.from);
+    const dateTo = parseYmd(req.query.to);
+    const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
+    const nameFilters = tokens.map((token) => ({
+      OR: [
+        { firstName: { contains: token, mode: 'insensitive' as const } },
+        { lastName: { contains: token, mode: 'insensitive' as const } },
+      ],
+    }));
+
+    const recordedAtFilter: { gte?: Date; lt?: Date } = {};
+    if (dateFrom) {
+      recordedAtFilter.gte = new Date(`${dateFrom}T00:00:00`);
+    }
+    if (dateTo) {
+      const endExclusive = new Date(`${dateTo}T00:00:00`);
+      endExclusive.setDate(endExclusive.getDate() + 1);
+      recordedAtFilter.lt = endExclusive;
+    }
+
+    const payments = await prisma.clubPayment.findMany({
+      where: {
+        ...(Object.keys(recordedAtFilter).length > 0 ? { recordedAt: recordedAtFilter } : {}),
+        ...(nameFilters.length > 0
+          ? {
+              member: {
+                AND: nameFilters,
+              },
+            }
+          : {}),
+      },
       orderBy: { recordedAt: 'desc' },
       take: 500,
       include: {
@@ -1756,6 +1844,10 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
             : listFromMeta != null
               ? listFromMeta
               : p.amountCents + creditAppliedCents;
+        const startDate =
+          typeof meta.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(meta.startDate.trim())
+            ? meta.startDate.trim()
+            : null;
         const product =
           meta.product && typeof meta.product === 'object' && !Array.isArray(meta.product)
             ? (meta.product as Record<string, unknown>)
@@ -1774,6 +1866,7 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
           creditAppliedCents,
           purpose: p.purpose,
           planLabel,
+          effectiveDate: startDate,
           provider: p.provider,
           status: p.status,
           recordedAt: p.recordedAt.toISOString(),
