@@ -7,9 +7,56 @@ import {
   loadAdminSystemConfig,
   saveAdminSystemConfig,
   SystemConfig,
+  type ClubDayHours,
+  type ClubWeekday,
 } from '../utils/systemConfig';
 import { getErrorMessage } from '../utils/errorHandler';
 import { BoundedNumericInput } from './BoundedNumericInput';
+
+const WEEKDAY_ROWS: { key: ClubWeekday; label: string }[] = [
+  { key: 'mon', label: 'Monday' },
+  { key: 'tue', label: 'Tuesday' },
+  { key: 'wed', label: 'Wednesday' },
+  { key: 'thu', label: 'Thursday' },
+  { key: 'fri', label: 'Friday' },
+  { key: 'sat', label: 'Saturday' },
+  { key: 'sun', label: 'Sunday' },
+];
+
+const SESSION_OPEN_SECTION = 'systemSettings_session_openSection';
+const SESSION_OPEN_TOURNAMENT_RULE = 'systemSettings_session_openTournamentRule';
+const SESSION_HOURS_OPEN = 'systemSettings_session_hoursOpen';
+
+function readSessionString(key: string, fallback: string): string {
+  try {
+    const saved = sessionStorage.getItem(key);
+    return saved == null ? fallback : saved;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSessionString(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
+
+function readSessionBool(key: string, fallback: boolean): boolean {
+  try {
+    const saved = sessionStorage.getItem(key);
+    if (saved == null) return fallback;
+    return saved === '1' || saved === 'true';
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSessionBool(key: string, value: boolean): void {
+  writeSessionString(key, value ? '1' : '0');
+}
 
 type NumericInputProps = {
   label: string;
@@ -179,26 +226,14 @@ export default function SystemSettings() {
   const [message, setMessage] = useState('');
   const [achievementsSetAll, setAchievementsSetAll] = useState(10);
   const [dirty, setDirty] = useState(false);
-  const [openSectionId, setOpenSectionId] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('systemSettings_openSection') || 'core';
-      // Old payment section ids moved to /payments; fall back to core
-      if (
-        saved === 'club' ||
-        saved === 'payment-categories' ||
-        saved === 'payment-plans' ||
-        saved === 'payment-provider' ||
-        saved === 'courtesy-visits' ||
-        saved === 'payment-plans-courtesy'
-      ) {
-        return 'core';
-      }
-      return saved;
-    } catch {
-      return 'core';
-    }
+  const [openSectionId, setOpenSectionId] = useState<string>(() =>
+    readSessionString(SESSION_OPEN_SECTION, ''),
+  );
+  const [openTournamentRuleId, setOpenTournamentRuleId] = useState<string | null>(() => {
+    const saved = readSessionString(SESSION_OPEN_TOURNAMENT_RULE, '');
+    return saved || null;
   });
-  const [openTournamentRuleId, setOpenTournamentRuleId] = useState<string | null>(null);
+  const [hoursOpen, setHoursOpen] = useState(() => readSessionBool(SESSION_HOURS_OPEN, false));
 
   useEffect(() => {
     let cancelled = false;
@@ -227,17 +262,25 @@ export default function SystemSettings() {
   const toggleSection = (id: string) => {
     setOpenSectionId((current) => {
       const next = current === id ? '' : id;
-      try {
-        localStorage.setItem('systemSettings_openSection', next);
-      } catch {
-        /* ignore */
-      }
+      writeSessionString(SESSION_OPEN_SECTION, next);
       return next;
     });
   };
 
   const toggleTournamentRule = (id: string) => {
-    setOpenTournamentRuleId((current) => (current === id ? null : id));
+    setOpenTournamentRuleId((current) => {
+      const next = current === id ? null : id;
+      writeSessionString(SESSION_OPEN_TOURNAMENT_RULE, next ?? '');
+      return next;
+    });
+  };
+
+  const toggleHoursOpen = () => {
+    setHoursOpen((open) => {
+      const next = !open;
+      writeSessionBool(SESSION_HOURS_OPEN, next);
+      return next;
+    });
   };
 
   const updateConfig = (updater: (draft: SystemConfig) => void) => {
@@ -365,99 +408,234 @@ export default function SystemSettings() {
           <code>CLUB_TIMEZONE</code> env if unset.
         </p>
       </div>
-
-      <Section
-        title="Core Settings"
-        sectionId="core"
-        open={openSectionId === 'core'}
-        onToggle={toggleSection}
-      >
-        <NumericInput
-          label="Minimum Password Length"
-          min={6}
-          value={config.authPolicy.minimumPasswordLength}
-          onChange={(value) => updateConfig(draft => { draft.authPolicy.minimumPasswordLength = value; })}
-        />
-        <NumericInput
-          label="Password Reset TTL (hours)"
-          min={1}
-          value={config.authPolicy.passwordResetTokenTtlHours}
-          onChange={(value) => updateConfig(draft => { draft.authPolicy.passwordResetTokenTtlHours = value; })}
-        />
-        <NumericInput
-          label="Score PIN Length"
-          min={4}
-          value={config.authPolicy.pinLength}
-          onChange={(value) => updateConfig(draft => { draft.authPolicy.pinLength = value; })}
-        />
-        <FieldRow label="Auto Relinquish Privileges (club default)">
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-            <input
-              type="checkbox"
-              checked={config.authPolicy.autoRelinquishPrivileges}
-              onChange={(event) => updateConfig(draft => {
-                draft.authPolicy.autoRelinquishPrivileges = event.target.checked;
+      <div style={{
+        marginBottom: '18px',
+        border: '1px solid #e1ebf2',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        backgroundColor: '#ffffff',
+      }}>
+        <button
+          type="button"
+          onClick={toggleHoursOpen}
+          aria-expanded={hoursOpen}
+          data-testid="system-settings-hours-toggle"
+          style={{
+            width: '100%',
+            margin: 0,
+            padding: '10px 14px',
+            backgroundColor: '#f2f8fb',
+            color: '#3c7890',
+            border: 'none',
+            borderBottom: hoursOpen ? '1px solid #e1ebf2' : 'none',
+            fontSize: '14px',
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            textAlign: 'left',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <span>Open / Close hours</span>
+          <span style={{ fontSize: '12px', opacity: 0.75, textTransform: 'none', letterSpacing: 0 }} aria-hidden>
+            {hoursOpen ? '▼' : '▶'}
+          </span>
+        </button>
+        {hoursOpen ? (
+          <div style={{ padding: '12px 14px 16px' }}>
+            <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#666' }}>
+              Per weekday schedule in the club timezone. Same-day open/close only (no overnight). Date overrides replace that day’s default.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '18px' }}>
+              {WEEKDAY_ROWS.map(({ key, label }) => {
+                const day = config.branding.weeklyHours[key];
+                const closed = day.closed === true;
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '100px 90px 1fr 1fr',
+                      gap: '8px',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, fontSize: '13px', color: '#2c3e50' }}>{label}</span>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                      <input
+                        type="checkbox"
+                        checked={closed}
+                        onChange={(e) => updateConfig((draft) => {
+                          draft.branding.weeklyHours[key] = e.target.checked
+                            ? { closed: true }
+                            : { closed: false, open: '10:00', close: '22:00' };
+                        })}
+                      />
+                      Closed
+                    </label>
+                    <input
+                      type="time"
+                      disabled={closed}
+                      value={closed ? '' : day.open}
+                      onChange={(e) => updateConfig((draft) => {
+                        const cur = draft.branding.weeklyHours[key];
+                        if (cur.closed) return;
+                        draft.branding.weeklyHours[key] = { closed: false, open: e.target.value || '10:00', close: cur.close };
+                      })}
+                      style={valueInputStyle}
+                      aria-label={`${label} open`}
+                    />
+                    <input
+                      type="time"
+                      disabled={closed}
+                      value={closed ? '' : day.close}
+                      onChange={(e) => updateConfig((draft) => {
+                        const cur = draft.branding.weeklyHours[key];
+                        if (cur.closed) return;
+                        draft.branding.weeklyHours[key] = { closed: false, open: cur.open, close: e.target.value || '22:00' };
+                      })}
+                      style={valueInputStyle}
+                      aria-label={`${label} close`}
+                    />
+                  </div>
+                );
               })}
-            />
-            Elevated accounts enter kiosk mode on login by default
-          </label>
-        </FieldRow>
-        <NumericInput
-          label="Auto Relinquish Idle (minutes)"
-          min={0}
-          value={config.authPolicy.autoRelinquishIdleMinutes}
-          onChange={(value) => updateConfig(draft => { draft.authPolicy.autoRelinquishIdleMinutes = value; })}
-        />
-        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#666' }}>
-          After restoring privileges, return to kiosk after this many idle minutes (0 = only on login).
-        </p>
-        <NumericInput
-          label="Preregistration Date Offset (days)"
-          value={config.preregistration.defaultTournamentOffsetDays}
-          onChange={(value) => updateConfig(draft => { draft.preregistration.defaultTournamentOffsetDays = value; })}
-        />
-        <FieldRow label="Default Tournament Time">
-          <input
-            type="time"
-            value={config.preregistration.defaultTournamentTime}
-            onChange={(event) => updateConfig(draft => { draft.preregistration.defaultTournamentTime = event.target.value; })}
-            style={valueInputStyle}
-          />
-        </FieldRow>
-        <NumericInput
-          label="Registration Deadline Offset (minutes)"
-          value={config.preregistration.registrationDeadlineOffsetMinutes}
-          onChange={(value) => updateConfig(draft => { draft.preregistration.registrationDeadlineOffsetMinutes = value; })}
-        />
-        <NumericInput
-          label="Rating Input Max"
-          value={config.ratingValidation.ratingInputMax}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.ratingInputMax = value; })}
-        />
-        <NumericInput
-          label="Suspicious Rating Min"
-          value={config.ratingValidation.suspiciousRatingMin}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMin = value; })}
-        />
-        <NumericInput
-          label="Suspicious Rating Max"
-          value={config.ratingValidation.suspiciousRatingMax}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMax = value; })}
-        />
-        <FieldRow label="Preregistration Cancellation Reasons">
-          <textarea
-            rows={5}
-            value={config.preregistration.cancelReasonPresets.join('\n')}
-            onChange={(event) => updateConfig(draft => {
-              draft.preregistration.cancelReasonPresets = event.target.value
-                .split('\n')
-                .map(reason => reason.trim())
-                .filter(Boolean);
-            })}
-            style={{ ...valueInputStyle, minHeight: '110px', resize: 'vertical' }}
-          />
-        </FieldRow>
-      </Section>
+            </div>
+
+            <div style={{ fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '8px' }}>
+              Date overrides
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {(config.branding.hourOverrides ?? []).map((row, index) => {
+                const closed = row.hours.closed === true;
+                return (
+                  <div
+                    key={`${row.date}-${index}`}
+                    style={{
+                      border: '1px solid #edf1f5',
+                      borderRadius: '6px',
+                      padding: '10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                      <input
+                        type="date"
+                        value={row.date}
+                        onChange={(e) => updateConfig((draft) => {
+                          draft.branding.hourOverrides[index].date = e.target.value;
+                        })}
+                        style={{ ...valueInputStyle, maxWidth: '160px' }}
+                        aria-label={`Override ${index + 1} date`}
+                      />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                        <input
+                          type="checkbox"
+                          checked={closed}
+                          onChange={(e) => updateConfig((draft) => {
+                            draft.branding.hourOverrides[index].hours = e.target.checked
+                              ? { closed: true }
+                              : { closed: false, open: '10:00', close: '22:00' };
+                          })}
+                        />
+                        Closed
+                      </label>
+                      <input
+                        type="time"
+                        disabled={closed}
+                        value={closed ? '' : (row.hours as Extract<ClubDayHours, { closed: false }>).open}
+                        onChange={(e) => updateConfig((draft) => {
+                          const cur = draft.branding.hourOverrides[index].hours;
+                          if (cur.closed) return;
+                          draft.branding.hourOverrides[index].hours = {
+                            closed: false,
+                            open: e.target.value || '10:00',
+                            close: cur.close,
+                          };
+                        })}
+                        style={{ ...valueInputStyle, maxWidth: '120px' }}
+                      />
+                      <input
+                        type="time"
+                        disabled={closed}
+                        value={closed ? '' : (row.hours as Extract<ClubDayHours, { closed: false }>).close}
+                        onChange={(e) => updateConfig((draft) => {
+                          const cur = draft.branding.hourOverrides[index].hours;
+                          if (cur.closed) return;
+                          draft.branding.hourOverrides[index].hours = {
+                            closed: false,
+                            open: cur.open,
+                            close: e.target.value || '22:00',
+                          };
+                        })}
+                        style={{ ...valueInputStyle, maxWidth: '120px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateConfig((draft) => {
+                          draft.branding.hourOverrides.splice(index, 1);
+                        })}
+                        style={{
+                          padding: '6px 10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '4px',
+                          background: '#fff',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={row.comment ?? ''}
+                      placeholder="Comment (shown next to club name for members)"
+                      onChange={(e) => updateConfig((draft) => {
+                        draft.branding.hourOverrides[index].comment =
+                          e.target.value.trim() === '' ? null : e.target.value;
+                      })}
+                      style={valueInputStyle}
+                      aria-label={`Override ${index + 1} comment`}
+                    />
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => updateConfig((draft) => {
+                  if (!draft.branding.hourOverrides) draft.branding.hourOverrides = [];
+                  draft.branding.hourOverrides.push({
+                    date: new Date().toISOString().slice(0, 10),
+                    hours: { closed: true },
+                    comment: null,
+                  });
+                })}
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '8px 12px',
+                  border: '1px solid #b9c7d8',
+                  borderRadius: '6px',
+                  background: '#f8fbff',
+                  color: '#1a5276',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                Add date override
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
 
       <Section
         title="Tournament Rules"
@@ -625,6 +803,99 @@ export default function SystemSettings() {
             })}
           />
         ))}
+      </Section>
+
+      <Section
+        title="Core Settings"
+        sectionId="core"
+        open={openSectionId === 'core'}
+        onToggle={toggleSection}
+      >
+        <NumericInput
+          label="Minimum Password Length"
+          min={6}
+          value={config.authPolicy.minimumPasswordLength}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.minimumPasswordLength = value; })}
+        />
+        <NumericInput
+          label="Password Reset TTL (hours)"
+          min={1}
+          value={config.authPolicy.passwordResetTokenTtlHours}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.passwordResetTokenTtlHours = value; })}
+        />
+        <NumericInput
+          label="Score PIN Length"
+          min={4}
+          value={config.authPolicy.pinLength}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.pinLength = value; })}
+        />
+        <FieldRow label="Auto Relinquish Privileges (club default)">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+            <input
+              type="checkbox"
+              checked={config.authPolicy.autoRelinquishPrivileges}
+              onChange={(event) => updateConfig(draft => {
+                draft.authPolicy.autoRelinquishPrivileges = event.target.checked;
+              })}
+            />
+            Elevated accounts enter kiosk mode on login by default
+          </label>
+        </FieldRow>
+        <NumericInput
+          label="Auto Relinquish Idle (minutes)"
+          min={0}
+          value={config.authPolicy.autoRelinquishIdleMinutes}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.autoRelinquishIdleMinutes = value; })}
+        />
+        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#666' }}>
+          After restoring privileges, return to kiosk after this many idle minutes (0 = only on login).
+        </p>
+        <NumericInput
+          label="Preregistration Date Offset (days)"
+          value={config.preregistration.defaultTournamentOffsetDays}
+          onChange={(value) => updateConfig(draft => { draft.preregistration.defaultTournamentOffsetDays = value; })}
+        />
+        <FieldRow label="Default Tournament Time">
+          <input
+            type="time"
+            value={config.preregistration.defaultTournamentTime}
+            onChange={(event) => updateConfig(draft => { draft.preregistration.defaultTournamentTime = event.target.value; })}
+            style={valueInputStyle}
+          />
+        </FieldRow>
+        <NumericInput
+          label="Registration Deadline Offset (minutes)"
+          value={config.preregistration.registrationDeadlineOffsetMinutes}
+          onChange={(value) => updateConfig(draft => { draft.preregistration.registrationDeadlineOffsetMinutes = value; })}
+        />
+        <NumericInput
+          label="Rating Input Max"
+          value={config.ratingValidation.ratingInputMax}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.ratingInputMax = value; })}
+        />
+        <NumericInput
+          label="Suspicious Rating Min"
+          value={config.ratingValidation.suspiciousRatingMin}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMin = value; })}
+        />
+        <NumericInput
+          label="Suspicious Rating Max"
+          value={config.ratingValidation.suspiciousRatingMax}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMax = value; })}
+        />
+        <FieldRow label="Preregistration Cancellation Reasons">
+          <textarea
+            rows={5}
+            value={config.preregistration.cancelReasonPresets.join('\n')}
+            onChange={(event) => updateConfig(draft => {
+              draft.preregistration.cancelReasonPresets = event.target.value
+                .split('\n')
+                .map(reason => reason.trim())
+                .filter(Boolean);
+            })}
+            style={{ ...valueInputStyle, minHeight: '110px', resize: 'vertical' }}
+          />
+        </FieldRow>
       </Section>
 
       <Section

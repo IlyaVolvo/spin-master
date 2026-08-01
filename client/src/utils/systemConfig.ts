@@ -18,10 +18,24 @@ export const ACHIEVEMENT_CATEGORY_LABELS: Record<AchievementCategoryId, string> 
   club_ladder_movers: 'Club ladder movers',
 };
 
+export type ClubWeekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export type ClubDayHours =
+  | { closed: true }
+  | { closed: false; open: string; close: string };
+
+export type ClubHourOverride = {
+  date: string;
+  hours: ClubDayHours;
+  comment: string | null;
+};
+
 export type SystemConfig = {
   branding: {
     clubName: string | null;
     clubTimezone: string;
+    weeklyHours: Record<ClubWeekday, ClubDayHours>;
+    hourOverrides: ClubHourOverride[];
   };
   authPolicy: {
     minimumPasswordLength: number;
@@ -121,10 +135,23 @@ export type SystemConfigPatch = Partial<{
   [K in keyof SystemConfig]: Partial<SystemConfig[K]>;
 }>;
 
+const defaultOpenDay: ClubDayHours = { closed: false, open: '10:00', close: '22:00' };
+const defaultClosedDay: ClubDayHours = { closed: true };
+
 const defaultSystemConfig: SystemConfig = {
   branding: {
     clubName: null,
     clubTimezone: 'UTC',
+    weeklyHours: {
+      mon: defaultOpenDay,
+      tue: defaultOpenDay,
+      wed: defaultOpenDay,
+      thu: defaultOpenDay,
+      fri: defaultOpenDay,
+      sat: defaultClosedDay,
+      sun: defaultClosedDay,
+    },
+    hourOverrides: [],
   },
   authPolicy: {
     minimumPasswordLength: 6,

@@ -3,7 +3,20 @@ import { describe, expect, it, vi } from 'vitest';
 import SystemSettings from './SystemSettings';
 
 const mockConfig = {
-  branding: { clubName: 'Initial Club', clubTimezone: 'UTC' },
+  branding: {
+    clubName: 'Initial Club',
+    clubTimezone: 'UTC',
+    weeklyHours: {
+      mon: { closed: false, open: '10:00', close: '22:00' },
+      tue: { closed: false, open: '10:00', close: '22:00' },
+      wed: { closed: false, open: '10:00', close: '22:00' },
+      thu: { closed: false, open: '10:00', close: '22:00' },
+      fri: { closed: false, open: '10:00', close: '22:00' },
+      sat: { closed: true },
+      sun: { closed: true },
+    },
+    hourOverrides: [],
+  },
   authPolicy: { minimumPasswordLength: 6, passwordResetTokenTtlHours: 1, pinLength: 4, autoRelinquishPrivileges: false, autoRelinquishIdleMinutes: 5 },
   preregistration: {
     defaultTournamentOffsetDays: 1,

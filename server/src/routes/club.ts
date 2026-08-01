@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
@@ -24,6 +25,7 @@ import { emitPaymentUpdated, emitClubVisitUpdated } from '../services/socketServ
 import { getExpiryWarning } from '../payments/checkInReminders';
 import { createTrialVisit, resolveFirstVisitOfDay } from '../payments/checkInAccess';
 import { recordRejectedCheckIn } from '../payments/recordRejectedCheckIn';
+import { runAutoCheckout, runCloseClub } from '../payments/autoCheckout';
 import {
   attendanceStatusWhere,
   parseAttendanceStatusFilter,
@@ -1228,8 +1230,7 @@ router.get('/admin/plan-price-suggestion', async (req: AuthRequest, res: Respons
 
 /**
  * POST /api/club/cron/auto-checkout
- * SHELVED — implementation remains in payments/autoCheckout.ts; not run for now.
- * Closes stale open visits (clubDate < today club-local), or a single day when body.clubDate is set.
+ * Closes stale open visits (clubDate < today club-local), stamping checkOutAt at each day's club close.
  * Protected by x-club-cron-secret header.
  * Body (optional): { "clubDate": "YYYY-MM-DD" } — targeted single-day run; omit for all stale open visits.
  */
@@ -1242,12 +1243,70 @@ router.post('/cron/auto-checkout', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Invalid cron secret' });
     }
 
-    return res.status(503).json({
-      error: 'Auto-checkout is shelved',
-      shelved: true,
-    });
+    const clubDate =
+      typeof req.body?.clubDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clubDate.trim())
+        ? req.body.clubDate.trim()
+        : undefined;
+    const result = await runAutoCheckout(clubDate ? { clubDate } : undefined);
+    res.json(result);
   } catch (error) {
     logger.error('Error during auto-checkout', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/club/admin/close-club
+ * Admin bulk checkout of everyone still present. closedBy=AUTO.
+ * Body: { "password": "<admin login password>", "checkOutAt"?: "<ISO datetime>" }
+ * Password is required (current admin member). checkOutAt defaults to now.
+ */
+router.post('/admin/close-club', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const adminId = req.member?.id;
+    if (!adminId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+
+    const admin = await prisma.member.findUnique({
+      where: { id: adminId },
+      select: { id: true, password: true, isActive: true },
+    });
+    if (!admin || !admin.isActive) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (!admin.password) {
+      return res.status(403).json({ error: 'Password is not set for this account' });
+    }
+    const valid = await bcrypt.compare(password, admin.password);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    let checkOutAt: Date | undefined;
+    if (req.body?.checkOutAt != null && req.body.checkOutAt !== '') {
+      if (typeof req.body.checkOutAt !== 'string') {
+        return res.status(400).json({ error: 'checkOutAt must be an ISO datetime string' });
+      }
+      checkOutAt = new Date(req.body.checkOutAt);
+      if (Number.isNaN(checkOutAt.getTime())) {
+        return res.status(400).json({ error: 'Invalid checkOutAt' });
+      }
+    }
+
+    const result = await runCloseClub(checkOutAt ? { checkOutAt } : undefined);
+    res.json(result);
+  } catch (error) {
+    logger.error('Error during close club', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

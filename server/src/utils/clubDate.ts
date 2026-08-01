@@ -52,10 +52,60 @@ export function clubLocalDayStartUtc(ymd: string, timeZone: string = getClubTime
 }
 
 /** Shift a "YYYY-MM-DD" calendar day by whole days. */
-function shiftYmd(ymd: string, deltaDays: number): string {
+export function addDaysToYmd(ymd: string, deltaDays: number): string {
   const [y, m, d] = ymd.split('-').map(Number);
   const shifted = new Date(Date.UTC(y, m - 1, d + deltaDays));
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Convert a club-local calendar day + wall time (HH:mm or HH:mm:ss) to a UTC instant.
+ */
+export function clubLocalDateTimeUtc(
+  ymd: string,
+  hm: string,
+  timeZone: string = getClubTimezone(),
+): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    throw new Error(`Invalid club-local date: ${ymd}`);
+  }
+  if (!/^\d{2}:\d{2}(:\d{2})?$/.test(hm)) {
+    throw new Error(`Invalid club-local time: ${hm}`);
+  }
+  const [hh, mm, ss = '0'] = hm.split(':');
+  const hour = Number(hh);
+  const minute = Number(mm);
+  const second = Number(ss);
+  let guess = Date.parse(`${ymd}T${hh}:${mm}:${String(second).padStart(2, '0')}.000Z`);
+  for (let i = 0; i < 4; i += 1) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(guess));
+    const get = (type: string) => parts.find((p) => p.type === type)?.value || '00';
+    const asYmd = `${get('year')}-${get('month')}-${get('day')}`;
+    const asH = Number(get('hour'));
+    const asM = Number(get('minute'));
+    const asS = Number(get('second'));
+    if (asYmd === ymd && asH === hour && asM === minute && asS === second) {
+      return new Date(guess);
+    }
+    const desired = Date.parse(`${ymd}T00:00:00.000Z`) + (hour * 3600 + minute * 60 + second) * 1000;
+    const observed = Date.parse(`${asYmd}T00:00:00.000Z`) + (asH * 3600 + asM * 60 + asS) * 1000;
+    guess += desired - observed;
+  }
+  return new Date(guess);
+}
+
+/** Shift a "YYYY-MM-DD" calendar day by whole days (internal alias). */
+function shiftYmd(ymd: string, deltaDays: number): string {
+  return addDaysToYmd(ymd, deltaDays);
 }
 
 /** Inclusive club-local day filter bounds as UTC instants: [start, endExclusive). */

@@ -8,10 +8,28 @@ import {
   type AchievementCategoryId,
 } from '../achievements/categoryIds';
 
+export const CLUB_WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+export type ClubWeekday = (typeof CLUB_WEEKDAYS)[number];
+
+/** Same-calendar-day hours, or closed all day. */
+export type ClubDayHours =
+  | { closed: true }
+  | { closed: false; open: string; close: string };
+
+export type ClubHourOverride = {
+  date: string;
+  hours: ClubDayHours;
+  comment: string | null;
+};
+
 export type BrandingConfig = {
   clubName: string | null;
   /** IANA timezone for club-local calendar days (check-in, trials, midnight jobs). */
   clubTimezone: string;
+  /** Default open/close (or closed) per weekday. */
+  weeklyHours: Record<ClubWeekday, ClubDayHours>;
+  /** Single-date overrides; replace that day's weekly default. */
+  hourOverrides: ClubHourOverride[];
 };
 
 export type AuthPolicyConfig = {
@@ -192,11 +210,27 @@ function getEnvClubName(): string | null {
   return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
 }
 
+function getDefaultWeeklyHours(): Record<ClubWeekday, ClubDayHours> {
+  const openDay: ClubDayHours = { closed: false, open: '10:00', close: '22:00' };
+  const closedDay: ClubDayHours = { closed: true };
+  return {
+    mon: openDay,
+    tue: openDay,
+    wed: openDay,
+    thu: openDay,
+    fri: openDay,
+    sat: closedDay,
+    sun: closedDay,
+  };
+}
+
 export function getDefaultSystemConfig(): SystemConfig {
   return {
     branding: {
       clubName: getEnvClubName(),
       clubTimezone: getEnvClubTimezone(),
+      weeklyHours: getDefaultWeeklyHours(),
+      hourOverrides: [],
     },
     authPolicy: {
       minimumPasswordLength: 6,
@@ -341,6 +375,75 @@ function requireTime(value: unknown, path: string): string {
   return value;
 }
 
+function parseHmToMinutes(value: string): number {
+  const [h, m] = value.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function validateDayHours(value: unknown, path: string): ClubDayHours {
+  if (!isRecord(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+  if (value.closed === true) {
+    return { closed: true };
+  }
+  if (value.closed !== false && value.closed !== undefined) {
+    throw new Error(`${path}.closed must be a boolean`);
+  }
+  const open = requireTime(value.open, `${path}.open`);
+  const close = requireTime(value.close, `${path}.close`);
+  if (parseHmToMinutes(open) >= parseHmToMinutes(close)) {
+    throw new Error(`${path}: open must be before close on the same day`);
+  }
+  return { closed: false, open, close };
+}
+
+function validateWeeklyHours(value: unknown): Record<ClubWeekday, ClubDayHours> {
+  const defaults = getDefaultWeeklyHours();
+  const raw = isRecord(value) ? value : {};
+  const result = { ...defaults };
+  for (const day of CLUB_WEEKDAYS) {
+    if (raw[day] !== undefined) {
+      result[day] = validateDayHours(raw[day], `branding.weeklyHours.${day}`);
+    }
+  }
+  return result;
+}
+
+function validateHourOverrides(value: unknown): ClubHourOverride[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error('branding.hourOverrides must be an array');
+  }
+  const seen = new Set<string>();
+  return value.map((entry, index) => {
+    if (!isRecord(entry)) {
+      throw new Error(`branding.hourOverrides[${index}] must be an object`);
+    }
+    const date = typeof entry.date === 'string' ? entry.date.trim() : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new Error(`branding.hourOverrides[${index}].date must be YYYY-MM-DD`);
+    }
+    if (seen.has(date)) {
+      throw new Error(`branding.hourOverrides: duplicate date ${date}`);
+    }
+    seen.add(date);
+    const comment =
+      entry.comment === null || entry.comment === undefined
+        ? null
+        : typeof entry.comment === 'string'
+          ? entry.comment.trim() || null
+          : (() => {
+              throw new Error(`branding.hourOverrides[${index}].comment must be a string or null`);
+            })();
+    return {
+      date,
+      hours: validateDayHours(entry.hours, `branding.hourOverrides[${index}].hours`),
+      comment,
+    };
+  });
+}
+
 function validateBranding(value: unknown): BrandingConfig {
   const config = deepMerge(getDefaultSystemConfig().branding, value);
   if (config.clubName !== null && typeof config.clubName !== 'string') {
@@ -353,11 +456,14 @@ function validateBranding(value: unknown): BrandingConfig {
   if (!isValidIanaTimezone(clubTimezone)) {
     throw new Error(`branding.clubTimezone must be a valid IANA timezone (got "${clubTimezone}")`);
   }
+  const raw = isRecord(value) ? value : {};
   return {
     clubName: typeof config.clubName === 'string' && config.clubName.trim() !== ''
       ? config.clubName.trim()
       : null,
     clubTimezone,
+    weeklyHours: validateWeeklyHours(raw.weeklyHours ?? config.weeklyHours),
+    hourOverrides: validateHourOverrides(raw.hourOverrides ?? config.hourOverrides),
   };
 }
 

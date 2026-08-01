@@ -7,6 +7,7 @@ import { enterKioskMode, defaultKioskKindForRoles } from './utils/kioskEntry';
 import api from './utils/api';
 import { connectSocket } from './utils/socket';
 import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig, hasAnyPublicAchievementEnabled } from './utils/systemConfig';
+import { todayHoursHeaderLabel } from './utils/clubHoursDisplay';
 import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPosition';
 import { getErrorMessage } from './utils/errorHandler';
 import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail } from './utils/tournamentNavState';
@@ -633,6 +634,7 @@ function Header({
   const navigate = useNavigate();
   const location = useLocation();
   const systemConfig = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
+  const todayHours = todayHoursHeaderLabel(systemConfig.branding);
   const showAchievementsLink = hasAnyPublicAchievementEnabled(systemConfig);
   const [userName, setUserName] = useState<string>('');
   const [userRoles, setUserRoles] = useState<string[]>([]);
@@ -1017,8 +1019,19 @@ function Header({
     };
   }, [adminMenuOpen]);
 
-  // Size to the current label only — keep the header tab as narrow as possible.
-  const adminMenuTriggerMinWidth = `calc(${adminMenuLabel.length + 2}ch + 24px)`;
+  const adminMenuItems = [
+    { id: 'payment-log' as const, label: 'Payment Log', active: isPaymentsListActive },
+    { id: 'attendance-log' as const, label: 'Attendance Log', active: isAttendanceActive },
+    { id: 'separator' as const, label: '', active: false },
+    { id: 'plans' as const, label: 'Payment Plans', active: isPlansActive },
+    { id: 'settings' as const, label: 'System Configuration', active: isSettingsActive },
+  ] as const;
+  const adminMenuLongestLabel = adminMenuItems.reduce(
+    (longest, item) => (item.label.length > longest.length ? item.label : longest),
+    'Admin',
+  );
+  // Keep trigger + every dropdown option the same width (longest label).
+  const adminMenuWidth = `calc(${adminMenuLongestLabel.length + 2}ch + 24px)`;
 
   const hasPendingPreregistrations = pendingPreregistrationCount > 0;
   const isAdminUser = !kioskMode && isAdmin();
@@ -1059,20 +1072,6 @@ function Header({
             flexShrink: 0,
           }}
         >
-          {/* Match changeset line height so nav aligns with $, Settings, name, Logout */}
-          <span
-            aria-hidden="true"
-            style={{
-              fontSize: '11px',
-              fontFamily: 'monospace',
-              letterSpacing: '0.08em',
-              lineHeight: 1,
-              visibility: 'hidden',
-              paddingRight: '2px',
-            }}
-          >
-            {changesetId}
-          </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
           {showPlayersTab && (
           <a 
@@ -1159,8 +1158,8 @@ function Header({
                 onClick={() => setAdminMenuOpen((open) => !open)}
                 style={{
                   ...headerIconControlSize,
-                  minWidth: adminMenuTriggerMinWidth,
-                  width: adminMenuTriggerMinWidth,
+                  minWidth: adminMenuWidth,
+                  width: adminMenuWidth,
                   padding: '10px 12px 12px 12px',
                   justifyContent: 'space-between',
                   gap: '6px',
@@ -1199,8 +1198,8 @@ function Header({
                     top: '100%',
                     left: 0,
                     marginTop: '4px',
-                    minWidth: '100%',
-                    width: 'max-content',
+                    width: adminMenuWidth,
+                    minWidth: adminMenuWidth,
                     background: 'white',
                     border: '1px solid rgba(0, 0, 0, 0.12)',
                     borderRadius: '8px',
@@ -1208,17 +1207,10 @@ function Header({
                     zIndex: 10050,
                     overflow: 'hidden',
                     padding: '4px 0',
+                    boxSizing: 'border-box',
                   }}
                 >
-                  {(
-                    [
-                      { id: 'payment-log' as const, label: 'Payment Log', active: isPaymentsListActive },
-                      { id: 'attendance-log' as const, label: 'Attendance Log', active: isAttendanceActive },
-                      { id: 'separator' as const, label: '', active: false },
-                      { id: 'plans' as const, label: 'Payment Plans', active: isPlansActive },
-                      { id: 'settings' as const, label: 'System Configuration', active: isSettingsActive },
-                    ] as const
-                  ).map((item) => {
+                  {adminMenuItems.map((item) => {
                     if (item.id === 'separator') {
                       return (
                         <div
@@ -1246,6 +1238,7 @@ function Header({
                         style={{
                           display: 'block',
                           width: '100%',
+                          boxSizing: 'border-box',
                           textAlign: 'left',
                           padding: '10px 14px',
                           border: 'none',
@@ -1280,13 +1273,31 @@ function Header({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: '14px',
+          justifyContent: 'flex-start',
+          gap: '10px',
           flex: 1,
-          // Skip changeset line so logo sits on the same band as nav / $ / Logout
-          paddingTop: '17px',
         }}>
-          <div className="app-header-logo-wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
+          <div className="app-header-logo-wrap" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
+            <span
+              aria-label={`Build ${changesetId}`}
+              title={changesetId}
+              style={{
+                position: 'absolute',
+                left: '50%',
+                bottom: 'calc(100% + 3px)',
+                transform: 'translateX(-50%)',
+                color: 'rgba(255, 255, 255, 0.45)',
+                fontSize: '9px',
+                fontFamily: 'monospace',
+                letterSpacing: '0.06em',
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+            >
+              {changesetId}
+            </span>
             <span className="app-header-paddle">🏓</span>
             <span
               className="app-header-logo-box"
@@ -1359,35 +1370,31 @@ function Header({
                 textAlign: 'center',
                 letterSpacing: '0.02em',
                 lineHeight: 1.25,
-                maxWidth: '320px',
+                maxWidth: '420px',
                 margin: '0 auto',
                 textShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
+                whiteSpace: 'nowrap',
               }}
+              title={todayHours.comment || undefined}
             >
               {clubName}
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: 'rgba(184, 217, 240, 0.88)',
+                  letterSpacing: '0.01em',
+                  marginLeft: '0.35em',
+                }}
+              >
+                ({todayHours.label}
+                {todayHours.comment ? ` · ${todayHours.comment}` : ''})
+              </span>
             </span>
           ) : null}
         </h1>
         <div className="app-header-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-          <span style={{
-            color: 'rgba(255, 255, 255, 0.75)',
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            letterSpacing: '0.08em',
-            lineHeight: 1,
-            paddingRight: '2px'
-          }}>
-            {changesetId}
-          </span>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-end',
-              gap: '14px',
-            }}
-          >
-            <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               {userName && (
                 <>
                   {!kioskMode && (
@@ -1518,38 +1525,45 @@ function Header({
                 </button>
               )}
             </div>
-            {(!kioskMode || showAchievementsLink) ? (
-              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                {!kioskMode ? <PlayersKioskEntryButton /> : null}
-                {showAchievementsLink ? (
-                  <button
-                    type="button"
-                    className="app-header-public-link"
-                    onClick={() => {
-                      clearAllScrollPositions();
-                      clearAllUIStates();
-                      window.scrollTo(0, 0);
-                      navigate('/public');
-                    }}
-                    style={{
-                      padding: '2px 8px',
-                      fontSize: '11px',
-                      fontWeight: isAchievementsActive ? 700 : 500,
-                      lineHeight: 1.2,
-                      color: isAchievementsActive ? '#fff' : 'rgba(255, 255, 255, 0.75)',
-                      background: isAchievementsActive ? 'rgba(255, 255, 255, 0.22)' : 'transparent',
-                      border: '1px solid rgba(255, 255, 255, 0.35)',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Public
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+                alignSelf: 'flex-start',
+                gap: '6px',
+                minHeight: '18px',
+              }}
+            >
+              {!kioskMode ? <PlayersKioskEntryButton /> : null}
+              {showAchievementsLink ? (
+                <button
+                  type="button"
+                  className="app-header-public-link"
+                  onClick={() => {
+                    clearAllScrollPositions();
+                    clearAllUIStates();
+                    window.scrollTo(0, 0);
+                    navigate('/public');
+                  }}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    fontWeight: isAchievementsActive ? 700 : 500,
+                    lineHeight: 1.2,
+                    color: isAchievementsActive ? '#fff' : 'rgba(255, 255, 255, 0.75)',
+                    background: isAchievementsActive ? 'rgba(255, 255, 255, 0.22)' : 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.35)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Public
+                </button>
+              ) : null}
+            </div>
         </div>
       </div>
       {kioskMode && (

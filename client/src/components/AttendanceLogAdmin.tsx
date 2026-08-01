@@ -91,7 +91,8 @@ function visitStatusSummary(v: VisitRow): {
     };
   }
   const bits: string[] = ['Checked out'];
-  if (v.closedBy) bits.push(`Closed by ${v.closedBy}`);
+  if (v.closedBy === 'AUTO') bits.push('Club close (AUTO)');
+  else if (v.closedBy) bits.push(`Closed by ${v.closedBy}`);
   if (v.isCourtesy) bits.push(v.courtesyClearedAt ? 'Courtesy (cleared)' : 'Courtesy');
   if (v.dailyPaymentApplied) bits.push('Charged');
   return {
@@ -360,6 +361,12 @@ export default function AttendanceLogAdmin() {
   const [error, setError] = useState('');
   const [selectedMember, setSelectedMember] = useState<MemberAttendanceTarget | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [closeClubBusy, setCloseClubBusy] = useState(false);
+  const [closeClubAt, setCloseClubAt] = useState('');
+  const [closeClubMessage, setCloseClubMessage] = useState('');
+  const [closeClubModalOpen, setCloseClubModalOpen] = useState(false);
+  const [closeClubPassword, setCloseClubPassword] = useState('');
+  const [closeClubError, setCloseClubError] = useState('');
   const debounceRef = useRef<number | null>(null);
   const requestSeq = useRef(0);
 
@@ -453,16 +460,188 @@ export default function AttendanceLogAdmin() {
       ? 'Attendance Log'
       : `Attendance Log (${presentCount} Present)`;
 
+  const openCloseClubModal = () => {
+    setCloseClubPassword('');
+    setCloseClubError('');
+    setCloseClubModalOpen(true);
+  };
+
+  const handleCloseClub = async () => {
+    if (!closeClubPassword.trim()) {
+      setCloseClubError('Password is required');
+      return;
+    }
+    setCloseClubBusy(true);
+    setCloseClubError('');
+    setCloseClubMessage('');
+    try {
+      const body: { password: string; checkOutAt?: string } = {
+        password: closeClubPassword,
+      };
+      if (closeClubAt.trim() !== '') {
+        body.checkOutAt = new Date(closeClubAt).toISOString();
+      }
+      const res = await api.post('/club/admin/close-club', body);
+      const closed = Number(res.data?.closedCount) || 0;
+      setCloseClubMessage(`Checked out ${closed} member${closed === 1 ? '' : 's'}.`);
+      setCloseClubModalOpen(false);
+      setCloseClubPassword('');
+      setRefreshToken((n) => n + 1);
+    } catch (err) {
+      setCloseClubError(getErrorMessage(err, 'Failed to close club'));
+    } finally {
+      setCloseClubBusy(false);
+    }
+  };
+
   return (
     <div style={{ paddingBottom: '16px' }}>
-      <div style={{ marginBottom: '16px' }}>
+      <div
+        style={{
+          marginBottom: '16px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: '12px 20px',
+        }}
+      >
         <h2
           style={{ margin: 0, display: 'inline-block', cursor: 'help' }}
           title="Check-in and check-out history, newest first. Includes rejected check-in attempts. Click a member for their attendance history."
         >
           {presentLabel}
         </h2>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+          <label
+            htmlFor="close-club-at"
+            style={{ fontSize: '12px', fontWeight: 600, color: '#566573' }}
+          >
+            Close at (optional)
+          </label>
+          <input
+            id="close-club-at"
+            type="datetime-local"
+            value={closeClubAt}
+            onChange={(e) => setCloseClubAt(e.target.value)}
+            disabled={closeClubBusy}
+            style={{
+              padding: '6px 8px',
+              border: '1px solid #b9c7d8',
+              borderRadius: '6px',
+              fontSize: '12px',
+              color: '#17324d',
+            }}
+          />
+          <button
+            type="button"
+            onClick={openCloseClubModal}
+            disabled={closeClubBusy || presentCount === 0}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid #922b21',
+              background: closeClubBusy ? '#f5b7b1' : '#fadbd8',
+              color: '#922b21',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: closeClubBusy || presentCount === 0 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Close club
+          </button>
+        </div>
+        {closeClubMessage ? (
+          <span style={{ fontSize: '12px', color: '#566573' }}>{closeClubMessage}</span>
+        ) : null}
       </div>
+
+      {closeClubModalOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="close-club-dialog-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            zIndex: 20000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => {
+            if (!closeClubBusy) setCloseClubModalOpen(false);
+          }}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '24px',
+              borderRadius: '8px',
+              width: '90%',
+              maxWidth: '400px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="close-club-dialog-title" style={{ marginTop: 0 }}>
+              Close club
+            </h3>
+            <p style={{ fontSize: '14px', color: '#555' }}>
+              Check out{' '}
+              {presentCount == null ? 'all present members' : `${presentCount} present member(s)`}.
+              {closeClubAt.trim()
+                ? ` Checkout time: ${closeClubAt.replace('T', ' ')}.`
+                : ' Checkout time: now.'}{' '}
+              Enter your admin password to confirm.
+            </p>
+            {closeClubError ? (
+              <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>
+                {closeClubError}
+              </div>
+            ) : null}
+            <input
+              type="password"
+              value={closeClubPassword}
+              onChange={(e) => setCloseClubPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleCloseClub();
+                }
+              }}
+              placeholder="Password"
+              autoFocus
+              disabled={closeClubBusy}
+              style={{ width: '100%', padding: '10px', marginBottom: '16px', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setCloseClubModalOpen(false)}
+                disabled={closeClubBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCloseClub()}
+                disabled={closeClubBusy}
+                style={{
+                  background: '#922b21',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '8px 14px',
+                  fontWeight: 700,
+                  cursor: closeClubBusy ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {closeClubBusy ? 'Closing…' : 'Close club'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -473,7 +652,7 @@ export default function AttendanceLogAdmin() {
           marginBottom: '4px',
         }}
       >
-        <div style={{ flex: '0 1 180px', maxWidth: '180px' }}>
+        <div style={{ flex: '0 1 200px', maxWidth: '200px' }}>
           <label
             htmlFor="attendance-member-filter"
             style={{ display: 'block', margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}
