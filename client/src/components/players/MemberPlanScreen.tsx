@@ -25,6 +25,7 @@ type PlanSummary = {
     lastName: string;
     email: string | null;
     segment: string;
+    courtesySuspended?: boolean;
   };
   current: EntitlementView | null;
   future: EntitlementView | null;
@@ -237,7 +238,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
     if (!opts?.silent) {
       setLoading(true);
     }
-    setError('');
+    setError(''); 
     try {
       const [planRes, pricedRes] = await Promise.all([
         api.get(`/club/members/${memberId}/plan`),
@@ -319,6 +320,23 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       setMessage(enabled ? 'Online pay consent saved' : 'Online pay consent cleared');
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to update consent'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveCourtesyEnabled = async (enabled: boolean) => {
+    if (!admin) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.post(`/club/admin/members/${memberId}/courtesy-suspend`, {
+        suspended: !enabled,
+      });
+      await load({ silent: true });
+      setMessage(enabled ? 'Courtesy check-in enabled' : 'Courtesy check-in suspended');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to update courtesy setting'));
     } finally {
       setBusy(false);
     }
@@ -727,6 +745,27 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                     Set credit ($)
                   </button>
                 </div>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '12px',
+                    fontSize: '13px',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={summary.member.courtesySuspended !== true}
+                    disabled={busy}
+                    onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
+                  />
+                  Courtesy check-in enabled
+                </label>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
+                  Default is on. Uncheck to suspend courtesy for this member until re-enabled.
+                </p>
               </section>
             )}
 

@@ -57,7 +57,8 @@ export function CourtesyVisitsAdmin() {
   return (
     <div>
       <p style={{ margin: '0 0 10px', color: '#666', fontSize: '13px' }}>
-        Uncleared courtesy check-ins. Suspend blocks further courtesy until payment or resume.
+        Uncleared courtesy check-ins. Per-member courtesy is enabled by default; use Suspend/Resume
+        here, or toggle it on the member&apos;s Plan screen.
       </p>
       <button type="button" onClick={() => void load()} style={{ marginBottom: '10px' }}>
         Refresh

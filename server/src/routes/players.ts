@@ -27,6 +27,7 @@ import { isAdmin as sharedIsAdmin } from '../utils/adminAccess';
 import { isOrganizer as sharedIsOrganizer } from '../utils/organizerAccess';
 import { getPaymentsConfig } from '../services/systemConfigService';
 import { computePlanIndicator, type PlanIndicator } from '../payments/planIndicator';
+import { resolveNewMemberTrialEndsOn } from '../payments/memberTrial';
 
 const router = express.Router();
 const importUpload = multer({ storage: multer.memoryStorage() });
@@ -1193,6 +1194,7 @@ router.post('/', [
           picture: picture ? picture.trim() : null,
           segment: segment || 'Regular',
           onlinePayConsent: false,
+          trialEndsOn: resolveNewMemberTrialEndsOn(),
           qrTokenHash: generateQrTokenHash(),
         scorePin: generateScorePin(),
           autoRelinquishPrivileges:
@@ -1251,6 +1253,7 @@ router.post('/', [
         picture: picture ? picture.trim() : null,
         segment: segment || 'Regular',
         onlinePayConsent: getPaymentsConfig().defaultOnlinePayConsent === true,
+        trialEndsOn: resolveNewMemberTrialEndsOn(),
         qrTokenHash: generateQrTokenHash(),
         scorePin: generateScorePin(),
         autoRelinquishPrivileges:

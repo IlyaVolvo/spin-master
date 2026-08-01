@@ -61,6 +61,7 @@ export async function evaluateCourtesy(memberId: number): Promise<CourtesyDecisi
         memberId,
         isCourtesy: true,
         courtesyClearedAt: null,
+        rejectedAt: null,
       },
     });
     // Grace applies after pack is exhausted (active false or remaining 0)

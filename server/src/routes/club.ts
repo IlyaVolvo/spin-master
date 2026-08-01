@@ -20,7 +20,7 @@ import {
   trialPlanStartYmd,
 } from '../payments/memberTrial';
 import { confirmPayment } from '../payments/confirmPayment';
-import { emitPaymentUpdated } from '../services/socketService';
+import { emitPaymentUpdated, emitClubVisitUpdated } from '../services/socketService';
 import { getExpiryWarning } from '../payments/checkInReminders';
 import { createTrialVisit, resolveFirstVisitOfDay } from '../payments/checkInAccess';
 
@@ -63,9 +63,20 @@ async function getActiveEntitlement(memberId: number) {
 async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') {
   const clubDate = getClubDate();
 
-  // Find open visit (no checkOutAt) for today
+  const finish = <T extends { action: string; visit?: { id: number } | null }>(result: T): T => {
+    emitClubVisitUpdated({
+      memberId,
+      action: result.action,
+      clubDate,
+      visitId: result.visit?.id ?? null,
+    });
+    return result;
+  };
+
+  // Any still-open visit means the member is inside, even if it began on an earlier
+  // club date (day rollover, missed auto-checkout) — ignore rejected attempts
   const openVisit = await prisma.clubVisit.findFirst({
-    where: { memberId, clubDate, checkOutAt: null },
+    where: { memberId, checkOutAt: null, rejectedAt: null },
     orderBy: { checkInAt: 'desc' },
   });
 
@@ -76,7 +87,7 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
       data: { checkOutAt: new Date(), closedBy: closedByMethod },
     });
     const entitlement = await getActiveEntitlement(memberId);
-    return {
+    return finish({
       action: 'CHECK_OUT' as const,
       visit: updatedVisit,
       warning: null,
@@ -91,12 +102,12 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
       courtesy: openVisit.isCourtesy,
       canPay: false,
       paymentInProgress: false,
-    };
+    });
   }
 
-  // CHECK-IN: determine if this is the first visit of the day
+  // CHECK-IN: determine if this is the first successful visit of the day
   const existingVisitsToday = await prisma.clubVisit.count({
-    where: { memberId, clubDate },
+    where: { memberId, clubDate, rejectedAt: null },
   });
   const isFirstVisitOfDay = existingVisitsToday === 0;
 
@@ -126,7 +137,7 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
 
     if (outcome.kind === 'trial') {
       const visit = await createTrialVisit(memberId, clubDate);
-      return {
+      return finish({
         action: 'CHECK_IN' as const,
         visit,
         warning: outcome.warning,
@@ -135,12 +146,12 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
         courtesy: false,
         canPay: outcome.canPay,
         paymentInProgress: false,
-      };
+      });
     }
 
     if (outcome.kind === 'courtesy') {
       const visit = await prisma.clubVisit.findUnique({ where: { id: outcome.visitId } });
-      return {
+      return finish({
         action: 'CHECK_IN' as const,
         visit,
         warning: outcome.warning,
@@ -149,20 +160,33 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
         courtesy: true,
         canPay: outcome.canPay,
         paymentInProgress: outcome.paymentInProgress,
-      };
+      });
     }
 
     if (outcome.kind === 'payment_required') {
-      return {
+      const now = new Date();
+      const rejectedVisit = await prisma.clubVisit.create({
+        data: {
+          memberId,
+          clubDate,
+          checkInAt: now,
+          checkOutAt: now,
+          closedBy: closedByMethod,
+          dailyPaymentApplied: false,
+          rejectedAt: now,
+          rejectionReason: outcome.warning || 'Check-in rejected',
+        },
+      });
+      return finish({
         action: 'PAYMENT_REQUIRED' as const,
-        visit: null,
+        visit: rejectedVisit,
         warning: outcome.warning,
         charged: false,
         entitlement: null,
         courtesy: false,
         canPay: outcome.canPay,
         paymentInProgress: false,
-      };
+      });
     }
 
     // covered
@@ -193,7 +217,7 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
     where: { memberId, status: 'PENDING', externalRef: { not: null } },
   });
 
-  return {
+  return finish({
     action: 'CHECK_IN' as const,
     visit,
     warning,
@@ -208,7 +232,7 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
     courtesy: false,
     canPay: false,
     paymentInProgress: Boolean(pendingCheckout),
-  };
+  });
 }
 
 // ─── Public Endpoints (no auth) ──────────────────────────────────────────────
@@ -411,8 +435,11 @@ router.get('/kiosk/today-status', async (req: AuthRequest, res: Response) => {
   try {
     const clubDate = getClubDate();
     const visits = await prisma.clubVisit.findMany({
-      where: { clubDate },
-      select: { memberId: true, checkInAt: true, checkOutAt: true },
+      where: {
+        rejectedAt: null,
+        OR: [{ clubDate }, { checkOutAt: null }],
+      },
+      select: { memberId: true, clubDate: true, checkInAt: true, checkOutAt: true },
       orderBy: { checkInAt: 'desc' },
     });
 
@@ -426,12 +453,13 @@ router.get('/kiosk/today-status', async (req: AuthRequest, res: Response) => {
       if (!existing) {
         byMember.set(visit.memberId, {
           present: visit.checkOutAt == null,
-          visitedToday: true,
+          visitedToday: visit.clubDate === clubDate,
           lastCheckInAt: visit.checkInAt.toISOString(),
         });
-      } else if (visit.checkOutAt == null) {
-        existing.present = true;
+        continue;
       }
+      if (visit.checkOutAt == null) existing.present = true;
+      if (visit.clubDate === clubDate) existing.visitedToday = true;
     }
 
     const members = Array.from(byMember.entries()).map(([memberId, status]) => ({
@@ -455,9 +483,13 @@ router.get('/kiosk/present', async (req: AuthRequest, res: Response) => {
   try {
     const clubDate = getClubDate();
     const visits = await prisma.clubVisit.findMany({
-      where: { clubDate },
+      where: {
+        rejectedAt: null,
+        OR: [{ clubDate }, { checkOutAt: null }],
+      },
       select: {
         memberId: true,
+        clubDate: true,
         checkInAt: true,
         checkOutAt: true,
         member: { select: { id: true, firstName: true, lastName: true, rating: true } },
@@ -465,7 +497,9 @@ router.get('/kiosk/present', async (req: AuthRequest, res: Response) => {
       orderBy: { checkInAt: 'desc' },
     });
 
-    const visitedTodayIds = Array.from(new Set(visits.map((v) => v.memberId)));
+    const visitedTodayIds = Array.from(
+      new Set(visits.filter((v) => v.clubDate === clubDate).map((v) => v.memberId)),
+    );
     const openByMember = new Map<
       number,
       {
@@ -1370,6 +1404,7 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
         autoRenewEnabled: true,
         autoRenewFamilyKey: true,
         onlinePayConsent: true,
+        courtesySuspended: true,
         trialEndsOn: true,
       },
     });
@@ -1430,6 +1465,7 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
         lastName: member.lastName,
         email: member.email,
         segment: member.segment,
+        courtesySuspended: member.courtesySuspended,
       },
       current: serializeEntitlement(current),
       future: serializeEntitlement(future),
@@ -1690,7 +1726,7 @@ router.get('/admin/members/search', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** GET /api/club/admin/visits — attendance log, newest first; optional `q`, `from`, `to` (YYYY-MM-DD), `present=1` */
+/** GET /api/club/admin/visits — attendance log, newest first; optional `q`, `from`, `to`, `status=all|present|rejected` */
 router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) {
@@ -1705,11 +1741,16 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
     };
     const dateFrom = parseYmd(req.query.from);
     const dateTo = parseYmd(req.query.to);
-    const onlyPresent =
-      req.query.present === '1' ||
-      req.query.present === 'true' ||
-      req.query.onlyPresent === '1' ||
-      req.query.onlyPresent === 'true';
+    const statusRaw = typeof req.query.status === 'string' ? req.query.status.trim().toLowerCase() : '';
+    const statusFilter: 'all' | 'present' | 'rejected' =
+      statusRaw === 'present' || statusRaw === 'rejected'
+        ? statusRaw
+        : req.query.present === '1' ||
+            req.query.present === 'true' ||
+            req.query.onlyPresent === '1' ||
+            req.query.onlyPresent === 'true'
+          ? 'present'
+          : 'all';
     const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
     const nameFilters = tokens.map((token) => ({
       OR: [
@@ -1726,9 +1767,16 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
           }
         : undefined;
 
+    const statusWhere =
+      statusFilter === 'present'
+        ? { checkOutAt: null, rejectedAt: null }
+        : statusFilter === 'rejected'
+          ? { rejectedAt: { not: null } }
+          : {};
+
     const visits = await prisma.clubVisit.findMany({
       where: {
-        ...(onlyPresent ? { checkOutAt: null } : {}),
+        ...statusWhere,
         ...(clubDateFilter ? { clubDate: clubDateFilter } : {}),
         ...(nameFilters.length > 0
           ? {
@@ -1759,6 +1807,8 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
         isCourtesy: v.isCourtesy,
         dailyPaymentApplied: v.dailyPaymentApplied,
         courtesyClearedAt: v.courtesyClearedAt ? v.courtesyClearedAt.toISOString() : null,
+        rejectedAt: v.rejectedAt ? v.rejectedAt.toISOString() : null,
+        rejectionReason: v.rejectionReason,
       })),
     });
   } catch (error) {

@@ -35,8 +35,8 @@ export async function runAutoCheckout(options?: {
 
   const result = await prisma.clubVisit.updateMany({
     where: targeted
-      ? { clubDate: targeted, checkOutAt: null }
-      : { clubDate: { lt: getClubDate(now) }, checkOutAt: null },
+      ? { clubDate: targeted, checkOutAt: null, rejectedAt: null }
+      : { clubDate: { lt: getClubDate(now) }, checkOutAt: null, rejectedAt: null },
     data: {
       checkOutAt: now,
       closedBy: 'AUTO',

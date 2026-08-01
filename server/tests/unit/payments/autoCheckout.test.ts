@@ -40,6 +40,7 @@ describe('runAutoCheckout', () => {
       where: {
         clubDate: { lt: '2026-07-31' },
         checkOutAt: null,
+        rejectedAt: null,
       },
       data: {
         checkOutAt: new Date('2026-07-31T15:00:00.000Z'),
@@ -60,6 +61,7 @@ describe('runAutoCheckout', () => {
       where: {
         clubDate: '2026-07-28',
         checkOutAt: null,
+        rejectedAt: null,
       },
       data: expect.objectContaining({ closedBy: 'AUTO' }),
     });

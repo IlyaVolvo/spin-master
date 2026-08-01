@@ -129,6 +129,8 @@ export type PaymentsConfig = {
   notifyAdminsOnCourtesy: boolean;
   courtesyGraceDays: number;
   courtesyExtraVisits: number;
+  /** Trial length granted automatically to newly created members; 0 = no trial. */
+  newMemberTrialDays: number;
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */
   providers: {
@@ -261,6 +263,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       notifyAdminsOnCourtesy: true,
       courtesyGraceDays: 7,
       courtesyExtraVisits: 3,
+      newMemberTrialDays: 7,
       reminders: {
         checkInBannerEnabled: true,
         emailEnabled: true,
@@ -608,6 +611,7 @@ function validatePayments(value: unknown): PaymentsConfig {
   }
   config.courtesyGraceDays = Math.max(0, Math.floor(Number(config.courtesyGraceDays) || 0));
   config.courtesyExtraVisits = Math.max(0, Math.floor(Number(config.courtesyExtraVisits) || 0));
+  config.newMemberTrialDays = Math.max(0, Math.floor(Number(config.newMemberTrialDays) || 0));
   config.reminders.checkInBannerEnabled = Boolean(config.reminders.checkInBannerEnabled);
   config.reminders.emailEnabled = Boolean(config.reminders.emailEnabled);
   config.reminders.periodDaysBeforeExpiry = Math.max(

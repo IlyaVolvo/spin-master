@@ -1,6 +1,8 @@
 import { sendMail } from '../services/mailService';
 import { logger } from '../utils/logger';
 import { prisma } from '../index';
+import { getClubDate } from '../utils/clubDate';
+import { getPaymentsConfig } from '../services/systemConfigService';
 
 /** YYYY-MM-DD from a date-only trialEndsOn (stored as UTC noon). */
 export function trialEndsOnToYmd(value: Date | null | undefined): string | null {
@@ -35,6 +37,21 @@ export function addDaysToYmd(ymd: string, deltaDays: number): string {
   const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
   dt.setUTCDate(dt.getUTCDate() + deltaDays);
   return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Inclusive trial end for a member joining on `startYmd`, or null when trials are off.
+ * `trialDays` counts the join day itself, so 1 day means "today only".
+ */
+export function newMemberTrialEndsOn(startYmd: string, trialDays: number): Date | null {
+  const days = Math.floor(trialDays);
+  if (!Number.isFinite(days) || days < 1) return null;
+  return parseTrialEndsOnInput(addDaysToYmd(startYmd, days - 1));
+}
+
+/** Trial end to store on a member created right now, per configured trial length. */
+export function resolveNewMemberTrialEndsOn(): Date | null {
+  return newMemberTrialEndsOn(getClubDate(), getPaymentsConfig().newMemberTrialDays);
 }
 
 /** First club day after an inclusive trial end date. */

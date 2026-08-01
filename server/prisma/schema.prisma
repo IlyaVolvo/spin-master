@@ -446,6 +446,9 @@ model ClubVisit {
   isCourtesy          Boolean             @default(false)
   courtesyClearedAt   DateTime?
   obligationPaymentId Int?
+  /** Set when check-in was refused (e.g. payment required); not a successful visit */
+  rejectedAt          DateTime?
+  rejectionReason     String?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -457,6 +460,7 @@ model ClubVisit {
   @@index([memberId, clubDate])
   @@index([isCourtesy, courtesyClearedAt])
   @@index([obligationPaymentId])
+  @@index([rejectedAt])
   @@map("club_visits")
 }
 

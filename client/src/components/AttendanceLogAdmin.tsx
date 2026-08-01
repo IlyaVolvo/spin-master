@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { isAdmin } from '../utils/auth';
 import api from '../utils/api';
 import { getErrorMessage } from '../utils/errorHandler';
+import { connectSocket, getSocket } from '../utils/socket';
 import { MemberPlanScreen } from './players/MemberPlanScreen';
 
 type VisitRow = {
@@ -15,7 +16,11 @@ type VisitRow = {
   isCourtesy: boolean;
   dailyPaymentApplied: boolean;
   courtesyClearedAt: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
 };
+
+type StatusFilter = 'all' | 'present' | 'rejected';
 
 const thStyle: CSSProperties = {
   textAlign: 'left',
@@ -58,13 +63,25 @@ export default function AttendanceLogAdmin() {
   const [memberFilter, setMemberFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [onlyPresent, setOnlyPresent] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
   const debounceRef = useRef<number | null>(null);
   const requestSeq = useRef(0);
+
+  useEffect(() => {
+    if (!isAdmin()) return;
+    connectSocket();
+    const socket = getSocket();
+    const onVisitUpdated = () => setRefreshToken((n) => n + 1);
+    socket?.on('club:visitUpdated', onVisitUpdated);
+    return () => {
+      socket?.off('club:visitUpdated', onVisitUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAdmin()) {
@@ -85,12 +102,19 @@ export default function AttendanceLogAdmin() {
       if (q) params.q = q;
       if (dateFrom) params.from = dateFrom;
       if (dateTo) params.to = dateTo;
-      if (onlyPresent) params.present = '1';
+      if (statusFilter !== 'all') params.status = statusFilter;
       api
         .get('/club/admin/visits', { params })
         .then((res) => {
           if (seq !== requestSeq.current) return;
-          setVisits(Array.isArray(res.data?.visits) ? res.data.visits : []);
+          const rows: VisitRow[] = Array.isArray(res.data?.visits) ? res.data.visits : [];
+          const filtered =
+            statusFilter === 'present'
+              ? rows.filter((v) => !v.rejectedAt && !v.checkOutAt)
+              : statusFilter === 'rejected'
+                ? rows.filter((v) => Boolean(v.rejectedAt))
+                : rows;
+          setVisits(filtered);
           setError('');
         })
         .catch((err) => {
@@ -108,20 +132,20 @@ export default function AttendanceLogAdmin() {
         window.clearTimeout(debounceRef.current);
       }
     };
-  }, [memberFilter, dateFrom, dateTo, onlyPresent]);
+  }, [memberFilter, dateFrom, dateTo, statusFilter, refreshToken]);
 
   if (!isAdmin()) {
     return <div className="card error-message">Admin access required</div>;
   }
 
-  const filtersActive = Boolean(memberFilter.trim() || dateFrom || dateTo || onlyPresent);
+  const filtersActive = Boolean(memberFilter.trim() || dateFrom || dateTo || statusFilter !== 'all');
 
   return (
     <div style={{ paddingBottom: '16px' }}>
       <div style={{ marginBottom: '16px' }}>
         <h2 style={{ margin: 0 }}>Attendance Log</h2>
         <p style={{ margin: '6px 0 0', color: '#666' }}>
-          Check-in and check-out history, newest first. Filter by member name, date range, or currently present only.
+          Check-in and check-out history, newest first. Includes rejected check-in attempts.
         </p>
       </div>
 
@@ -193,27 +217,34 @@ export default function AttendanceLogAdmin() {
           />
         </div>
         <div>
-          <div style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}>
-            Presence
-          </div>
           <label
+            htmlFor="attendance-status-filter"
+            style={{ display: 'block', margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}
+          >
+            Status
+          </label>
+          <select
+            id="attendance-status-filter"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            aria-label="Filter attendance by status"
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
+              padding: '8px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              backgroundColor: '#fff',
+              color: '#333',
               fontSize: '13px',
-              cursor: 'pointer',
+              fontWeight: 400,
+              fontFamily: 'inherit',
+              minWidth: '150px',
               minHeight: '38px',
             }}
           >
-            <input
-              type="checkbox"
-              checked={onlyPresent}
-              onChange={(e) => setOnlyPresent(e.target.checked)}
-              aria-label="Show only currently present members"
-            />
-            Only Present
-          </label>
+            <option value="all">All</option>
+            <option value="present">Only Present</option>
+            <option value="rejected">Only Rejected</option>
+          </select>
         </div>
       </div>
 
@@ -240,67 +271,88 @@ export default function AttendanceLogAdmin() {
               </tr>
             </thead>
             <tbody>
-              {visits.map((v) => (
-                <tr key={v.id}>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>{v.clubDate}</td>
-                  <td style={tdStyle}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMemberId(v.memberId)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: 0,
-                        color: '#1a5276',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                        textAlign: 'left',
-                      }}
-                    >
-                      {v.memberName}
-                    </button>
-                    <div style={{ color: '#666', fontSize: '12px' }}>#{v.memberId}</div>
-                  </td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatWhen(v.checkInAt)}</td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                    {v.checkOutAt ? formatWhen(v.checkOutAt) : (
-                      <span style={{ color: '#1e8449', fontWeight: 700 }}>Present</span>
-                    )}
-                  </td>
-                  <td style={tdStyle}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {v.isCourtesy ? (
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          color: '#9a7b0a',
-                          background: '#fcf3cf',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                        }}>
-                          Courtesy{v.courtesyClearedAt ? ' (cleared)' : ''}
-                        </span>
-                      ) : null}
-                      {v.dailyPaymentApplied ? (
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
+              {visits.map((v) => {
+                const rejected = Boolean(v.rejectedAt);
+                return (
+                  <tr key={v.id}>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>{v.clubDate}</td>
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMemberId(v.memberId)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
                           color: '#1a5276',
-                          background: '#d6eaf8',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                        }}>
-                          Charged
-                        </span>
-                      ) : null}
-                      {v.closedBy ? (
-                        <span style={{ fontSize: '11px', color: '#888' }}>{v.closedBy}</span>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          textAlign: 'left',
+                        }}
+                      >
+                        {v.memberName} ({v.memberId})
+                      </button>
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatWhen(v.checkInAt)}</td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      {rejected ? (
+                        <span style={{ color: '#c0392b', fontWeight: 700 }}>Rejected</span>
+                      ) : v.checkOutAt ? (
+                        formatWhen(v.checkOutAt)
+                      ) : (
+                        <span style={{ color: '#1e8449', fontWeight: 700 }}>Present</span>
+                      )}
+                    </td>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {rejected ? (
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#922b21',
+                            background: '#fadbd8',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                          }}>
+                            Rejected
+                          </span>
+                        ) : null}
+                        {rejected && v.rejectionReason ? (
+                          <span style={{ fontSize: '12px', color: '#922b21' }}>{v.rejectionReason}</span>
+                        ) : null}
+                        {!rejected && v.isCourtesy ? (
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#9a7b0a',
+                            background: '#fcf3cf',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                          }}>
+                            Courtesy{v.courtesyClearedAt ? ' (cleared)' : ''}
+                          </span>
+                        ) : null}
+                        {!rejected && v.dailyPaymentApplied ? (
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#1a5276',
+                            background: '#d6eaf8',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                          }}>
+                            Charged
+                          </span>
+                        ) : null}
+                        {!rejected && v.closedBy ? (
+                          <span style={{ fontSize: '11px', color: '#888' }}>{v.closedBy}</span>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

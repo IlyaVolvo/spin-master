@@ -160,3 +160,21 @@ export function emitPaymentUpdated(payment: {
   });
 }
 
+/**
+ * Notify clients that club attendance changed (check-in, check-out, or rejected attempt).
+ */
+export function emitClubVisitUpdated(payload: {
+  memberId: number;
+  action: string;
+  clubDate?: string | null;
+  visitId?: number | null;
+}) {
+  emitToAll('club:visitUpdated', {
+    memberId: payload.memberId,
+    action: payload.action,
+    clubDate: payload.clubDate ?? null,
+    visitId: payload.visitId ?? null,
+    timestamp: Date.now(),
+  });
+}
+

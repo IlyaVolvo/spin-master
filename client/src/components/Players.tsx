@@ -7,6 +7,7 @@ import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder, setNameDisplayOrder, NameDisplayOrder } from '../utils/nameFormatter';
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
 import { getMember, setMember, isOrganizer, isAdmin, isKioskMode, getKioskKind } from '../utils/auth';
+import { connectSocket, getSocket } from '../utils/socket';
 import {
   CheckinKioskToolbar,
   CheckinPinModal,
@@ -494,10 +495,14 @@ const Players: React.FC = () => {
         });
     };
     load();
+    connectSocket();
+    const socket = getSocket();
+    socket?.on('club:visitUpdated', load);
     const interval = window.setInterval(load, 30000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      socket?.off('club:visitUpdated', load);
     };
   }, [isCheckinKiosk]);
 

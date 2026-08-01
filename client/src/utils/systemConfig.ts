@@ -99,6 +99,7 @@ export type SystemConfig = {
     notifyAdminsOnCourtesy: boolean;
     courtesyGraceDays: number;
     courtesyExtraVisits: number;
+    newMemberTrialDays: number;
     reminders: {
       checkInBannerEnabled: boolean;
       emailEnabled: boolean;
@@ -208,6 +209,7 @@ const defaultSystemConfig: SystemConfig = {
     notifyAdminsOnCourtesy: true,
     courtesyGraceDays: 7,
     courtesyExtraVisits: 3,
+    newMemberTrialDays: 7,
     reminders: {
       checkInBannerEnabled: true,
       emailEnabled: true,

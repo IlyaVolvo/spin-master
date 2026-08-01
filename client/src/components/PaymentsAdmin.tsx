@@ -411,6 +411,16 @@ function PaymentsSettingsEditor({
       )}
 
       <NumericInput
+        label="New member trial days (0 = no trial)"
+        min={0}
+        value={payments.newMemberTrialDays}
+        onChange={(value) =>
+          updateConfig((draft) => {
+            draft.payments.newMemberTrialDays = value;
+          })
+        }
+      />
+      <NumericInput
         label="Courtesy grace days (period plans)"
         min={0}
         value={payments.courtesyGraceDays}
