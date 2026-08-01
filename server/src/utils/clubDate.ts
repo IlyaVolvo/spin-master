@@ -51,6 +51,13 @@ export function clubLocalDayStartUtc(ymd: string, timeZone: string = getClubTime
   return new Date(guess);
 }
 
+/** Shift a "YYYY-MM-DD" calendar day by whole days. */
+function shiftYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + deltaDays));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
+}
+
 /** Inclusive club-local day filter bounds as UTC instants: [start, endExclusive). */
 export function clubLocalDayRangeUtc(
   fromYmd: string | null,
@@ -62,10 +69,26 @@ export function clubLocalDayRangeUtc(
     range.gte = clubLocalDayStartUtc(fromYmd, timeZone);
   }
   if (toYmd) {
-    const [y, m, d] = toYmd.split('-').map(Number);
-    const next = new Date(Date.UTC(y, m - 1, d + 1));
-    const nextYmd = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
-    range.lt = clubLocalDayStartUtc(nextYmd, timeZone);
+    range.lt = clubLocalDayStartUtc(shiftYmd(toYmd, 1), timeZone);
   }
   return range;
+}
+
+/**
+ * Inclusive bound for a club-local calendar day, as a UTC instant:
+ * day start for `endOfDay: false`, last millisecond of the day otherwise.
+ * Returns null for anything that is not a "YYYY-MM-DD" string.
+ */
+export function clubLocalInclusiveBound(
+  value: unknown,
+  endOfDay: boolean,
+  timeZone: string = getClubTimezone(),
+): Date | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+  const bound = endOfDay
+    ? new Date(clubLocalDayStartUtc(shiftYmd(value, 1), timeZone).getTime() - 1)
+    : clubLocalDayStartUtc(value, timeZone);
+  return Number.isNaN(bound.getTime()) ? null : bound;
 }

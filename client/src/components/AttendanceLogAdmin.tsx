@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { isAdmin } from '../utils/auth';
 import api from '../utils/api';
+import { formatClubDateTime } from '../utils/clubDateTime';
 import { getErrorMessage } from '../utils/errorHandler';
 import { connectSocket, getSocket } from '../utils/socket';
-import { MemberPlanScreen } from './players/MemberPlanScreen';
 
 type VisitRow = {
   id: number;
@@ -21,6 +21,11 @@ type VisitRow = {
 };
 
 type StatusFilter = 'all' | 'present' | 'rejected';
+
+type MemberAttendanceTarget = {
+  memberId: number;
+  memberName: string;
+};
 
 const thStyle: CSSProperties = {
   textAlign: 'left',
@@ -43,13 +48,6 @@ const tdStyle: CSSProperties = {
   lineHeight: 1.35,
 };
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
-}
-
 const dateInputStyle: CSSProperties = {
   padding: '9px 11px',
   border: '1px solid #b9c7d8',
@@ -59,15 +57,312 @@ const dateInputStyle: CSSProperties = {
   fontWeight: 600,
 };
 
+function formatWhen(iso: string | null): string {
+  if (!iso) return '—';
+  const formatted = formatClubDateTime(iso);
+  return formatted === '—' ? iso : formatted;
+}
+
+function VisitFlags({ v }: { v: VisitRow }) {
+  const rejected = Boolean(v.rejectedAt);
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+      {rejected ? (
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            color: '#922b21',
+            background: '#fadbd8',
+            padding: '2px 6px',
+            borderRadius: '4px',
+          }}
+        >
+          Rejected
+        </span>
+      ) : null}
+      {rejected && v.rejectionReason ? (
+        <span style={{ fontSize: '12px', color: '#922b21' }}>{v.rejectionReason}</span>
+      ) : null}
+      {!rejected && v.isCourtesy ? (
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            color: '#9a7b0a',
+            background: '#fcf3cf',
+            padding: '2px 6px',
+            borderRadius: '4px',
+          }}
+        >
+          Courtesy{v.courtesyClearedAt ? ' (cleared)' : ''}
+        </span>
+      ) : null}
+      {!rejected && v.dailyPaymentApplied ? (
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            color: '#1a5276',
+            background: '#d6eaf8',
+            padding: '2px 6px',
+            borderRadius: '4px',
+          }}
+        >
+          Charged
+        </span>
+      ) : null}
+      {!rejected && v.closedBy ? (
+        <span style={{ fontSize: '11px', color: '#888' }}>{v.closedBy}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function MemberAttendancePopup({
+  memberId,
+  memberName,
+  onClose,
+}: {
+  memberId: number;
+  memberName: string;
+  onClose: () => void;
+}) {
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const requestSeq = useRef(0);
+  const debounceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (debounceRef.current != null) {
+      window.clearTimeout(debounceRef.current);
+    }
+    setLoading(true);
+    debounceRef.current = window.setTimeout(() => {
+      const seq = ++requestSeq.current;
+      const params: Record<string, string> = { memberId: String(memberId) };
+      if (dateFrom) params.from = dateFrom;
+      if (dateTo) params.to = dateTo;
+      api
+        .get('/club/admin/visits', { params })
+        .then((res) => {
+          if (seq !== requestSeq.current) return;
+          const rows: VisitRow[] = Array.isArray(res.data?.visits) ? res.data.visits : [];
+          // Newest check-in first (API already orders desc; keep client sort as safety).
+          rows.sort((a, b) => {
+            const tb = new Date(b.checkInAt).getTime();
+            const ta = new Date(a.checkInAt).getTime();
+            return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+          });
+          setVisits(rows);
+          setError('');
+        })
+        .catch((err) => {
+          if (seq !== requestSeq.current) return;
+          setVisits([]);
+          setError(getErrorMessage(err, 'Failed to load member attendance'));
+        })
+        .finally(() => {
+          if (seq === requestSeq.current) setLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      if (debounceRef.current != null) {
+        window.clearTimeout(debounceRef.current);
+      }
+    };
+  }, [memberId, dateFrom, dateTo]);
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.45)',
+        zIndex: 20000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Attendance for ${memberName}`}
+        style={{
+          maxWidth: '720px',
+          width: '100%',
+          maxHeight: '90vh',
+          margin: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+            flexShrink: 0,
+          }}
+        >
+          <h3 style={{ margin: 0 }}>
+            Attendance — {memberName} ({memberId})
+          </h3>
+          <button type="button" onClick={onClose} style={{ padding: '6px 12px', cursor: 'pointer' }}>
+            Close
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '12px 16px',
+            alignItems: 'flex-end',
+            marginTop: '14px',
+            flexShrink: 0,
+          }}
+        >
+          <div>
+            <label
+              htmlFor="member-attendance-from"
+              style={{ display: 'block', margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}
+            >
+              From
+            </label>
+            <input
+              id="member-attendance-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              aria-label="Member attendance from date"
+              style={dateInputStyle}
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="member-attendance-to"
+              style={{ display: 'block', margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}
+            >
+              To
+            </label>
+            <input
+              id="member-attendance-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              aria-label="Member attendance to date"
+              style={dateInputStyle}
+            />
+          </div>
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom('');
+                setDateTo('');
+              }}
+              style={{ fontSize: '12px', marginBottom: '2px' }}
+            >
+              Clear dates
+            </button>
+          )}
+        </div>
+
+        {error ? <div className="error-message" style={{ marginTop: '10px', flexShrink: 0 }}>{error}</div> : null}
+        {loading ? (
+          <div style={{ marginTop: '10px', fontSize: '13px', color: '#666', flexShrink: 0 }}>Loading…</div>
+        ) : null}
+
+        <div
+          style={{
+            marginTop: '12px',
+            overflow: 'auto',
+            flex: '1 1 auto',
+            minHeight: 0,
+          }}
+        >
+          {!loading && visits.length === 0 && !error ? (
+            <div style={{ fontSize: '13px', color: '#888' }}>
+              {dateFrom || dateTo
+                ? 'No visits matched the selected date range.'
+                : 'No visits recorded for this member.'}
+            </div>
+          ) : null}
+
+          {!loading && visits.length > 0 ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Club date</th>
+                  <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Check-in</th>
+                  <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Check-out</th>
+                  <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Flags</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visits.map((v) => {
+                  const rejected = Boolean(v.rejectedAt);
+                  return (
+                    <tr key={v.id}>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>{v.clubDate}</td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatWhen(v.checkInAt)}</td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        {rejected ? (
+                          <span style={{ color: '#c0392b', fontWeight: 700 }}>Rejected</span>
+                        ) : v.checkOutAt ? (
+                          formatWhen(v.checkOutAt)
+                        ) : (
+                          <span style={{ color: '#1e8449', fontWeight: 700 }}>Present</span>
+                        )}
+                      </td>
+                      <td style={tdStyle}>
+                        <VisitFlags v={v} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AttendanceLogAdmin() {
   const [memberFilter, setMemberFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [presentCount, setPresentCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
+  const [selectedMember, setSelectedMember] = useState<MemberAttendanceTarget | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const debounceRef = useRef<number | null>(null);
   const requestSeq = useRef(0);
@@ -82,6 +377,24 @@ export default function AttendanceLogAdmin() {
       socket?.off('club:visitUpdated', onVisitUpdated);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin()) return;
+    let cancelled = false;
+    api
+      .get('/club/kiosk/present')
+      .then((res) => {
+        if (cancelled) return;
+        const count = Number(res.data?.presentCount);
+        setPresentCount(Number.isFinite(count) && count >= 0 ? count : 0);
+      })
+      .catch(() => {
+        if (!cancelled) setPresentCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshToken]);
 
   useEffect(() => {
     if (!isAdmin()) {
@@ -139,15 +452,19 @@ export default function AttendanceLogAdmin() {
   }
 
   const filtersActive = Boolean(memberFilter.trim() || dateFrom || dateTo || statusFilter !== 'all');
+  const presentLabel =
+    presentCount == null
+      ? 'Attendance Log'
+      : `Attendance Log (${presentCount} Present)`;
 
   return (
     <div style={{ paddingBottom: '16px' }}>
       <div style={{ marginBottom: '16px' }}>
         <h2
           style={{ margin: 0, display: 'inline-block', cursor: 'help' }}
-          title="Check-in and check-out history, newest first. Includes rejected check-in attempts."
+          title="Check-in and check-out history, newest first. Includes rejected check-in attempts. Click a member for their attendance history."
         >
-          Attendance Log
+          {presentLabel}
         </h2>
       </div>
 
@@ -281,7 +598,9 @@ export default function AttendanceLogAdmin() {
                     <td style={tdStyle}>
                       <button
                         type="button"
-                        onClick={() => setSelectedMemberId(v.memberId)}
+                        onClick={() =>
+                          setSelectedMember({ memberId: v.memberId, memberName: v.memberName })
+                        }
                         style={{
                           background: 'none',
                           border: 'none',
@@ -307,50 +626,7 @@ export default function AttendanceLogAdmin() {
                       )}
                     </td>
                     <td style={tdStyle}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {rejected ? (
-                          <span style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: '#922b21',
-                            background: '#fadbd8',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                          }}>
-                            Rejected
-                          </span>
-                        ) : null}
-                        {rejected && v.rejectionReason ? (
-                          <span style={{ fontSize: '12px', color: '#922b21' }}>{v.rejectionReason}</span>
-                        ) : null}
-                        {!rejected && v.isCourtesy ? (
-                          <span style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: '#9a7b0a',
-                            background: '#fcf3cf',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                          }}>
-                            Courtesy{v.courtesyClearedAt ? ' (cleared)' : ''}
-                          </span>
-                        ) : null}
-                        {!rejected && v.dailyPaymentApplied ? (
-                          <span style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: '#1a5276',
-                            background: '#d6eaf8',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                          }}>
-                            Charged
-                          </span>
-                        ) : null}
-                        {!rejected && v.closedBy ? (
-                          <span style={{ fontSize: '11px', color: '#888' }}>{v.closedBy}</span>
-                        ) : null}
-                      </div>
+                      <VisitFlags v={v} />
                     </td>
                   </tr>
                 );
@@ -360,10 +636,11 @@ export default function AttendanceLogAdmin() {
         </div>
       ) : null}
 
-      {selectedMemberId != null ? (
-        <MemberPlanScreen
-          memberId={selectedMemberId}
-          onClose={() => setSelectedMemberId(null)}
+      {selectedMember ? (
+        <MemberAttendancePopup
+          memberId={selectedMember.memberId}
+          memberName={selectedMember.memberName}
+          onClose={() => setSelectedMember(null)}
         />
       ) : null}
     </div>

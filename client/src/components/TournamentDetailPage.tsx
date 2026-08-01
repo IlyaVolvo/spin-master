@@ -13,6 +13,7 @@ import {
 } from '../utils/scrollPosition';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { isDateInRange } from '../utils/dateFormatter';
+import { addDaysToYmd, clubTodayYmd } from '../utils/clubDateTime';
 import { formatActiveTournamentRating } from '../utils/ratingFormatter';
 import { PlayoffBracket } from './tournaments/plugins/PlayoffBracket';
 import { MatchEntryPopup } from './MatchEntryPopup';
@@ -363,34 +364,24 @@ const TournamentDetailPage: React.FC = () => {
 
   useEffect(() => subscribeToSystemConfig(setSystemConfig), []);
 
-  // Calculate date range based on filter type
+  // Calculate date range based on filter type, in club-local calendar days
   const getDateRangeForType = (type: string): { start: string; end: string } => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // End of today
-    const endDate = today.toISOString().split('T')[0];
-    
+    const endDate = clubTodayYmd();
+
     let startDate = '';
-    
+
     switch (type) {
       case 'day':
         startDate = endDate;
         break;
       case 'week':
-        const weekAgo = new Date(today);
-        weekAgo.setDate(weekAgo.getDate() - 6); // 7 days including today
-        weekAgo.setHours(0, 0, 0, 0);
-        startDate = weekAgo.toISOString().split('T')[0];
+        startDate = addDaysToYmd(endDate, -6); // 7 days including today
         break;
       case 'month':
-        const monthAgo = new Date(today);
-        monthAgo.setDate(monthAgo.getDate() - 29); // 30 days including today
-        monthAgo.setHours(0, 0, 0, 0);
-        startDate = monthAgo.toISOString().split('T')[0];
+        startDate = addDaysToYmd(endDate, -29); // 30 days including today
         break;
       case 'year':
-        const yearStart = new Date(today.getFullYear(), 0, 1); // January 1st of current year
-        yearStart.setHours(0, 0, 0, 0);
-        startDate = yearStart.toISOString().split('T')[0];
+        startDate = `${endDate.slice(0, 4)}-01-01`;
         break;
       case 'custom':
         // Use existing dateFilterStart and dateFilterEnd
@@ -398,7 +389,7 @@ const TournamentDetailPage: React.FC = () => {
       default:
         return { start: '', end: '' };
     }
-    
+
     return { start: startDate, end: endDate };
   };
 

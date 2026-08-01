@@ -1,6 +1,7 @@
 import { prisma } from '../index';
 import { evaluateCourtesy, ensureCourtesyObligation, notifyAdminsOfCourtesy } from './courtesy';
 import { isMemberInTrialPeriod, trialEndsOnToYmd } from './memberTrial';
+import { clubLocalDayRangeUtc } from '../utils/clubDate';
 
 export type CheckInEntitlement = {
   id: number;
@@ -107,9 +108,7 @@ export async function resolveFirstVisitOfDay(opts: {
         where: {
           memberId,
           status: 'SUCCEEDED',
-          recordedAt: {
-            gte: new Date(clubDate + 'T00:00:00'),
-          },
+          recordedAt: clubLocalDayRangeUtc(clubDate, clubDate),
           purpose: { contains: 'per-visit' },
         },
       });

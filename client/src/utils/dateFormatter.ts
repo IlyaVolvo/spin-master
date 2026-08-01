@@ -2,6 +2,8 @@
  * Utility functions for formatting dates in tournaments
  */
 
+import { clubYmd } from './clubDateTime';
+
 /**
  * Compares two dates by year, month, and day (ignoring time)
  * Normalizes dates to UTC to avoid timezone issues
@@ -51,6 +53,7 @@ export function formatTournamentDates(
 
 /**
  * Checks if a date falls within a date range (inclusive)
+ * Range bounds are calendar days in the club timezone, matching the date pickers.
  * @param date - Date to check
  * @param startDate - Start of range (optional)
  * @param endDate - End of range (optional)
@@ -61,7 +64,7 @@ export function isDateInRange(
   startDate?: string | null,
   endDate?: string | null
 ): boolean {
-  const dateStr = date.toISOString().split('T')[0];
+  const dateStr = clubYmd(date);
 
   if (startDate && endDate) {
     return dateStr >= startDate && dateStr <= endDate;

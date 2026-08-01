@@ -8,6 +8,7 @@ import {
   getMatchDateRangesByRootId,
   rangesOverlap,
 } from '../utils/tournamentMatchDateRange';
+import { clubLocalInclusiveBound } from '../utils/clubDate';
 
 const router = express.Router();
 
@@ -48,14 +49,9 @@ function tournamentDetailInclude() {
   };
 }
 
-/** Parse YYYY-MM-DD into UTC day start/end for inclusive filtering. */
+/** Parse YYYY-MM-DD into club-local day start/end for inclusive filtering. */
 function parseInclusiveDateBound(value: unknown, endOfDay: boolean): Date | null {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return null;
-  }
-  const suffix = endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z';
-  const date = new Date(`${value}${suffix}`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return clubLocalInclusiveBound(value, endOfDay);
 }
 
 function attachMatchDateRange(tournament: any): any {

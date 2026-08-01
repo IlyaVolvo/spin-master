@@ -11,6 +11,7 @@ import {
 } from '../utils/scrollPosition';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { isDateInRange } from '../utils/dateFormatter';
+import { addDaysToYmd, clubTodayYmd, endOfMonthYmd, startOfMonthYmd } from '../utils/clubDateTime';
 import { EmptyState } from './EmptyState';
 import { EmptyActiveIcon, EmptyCalendarIcon, EmptyCompletedIcon, EmptySearchIcon } from './emptyStateIcons';
 import { TriStateCheckbox } from './TriStateCheckbox';
@@ -116,23 +117,17 @@ const Tournaments: React.FC = () => {
   const [cancelledFilter, setCancelledFilter] = useState<CancelledFilterMode>(() => loadCancelledFilterMode());
 
   const effectiveDateRange = useMemo(() => {
-    const now = new Date();
-    const toDateStr = (d: Date) => d.toISOString().split('T')[0];
+    const today = clubTodayYmd();
     if (dateFilterType === 'today') {
-      const day = toDateStr(now);
-      return { start: day, end: day };
+      return { start: today, end: today };
     }
     if (dateFilterType === 'week') {
-      const day = now.getDay();
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
-      const end = new Date(start);
-      end.setDate(start.getDate() + 6);
-      return { start: toDateStr(start), end: toDateStr(end) };
+      const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+      const start = addDaysToYmd(today, -weekday);
+      return { start, end: addDaysToYmd(start, 6) };
     }
     if (dateFilterType === 'month') {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      return { start: toDateStr(start), end: toDateStr(end) };
+      return { start: startOfMonthYmd(today), end: endOfMonthYmd(today) };
     }
     if (dateFilterType === 'custom' && dateFilterStart && dateFilterEnd) {
       return { start: dateFilterStart, end: dateFilterEnd };

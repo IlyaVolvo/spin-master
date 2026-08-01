@@ -5,6 +5,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import api from '../utils/api';
 import { formatPlayerName, getNameDisplayOrder, setNameDisplayOrder, NameDisplayOrder } from '../utils/nameFormatter';
+import { addDaysToYmd, addMonthsToYmd, clubTodayYmd, clubYmd, pickedDayYmd } from '../utils/clubDateTime';
 import { saveScrollPosition, getScrollPosition, clearScrollPosition } from '../utils/scrollPosition';
 import { getMember, setMember, isOrganizer, isAdmin, isKioskMode, getKioskKind } from '../utils/auth';
 import { connectSocket, getSocket } from '../utils/socket';
@@ -728,30 +729,23 @@ const Players: React.FC = () => {
     // Map is truthy in JS, so we previously returned a stale empty Map after e.g. an
     // initial fetch failure then masked non-empty data.
 
-    // Calculate the date range based on selected time period
-    const now = new Date();
-    let startDate: Date;
-    let endDate: Date = now;
+    // Calculate the date range based on selected time period, in club-local days
+    const today = clubTodayYmd();
+    let startYmd: string;
+    let endYmd: string = today;
 
     if (gamesTimePeriod === 'today') {
-      startDate = new Date(now);
-      startDate.setHours(0, 0, 0, 0);
+      startYmd = today;
     } else if (gamesTimePeriod === 'week') {
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - 7);
-      startDate.setHours(0, 0, 0, 0);
+      startYmd = addDaysToYmd(today, -7);
     } else if (gamesTimePeriod === 'month') {
-      startDate = new Date(now);
-      startDate.setMonth(now.getMonth() - 1);
-      startDate.setHours(0, 0, 0, 0);
+      startYmd = addMonthsToYmd(today, -1);
     } else if (gamesTimePeriod === 'custom') {
       if (!gamesCustomStartDate || !gamesCustomEndDate) {
         return new Map<number, number>();
       }
-      startDate = new Date(gamesCustomStartDate);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(gamesCustomEndDate);
-      endDate.setHours(23, 59, 59, 999);
+      startYmd = pickedDayYmd(gamesCustomStartDate);
+      endYmd = pickedDayYmd(gamesCustomEndDate);
     } else if (gamesTimePeriod === 'all') {
       // For 'all', we don't filter by date - count all matches
       // We'll handle this in the forEach loop below
@@ -777,10 +771,10 @@ const Players: React.FC = () => {
         }
       } else {
         // Filter by date range
-        const matchDate = new Date(match.updatedAt || match.createdAt);
-        
+        const matchYmd = clubYmd(match.updatedAt || match.createdAt);
+
         // Check if match is within the date range
-        if (matchDate >= startDate && matchDate <= endDate) {
+        if (matchYmd >= startYmd && matchYmd <= endYmd) {
           // Count for player1 (member1Id)
           if (match.member1Id !== null && match.member1Id !== 0) {
             matchCounts.set(match.member1Id, (matchCounts.get(match.member1Id) || 0) + 1);

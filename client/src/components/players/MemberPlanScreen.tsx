@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../utils/api';
-import { formatClubDateTime } from '../../utils/clubDateTime';
+import { clubTodayYmd, formatClubDate, formatClubDateTime } from '../../utils/clubDateTime';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { isAdmin } from '../../utils/auth';
 import {
@@ -84,20 +84,12 @@ function formatMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function todayYmdLocal(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 function entitlementDetail(e: EntitlementView): string {
   if (e.type === 'VISIT_PACK') {
     return `${e.visitsRemaining ?? 0}/${e.visitsTotal ?? '?'} visits`;
   }
-  const to = e.validTo ? new Date(e.validTo).toLocaleDateString() : '—';
-  const from = new Date(e.validFrom).toLocaleDateString();
+  const to = e.validTo ? formatClubDate(e.validTo) : '—';
+  const from = formatClubDate(e.validFrom);
   return `${from} → ${to}`;
 }
 
@@ -206,7 +198,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   const [purchaseLineLabel, setPurchaseLineLabel] = useState('');
   /** Which plan row reflects the in-flight / last purchase outcome */
   const [statusTarget, setStatusTarget] = useState<'current' | 'future' | null>(null);
-  const [startDate, setStartDate] = useState(todayYmdLocal);
+  const [startDate, setStartDate] = useState(clubTodayYmd);
   const [payMethod, setPayMethod] = useState<'cash' | 'online'>('cash');
   const paymentAbortRef = useRef<AbortController | null>(null);
   const closedRef = useRef(false);
@@ -307,7 +299,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
 
   useEffect(() => {
     if (showStartDate && !startDate) {
-      setStartDate(todayYmdLocal());
+      setStartDate(clubTodayYmd());
     }
   }, [showStartDate, startDate]);
 
@@ -923,9 +915,9 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                     <input
                       type="date"
                       value={startDate}
-                      min={todayYmdLocal()}
+                      min={clubTodayYmd()}
                       disabled={busy}
-                      onChange={(e) => setStartDate(e.target.value || todayYmdLocal())}
+                      onChange={(e) => setStartDate(e.target.value || clubTodayYmd())}
                       style={{ padding: '8px', fontSize: '14px' }}
                     />
                   </label>

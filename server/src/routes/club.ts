@@ -1728,7 +1728,7 @@ router.get('/admin/members/search', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** GET /api/club/admin/visits — attendance log, newest first; optional `q`, `from`, `to`, `status=all|present|rejected` */
+/** GET /api/club/admin/visits — attendance log, newest first; optional `q`, `memberId`, `from`, `to`, `status=all|present|rejected` */
 router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) {
@@ -1744,6 +1744,9 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
     const dateFrom = parseYmd(req.query.from);
     const dateTo = parseYmd(req.query.to);
     const statusFilter = parseAttendanceStatusFilter(req.query);
+    const memberIdRaw = req.query.memberId != null ? Number(req.query.memberId) : NaN;
+    const memberIdFilter =
+      Number.isInteger(memberIdRaw) && memberIdRaw >= 1 ? memberIdRaw : null;
     const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
     const nameFilters = tokens.map((token) => ({
       OR: [
@@ -1765,6 +1768,7 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
     const visits = await prisma.clubVisit.findMany({
       where: {
         ...statusWhere,
+        ...(memberIdFilter != null ? { memberId: memberIdFilter } : {}),
         ...(clubDateFilter ? { clubDate: clubDateFilter } : {}),
         ...(nameFilters.length > 0
           ? {

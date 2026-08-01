@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import api from '../utils/api';
-import { formatClubDateTime } from '../utils/clubDateTime';
+import { formatClubDateTime, formatYmd } from '../utils/clubDateTime';
 import { getErrorMessage } from '../utils/errorHandler';
 import { MemberPlanScreen } from './players/MemberPlanScreen';
 
@@ -27,13 +27,6 @@ type PaymentsMemberLookupProps = {
 
 function formatMoney(cents: number): string {
   return `$${(Math.max(0, cents) / 100).toFixed(2)}`;
-}
-
-function formatEffectiveDate(ymd: string | null | undefined): string | null {
-  if (!ymd) return null;
-  const d = new Date(`${ymd}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return ymd;
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 const thStyle: CSSProperties = {
@@ -300,7 +293,7 @@ export function PaymentsMemberLookup({
             </thead>
             <tbody>
               {filteredPayments.map((p) => {
-                const effective = formatEffectiveDate(p.effectiveDate);
+                const effective = formatYmd(p.effectiveDate);
                 const isCashPending = p.status === 'PENDING' && p.provider === 'cash';
                 return (
                   <tr key={p.id}>

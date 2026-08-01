@@ -4,6 +4,7 @@ import { formatPlayerName } from '../../utils/nameFormatter';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
 import { storeCheckinPaymentUnlock } from '../../utils/checkinPaymentUnlock';
+import { formatClubDate } from '../../utils/clubDateTime';
 
 export type CheckinMemberStatus = {
   present: boolean;
@@ -40,7 +41,7 @@ function formatEntitlementLine(entitlement: EntitlementSummary): string | null {
   if (entitlement.validTo) {
     const d = new Date(entitlement.validTo);
     if (!Number.isNaN(d.getTime())) {
-      return `Plan valid until ${d.toLocaleDateString()}`;
+      return `Plan valid until ${formatClubDate(entitlement.validTo)}`;
     }
   }
   return null;

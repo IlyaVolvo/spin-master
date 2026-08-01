@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import api from '../utils/api';
 import { formatPlayerName } from '../utils/nameFormatter';
 import { getErrorMessage } from '../utils/errorHandler';
+import { formatClubDateTime } from '../utils/clubDateTime';
 
 type CourtesyVisitRow = {
   id: number;
@@ -86,7 +87,7 @@ export function CourtesyVisitsAdmin() {
                 </td>
                 <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>{v.clubDate}</td>
                 <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>
-                  {new Date(v.checkInAt).toLocaleString()}
+                  {formatClubDateTime(v.checkInAt)}
                 </td>
                 <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>
                   <button

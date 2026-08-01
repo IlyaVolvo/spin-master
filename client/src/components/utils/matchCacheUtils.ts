@@ -1,6 +1,14 @@
 // Module-level caches and utility functions for match data.
 // These have no React dependencies and are shared across components.
 
+import {
+  addDaysToYmd,
+  addMonthsToYmd,
+  clubTodayYmd,
+  clubYmd,
+  normalizeDayYmd,
+} from '../../utils/clubDateTime';
+
 export interface CachedMatch {
   id: number;
   member1Id: number;
@@ -192,27 +200,20 @@ function recalculateCountsForPlayers(playerIds: number[]) {
     const customStartDate = customStartStr && customStartStr !== '' ? customStartStr : null;
     const customEndDate = customEndStr && customEndStr !== '' ? customEndStr : null;
 
-    // Calculate date range for this cache entry
-    const now = new Date();
-    let startDate: Date;
-    let endDate: Date = now;
+    // Calculate date range for this cache entry, in club-local days
+    const today = clubTodayYmd();
+    let startYmd: string;
+    let endYmd: string = today;
 
     if (timePeriod === 'today') {
-      startDate = new Date(now);
-      startDate.setHours(0, 0, 0, 0);
+      startYmd = today;
     } else if (timePeriod === 'week') {
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - 7);
-      startDate.setHours(0, 0, 0, 0);
+      startYmd = addDaysToYmd(today, -7);
     } else if (timePeriod === 'month') {
-      startDate = new Date(now);
-      startDate.setMonth(now.getMonth() - 1);
-      startDate.setHours(0, 0, 0, 0);
+      startYmd = addMonthsToYmd(today, -1);
     } else if (timePeriod === 'custom' && customStartDate && customEndDate) {
-      startDate = new Date(customStartDate);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(customEndDate);
-      endDate.setHours(23, 59, 59, 999);
+      startYmd = normalizeDayYmd(customStartDate);
+      endYmd = normalizeDayYmd(customEndDate);
     } else if (timePeriod === 'all') {
       // For 'all', count all matches regardless of date
       playerIds.forEach(playerId => {
@@ -235,8 +236,8 @@ function recalculateCountsForPlayers(playerIds: number[]) {
       let count = 0;
       matchesCache.data!.forEach(m => {
         if (!matchCountsAsGamesPlayed(m)) return;
-        const mDate = new Date(m.updatedAt || m.createdAt);
-        if (mDate >= startDate && mDate <= endDate) {
+        const mYmd = clubYmd(m.updatedAt || m.createdAt);
+        if (mYmd >= startYmd && mYmd <= endYmd) {
           if (m.member1Id === playerId || m.member2Id === playerId) {
             count++;
           }
