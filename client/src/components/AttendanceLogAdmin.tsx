@@ -29,8 +29,8 @@ type MemberAttendanceTarget = {
 
 const thStyle: CSSProperties = {
   textAlign: 'left',
-  padding: '8px 8px',
-  fontSize: '11px',
+  padding: '4px 8px',
+  fontSize: '10px',
   fontWeight: 700,
   color: '#3c7890',
   textTransform: 'uppercase',
@@ -40,12 +40,13 @@ const thStyle: CSSProperties = {
 };
 
 const tdStyle: CSSProperties = {
-  padding: '8px',
+  padding: '3px 8px',
   borderBottom: '1px solid #eee',
-  fontSize: '13px',
+  fontSize: '12px',
   color: '#17324d',
-  verticalAlign: 'top',
-  lineHeight: 1.35,
+  verticalAlign: 'middle',
+  lineHeight: 1.25,
+  whiteSpace: 'nowrap',
 };
 
 const dateInputStyle: CSSProperties = {
@@ -63,59 +64,63 @@ function formatWhen(iso: string | null): string {
   return formatted === '—' ? iso : formatted;
 }
 
-function VisitFlags({ v }: { v: VisitRow }) {
-  const rejected = Boolean(v.rejectedAt);
+function visitStatusSummary(v: VisitRow): {
+  label: string;
+  tooltip: string;
+  color: string;
+  background: string;
+} {
+  if (v.rejectedAt) {
+    const reason = v.rejectionReason?.trim();
+    return {
+      label: 'Rejected',
+      tooltip: reason || 'Check-in rejected',
+      color: '#922b21',
+      background: '#fadbd8',
+    };
+  }
+  if (!v.checkOutAt) {
+    const bits: string[] = ['Currently present'];
+    if (v.isCourtesy) bits.push(v.courtesyClearedAt ? 'Courtesy (cleared)' : 'Courtesy');
+    if (v.dailyPaymentApplied) bits.push('Charged');
+    return {
+      label: 'Present',
+      tooltip: bits.join(' · '),
+      color: '#1e8449',
+      background: '#d5f5e3',
+    };
+  }
+  const bits: string[] = ['Checked out'];
+  if (v.closedBy) bits.push(`Closed by ${v.closedBy}`);
+  if (v.isCourtesy) bits.push(v.courtesyClearedAt ? 'Courtesy (cleared)' : 'Courtesy');
+  if (v.dailyPaymentApplied) bits.push('Charged');
+  return {
+    label: 'Out',
+    tooltip: bits.join(' · '),
+    color: '#566573',
+    background: '#eaecee',
+  };
+}
+
+function VisitStatus({ v }: { v: VisitRow }) {
+  const status = visitStatusSummary(v);
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-      {rejected ? (
-        <span
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: '#922b21',
-            background: '#fadbd8',
-            padding: '2px 6px',
-            borderRadius: '4px',
-          }}
-        >
-          Rejected
-        </span>
-      ) : null}
-      {rejected && v.rejectionReason ? (
-        <span style={{ fontSize: '12px', color: '#922b21' }}>{v.rejectionReason}</span>
-      ) : null}
-      {!rejected && v.isCourtesy ? (
-        <span
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: '#9a7b0a',
-            background: '#fcf3cf',
-            padding: '2px 6px',
-            borderRadius: '4px',
-          }}
-        >
-          Courtesy{v.courtesyClearedAt ? ' (cleared)' : ''}
-        </span>
-      ) : null}
-      {!rejected && v.dailyPaymentApplied ? (
-        <span
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: '#1a5276',
-            background: '#d6eaf8',
-            padding: '2px 6px',
-            borderRadius: '4px',
-          }}
-        >
-          Charged
-        </span>
-      ) : null}
-      {!rejected && v.closedBy ? (
-        <span style={{ fontSize: '11px', color: '#888' }}>{v.closedBy}</span>
-      ) : null}
-    </div>
+    <span
+      title={status.tooltip}
+      style={{
+        display: 'inline-block',
+        fontSize: '11px',
+        fontWeight: 700,
+        color: status.color,
+        background: status.background,
+        padding: '2px 6px',
+        borderRadius: '4px',
+        whiteSpace: 'nowrap',
+        cursor: 'help',
+      }}
+    >
+      {status.label}
+    </span>
   );
 }
 
@@ -313,33 +318,24 @@ function MemberAttendancePopup({
           ) : null}
 
           {!loading && visits.length > 0 ? (
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
+            <table style={{ width: 'max-content', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Club date</th>
                   <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Check-in</th>
                   <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Check-out</th>
-                  <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Flags</th>
+                  <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {visits.map((v) => {
-                  const rejected = Boolean(v.rejectedAt);
                   return (
                     <tr key={v.id}>
-                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>{v.clubDate}</td>
-                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatWhen(v.checkInAt)}</td>
-                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                        {rejected ? (
-                          <span style={{ color: '#c0392b', fontWeight: 700 }}>Rejected</span>
-                        ) : v.checkOutAt ? (
-                          formatWhen(v.checkOutAt)
-                        ) : (
-                          <span style={{ color: '#1e8449', fontWeight: 700 }}>Present</span>
-                        )}
+                      <td style={tdStyle}>{formatWhen(v.checkInAt)}</td>
+                      <td style={tdStyle}>
+                        {v.checkOutAt && !v.rejectedAt ? formatWhen(v.checkOutAt) : '—'}
                       </td>
                       <td style={tdStyle}>
-                        <VisitFlags v={v} />
+                        <VisitStatus v={v} />
                       </td>
                     </tr>
                   );
@@ -477,7 +473,7 @@ export default function AttendanceLogAdmin() {
           marginBottom: '4px',
         }}
       >
-        <div style={{ flex: '1 1 220px', maxWidth: '420px' }}>
+        <div style={{ flex: '0 1 180px', maxWidth: '180px' }}>
           <label
             htmlFor="attendance-member-filter"
             style={{ display: 'block', margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}
@@ -579,22 +575,19 @@ export default function AttendanceLogAdmin() {
 
       {!loading && visits.length > 0 ? (
         <div style={{ overflowX: 'auto', marginTop: '10px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
+          <table style={{ width: 'max-content', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={thStyle}>Club date</th>
                 <th style={thStyle}>Member</th>
                 <th style={thStyle}>Check-in</th>
                 <th style={thStyle}>Check-out</th>
-                <th style={thStyle}>Flags</th>
+                <th style={thStyle}>Status</th>
               </tr>
             </thead>
             <tbody>
               {visits.map((v) => {
-                const rejected = Boolean(v.rejectedAt);
                 return (
                   <tr key={v.id}>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>{v.clubDate}</td>
                     <td style={tdStyle}>
                       <button
                         type="button"
@@ -610,23 +603,18 @@ export default function AttendanceLogAdmin() {
                           cursor: 'pointer',
                           textDecoration: 'underline',
                           textAlign: 'left',
+                          fontSize: 'inherit',
                         }}
                       >
                         {v.memberName} ({v.memberId})
                       </button>
                     </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatWhen(v.checkInAt)}</td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      {rejected ? (
-                        <span style={{ color: '#c0392b', fontWeight: 700 }}>Rejected</span>
-                      ) : v.checkOutAt ? (
-                        formatWhen(v.checkOutAt)
-                      ) : (
-                        <span style={{ color: '#1e8449', fontWeight: 700 }}>Present</span>
-                      )}
+                    <td style={tdStyle}>{formatWhen(v.checkInAt)}</td>
+                    <td style={tdStyle}>
+                      {v.checkOutAt && !v.rejectedAt ? formatWhen(v.checkOutAt) : '—'}
                     </td>
                     <td style={tdStyle}>
-                      <VisitFlags v={v} />
+                      <VisitStatus v={v} />
                     </td>
                   </tr>
                 );
