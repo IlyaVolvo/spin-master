@@ -400,6 +400,103 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Cron Endpoints (no session auth; protected by x-club-cron-secret) ───────
+
+/**
+ * POST /api/club/cron/auto-checkout
+ * Closes stale open visits (clubDate < today club-local), stamping checkOutAt at each day's club close.
+ * Protected by x-club-cron-secret header.
+ * Body (optional): { "clubDate": "YYYY-MM-DD" } — targeted single-day run; omit for all stale open visits.
+ */
+router.post('/cron/auto-checkout', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+
+    const clubDate =
+      typeof req.body?.clubDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clubDate.trim())
+        ? req.body.clubDate.trim()
+        : undefined;
+    const result = await runAutoCheckout(clubDate ? { clubDate } : undefined);
+    res.json(result);
+  } catch (error) {
+    logger.error('Error during auto-checkout', { error: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/club/cron/payment-reminders — preemptive entitlement reminder emails
+ */
+router.post('/cron/payment-reminders', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+
+    const { sendPreemptivePaymentReminders } = await import('../payments/reminderCron');
+    const result = await sendPreemptivePaymentReminders();
+    res.json(result);
+  } catch (error) {
+    logger.error('Error sending payment reminders', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/club/cron/reconcile-payments — backup confirm for PENDING payments
+ */
+router.post('/cron/reconcile-payments', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+
+    const { reconcilePendingPayments } = await import('../payments/reconcilePending');
+    const result = await reconcilePendingPayments();
+    res.json(result);
+  } catch (error) {
+    logger.error('Error reconciling payments', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/club/cron/midnight — promote future entitlements + auto-renew
+ */
+router.post('/cron/midnight', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+
+    const { runClubMidnightJobs } = await import('../payments/midnightJobs');
+    const result = await runClubMidnightJobs({
+      clubDate: typeof req.body?.clubDate === 'string' ? req.body.clubDate : undefined,
+    });
+    res.json(result);
+  } catch (error) {
+    logger.error('Error running club midnight jobs', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── Authenticated Endpoints ─────────────────────────────────────────────────
 
 router.use(authenticate);
@@ -1226,35 +1323,6 @@ router.get('/admin/plan-price-suggestion', async (req: AuthRequest, res: Respons
   }
 });
 
-// ─── Cron Endpoint ───────────────────────────────────────────────────────────
-
-/**
- * POST /api/club/cron/auto-checkout
- * Closes stale open visits (clubDate < today club-local), stamping checkOutAt at each day's club close.
- * Protected by x-club-cron-secret header.
- * Body (optional): { "clubDate": "YYYY-MM-DD" } — targeted single-day run; omit for all stale open visits.
- */
-router.post('/cron/auto-checkout', async (req: Request, res: Response) => {
-  try {
-    const cronSecret = process.env.CLUB_CRON_SECRET;
-    const providedSecret = req.headers['x-club-cron-secret'];
-
-    if (cronSecret && providedSecret !== cronSecret) {
-      return res.status(403).json({ error: 'Invalid cron secret' });
-    }
-
-    const clubDate =
-      typeof req.body?.clubDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clubDate.trim())
-        ? req.body.clubDate.trim()
-        : undefined;
-    const result = await runAutoCheckout(clubDate ? { clubDate } : undefined);
-    res.json(result);
-  } catch (error) {
-    logger.error('Error during auto-checkout', { error: error instanceof Error ? error.message : String(error) });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 /**
  * POST /api/club/admin/close-club
  * Admin bulk checkout of everyone still present. closedBy=AUTO.
@@ -1361,74 +1429,6 @@ router.post('/admin/members/:id/courtesy-suspend', async (req: AuthRequest, res:
     res.json({ member });
   } catch (error) {
     logger.error('Error updating courtesy suspend', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * POST /api/club/cron/payment-reminders — preemptive entitlement reminder emails
- */
-router.post('/cron/payment-reminders', async (req: Request, res: Response) => {
-  try {
-    const cronSecret = process.env.CLUB_CRON_SECRET;
-    const providedSecret = req.headers['x-club-cron-secret'];
-    if (cronSecret && providedSecret !== cronSecret) {
-      return res.status(403).json({ error: 'Invalid cron secret' });
-    }
-
-    const { sendPreemptivePaymentReminders } = await import('../payments/reminderCron');
-    const result = await sendPreemptivePaymentReminders();
-    res.json(result);
-  } catch (error) {
-    logger.error('Error sending payment reminders', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * POST /api/club/cron/reconcile-payments — backup confirm for PENDING payments
- */
-router.post('/cron/reconcile-payments', async (req: Request, res: Response) => {
-  try {
-    const cronSecret = process.env.CLUB_CRON_SECRET;
-    const providedSecret = req.headers['x-club-cron-secret'];
-    if (cronSecret && providedSecret !== cronSecret) {
-      return res.status(403).json({ error: 'Invalid cron secret' });
-    }
-
-    const { reconcilePendingPayments } = await import('../payments/reconcilePending');
-    const result = await reconcilePendingPayments();
-    res.json(result);
-  } catch (error) {
-    logger.error('Error reconciling payments', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * POST /api/club/cron/midnight — promote future entitlements + auto-renew
- */
-router.post('/cron/midnight', async (req: Request, res: Response) => {
-  try {
-    const cronSecret = process.env.CLUB_CRON_SECRET;
-    const providedSecret = req.headers['x-club-cron-secret'];
-    if (cronSecret && providedSecret !== cronSecret) {
-      return res.status(403).json({ error: 'Invalid cron secret' });
-    }
-
-    const { runClubMidnightJobs } = await import('../payments/midnightJobs');
-    const result = await runClubMidnightJobs({
-      clubDate: typeof req.body?.clubDate === 'string' ? req.body.clubDate : undefined,
-    });
-    res.json(result);
-  } catch (error) {
-    logger.error('Error running club midnight jobs', {
       error: error instanceof Error ? error.message : String(error),
     });
     res.status(500).json({ error: 'Internal server error' });
