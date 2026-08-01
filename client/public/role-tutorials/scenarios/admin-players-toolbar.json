@@ -1,0 +1,23 @@
+{
+  "slug": "admin-players-toolbar",
+  "role": "admin",
+  "title": "Admin Players toolbar",
+  "description": "Full administration toolbar: + Player, + Match, Stats, and more.",
+  "relatedSlugs": [
+    "admin-add-player",
+    "admin-sign-in"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "toolbar",
+      "title": "Toolbar",
+      "body": "Admins combine member administration with match tools on Players.",
+      "image": "assets/admin-players-toolbar/step-01.png",
+      "actionHint": "Click + Player"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "slug": "admin-settings-hours",
+  "role": "admin",
+  "title": "Club open / close hours",
+  "description": "Expand Open / Close hours to set weekly hours and date overrides.",
+  "relatedSlugs": [
+    "admin-system-settings",
+    "admin-attendance-log"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "hours",
+      "title": "Hours section",
+      "body": "Configure weekday hours, closed days, and single-date overrides used by check-in and auto check-out.",
+      "image": "assets/admin-settings-hours/step-01.png",
+      "actionHint": "Open hours section"
+    }
+  ]
+}

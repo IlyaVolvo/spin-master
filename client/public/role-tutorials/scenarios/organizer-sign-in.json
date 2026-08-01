@@ -1,0 +1,30 @@
+{
+  "slug": "organizer-sign-in",
+  "role": "organizer",
+  "title": "Sign in as an organizer",
+  "description": "Sign in with an organizer account and see tournament tools on Players.",
+  "relatedSlugs": [
+    "organizer-create-round-robin",
+    "organizer-tournaments-active"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "login-form",
+      "title": "Login screen",
+      "body": "Use the tutorial demo account for this role. Click Sign in after the credentials are filled.",
+      "image": "assets/organizer-sign-in/step-01.png",
+      "actionHint": "Click Sign in"
+    },
+    {
+      "id": "players-toolbar",
+      "title": "Organizer toolbar",
+      "body": "Organizers see + Tournament and usually + Match on the Players page.",
+      "image": "assets/organizer-sign-in/step-02.png",
+      "actionHint": "Click + Tournament"
+    }
+  ]
+}

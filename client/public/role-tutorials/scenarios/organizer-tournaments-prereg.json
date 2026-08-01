@@ -1,0 +1,23 @@
+{
+  "slug": "organizer-tournaments-prereg",
+  "role": "organizer",
+  "title": "Pre-registration tournaments",
+  "description": "Switch to the Pre-Registration stage on the tournaments list.",
+  "relatedSlugs": [
+    "organizer-preregistration",
+    "organizer-tournaments-active"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "prereg-tab",
+      "title": "Pre-Registration tab",
+      "body": "Pre-Registration lists events still collecting sign-ups. Finalize or cancel from the event detail.",
+      "image": "assets/organizer-tournaments-prereg/step-01.png",
+      "actionHint": "Open Pre-Registration"
+    }
+  ]
+}

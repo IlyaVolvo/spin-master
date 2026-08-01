@@ -1,0 +1,21 @@
+{
+  "slug": "admin-checkin-present-filter",
+  "role": "admin",
+  "title": "Kiosk Present filter",
+  "description": "In check-in kiosk, toggle Present to focus on who is already in the club.",
+  "relatedSlugs": [
+    "admin-enter-checkin-kiosk"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "present",
+      "title": "Present filter",
+      "body": "Present narrows the roster to members currently checked in.",
+      "image": "assets/admin-checkin-present-filter/step-01.png"
+    }
+  ]
+}

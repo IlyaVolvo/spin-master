@@ -1,0 +1,29 @@
+{
+  "slug": "organizer-record-match",
+  "role": "organizer",
+  "title": "Record a casual match",
+  "description": "Organizers can also record casual matches from Players with + Match.",
+  "relatedSlugs": [
+    "player-record-match",
+    "organizer-sign-in"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "match",
+      "title": "Start match recording",
+      "body": "Click + Match, then pick players on the roster.",
+      "image": "assets/organizer-record-match/step-01.png",
+      "actionHint": "Click + Match"
+    },
+    {
+      "id": "selection",
+      "title": "Selection mode",
+      "body": "Choose participants, then continue into scoring when prompted.",
+      "image": "assets/organizer-record-match/step-02.png"
+    }
+  ]
+}

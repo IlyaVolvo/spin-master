@@ -1,0 +1,29 @@
+{
+  "slug": "admin-edit-member",
+  "role": "admin",
+  "title": "Edit a member",
+  "description": "Open a member edit control from the Players table.",
+  "relatedSlugs": [
+    "admin-add-player",
+    "admin-member-plan"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "edit",
+      "title": "Edit member",
+      "body": "Use the row edit control to change profile, roles, and admin-only fields.",
+      "image": "assets/admin-edit-member/step-01.png",
+      "actionHint": "Click Edit member profile"
+    },
+    {
+      "id": "editor",
+      "title": "Member editor",
+      "body": "Adjust roles (Player / Organizer / Admin / Coach), ratings, and account flags, then save.",
+      "image": "assets/admin-edit-member/step-02.png"
+    }
+  ]
+}

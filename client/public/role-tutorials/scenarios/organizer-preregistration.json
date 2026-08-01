@@ -1,0 +1,29 @@
+{
+  "slug": "organizer-preregistration",
+  "role": "organizer",
+  "title": "Pre-registration mode",
+  "description": "Enable pre-registration on the type modal to collect sign-ups before the event starts.",
+  "relatedSlugs": [
+    "organizer-create-round-robin",
+    "organizer-tournaments-prereg"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "open-wizard",
+      "title": "Tournament type modal",
+      "body": "Open + Tournament to reach the type modal.",
+      "image": "assets/organizer-preregistration/step-01.png"
+    },
+    {
+      "id": "enable-prereg",
+      "title": "Pre-registration checkbox",
+      "body": "Check Pre-registration mode to collect date, deadline, rating bounds, and max participants. The primary button becomes Create Pre-registration.",
+      "image": "assets/organizer-preregistration/step-02.png",
+      "actionHint": "Enable Pre-registration mode"
+    }
+  ]
+}

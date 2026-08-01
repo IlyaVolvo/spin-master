@@ -1,0 +1,22 @@
+{
+  "slug": "organizer-day-of-tools",
+  "role": "organizer",
+  "title": "Day-of tournament tools",
+  "description": "On an active event, locate scoring and related day-of controls.",
+  "relatedSlugs": [
+    "organizer-open-active-tournament",
+    "organizer-abandon-hint"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "day-of",
+      "title": "Day-of chrome",
+      "body": "Look for score entry, schedule, and print. Exact controls vary by tournament type.",
+      "image": "assets/organizer-day-of-tools/step-01.png"
+    }
+  ]
+}

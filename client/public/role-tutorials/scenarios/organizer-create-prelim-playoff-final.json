@@ -1,0 +1,30 @@
+{
+  "slug": "organizer-create-prelim-playoff-final",
+  "role": "organizer",
+  "title": "Create Preliminary + Playoff Final",
+  "description": "Open the tournament wizard and select Playoff Final.",
+  "relatedSlugs": [
+    "organizer-sign-in",
+    "organizer-player-selection"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "open-wizard",
+      "title": "Open tournament wizard",
+      "body": "From Players, use + Tournament to choose a format.",
+      "image": "assets/organizer-create-prelim-playoff-final/step-01.png",
+      "actionHint": "Click + Tournament"
+    },
+    {
+      "id": "select-type",
+      "title": "Select Playoff Final",
+      "body": "Expand Preliminary, choose Playoff Final, then set qualifiers per group and bracket options.",
+      "image": "assets/organizer-create-prelim-playoff-final/step-02.png",
+      "actionHint": "Select Playoff Final"
+    }
+  ]
+}

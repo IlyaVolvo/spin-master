@@ -1,0 +1,23 @@
+{
+  "slug": "organizer-tournaments-active",
+  "role": "organizer",
+  "title": "Active tournaments",
+  "description": "Open Tournaments and review the Active stage tab.",
+  "relatedSlugs": [
+    "organizer-tournaments-prereg",
+    "organizer-tournaments-completed"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "active",
+      "title": "Active stage",
+      "body": "Active holds running events. Open one for day-of scoring, schedule, and print tools.",
+      "image": "assets/organizer-tournaments-active/step-01.png",
+      "actionHint": "Open Active tab"
+    }
+  ]
+}

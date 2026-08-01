@@ -1,0 +1,21 @@
+{
+  "slug": "organizer-repeat-hint",
+  "role": "organizer",
+  "title": "Repeat a past setup",
+  "description": "Completed tournaments are the starting point for repeating a prior configuration.",
+  "relatedSlugs": [
+    "organizer-tournaments-completed"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "completed-list",
+      "title": "Completed list",
+      "body": "Open a completed event to look for Repeat / re-create style actions when the UI offers them.",
+      "image": "assets/organizer-repeat-hint/step-01.png"
+    }
+  ]
+}

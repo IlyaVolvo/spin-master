@@ -1,0 +1,23 @@
+{
+  "slug": "admin-settings-tournament-rules",
+  "role": "admin",
+  "title": "Tournament rules settings",
+  "description": "Expand Tournament Rules for format minima and match score bounds.",
+  "relatedSlugs": [
+    "admin-system-settings",
+    "organizer-create-round-robin"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "rules",
+      "title": "Tournament Rules",
+      "body": "Tune Round Robin, Playoff, Swiss, Multi RR, Preliminary formats, and match score limits.",
+      "image": "assets/admin-settings-tournament-rules/step-01.png",
+      "actionHint": "Open Tournament Rules"
+    }
+  ]
+}

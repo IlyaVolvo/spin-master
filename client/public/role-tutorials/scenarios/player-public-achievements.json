@@ -1,0 +1,21 @@
+{
+  "slug": "player-public-achievements",
+  "role": "player",
+  "title": "Public achievements",
+  "description": "Open the public achievements page from the app when the Public link is available.",
+  "relatedSlugs": [
+    "player-sign-in"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "public",
+      "title": "Public achievements",
+      "body": "Public pages showcase club achievements without requiring admin tools.",
+      "image": "assets/player-public-achievements/step-01.png"
+    }
+  ]
+}

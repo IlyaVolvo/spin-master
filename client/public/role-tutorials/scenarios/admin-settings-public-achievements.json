@@ -1,0 +1,22 @@
+{
+  "slug": "admin-settings-public-achievements",
+  "role": "admin",
+  "title": "Public achievements settings",
+  "description": "Configure which achievement categories appear on public pages.",
+  "relatedSlugs": [
+    "admin-system-settings",
+    "player-public-achievements"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "achievements",
+      "title": "Public Achievements",
+      "body": "Toggle categories and use Apply to all when bulk-updating visibility.",
+      "image": "assets/admin-settings-public-achievements/step-01.png"
+    }
+  ]
+}

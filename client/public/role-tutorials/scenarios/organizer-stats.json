@@ -1,0 +1,21 @@
+{
+  "slug": "organizer-stats",
+  "role": "organizer",
+  "title": "Organizer statistics",
+  "description": "Open Stats from the Players toolbar.",
+  "relatedSlugs": [
+    "player-statistics"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "stats",
+      "title": "Stats",
+      "body": "Statistics are available to organizers from the same toolbar entry as players.",
+      "image": "assets/organizer-stats/step-01.png"
+    }
+  ]
+}

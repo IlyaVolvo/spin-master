@@ -1,0 +1,22 @@
+{
+  "slug": "organizer-abandon-hint",
+  "role": "organizer",
+  "title": "Abandon / stop controls",
+  "description": "Find destructive end-of-event actions (Abandon / Early Completion) on an active tournament.",
+  "relatedSlugs": [
+    "organizer-day-of-tools",
+    "organizer-open-active-tournament"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "controls",
+      "title": "End-of-event actions",
+      "body": "Abandon stops an event without normal completion. Early Completion finishes early when rules allow. Prefer these only with intent.",
+      "image": "assets/organizer-abandon-hint/step-01.png"
+    }
+  ]
+}

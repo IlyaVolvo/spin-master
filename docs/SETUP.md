@@ -5,6 +5,18 @@
 - npm
 - PostgreSQL-compatible database (local Postgres or Supabase)
 
+## Interactive role tutorials (optional)
+
+Static walkthroughs live at `/role-tutorials/` (no auth). To re-record from the real UI:
+
+1. Create a dedicated DB whose name includes `tutorial` (e.g. `createdb spin_master_tutorials`).
+2. Set `DATABASE_URL_TUTORIAL` in `server/.env` (see `server/env.example`).
+3. `cd server && npm run tutorials:reset-seed`
+4. Start the API with `DATABASE_URL` pointing at that same tutorial database (and the Vite client as usual).
+5. `cd server && npm run tutorials:capture`
+
+Details: `docs/INTERACTIVE_ROLE_TUTORIALS_PLAN.md`.
+
 ## 1) Install dependencies
 
 From project root:

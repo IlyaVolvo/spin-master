@@ -1,0 +1,22 @@
+{
+  "slug": "admin-payment-provider",
+  "role": "admin",
+  "title": "Payment provider & courtesy settings",
+  "description": "On Payment Plans, review provider configuration, reminders, trial, and courtesy knobs.",
+  "relatedSlugs": [
+    "admin-payment-plans",
+    "admin-courtesy-visits"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "provider",
+      "title": "Provider & courtesy",
+      "body": "Set provider, online-pay defaults, courtesy grace, trial days, and reminder thresholds. Save with Save Payments Settings.",
+      "image": "assets/admin-payment-provider/step-01.png"
+    }
+  ]
+}

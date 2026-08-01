@@ -1,0 +1,29 @@
+{
+  "slug": "admin-add-player",
+  "role": "admin",
+  "title": "Add a player",
+  "description": "Start the + Player flow from the Players toolbar.",
+  "relatedSlugs": [
+    "admin-sign-in",
+    "admin-edit-member"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "add",
+      "title": "+ Player",
+      "body": "Administrators create members with + Player, including email invite / password setup flows.",
+      "image": "assets/admin-add-player/step-01.png",
+      "actionHint": "Click + Player"
+    },
+    {
+      "id": "form",
+      "title": "New player form",
+      "body": "Fill required member fields and save. New members may need password reset or trial settings.",
+      "image": "assets/admin-add-player/step-02.png"
+    }
+  ]
+}

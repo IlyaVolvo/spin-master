@@ -1,0 +1,28 @@
+{
+  "slug": "player-statistics",
+  "role": "player",
+  "title": "Statistics",
+  "description": "Open Statistics for personal and club performance views.",
+  "relatedSlugs": [
+    "player-history"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "stats",
+      "title": "Statistics page",
+      "body": "Use Stats from the Players toolbar or navigate to Statistics to explore results.",
+      "image": "assets/player-statistics/step-01.png",
+      "actionHint": "Click Stats"
+    },
+    {
+      "id": "stats-page",
+      "title": "Statistics content",
+      "body": "Review ratings, results, and related analytics available to members.",
+      "image": "assets/player-statistics/step-02.png"
+    }
+  ]
+}

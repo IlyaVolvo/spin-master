@@ -1,0 +1,22 @@
+{
+  "slug": "admin-settings-core",
+  "role": "admin",
+  "title": "Core & operations settings",
+  "description": "Open Core Settings and Operations Settings accordions.",
+  "relatedSlugs": [
+    "admin-system-settings",
+    "admin-settings-public-achievements"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "core",
+      "title": "Core Settings",
+      "body": "Core and Operations cover auth policy, preregistration defaults, and runtime options.",
+      "image": "assets/admin-settings-core/step-01.png"
+    }
+  ]
+}

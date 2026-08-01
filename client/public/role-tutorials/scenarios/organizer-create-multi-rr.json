@@ -1,0 +1,30 @@
+{
+  "slug": "organizer-create-multi-rr",
+  "role": "organizer",
+  "title": "Create Multi Round Robin",
+  "description": "Open the tournament wizard and select Multi Round Robin.",
+  "relatedSlugs": [
+    "organizer-sign-in",
+    "organizer-player-selection"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "open-wizard",
+      "title": "Open tournament wizard",
+      "body": "From Players, use + Tournament to choose a format.",
+      "image": "assets/organizer-create-multi-rr/step-01.png",
+      "actionHint": "Click + Tournament"
+    },
+    {
+      "id": "select-type",
+      "title": "Select Multi Round Robin",
+      "body": "Multi Round Robin splits the field into several RR groups. Select it, then configure group size.",
+      "image": "assets/organizer-create-multi-rr/step-02.png",
+      "actionHint": "Select Multi Round Robin"
+    }
+  ]
+}

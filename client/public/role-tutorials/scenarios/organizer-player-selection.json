@@ -1,0 +1,23 @@
+{
+  "slug": "organizer-player-selection",
+  "role": "organizer",
+  "title": "Select tournament players",
+  "description": "After choosing a type, advance to the shared player selection step.",
+  "relatedSlugs": [
+    "organizer-create-round-robin",
+    "organizer-sign-in"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "player-select",
+      "title": "Player selection",
+      "body": "Use Select All / Deselect All, then Continue when the roster meets the format minimum.",
+      "image": "assets/organizer-player-selection/step-01.png",
+      "actionHint": "Click Next / Continue"
+    }
+  ]
+}

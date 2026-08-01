@@ -1,0 +1,29 @@
+{
+  "slug": "player-sign-in",
+  "role": "player",
+  "title": "Sign in as a player",
+  "description": "Open the login screen, sign in with a player account, and land on the Players list.",
+  "relatedSlugs": [
+    "player-open-own-plan",
+    "player-payments-nav"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "login-form",
+      "title": "Login screen",
+      "body": "Use the tutorial demo account for this role. Click Sign in after the credentials are filled.",
+      "image": "assets/player-sign-in/step-01.png",
+      "actionHint": "Click Sign in"
+    },
+    {
+      "id": "players-home",
+      "title": "Players home",
+      "body": "After sign-in you see the club roster. Player accounts do not get admin or organizer create buttons.",
+      "image": "assets/player-sign-in/step-02.png"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "slug": "organizer-create-prelim-rr-final",
+  "role": "organizer",
+  "title": "Create Preliminary + RR Final",
+  "description": "Open the tournament wizard and select Round Robin Final.",
+  "relatedSlugs": [
+    "organizer-sign-in",
+    "organizer-player-selection"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "open-wizard",
+      "title": "Open tournament wizard",
+      "body": "From Players, use + Tournament to choose a format.",
+      "image": "assets/organizer-create-prelim-rr-final/step-01.png",
+      "actionHint": "Click + Tournament"
+    },
+    {
+      "id": "select-type",
+      "title": "Select Round Robin Final",
+      "body": "Expand Preliminary, choose Round Robin Final, then configure auto-qualified players and final size.",
+      "image": "assets/organizer-create-prelim-rr-final/step-02.png",
+      "actionHint": "Select Round Robin Final"
+    }
+  ]
+}

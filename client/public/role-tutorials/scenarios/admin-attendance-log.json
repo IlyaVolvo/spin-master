@@ -1,0 +1,29 @@
+{
+  "slug": "admin-attendance-log",
+  "role": "admin",
+  "title": "Attendance Log",
+  "description": "Open Attendance Log to see who is present and filter rejected check-ins.",
+  "relatedSlugs": [
+    "admin-close-club",
+    "admin-enter-checkin-kiosk"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "attendance",
+      "title": "Attendance Log",
+      "body": "Filter by member, date, and status (All / Only Present / Only Rejected). Close club ends the day for everyone present.",
+      "image": "assets/admin-attendance-log/step-01.png",
+      "actionHint": "Open Attendance Log"
+    },
+    {
+      "id": "log-page",
+      "title": "Attendance table",
+      "body": "Present count appears in the title. Use filters before closing the club.",
+      "image": "assets/admin-attendance-log/step-02.png"
+    }
+  ]
+}

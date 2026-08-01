@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tutorial scenario — Spin Master</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tutorial.css" />
+</head>
+<body class="cinema-body">
+  <header class="cinema-top">
+    <a class="home-btn" href="index.html">Home</a>
+    <p id="scenario-title" class="cinema-scenario-title"></p>
+  </header>
+
+  <div id="loading" class="status-msg">Loading scenario…</div>
+  <div id="error" class="status-msg error" hidden></div>
+
+  <div id="intro" class="gate-panel" hidden>
+    <p class="gate-eyebrow">Showcase</p>
+    <h1 id="intro-title"></h1>
+    <p id="intro-body" class="lead"></p>
+    <p id="intro-meta" class="gate-meta"></p>
+    <div class="controls cinema-controls">
+      <button type="button" id="btn-start" class="primary">Start walkthrough</button>
+    </div>
+  </div>
+
+  <div id="player" class="cinema-player" hidden>
+    <div class="cinema-stage-wrap">
+      <div id="stage" class="cinema-stage" role="button" tabindex="0" aria-label="Tutorial screen">
+        <img id="step-image" alt="" />
+        <div id="hotspot-seeker" class="hotspot-seeker" hidden aria-hidden="true"></div>
+        <div
+          id="hotspot"
+          class="hotspot"
+          role="button"
+          tabindex="0"
+          aria-label="Simulated action target"
+          hidden
+        >
+          <span class="hotspot-label">Click</span>
+        </div>
+        <div id="click-flash" class="click-flash" hidden></div>
+      </div>
+    </div>
+
+    <aside class="cinema-caption">
+      <div class="cinema-caption-main">
+        <div class="cinema-caption-head">
+          <span id="step-kind" class="kind-badge" hidden></span>
+          <p id="step-meta" class="step-meta"></p>
+        </div>
+        <h2 id="step-title"></h2>
+        <p id="step-body" class="lead"></p>
+        <p id="action-hint" class="action-hint" hidden></p>
+        <p id="result-note" class="result-note" hidden></p>
+        <p id="skip-warn" class="skip-warn" hidden role="status"></p>
+      </div>
+      <div class="controls cinema-controls">
+        <button type="button" id="btn-back">Back</button>
+      </div>
+    </aside>
+  </div>
+
+  <div id="complete" class="gate-panel" hidden>
+    <p class="gate-eyebrow">Complete</p>
+    <h1 id="complete-title"></h1>
+    <p id="complete-body" class="lead"></p>
+    <div class="controls cinema-controls gate-actions">
+      <a id="btn-home-done" class="home-btn primary-link" href="index.html">Home</a>
+      <a id="btn-next-showcase" class="home-btn" hidden href="#">Next showcase</a>
+    </div>
+    <p id="complete-next-hint" class="gate-meta" hidden></p>
+  </div>
+
+  <footer class="cinema-footer">Static tutorial — no auth, no live API.</footer>
+  <script src="tutorial-player.js"></script>
+</body>
+</html>

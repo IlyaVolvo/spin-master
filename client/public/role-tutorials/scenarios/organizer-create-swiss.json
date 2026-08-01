@@ -1,0 +1,30 @@
+{
+  "slug": "organizer-create-swiss",
+  "role": "organizer",
+  "title": "Create Swiss",
+  "description": "Open the tournament wizard and select Swiss.",
+  "relatedSlugs": [
+    "organizer-sign-in",
+    "organizer-player-selection"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "open-wizard",
+      "title": "Open tournament wizard",
+      "body": "From Players, use + Tournament to choose a format.",
+      "image": "assets/organizer-create-swiss/step-01.png",
+      "actionHint": "Click + Tournament"
+    },
+    {
+      "id": "select-type",
+      "title": "Select Swiss",
+      "body": "Swiss pairs by rating across rounds. Select Swiss, then continue into configuration.",
+      "image": "assets/organizer-create-swiss/step-02.png",
+      "actionHint": "Select Swiss"
+    }
+  ]
+}

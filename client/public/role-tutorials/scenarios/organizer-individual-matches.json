@@ -1,0 +1,21 @@
+{
+  "slug": "organizer-individual-matches",
+  "role": "organizer",
+  "title": "Individual matches",
+  "description": "Open the Individual Matches stage for casual / non-tournament match lists.",
+  "relatedSlugs": [
+    "organizer-record-match"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "individual",
+      "title": "Individual Matches",
+      "body": "This stage groups standalone matches outside tournament brackets.",
+      "image": "assets/organizer-individual-matches/step-01.png"
+    }
+  ]
+}

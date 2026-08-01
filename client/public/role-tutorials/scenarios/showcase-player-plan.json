@@ -1,0 +1,97 @@
+{
+  "slug": "showcase-player-plan",
+  "role": "player",
+  "title": "Showcase: Player buys / reviews a plan",
+  "description": "See how a member signs in, opens their club plan from the header, and reviews purchase options when they have no active entitlement.",
+  "relatedSlugs": [
+    "showcase-organizer-create-rr",
+    "showcase-admin-front-desk"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "login-context",
+      "title": "Start at login",
+      "body": "This walkthrough uses the tutorial player account. Credentials are filled so you can focus on the Sign in control.",
+      "image": "assets/showcase-player-plan/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "login-action",
+      "title": "Sign in",
+      "body": "Simulate signing in. The next frame shows the Players home after authentication.",
+      "image": "assets/showcase-player-plan/step-02.png",
+      "kind": "action",
+      "actionHint": "Click Sign in",
+      "hotspot": {
+        "x": 38.8,
+        "y": 34.8,
+        "w": 4.6,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "players-result",
+      "title": "Players home",
+      "body": "You land on the roster. Player accounts do not see Admin tools — plan management is via the $ control.",
+      "image": "assets/showcase-player-plan/step-03.png",
+      "kind": "result",
+      "resultNote": "Header shows your name and the $ plan shortcut."
+    },
+    {
+      "id": "open-plan-action",
+      "title": "Open your plan",
+      "body": "The $ control opens your membership / plan overlay from anywhere in the app.",
+      "image": "assets/showcase-player-plan/step-04.png",
+      "kind": "action",
+      "actionHint": "Click the $ plan control",
+      "hotspot": {
+        "x": 61.3,
+        "y": 4,
+        "w": 2.8,
+        "h": 4.4
+      }
+    },
+    {
+      "id": "plan-result",
+      "title": "Plan screen",
+      "body": "Tutorial player has no current entitlement, so purchase options (Monthly membership, 5-visit pack) are visible with cash / online methods.",
+      "image": "assets/showcase-player-plan/step-05.png",
+      "kind": "result",
+      "resultNote": "Seeded club plans and empty “current plan” state are intentional for this demo."
+    },
+    {
+      "id": "purchase-focus",
+      "title": "Purchase options",
+      "body": "Scroll the plan dialog if needed. Note list prices, payment method (Cash vs Pay online), and consent for online pay.",
+      "image": "assets/showcase-player-plan/step-06.png",
+      "kind": "context"
+    },
+    {
+      "id": "close-plan-action",
+      "title": "Close the plan",
+      "body": "When finished reviewing, close the overlay to return to Players.",
+      "image": "assets/showcase-player-plan/step-07.png",
+      "kind": "action",
+      "actionHint": "Click Close",
+      "hotspot": {
+        "x": 61.3,
+        "y": 18.9,
+        "w": 3.7,
+        "h": 2.8
+      }
+    },
+    {
+      "id": "back-on-players",
+      "title": "Back on Players",
+      "body": "Closing returns you to the roster. Admins can also open any member’s plan from the table.",
+      "image": "assets/showcase-player-plan/step-08.png",
+      "kind": "result",
+      "resultNote": "Overlay dismissed; roster is interactive again."
+    }
+  ],
+  "showcase": true
+}

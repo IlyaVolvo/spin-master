@@ -1,0 +1,24 @@
+{
+  "slug": "admin-header-menu",
+  "role": "admin",
+  "title": "Admin header menu",
+  "description": "Open the Admin dropdown to reach Payment Log, Attendance, Plans, and System Configuration.",
+  "relatedSlugs": [
+    "admin-payment-log",
+    "admin-attendance-log",
+    "admin-system-settings"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "menu",
+      "title": "Admin pages menu",
+      "body": "Payment Log, Attendance Log, Payment Plans, and System Configuration live under Admin.",
+      "image": "assets/admin-header-menu/step-01.png",
+      "actionHint": "Open Admin"
+    }
+  ]
+}

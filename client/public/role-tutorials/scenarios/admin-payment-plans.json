@@ -1,0 +1,24 @@
+{
+  "slug": "admin-payment-plans",
+  "role": "admin",
+  "title": "Payment Plans",
+  "description": "Configure club plans, segments, and payment provider settings.",
+  "relatedSlugs": [
+    "admin-payment-provider",
+    "admin-courtesy-visits",
+    "player-open-own-plan"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "plans",
+      "title": "Payment Plans tab",
+      "body": "Manage segments, create Time or Visit pack plans, and edit prices. Use + New Plan to add offers.",
+      "image": "assets/admin-payment-plans/step-01.png",
+      "actionHint": "Look for + New Plan"
+    }
+  ]
+}

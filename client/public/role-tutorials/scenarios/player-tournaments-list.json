@@ -1,0 +1,29 @@
+{
+  "slug": "player-tournaments-list",
+  "role": "player",
+  "title": "Browse tournaments",
+  "description": "Open the Tournaments tab to follow club events.",
+  "relatedSlugs": [
+    "player-sign-in",
+    "organizer-tournaments-active"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "nav-tournaments",
+      "title": "Tournaments tab",
+      "body": "Header Tournaments opens the event list for your club.",
+      "image": "assets/player-tournaments-list/step-01.png",
+      "actionHint": "Open Tournaments"
+    },
+    {
+      "id": "list",
+      "title": "Tournament list",
+      "body": "Browse pre-registration, active, and completed events. Players typically cannot create tournaments.",
+      "image": "assets/player-tournaments-list/step-02.png"
+    }
+  ]
+}

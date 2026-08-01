@@ -1,0 +1,22 @@
+{
+  "slug": "organizer-open-active-tournament",
+  "role": "organizer",
+  "title": "Open an active tournament",
+  "description": "Open the seeded tutorial active tournament detail page.",
+  "relatedSlugs": [
+    "organizer-tournaments-active",
+    "organizer-day-of-tools"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "detail",
+      "title": "Tournament detail",
+      "body": "Detail pages expose scoring, stands, schedule, abandon, early completion, and print actions depending on format and state.",
+      "image": "assets/organizer-open-active-tournament/step-01.png"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "slug": "admin-close-club",
+  "role": "admin",
+  "title": "Close club",
+  "description": "Locate the Close club action on the Attendance Log.",
+  "relatedSlugs": [
+    "admin-attendance-log"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "close",
+      "title": "Close club control",
+      "body": "Close club checks out everyone still present for the club-local day. Confirm before using it.",
+      "image": "assets/admin-close-club/step-01.png",
+      "actionHint": "Find Close club"
+    }
+  ]
+}

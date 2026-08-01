@@ -1,0 +1,30 @@
+{
+  "slug": "organizer-browse-kiosk",
+  "role": "organizer",
+  "title": "Enter browse kiosk",
+  "description": "Open the Kiosk chooser and enter Browse mode for floor display.",
+  "relatedSlugs": [
+    "admin-enter-checkin-kiosk",
+    "organizer-sign-in"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "kiosk-button",
+      "title": "Kiosk entry",
+      "body": "Kiosk drops elevated chrome for a floor-friendly UI. Organizers use Browse; admins also get Check-in.",
+      "image": "assets/organizer-browse-kiosk/step-01.png",
+      "actionHint": "Click Kiosk"
+    },
+    {
+      "id": "chooser",
+      "title": "Kiosk chooser",
+      "body": "Choose Browse for tournament floor browsing. Use Restore privileges later to exit kiosk.",
+      "image": "assets/organizer-browse-kiosk/step-02.png",
+      "actionHint": "Click Browse"
+    }
+  ]
+}

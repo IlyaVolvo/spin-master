@@ -1,0 +1,30 @@
+{
+  "slug": "organizer-create-playoff",
+  "role": "organizer",
+  "title": "Create Playoff / Bracket",
+  "description": "Open the tournament wizard and select Playoff / Bracket.",
+  "relatedSlugs": [
+    "organizer-sign-in",
+    "organizer-player-selection"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "open-wizard",
+      "title": "Open tournament wizard",
+      "body": "From Players, use + Tournament to choose a format.",
+      "image": "assets/organizer-create-playoff/step-01.png",
+      "actionHint": "Click + Tournament"
+    },
+    {
+      "id": "select-type",
+      "title": "Select Playoff / Bracket",
+      "body": "Playoff builds a bracket. Choose this type, then continue to select players and seeding options.",
+      "image": "assets/organizer-create-playoff/step-02.png",
+      "actionHint": "Select Playoff / Bracket"
+    }
+  ]
+}

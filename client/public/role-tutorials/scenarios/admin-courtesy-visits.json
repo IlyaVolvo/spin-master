@@ -1,0 +1,22 @@
+{
+  "slug": "admin-courtesy-visits",
+  "role": "admin",
+  "title": "Courtesy visits",
+  "description": "Review the Courtesy Visits subsection for members on courtesy check-in.",
+  "relatedSlugs": [
+    "admin-payment-plans",
+    "admin-enter-checkin-kiosk"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "courtesy",
+      "title": "Courtesy Visits",
+      "body": "Suspend or resume courtesy for members who checked in without a paid entitlement under club policy.",
+      "image": "assets/admin-courtesy-visits/step-01.png"
+    }
+  ]
+}

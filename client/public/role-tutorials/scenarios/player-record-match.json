@@ -1,0 +1,29 @@
+{
+  "slug": "player-record-match",
+  "role": "player",
+  "title": "Record a casual match",
+  "description": "Start + Match, select an opponent on the Players table, then continue the score flow.",
+  "relatedSlugs": [
+    "player-sign-in",
+    "organizer-record-match"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "toolbar-match",
+      "title": "Match toolbar",
+      "body": "Players can record casual matches with + Match.",
+      "image": "assets/player-record-match/step-01.png",
+      "actionHint": "Click + Match"
+    },
+    {
+      "id": "selection-mode",
+      "title": "Select opponent",
+      "body": "Selection mode highlights the table. Choose an active opponent (you stay on one side of the pairing).",
+      "image": "assets/player-record-match/step-02.png"
+    }
+  ]
+}

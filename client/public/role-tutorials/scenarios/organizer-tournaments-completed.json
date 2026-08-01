@@ -1,0 +1,22 @@
+{
+  "slug": "organizer-tournaments-completed",
+  "role": "organizer",
+  "title": "Completed tournaments",
+  "description": "Review finished events under Completed.",
+  "relatedSlugs": [
+    "organizer-tournaments-active",
+    "organizer-repeat-hint"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "completed",
+      "title": "Completed tab",
+      "body": "Completed events are available for review and often as a template to repeat a past setup.",
+      "image": "assets/organizer-tournaments-completed/step-01.png"
+    }
+  ]
+}

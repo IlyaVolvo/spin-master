@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Spin Master — Role tutorials</title>
+  <title>Spin Master — Tutorials</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -11,35 +11,104 @@
 </head>
 <body>
   <div class="page-top">
-    <h1>Spin Master role tutorials</h1>
+    <h1>Spin Master tutorials</h1>
     <p class="lead">
-      Visual walkthroughs for <strong>Player</strong>, <strong>Organizer</strong>, and <strong>Administrator</strong> accounts. Screenshots are captured from the live app; regenerate them after UI changes (see server scripts below).
-    </p>
-    <p class="lead" style="font-size:0.95rem;margin-top:-0.25rem">
-      If you open the app at <code>/role-tutorials</code> (no filename), the SPA forwards here once to this static page.
-    </p>
-    <nav class="nav-row" aria-label="Role tutorials">
-      <a href="player.html">Player tutorial</a>
-      <a href="organizer.html">Organizer tutorial</a>
-      <a href="administrator.html">Administrator tutorial</a>
-    </nav>
-    <p class="lead" style="font-size:0.92rem;margin-top:0.5rem">
-      The <a href="organizer.html">Organizer</a> page includes step-by-step scenarios for every tournament format, player selection, parameterization, pre-registration, modification, repeat, day-of scoring, <strong>Abandon</strong>, <strong>Early Completion</strong>, compound stop, and score correction.
+      Start with <strong>Showcase</strong>. Player / Organizer / Administrator lists are optional and collapsed by default.
+      Follow the amber circle and click the hotspot to advance; use <strong>Back</strong> to repeat a step.
+      On context/result screens, click the image to continue.
     </p>
   </div>
   <main>
-    <section class="steps">
-      <h2>Regenerating screenshots (maintainers)</h2>
-      <ol>
-        <li>Start the client so it can reach the API (for example <code>npm run dev</code> from the repo root).</li>
-        <li><code>cd server && npm run seed:role-tutorials</code> — upserts three demo logins in your database.</li>
-        <li><code>cd server && ROLE_TUTORIAL_BASE_URL=http://localhost:3000 npm run capture:role-tutorials</code> — writes PNGs under <code>client/public/role-tutorials/assets/</code>. Set <code>PUPPETEER_EXECUTABLE_PATH</code> if Chrome is not in the default location. The script signs in as <code>tutorial-admin@spin-master.local</code> first and sets <strong>Club Name</strong> to <code>ROLE_TUTORIAL_CLUB_NAME</code> (default <em>Portland Table Tennis Club</em>) so login and header screenshots match the tutorial; use <code>ROLE_TUTORIAL_SKIP_BRANDING=1</code> to leave branding unchanged.</li>
+    <div id="catalog-root" class="status-msg">Loading scenarios…</div>
+
+    <section class="callout" style="margin-top:2rem">
+      <strong>Maintainers — re-record</strong>
+      <ol style="margin:0.5rem 0 0;padding-left:1.25rem;color:var(--muted);font-size:0.9rem">
+        <li>Set <code>DATABASE_URL_TUTORIAL</code> in <code>server/.env</code> (dedicated DB only).</li>
+        <li><code>cd server && npm run tutorials:reset-seed</code></li>
+        <li>Start the app with the API using that tutorial database.</li>
+        <li><code>cd server && npm run tutorials:capture</code></li>
       </ol>
-      <p class="callout" style="margin-top:1rem">
-        Demo logins share the password from <code>server/scripts/seedRoleTutorialUsers.ts</code> (constant <code>ROLE_TUTORIAL_PASSWORD</code>). Use only on non-production databases.
-      </p>
     </section>
   </main>
-  <footer>Static files are served at <code>/role-tutorials/</code> when the Vite app or production build is running.</footer>
+  <footer>Static files at <code>/role-tutorials/</code> — no auth, no live API.</footer>
+  <script>
+    (async function () {
+      const root = document.getElementById('catalog-root');
+
+      function scenarioList(scenarios) {
+        if (!scenarios.length) {
+          const empty = document.createElement('p');
+          empty.className = 'empty-role';
+          empty.textContent = 'No scenarios yet.';
+          return empty;
+        }
+        const ul = document.createElement('ul');
+        ul.className = 'scenario-list';
+        scenarios.forEach(function (s) {
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = 'play.html?scenario=' + encodeURIComponent(s.slug);
+          a.innerHTML =
+            '<span>' +
+            (s.title || s.slug) +
+            '</span><span class="slug">' +
+            s.slug +
+            '</span>';
+          li.appendChild(a);
+          ul.appendChild(li);
+        });
+        return ul;
+      }
+
+      try {
+        const res = await fetch('catalog.json', { cache: 'no-cache' });
+        if (!res.ok) throw new Error('Could not load catalog.json');
+        const data = await res.json();
+        root.className = '';
+        root.textContent = '';
+
+        (data.roles || []).forEach(function (role) {
+          const isShowcase = role.id === 'showcase';
+          const startCollapsed = role.collapsed === true || (!isShowcase && role.collapsed !== false);
+          const scenarios = role.scenarios || [];
+          const count = scenarios.length;
+
+          const details = document.createElement('details');
+          details.className = 'role-section' + (isShowcase ? ' showcase' : ' role-collapsible');
+          details.id = 'role-' + role.id;
+          if (!startCollapsed) details.open = true;
+
+          const summary = document.createElement('summary');
+          summary.className = 'role-summary';
+          summary.innerHTML =
+            '<span class="role-summary-title">' +
+            (role.label || role.id) +
+            '</span>' +
+            '<span class="role-summary-meta">' +
+            count +
+            (count === 1 ? ' scenario' : ' scenarios') +
+            '</span>';
+          details.appendChild(summary);
+
+          const body = document.createElement('div');
+          body.className = 'role-body';
+          if (role.blurb) {
+            const p = document.createElement('p');
+            p.className = 'role-blurb';
+            p.textContent = role.blurb;
+            body.appendChild(p);
+          }
+          body.appendChild(scenarioList(scenarios));
+          details.appendChild(body);
+
+          root.appendChild(details);
+        });
+      } catch (err) {
+        root.className = 'status-msg error';
+        root.textContent = err && err.message ? err.message : String(err);
+      }
+    })();
+  </script>
 </body>
 </html>

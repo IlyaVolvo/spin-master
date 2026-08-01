@@ -1,0 +1,36 @@
+{
+  "slug": "admin-enter-checkin-kiosk",
+  "role": "admin",
+  "title": "Enter check-in kiosk",
+  "description": "Open Kiosk and choose Check-in for front-desk attendance.",
+  "relatedSlugs": [
+    "admin-checkin-present-filter",
+    "admin-attendance-log"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "kiosk",
+      "title": "Kiosk button",
+      "body": "Kiosk mode is for the front desk / floor. Admins can enter Check-in; organizers use Browse.",
+      "image": "assets/admin-enter-checkin-kiosk/step-01.png",
+      "actionHint": "Click Kiosk"
+    },
+    {
+      "id": "chooser",
+      "title": "Choose Check-in",
+      "body": "Select Check-in. Members then check in with PIN; payment gates may appear when required.",
+      "image": "assets/admin-enter-checkin-kiosk/step-02.png",
+      "actionHint": "Click Check-in"
+    },
+    {
+      "id": "kiosk-ui",
+      "title": "Check-in kiosk UI",
+      "body": "Toolbar shows attendance count and Present filter. Each row has Check-in / Check-out. Use Restore privileges to exit.",
+      "image": "assets/admin-enter-checkin-kiosk/step-03.png"
+    }
+  ]
+}

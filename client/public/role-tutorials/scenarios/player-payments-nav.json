@@ -1,0 +1,23 @@
+{
+  "slug": "player-payments-nav",
+  "role": "player",
+  "title": "Players cannot open Payment Log",
+  "description": "Players manage their own plan via $; the Admin Payment Log is not in the player header.",
+  "relatedSlugs": [
+    "player-open-own-plan",
+    "admin-payment-log"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "player-chrome",
+      "title": "Player header",
+      "body": "Confirm there is no Admin menu. Use $ for your plan instead of the admin Payment Log.",
+      "image": "assets/player-payments-nav/step-01.png",
+      "actionHint": "Click the $ plan control"
+    }
+  ]
+}

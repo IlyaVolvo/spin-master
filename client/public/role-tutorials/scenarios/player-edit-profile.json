@@ -1,0 +1,28 @@
+{
+  "slug": "player-edit-profile",
+  "role": "player",
+  "title": "Edit your profile",
+  "description": "Open the profile gear to update your member details.",
+  "relatedSlugs": [
+    "player-sign-in"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "profile-gear",
+      "title": "Profile control",
+      "body": "The gear next to your name opens your own profile editor.",
+      "image": "assets/player-edit-profile/step-01.png",
+      "actionHint": "Click Edit your profile"
+    },
+    {
+      "id": "profile-editor",
+      "title": "Profile editor",
+      "body": "Update allowed fields for your account, then save.",
+      "image": "assets/player-edit-profile/step-02.png"
+    }
+  ]
+}

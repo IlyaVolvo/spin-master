@@ -1,0 +1,22 @@
+{
+  "slug": "admin-member-plan",
+  "role": "admin",
+  "title": "Open a member plan",
+  "description": "Open another member’s plan from the roster $ indicator.",
+  "relatedSlugs": [
+    "player-open-own-plan",
+    "admin-payment-log"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "plan",
+      "title": "Member plan overlay",
+      "body": "Admins can purchase on behalf of members, set credit, and manage courtesy check-in from the plan screen.",
+      "image": "assets/admin-member-plan/step-01.png"
+    }
+  ]
+}

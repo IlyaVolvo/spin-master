@@ -1,0 +1,244 @@
+{
+  "roles": [
+    {
+      "id": "showcase",
+      "label": "Showcase",
+      "blurb": "Primary walkthroughs. Context → action (hotspot click advances) → result. Prefer these for day-to-day use.",
+      "collapsed": false,
+      "scenarios": [
+        {
+          "slug": "showcase-player-plan",
+          "title": "Showcase: Player buys / reviews a plan"
+        },
+        {
+          "slug": "showcase-organizer-create-rr",
+          "title": "Showcase: Organizer creates a Round Robin"
+        },
+        {
+          "slug": "showcase-admin-front-desk",
+          "title": "Showcase: Admin front desk (payments + attendance + kiosk)"
+        }
+      ]
+    },
+    {
+      "id": "player",
+      "label": "Player",
+      "blurb": "Basic member flows — especially payments and check-in.",
+      "collapsed": true,
+      "scenarios": [
+        {
+          "slug": "player-sign-in",
+          "title": "Sign in as a player"
+        },
+        {
+          "slug": "player-open-own-plan",
+          "title": "Open your club plan"
+        },
+        {
+          "slug": "player-plan-purchase-options",
+          "title": "Plan purchase options"
+        },
+        {
+          "slug": "player-payments-nav",
+          "title": "Players cannot open Payment Log"
+        },
+        {
+          "slug": "player-record-match",
+          "title": "Record a casual match"
+        },
+        {
+          "slug": "player-tournaments-list",
+          "title": "Browse tournaments"
+        },
+        {
+          "slug": "player-statistics",
+          "title": "Statistics"
+        },
+        {
+          "slug": "player-history",
+          "title": "Match history"
+        },
+        {
+          "slug": "player-edit-profile",
+          "title": "Edit your profile"
+        },
+        {
+          "slug": "player-public-achievements",
+          "title": "Public achievements"
+        }
+      ]
+    },
+    {
+      "id": "organizer",
+      "label": "Organizer",
+      "blurb": "Tournaments, day-of scoring, and event management.",
+      "collapsed": true,
+      "scenarios": [
+        {
+          "slug": "organizer-sign-in",
+          "title": "Sign in as an organizer"
+        },
+        {
+          "slug": "organizer-create-round-robin",
+          "title": "Create Round Robin"
+        },
+        {
+          "slug": "organizer-create-playoff",
+          "title": "Create Playoff / Bracket"
+        },
+        {
+          "slug": "organizer-create-swiss",
+          "title": "Create Swiss"
+        },
+        {
+          "slug": "organizer-create-multi-rr",
+          "title": "Create Multi Round Robin"
+        },
+        {
+          "slug": "organizer-create-prelim-rr-final",
+          "title": "Create Preliminary + RR Final"
+        },
+        {
+          "slug": "organizer-create-prelim-playoff-final",
+          "title": "Create Preliminary + Playoff Final"
+        },
+        {
+          "slug": "organizer-preregistration",
+          "title": "Pre-registration mode"
+        },
+        {
+          "slug": "organizer-player-selection",
+          "title": "Select tournament players"
+        },
+        {
+          "slug": "organizer-record-match",
+          "title": "Record a casual match"
+        },
+        {
+          "slug": "organizer-tournaments-active",
+          "title": "Active tournaments"
+        },
+        {
+          "slug": "organizer-tournaments-prereg",
+          "title": "Pre-registration tournaments"
+        },
+        {
+          "slug": "organizer-tournaments-completed",
+          "title": "Completed tournaments"
+        },
+        {
+          "slug": "organizer-individual-matches",
+          "title": "Individual matches"
+        },
+        {
+          "slug": "organizer-open-active-tournament",
+          "title": "Open an active tournament"
+        },
+        {
+          "slug": "organizer-day-of-tools",
+          "title": "Day-of tournament tools"
+        },
+        {
+          "slug": "organizer-abandon-hint",
+          "title": "Abandon / stop controls"
+        },
+        {
+          "slug": "organizer-repeat-hint",
+          "title": "Repeat a past setup"
+        },
+        {
+          "slug": "organizer-browse-kiosk",
+          "title": "Enter browse kiosk"
+        },
+        {
+          "slug": "organizer-stats",
+          "title": "Organizer statistics"
+        }
+      ]
+    },
+    {
+      "id": "admin",
+      "label": "Administrator",
+      "blurb": "Club settings, members, and payment configuration.",
+      "collapsed": true,
+      "scenarios": [
+        {
+          "slug": "admin-sign-in",
+          "title": "Sign in as administrator"
+        },
+        {
+          "slug": "admin-header-menu",
+          "title": "Admin header menu"
+        },
+        {
+          "slug": "admin-system-settings",
+          "title": "System Settings overview"
+        },
+        {
+          "slug": "admin-settings-hours",
+          "title": "Club open / close hours"
+        },
+        {
+          "slug": "admin-settings-tournament-rules",
+          "title": "Tournament rules settings"
+        },
+        {
+          "slug": "admin-settings-core",
+          "title": "Core & operations settings"
+        },
+        {
+          "slug": "admin-settings-public-achievements",
+          "title": "Public achievements settings"
+        },
+        {
+          "slug": "admin-payment-log",
+          "title": "Payment Log"
+        },
+        {
+          "slug": "admin-payment-plans",
+          "title": "Payment Plans"
+        },
+        {
+          "slug": "admin-payment-provider",
+          "title": "Payment provider & courtesy settings"
+        },
+        {
+          "slug": "admin-courtesy-visits",
+          "title": "Courtesy visits"
+        },
+        {
+          "slug": "admin-attendance-log",
+          "title": "Attendance Log"
+        },
+        {
+          "slug": "admin-close-club",
+          "title": "Close club"
+        },
+        {
+          "slug": "admin-add-player",
+          "title": "Add a player"
+        },
+        {
+          "slug": "admin-edit-member",
+          "title": "Edit a member"
+        },
+        {
+          "slug": "admin-member-plan",
+          "title": "Open a member plan"
+        },
+        {
+          "slug": "admin-enter-checkin-kiosk",
+          "title": "Enter check-in kiosk"
+        },
+        {
+          "slug": "admin-checkin-present-filter",
+          "title": "Kiosk Present filter"
+        },
+        {
+          "slug": "admin-players-toolbar",
+          "title": "Admin Players toolbar"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "slug": "admin-payment-log",
+  "role": "admin",
+  "title": "Payment Log",
+  "description": "Open Payment Log to filter and clear/reject pending payments.",
+  "relatedSlugs": [
+    "admin-payment-plans",
+    "admin-header-menu"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "menu",
+      "title": "Open Payment Log",
+      "body": "Admin → Payment Log lists member payments with status filters.",
+      "image": "assets/admin-payment-log/step-01.png",
+      "actionHint": "Open Payment Log"
+    },
+    {
+      "id": "log",
+      "title": "Payment Log page",
+      "body": "Filter by member, date, Paid/Pending. Clear or Reject pending cash rows; open a member name for their plan.",
+      "image": "assets/admin-payment-log/step-02.png"
+    }
+  ]
+}

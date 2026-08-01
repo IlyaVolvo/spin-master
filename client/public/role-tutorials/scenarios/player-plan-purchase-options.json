@@ -1,0 +1,22 @@
+{
+  "slug": "player-plan-purchase-options",
+  "role": "player",
+  "title": "Plan purchase options",
+  "description": "On the plan screen, see available plans and cash vs online payment methods.",
+  "relatedSlugs": [
+    "player-open-own-plan",
+    "admin-payment-plans"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "plan-purchase",
+      "title": "Purchase section",
+      "body": "Pick a plan, consent to online pay if needed, choose Cash or Pay online, then purchase.",
+      "image": "assets/player-plan-purchase-options/step-01.png"
+    }
+  ]
+}

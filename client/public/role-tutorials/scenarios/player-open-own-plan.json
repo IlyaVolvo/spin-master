@@ -1,0 +1,29 @@
+{
+  "slug": "player-open-own-plan",
+  "role": "player",
+  "title": "Open your club plan",
+  "description": "Use the $ control in the header to review your membership plan and purchase options.",
+  "relatedSlugs": [
+    "player-sign-in",
+    "player-plan-purchase-options"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "header-plan",
+      "title": "Plan shortcut",
+      "body": "The $ control opens your personal plan screen from anywhere in the app.",
+      "image": "assets/player-open-own-plan/step-01.png",
+      "actionHint": "Click the $ plan control"
+    },
+    {
+      "id": "plan-screen",
+      "title": "Your plan",
+      "body": "Review current entitlement, purchase a plan, choose cash or online payment, and see payment history.",
+      "image": "assets/player-open-own-plan/step-02.png"
+    }
+  ]
+}

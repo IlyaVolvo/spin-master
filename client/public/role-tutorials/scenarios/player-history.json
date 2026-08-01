@@ -1,0 +1,22 @@
+{
+  "slug": "player-history",
+  "role": "player",
+  "title": "Match history",
+  "description": "Open History to review past matches.",
+  "relatedSlugs": [
+    "player-statistics",
+    "player-record-match"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "history",
+      "title": "History",
+      "body": "History shows prior match activity for the club and your account.",
+      "image": "assets/player-history/step-01.png"
+    }
+  ]
+}
