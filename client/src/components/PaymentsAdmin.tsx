@@ -608,7 +608,16 @@ export default function PaymentsAdmin() {
             Configure segments, club plans, courtesy settings, and related payment options.
           </p>
         </div>
-      ) : null}
+      ) : (
+        <div style={{ marginBottom: '16px' }}>
+          <h2
+            style={{ margin: 0, display: 'inline-block', cursor: 'help' }}
+            title="All club payments, newest first. Filter by member, date, or Paid/Pending."
+          >
+            Payment Log
+          </h2>
+        </div>
+      )}
 
       {error ? <div className="error-message" style={{ marginBottom: '16px' }}>{error}</div> : null}
       {message && tab === 'plans' ? (

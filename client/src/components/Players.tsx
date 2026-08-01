@@ -6441,12 +6441,18 @@ const Players: React.FC = () => {
       </div>
       {/* End of card */}
 
-      {!isCheckinKiosk && planScreenMemberId != null && (
+      {planScreenMemberId != null && (
         <MemberPlanScreen
           memberId={planScreenMemberId}
           onClose={() => {
             setPlanScreenMemberId(null);
-            void fetchMembers();
+            if (isCheckinKiosk) {
+              fetchCheckinTodayStatus()
+                .then(setCheckinStatusByMember)
+                .catch(() => {});
+            } else {
+              void fetchMembers();
+            }
           }}
         />
       )}
@@ -7721,6 +7727,15 @@ const Players: React.FC = () => {
             setCheckinPinTarget(null);
             setSuccess(message);
             setError('');
+            fetchCheckinTodayStatus()
+              .then(setCheckinStatusByMember)
+              .catch(() => {});
+          }}
+          onOpenPayment={(memberId) => {
+            setCheckinPinTarget(null);
+            setError('');
+            setSuccess('');
+            setPlanScreenMemberId(memberId);
             fetchCheckinTodayStatus()
               .then(setCheckinStatusByMember)
               .catch(() => {});

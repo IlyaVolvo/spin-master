@@ -11,6 +11,7 @@ import { getAuthPolicyConfig } from '../services/systemConfigService';
 import type { AuthRequest } from '../middleware/auth';
 import {
   defaultKioskKindForRoles,
+  getKioskKind,
   isKioskKind,
   isKioskMode,
   memberHasRole,
@@ -21,6 +22,11 @@ import {
   resolveAutoRelinquishPrivileges,
   shouldAutoEnterKioskMode,
 } from '../utils/autoRelinquish';
+import {
+  createCheckinPaymentUnlockToken,
+  writeSessionCheckinPaymentUnlock,
+} from '../utils/checkinPaymentUnlock';
+import { memberHasPaymentLogin } from '../utils/paymentLoginEligibility';
 
 const router = express.Router();
 
@@ -1171,6 +1177,111 @@ router.post('/member/relinquish-privileges', async (req: Request, res: Response)
     });
   } catch (error) {
     logger.error('Relinquish privileges error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Confirm the paying member's password in check-in kiosk to unlock Plan/Payment.
+ * Does not leave kiosk mode or authenticate the member into the kiosk session.
+ */
+router.post('/member/authorize-checkin-payment', [
+  body('password').notEmpty(),
+  body('memberId').isInt({ min: 1 }),
+], async (req: Request, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const authReq = req as AuthRequest;
+    let staffId = req.session?.member?.id ?? authReq.memberId;
+    let inKiosk = req.session?.kioskMode === true || authReq.kioskMode === true;
+    let kioskKind = getKioskKind(req);
+
+    if (!staffId) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const decoded = jwt.verify(authHeader.split(' ')[1], getJwtSecret()) as {
+            memberId?: number;
+            type?: string;
+            kioskMode?: boolean;
+            kioskKind?: string;
+          };
+          if (decoded.type === 'member' && decoded.memberId) {
+            staffId = decoded.memberId;
+            inKiosk = decoded.kioskMode === true;
+            if (isKioskKind(decoded.kioskKind)) kioskKind = decoded.kioskKind;
+          }
+        } catch {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+      }
+    }
+
+    if (!staffId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (!inKiosk || kioskKind !== 'checkin') {
+      return res.status(403).json({ error: 'Only available from check-in kiosk' });
+    }
+
+    const kioskMember = await prisma.member.findUnique({
+      where: { id: staffId },
+      select: { id: true, isActive: true, roles: true },
+    });
+    if (!kioskMember || !kioskMember.isActive) {
+      return res.status(404).json({ error: 'Staff account not found' });
+    }
+    if (!memberHasRole(kioskMember.roles, 'ADMIN')) {
+      return res.status(403).json({ error: 'Check-in kiosk access required' });
+    }
+
+    const memberId = Number(req.body.memberId);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+
+    const target = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { id: true, email: true, password: true, isActive: true },
+    });
+    if (!target) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+    if (!target.isActive) {
+      return res.status(403).json({ error: 'Member account is inactive' });
+    }
+    if (!memberHasPaymentLogin(target)) {
+      return res.status(403).json({
+        error: 'Payment is unavailable because this member does not have a login email and password.',
+      });
+    }
+
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    const valid = await bcrypt.compare(password, target.password);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid member password' });
+    }
+
+    const { unlockToken, expiresAt } = createCheckinPaymentUnlockToken(memberId);
+    writeSessionCheckinPaymentUnlock(req, { memberId, expiresAt });
+    if (req.session) {
+      await saveSessionAsync(req);
+    }
+
+    return res.json({
+      unlockedMemberId: memberId,
+      expiresAt,
+      unlockToken,
+      message: 'Payment unlocked for this member',
+    });
+  } catch (error) {
+    logger.error('Authorize check-in payment error', {
       error: error instanceof Error ? error.message : String(error),
     });
     return res.status(500).json({ error: 'Internal server error' });

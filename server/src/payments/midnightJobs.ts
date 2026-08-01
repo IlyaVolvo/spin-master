@@ -8,14 +8,7 @@ import {
 } from './entitlementQueue';
 import { runMemberCheckout } from './runCheckout';
 import { notifyCompletedTrials } from './memberTrial';
-
-function getClubTimezone(): string {
-  return process.env.CLUB_TIMEZONE || 'UTC';
-}
-
-function getClubDate(date: Date = new Date()): string {
-  return date.toLocaleDateString('en-CA', { timeZone: getClubTimezone() });
-}
+import { getClubDate } from '../utils/clubDate';
 
 function addClubDays(clubDate: string, deltaDays: number): string {
   // Interpret clubDate as noon UTC then shift — good enough for YYYY-MM-DD arithmetic

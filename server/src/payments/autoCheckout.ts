@@ -1,14 +1,6 @@
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
-
-function getClubTimezone(): string {
-  return process.env.CLUB_TIMEZONE || 'UTC';
-}
-
-/** Club-local date string "YYYY-MM-DD" for a given instant. */
-function getClubDate(date: Date = new Date()): string {
-  return date.toLocaleDateString('en-CA', { timeZone: getClubTimezone() });
-}
+import { getClubDate } from '../utils/clubDate';
 
 export type AutoCheckoutResult = {
   /** Club-local "today" used for the default (all stale) path. */

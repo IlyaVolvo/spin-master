@@ -3,6 +3,7 @@ import api from '../../utils/api';
 import { formatPlayerName } from '../../utils/nameFormatter';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
+import { storeCheckinPaymentUnlock } from '../../utils/checkinPaymentUnlock';
 
 export type CheckinMemberStatus = {
   present: boolean;
@@ -25,6 +26,7 @@ type PinToggleResponse = {
   charged?: boolean;
   courtesy?: boolean;
   canPay?: boolean;
+  paymentLoginAvailable?: boolean;
   paymentInProgress?: boolean;
   entitlement?: EntitlementSummary;
   member?: { firstName: string; lastName: string };
@@ -227,6 +229,8 @@ type PinModalProps = {
   freeReentry: boolean;
   onClose: () => void;
   onSuccess: (message: string) => void;
+  /** Open the member Plan/Payment screen (e.g. after a rejected check-in). */
+  onOpenPayment?: (memberId: number) => void;
 };
 
 export function CheckinPinModal({
@@ -236,14 +240,19 @@ export function CheckinPinModal({
   freeReentry,
   onClose,
   onSuccess,
+  onOpenPayment,
 }: PinModalProps) {
   const [scorePin, setScorePin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [pinLength, setPinLength] = useState(() => getSystemConfig().authPolicy.pinLength);
-  const [phase, setPhase] = useState<'pin' | 'pay_offer'>('pin');
+  const [phase, setPhase] = useState<'pin' | 'pay_offer' | 'rejected' | 'member_password'>('pin');
+  const [passwordReturnPhase, setPasswordReturnPhase] = useState<'pay_offer' | 'rejected'>('rejected');
   const [resultMessage, setResultMessage] = useState('');
+  const [paymentLoginAvailable, setPaymentLoginAvailable] = useState(false);
+  const [memberPassword, setMemberPassword] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     return subscribeToSystemConfig((config) => {
@@ -252,11 +261,55 @@ export function CheckinPinModal({
   }, []);
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    if (phase === 'member_password') {
+      passwordRef.current?.focus();
+    } else {
+      inputRef.current?.focus();
+    }
+  }, [phase]);
 
   const finish = (message: string) => {
     onSuccess(message);
+  };
+
+  const requestMemberPassword = (from: 'pay_offer' | 'rejected') => {
+    setPasswordReturnPhase(from);
+    setMemberPassword('');
+    setError('');
+    setPhase('member_password');
+  };
+
+  const goToPayment = (message: string) => {
+    if (onOpenPayment) {
+      onOpenPayment(memberId);
+      return;
+    }
+    finish(message);
+  };
+
+  const authorizeAndOpenPayment = async () => {
+    if (!memberPassword.trim()) {
+      setError('Password is required');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.post('/auth/member/authorize-checkin-payment', {
+        password: memberPassword,
+        memberId,
+      });
+      const unlockToken = typeof res.data?.unlockToken === 'string' ? res.data.unlockToken : '';
+      const expiresAt = Number(res.data?.expiresAt) || Date.now() + 15 * 60 * 1000;
+      if (unlockToken) {
+        storeCheckinPaymentUnlock(memberId, unlockToken, expiresAt);
+      }
+      goToPayment(resultMessage);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Invalid password'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const submit = async () => {
@@ -270,8 +323,13 @@ export function CheckinPinModal({
       const res = await api.post('/club/pin-toggle', { memberId, scorePin: scorePin.trim() });
       const data = res.data as PinToggleResponse;
       const message = formatPinToggleMessage(data);
-      if (data.canPay || data.courtesy || data.action === 'PAYMENT_REQUIRED') {
+      if (data.action === 'PAYMENT_REQUIRED') {
         setResultMessage(message);
+        setPaymentLoginAvailable(data.paymentLoginAvailable === true);
+        setPhase('rejected');
+      } else if (data.canPay || data.courtesy) {
+        setResultMessage(message);
+        setPaymentLoginAvailable(data.paymentLoginAvailable === true);
         setPhase('pay_offer');
       } else {
         finish(message);
@@ -282,7 +340,8 @@ export function CheckinPinModal({
         const data = axiosErr.response.data;
         const message = formatPinToggleMessage(data);
         setResultMessage(message);
-        setPhase('pay_offer');
+        setPaymentLoginAvailable(data.paymentLoginAvailable === true);
+        setPhase('rejected');
       } else {
         setError(getErrorMessage(err, 'Check-in failed'));
       }
@@ -347,21 +406,101 @@ export function CheckinPinModal({
           </>
         )}
 
+        {phase === 'rejected' && (
+          <>
+            <h3 style={{ marginTop: 0, color: '#c0392b' }}>Check-in blocked</h3>
+            <p style={{ fontSize: '14px', color: '#333', lineHeight: 1.45 }}>{resultMessage}</p>
+            {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
+            <p style={{ fontSize: '13px', color: '#666' }}>
+              {paymentLoginAvailable
+                ? 'Purchase a plan to check in, or close and try again later.'
+                : 'Online payment is unavailable because this member does not have a login email and password.'}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => finish(resultMessage)}>
+                Close
+              </button>
+              {paymentLoginAvailable && (
+                <button
+                  type="button"
+                  className="success"
+                  onClick={() => requestMemberPassword('rejected')}
+                >
+                  Pay now
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
         {phase === 'pay_offer' && (
           <>
             <h3 style={{ marginTop: 0 }}>Payment</h3>
             <p style={{ fontSize: '14px', color: '#333' }}>{resultMessage}</p>
             {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
             <p style={{ fontSize: '13px', color: '#666' }}>
-              Purchases cannot be started from check-in. Use the Plan page after a full login, or ask an
-              administrator to record cash payment.
+              {paymentLoginAvailable
+                ? 'You can purchase a plan now, or continue without paying.'
+                : 'Online payment is unavailable because this member does not have a login email and password.'}
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => finish(resultMessage)}>
+                Not now
+              </button>
+              {paymentLoginAvailable && (
+                <button
+                  type="button"
+                  className="success"
+                  onClick={() => requestMemberPassword('pay_offer')}
+                >
+                  Pay now
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {phase === 'member_password' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Member password required</h3>
+            <p style={{ fontSize: '14px', color: '#555' }}>
+              {memberName}, enter your login password to continue to payment.
+            </p>
+            {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
+            <input
+              ref={passwordRef}
+              type="password"
+              value={memberPassword}
+              onChange={(e) => setMemberPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void authorizeAndOpenPayment();
+                }
+              }}
+              placeholder="Password"
+              autoComplete="current-password"
+              style={{ width: '100%', padding: '10px', marginBottom: '16px', boxSizing: 'border-box', fontSize: '16px' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
               <button
                 type="button"
-                onClick={() => finish(resultMessage + ' Settle via Plan page or staff.')}
+                onClick={() => {
+                  setMemberPassword('');
+                  setError('');
+                  setPhase(passwordReturnPhase);
+                }}
+                disabled={loading}
               >
-                OK
+                Back
+              </button>
+              <button
+                type="button"
+                className="success"
+                onClick={() => void authorizeAndOpenPayment()}
+                disabled={loading}
+              >
+                {loading ? '…' : 'Continue'}
               </button>
             </div>
           </>

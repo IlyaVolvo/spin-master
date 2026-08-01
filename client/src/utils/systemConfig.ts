@@ -21,6 +21,7 @@ export const ACHIEVEMENT_CATEGORY_LABELS: Record<AchievementCategoryId, string> 
 export type SystemConfig = {
   branding: {
     clubName: string | null;
+    clubTimezone: string;
   };
   authPolicy: {
     minimumPasswordLength: number;
@@ -123,6 +124,7 @@ export type SystemConfigPatch = Partial<{
 const defaultSystemConfig: SystemConfig = {
   branding: {
     clubName: null,
+    clubTimezone: 'UTC',
   },
   authPolicy: {
     minimumPasswordLength: 6,

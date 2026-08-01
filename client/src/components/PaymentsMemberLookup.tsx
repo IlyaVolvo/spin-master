@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import api from '../utils/api';
+import { formatClubDateTime } from '../utils/clubDateTime';
 import { getErrorMessage } from '../utils/errorHandler';
 import { MemberPlanScreen } from './players/MemberPlanScreen';
 
@@ -304,7 +305,7 @@ export function PaymentsMemberLookup({
                 return (
                   <tr key={p.id}>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>
-                      {new Date(p.recordedAt).toLocaleString()}
+                      {formatClubDateTime(p.recordedAt)}
                     </td>
                     <td style={tdStyle}>
                       <button

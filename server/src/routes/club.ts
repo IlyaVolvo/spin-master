@@ -23,19 +23,17 @@ import { confirmPayment } from '../payments/confirmPayment';
 import { emitPaymentUpdated, emitClubVisitUpdated } from '../services/socketService';
 import { getExpiryWarning } from '../payments/checkInReminders';
 import { createTrialVisit, resolveFirstVisitOfDay } from '../payments/checkInAccess';
+import { recordRejectedCheckIn } from '../payments/recordRejectedCheckIn';
+import {
+  attendanceStatusWhere,
+  parseAttendanceStatusFilter,
+} from '../payments/attendanceLogFilters';
+import { getClubDate, getClubTimezone, clubLocalDayRangeUtc } from '../utils/clubDate';
+import { memberHasPaymentLogin } from '../utils/paymentLoginEligibility';
 
 const router = express.Router();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getClubTimezone(): string {
-  return process.env.CLUB_TIMEZONE || 'UTC';
-}
-
-/** Returns the club-local date string "YYYY-MM-DD" for a given instant. */
-function getClubDate(date: Date = new Date()): string {
-  return date.toLocaleDateString('en-CA', { timeZone: getClubTimezone() }); // en-CA gives YYYY-MM-DD
-}
 
 /** Check if user has ADMIN or ORGANIZER role */
 function isAdminOrOrganizer(req: AuthRequest): boolean {
@@ -164,18 +162,11 @@ async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') 
     }
 
     if (outcome.kind === 'payment_required') {
-      const now = new Date();
-      const rejectedVisit = await prisma.clubVisit.create({
-        data: {
-          memberId,
-          clubDate,
-          checkInAt: now,
-          checkOutAt: now,
-          closedBy: closedByMethod,
-          dailyPaymentApplied: false,
-          rejectedAt: now,
-          rejectionReason: outcome.warning || 'Check-in rejected',
-        },
+      const rejectedVisit = await recordRejectedCheckIn({
+        memberId,
+        clubDate,
+        closedBy: closedByMethod,
+        reason: outcome.warning || 'Check-in rejected',
       });
       return finish({
         action: 'PAYMENT_REQUIRED' as const,
@@ -347,7 +338,15 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
 
     const member = await prisma.member.findUnique({
       where: { id: memberId },
-      select: { id: true, firstName: true, lastName: true, isActive: true, scorePin: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        isActive: true,
+        scorePin: true,
+        email: true,
+        password: true,
+      },
     });
 
     if (!member) {
@@ -363,6 +362,7 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
     }
 
     const result = await toggleVisit(member.id, 'MANUAL');
+    const paymentLoginAvailable = memberHasPaymentLogin(member);
 
     if (result.action === 'PAYMENT_REQUIRED') {
       return res.status(402).json({
@@ -372,6 +372,7 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
         entitlement: result.entitlement,
         courtesy: result.courtesy,
         canPay: result.canPay,
+        paymentLoginAvailable,
         paymentInProgress: result.paymentInProgress,
         member: { firstName: member.firstName, lastName: member.lastName },
       });
@@ -385,6 +386,7 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
       entitlement: result.entitlement,
       courtesy: result.courtesy,
       canPay: result.canPay,
+      paymentLoginAvailable,
       paymentInProgress: result.paymentInProgress,
       member: { firstName: member.firstName, lastName: member.lastName },
     });
@@ -1741,16 +1743,7 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
     };
     const dateFrom = parseYmd(req.query.from);
     const dateTo = parseYmd(req.query.to);
-    const statusRaw = typeof req.query.status === 'string' ? req.query.status.trim().toLowerCase() : '';
-    const statusFilter: 'all' | 'present' | 'rejected' =
-      statusRaw === 'present' || statusRaw === 'rejected'
-        ? statusRaw
-        : req.query.present === '1' ||
-            req.query.present === 'true' ||
-            req.query.onlyPresent === '1' ||
-            req.query.onlyPresent === 'true'
-          ? 'present'
-          : 'all';
+    const statusFilter = parseAttendanceStatusFilter(req.query);
     const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
     const nameFilters = tokens.map((token) => ({
       OR: [
@@ -1767,12 +1760,7 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
           }
         : undefined;
 
-    const statusWhere =
-      statusFilter === 'present'
-        ? { checkOutAt: null, rejectedAt: null }
-        : statusFilter === 'rejected'
-          ? { rejectedAt: { not: null } }
-          : {};
+    const statusWhere = attendanceStatusWhere(statusFilter);
 
     const visits = await prisma.clubVisit.findMany({
       where: {
@@ -1842,15 +1830,7 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
       ],
     }));
 
-    const recordedAtFilter: { gte?: Date; lt?: Date } = {};
-    if (dateFrom) {
-      recordedAtFilter.gte = new Date(`${dateFrom}T00:00:00`);
-    }
-    if (dateTo) {
-      const endExclusive = new Date(`${dateTo}T00:00:00`);
-      endExclusive.setDate(endExclusive.getDate() + 1);
-      recordedAtFilter.lt = endExclusive;
-    }
+    const recordedAtFilter = clubLocalDayRangeUtc(dateFrom, dateTo);
 
     const payments = await prisma.clubPayment.findMany({
       where: {

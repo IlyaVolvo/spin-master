@@ -8,11 +8,18 @@ import { runMemberCheckout } from '../runCheckout';
 import { paymentProviderRegistry } from '../PaymentProviderRegistry';
 import { getPaymentsConfig } from '../../services/systemConfigService';
 import type { PaymentInitiatedBy } from '../types';
+import { getKioskKind, isKioskMode } from '../../utils/kioskMode';
+import { hasCheckinPaymentUnlock } from '../../utils/checkinPaymentUnlock';
 
 const router = express.Router();
 
 function isAdmin(req: AuthRequest): boolean {
   return (req.member?.roles || []).includes('ADMIN');
+}
+
+/** Check-in kiosk is staffed by an admin; allow paying for a named member there. */
+function isCheckinKioskStaff(req: AuthRequest): boolean {
+  return isKioskMode(req) && getKioskKind(req) === 'checkin' && isAdmin(req);
 }
 
 /** GET /api/payments/providers — list registered providers for System Settings */
@@ -152,17 +159,32 @@ router.get('/:paymentId', authenticate, async (req: AuthRequest, res: Response) 
  */
 router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    if (req.kioskMode === true) {
+    const bodyMemberId =
+      req.body?.memberId != null ? Number(req.body.memberId) : NaN;
+    const checkinKioskStaff = isCheckinKioskStaff(req);
+
+    if (req.kioskMode === true && !checkinKioskStaff) {
       return res.status(403).json({
         error:
-          'Purchases cannot be started from kiosk / check-in PIN. Use the Plan page after full login, or ask an administrator.',
+          'Purchases cannot be started from this kiosk. Use the Plan page after full login, or ask an administrator.',
       });
     }
 
-    const bodyMemberId =
-      req.body?.memberId != null ? Number(req.body.memberId) : NaN;
+    if (checkinKioskStaff) {
+      if (!Number.isInteger(bodyMemberId) || bodyMemberId < 1) {
+        return res.status(400).json({ error: 'memberId is required' });
+      }
+      if (!hasCheckinPaymentUnlock(req, bodyMemberId)) {
+        return res.status(403).json({
+          error: 'Member password required to start payment from check-in.',
+        });
+      }
+    }
+
     const adminOnBehalf =
-      isAdmin(req) && Number.isInteger(bodyMemberId) && bodyMemberId !== req.memberId;
+      (isAdmin(req) || checkinKioskStaff) &&
+      Number.isInteger(bodyMemberId) &&
+      bodyMemberId !== req.memberId;
 
     const initiatedBy: PaymentInitiatedBy = adminOnBehalf ? 'ADMIN' : 'MEMBER';
 

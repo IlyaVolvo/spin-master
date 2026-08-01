@@ -10,6 +10,8 @@ import {
 
 export type BrandingConfig = {
   clubName: string | null;
+  /** IANA timezone for club-local calendar days (check-in, trials, midnight jobs). */
+  clubTimezone: string;
 };
 
 export type AuthPolicyConfig = {
@@ -171,6 +173,20 @@ const DEFAULT_CANCEL_REASONS = [
   'Weather or emergency closure',
 ];
 
+function getEnvClubTimezone(): string {
+  const raw = process.env.CLUB_TIMEZONE;
+  return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : 'UTC';
+}
+
+function isValidIanaTimezone(value: string): boolean {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: value }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getEnvClubName(): string | null {
   const raw = process.env.CLUB_NAME;
   return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
@@ -180,6 +196,7 @@ export function getDefaultSystemConfig(): SystemConfig {
   return {
     branding: {
       clubName: getEnvClubName(),
+      clubTimezone: getEnvClubTimezone(),
     },
     authPolicy: {
       minimumPasswordLength: 6,
@@ -329,10 +346,18 @@ function validateBranding(value: unknown): BrandingConfig {
   if (config.clubName !== null && typeof config.clubName !== 'string') {
     throw new Error('branding.clubName must be a string or null');
   }
+  const clubTimezone =
+    typeof config.clubTimezone === 'string' && config.clubTimezone.trim() !== ''
+      ? config.clubTimezone.trim()
+      : getEnvClubTimezone();
+  if (!isValidIanaTimezone(clubTimezone)) {
+    throw new Error(`branding.clubTimezone must be a valid IANA timezone (got "${clubTimezone}")`);
+  }
   return {
     clubName: typeof config.clubName === 'string' && config.clubName.trim() !== ''
       ? config.clubName.trim()
       : null,
+    clubTimezone,
   };
 }
 
@@ -758,6 +783,10 @@ export function getTournamentRulesConfig(): TournamentRulesConfig {
 
 export function getClientRuntimeConfig(): ClientRuntimeConfig {
   return getSystemConfig().clientRuntime;
+}
+
+export function getClubTimezoneConfig(): string {
+  return getSystemConfig().branding.clubTimezone || getEnvClubTimezone();
 }
 
 export function getClubPlansConfig(): ClubPlansConfig {

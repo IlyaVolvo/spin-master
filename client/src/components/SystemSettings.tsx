@@ -308,6 +308,64 @@ export default function SystemSettings() {
         />
       </div>
 
+      <div style={{ marginBottom: '18px' }}>
+        <label
+          htmlFor="system-settings-club-timezone"
+          style={{ display: 'block', fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+        >
+          Club Timezone
+        </label>
+        <select
+          id="system-settings-club-timezone"
+          data-testid="system-settings-club-timezone"
+          value={config.branding.clubTimezone || 'UTC'}
+          onChange={(event) => updateConfig((draft) => {
+            draft.branding.clubTimezone = event.target.value;
+          })}
+          style={{ ...valueInputStyle, fontSize: '14px', fontWeight: 500, maxWidth: '420px' }}
+        >
+          {(() => {
+            const known = [
+              'UTC',
+              'America/Los_Angeles',
+              'America/Denver',
+              'America/Phoenix',
+              'America/Chicago',
+              'America/New_York',
+              'America/Anchorage',
+              'Pacific/Honolulu',
+              'Europe/London',
+              'Europe/Paris',
+              'Asia/Tokyo',
+              'Australia/Sydney',
+            ];
+            const current = config.branding.clubTimezone || 'UTC';
+            const options = known.includes(current) ? known : [current, ...known];
+            const labels: Record<string, string> = {
+              UTC: 'UTC',
+              'America/Los_Angeles': 'America/Los_Angeles (Pacific)',
+              'America/Denver': 'America/Denver (Mountain)',
+              'America/Phoenix': 'America/Phoenix (Arizona)',
+              'America/Chicago': 'America/Chicago (Central)',
+              'America/New_York': 'America/New_York (Eastern)',
+              'America/Anchorage': 'America/Anchorage',
+              'Pacific/Honolulu': 'Pacific/Honolulu',
+              'Europe/London': 'Europe/London',
+              'Europe/Paris': 'Europe/Paris',
+              'Asia/Tokyo': 'Asia/Tokyo',
+              'Australia/Sydney': 'Australia/Sydney',
+            };
+            return options.map((tz) => (
+              <option key={tz} value={tz}>{labels[tz] || tz}</option>
+            ));
+          })()}
+        </select>
+        <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#666' }}>
+          Used for club calendar days (check-in, trials, midnight jobs). Defaults from{' '}
+          <code>CLUB_TIMEZONE</code> env if unset.
+        </p>
+      </div>
+
       <Section
         title="Core Settings"
         sectionId="core"

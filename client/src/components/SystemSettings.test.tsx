@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import SystemSettings from './SystemSettings';
 
 const mockConfig = {
-  branding: { clubName: 'Initial Club' },
+  branding: { clubName: 'Initial Club', clubTimezone: 'UTC' },
   authPolicy: { minimumPasswordLength: 6, passwordResetTokenTtlHours: 1, pinLength: 4, autoRelinquishPrivileges: false, autoRelinquishIdleMinutes: 5 },
   preregistration: {
     defaultTournamentOffsetDays: 1,

@@ -15,6 +15,7 @@ import type {
   PaymentMetadata,
   StartCheckoutResult,
 } from './types';
+import { getClubDate } from '../utils/clubDate';
 
 export type CheckoutMethod = 'cash' | 'online';
 
@@ -43,9 +44,7 @@ export type RunCheckoutResult = StartCheckoutResult & {
 };
 
 function clubTodayYmd(): string {
-  return new Date().toLocaleDateString('en-CA', {
-    timeZone: process.env.CLUB_TIMEZONE || 'UTC',
-  });
+  return getClubDate();
 }
 
 /**

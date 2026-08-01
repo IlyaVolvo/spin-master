@@ -15,6 +15,11 @@ declare module 'express-session' {
     kioskKind?: 'checkin' | 'browse' | 'tournamentScore';
     /** Tournament id when kioskKind is tournamentScore. */
     kioskTournamentId?: number;
+    /** When set, check-in kiosk staff may purchase for this member until expiresAt. */
+    kioskPaymentUnlock?: {
+      memberId: number;
+      expiresAt: number;
+    };
   }
 }
 

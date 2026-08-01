@@ -143,10 +143,12 @@ export default function AttendanceLogAdmin() {
   return (
     <div style={{ paddingBottom: '16px' }}>
       <div style={{ marginBottom: '16px' }}>
-        <h2 style={{ margin: 0 }}>Attendance Log</h2>
-        <p style={{ margin: '6px 0 0', color: '#666' }}>
-          Check-in and check-out history, newest first. Includes rejected check-in attempts.
-        </p>
+        <h2
+          style={{ margin: 0, display: 'inline-block', cursor: 'help' }}
+          title="Check-in and check-out history, newest first. Includes rejected check-in attempts."
+        >
+          Attendance Log
+        </h2>
       </div>
 
       <div

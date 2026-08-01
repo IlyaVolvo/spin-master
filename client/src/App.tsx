@@ -1017,17 +1017,8 @@ function Header({
     };
   }, [adminMenuOpen]);
 
-  const adminMenuItems = [
-    { id: 'payment-log' as const, label: 'Payment Log' },
-    { id: 'attendance-log' as const, label: 'Attendance Log' },
-    { id: 'plans' as const, label: 'Payment Plans' },
-    { id: 'settings' as const, label: 'System Configuration' },
-  ];
-  const adminMenuLongestLabel = adminMenuItems.reduce(
-    (longest, item) => (item.label.length > longest.length ? item.label : longest),
-    'Admin',
-  );
-  const adminMenuTriggerMinWidth = `calc(${adminMenuLongestLabel.length + 2}ch + 24px)`;
+  // Size to the current label only — keep the header tab as narrow as possible.
+  const adminMenuTriggerMinWidth = `calc(${adminMenuLabel.length + 2}ch + 24px)`;
 
   const hasPendingPreregistrations = pendingPreregistrationCount > 0;
   const isAdminUser = !kioskMode && isAdmin();

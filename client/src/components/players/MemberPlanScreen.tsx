@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../utils/api';
+import { formatClubDateTime } from '../../utils/clubDateTime';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { isAdmin } from '../../utils/auth';
+import {
+  clearCheckinPaymentUnlock,
+  getCheckinPaymentUnlockToken,
+} from '../../utils/checkinPaymentUnlock';
 import { waitForPaymentUpdate } from '../../utils/waitForPaymentUpdate';
 
 type EntitlementView = {
@@ -212,13 +217,15 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       closedRef.current = true;
       paymentAbortRef.current?.abort();
       paymentAbortRef.current = null;
+      clearCheckinPaymentUnlock(memberId);
     };
-  }, []);
+  }, [memberId]);
 
   const handleClose = () => {
     closedRef.current = true;
     paymentAbortRef.current?.abort();
     paymentAbortRef.current = null;
+    clearCheckinPaymentUnlock(memberId);
     onClose();
   };
 
@@ -365,6 +372,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
     paymentAbortRef.current?.abort();
     paymentAbortRef.current = abort;
     try {
+      const paymentUnlockToken = getCheckinPaymentUnlockToken(memberId);
       const res = await api.post('/payments/checkout', {
         memberId,
         familyKey: selectedPlan.familyKey,
@@ -372,6 +380,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         method: payMethod,
         autoRenew: summary.autoRenewEnabled && payMethod === 'online',
         ...(showStartDate ? { startDate } : {}),
+        ...(paymentUnlockToken ? { paymentUnlockToken } : {}),
       });
       const paymentId = Number(res.data?.paymentId);
       if (!paymentId) {
@@ -997,7 +1006,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                         Credit {formatMoney(p.creditAppliedCents ?? 0)}
                       </div>
                       <div style={{ color: '#888', fontSize: '12px' }}>
-                        {new Date(p.recordedAt).toLocaleString()}
+                        {formatClubDateTime(p.recordedAt)}
                       </div>
                     </li>
                   ))}
