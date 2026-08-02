@@ -60,6 +60,7 @@ export async function runAutoCheckout(options?: {
         action: 'AUTO_CHECK_OUT',
         clubDate,
         visitId: visit.id,
+        present: false,
       });
     }
   }
@@ -111,6 +112,7 @@ export async function runCloseClub(options?: {
       action: 'AUTO_CHECK_OUT',
       clubDate: visit.clubDate,
       visitId: visit.id,
+      present: false,
     });
   }
 

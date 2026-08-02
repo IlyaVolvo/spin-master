@@ -39,6 +39,7 @@ import {
   setCachedMemberCheckInStub,
   type MemberCheckInStub,
 } from '../payments/checkInStateCache';
+import { getPresenceBoardVersion } from '../payments/presenceBoardVersion';
 
 const router = express.Router();
 
@@ -370,6 +371,14 @@ router.post('/self/toggle', async (req: AuthRequest, res: Response) => {
   }
 });
 
+/** GET /api/club/kiosk/today-status/version — cheap presence-board sync probe */
+router.get('/kiosk/today-status/version', async (_req: AuthRequest, res: Response) => {
+  res.json({
+    clubDate: getClubDate(),
+    version: getPresenceBoardVersion(),
+  });
+});
+
 /** GET /api/club/kiosk/today-status — bulk presence flags for Players check-in kiosk */
 router.get('/kiosk/today-status', async (req: AuthRequest, res: Response) => {
   try {
@@ -409,7 +418,7 @@ router.get('/kiosk/today-status', async (req: AuthRequest, res: Response) => {
       lastCheckInAt: status.lastCheckInAt,
     }));
 
-    res.json({ clubDate, members });
+    res.json({ clubDate, version: getPresenceBoardVersion(), members });
   } catch (error) {
     logger.error('Error loading kiosk today-status', {
       error: error instanceof Error ? error.message : String(error),

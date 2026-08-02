@@ -184,12 +184,38 @@ export async function toggleVisit(
   let estimatedRoundTrips = 0;
 
   const finish = (result: ToggleVisitResult): ToggleVisitResult => {
-    emitClubVisitUpdated({
-      memberId,
-      action: result.action,
-      clubDate,
-      visitId: result.visit?.id ?? null,
-    });
+    const visit = result.visit;
+    const lastCheckInAt = visit?.checkInAt ? visit.checkInAt.toISOString() : null;
+    if (result.action === 'CHECK_IN') {
+      emitClubVisitUpdated({
+        memberId,
+        action: result.action,
+        clubDate,
+        visitId: visit?.id ?? null,
+        present: true,
+        visitedToday: true,
+        lastCheckInAt,
+      });
+    } else if (result.action === 'CHECK_OUT') {
+      emitClubVisitUpdated({
+        memberId,
+        action: result.action,
+        clubDate,
+        visitId: visit?.id ?? null,
+        present: false,
+        // Leave visitedToday to the client (or a full refresh); open visit may be from an earlier clubDate.
+        lastCheckInAt,
+      });
+    } else {
+      // PAYMENT_REQUIRED (rejected): not present; do not clear visitedToday on clients.
+      emitClubVisitUpdated({
+        memberId,
+        action: result.action,
+        clubDate,
+        visitId: visit?.id ?? null,
+        present: false,
+      });
+    }
     logger.debug('checkInDbRoundTrips', {
       memberId,
       action: result.action,

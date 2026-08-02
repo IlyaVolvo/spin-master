@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import { logger } from '../utils/logger';
+import { bumpPresenceBoardVersion } from '../payments/presenceBoardVersion';
 
 let ioInstance: Server | null = null;
 
@@ -162,18 +163,28 @@ export function emitPaymentUpdated(payment: {
 
 /**
  * Notify clients that club attendance changed (check-in, check-out, or rejected attempt).
+ * Always bumps the presence-board version so clients can detect missed events.
  */
 export function emitClubVisitUpdated(payload: {
   memberId: number;
   action: string;
   clubDate?: string | null;
   visitId?: number | null;
+  /** When set, clients may patch local status without a full today-status fetch. */
+  present?: boolean;
+  visitedToday?: boolean;
+  lastCheckInAt?: string | null;
 }) {
+  const version = bumpPresenceBoardVersion();
   emitToAll('club:visitUpdated', {
     memberId: payload.memberId,
     action: payload.action,
     clubDate: payload.clubDate ?? null,
     visitId: payload.visitId ?? null,
+    version,
+    present: payload.present,
+    visitedToday: payload.visitedToday,
+    lastCheckInAt: payload.lastCheckInAt ?? null,
     timestamp: Date.now(),
   });
 }
