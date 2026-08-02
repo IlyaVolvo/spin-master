@@ -1542,11 +1542,9 @@ function Header({
                   type="button"
                   className="app-header-public-link"
                   onClick={() => {
-                    clearAllScrollPositions();
-                    clearAllUIStates();
-                    window.scrollTo(0, 0);
-                    navigate('/public');
+                    window.open('/public', '_blank', 'noopener,noreferrer');
                   }}
+                  title="Open public pages in a new tab"
                   style={{
                     padding: '2px 8px',
                     fontSize: '11px',
@@ -1561,6 +1559,30 @@ function Header({
                   }}
                 >
                   Public
+                </button>
+              ) : null}
+              {!kioskMode ? (
+                <button
+                  type="button"
+                  className="app-header-public-link"
+                  onClick={() => {
+                    window.open('/role-tutorials/index.html', '_blank', 'noopener,noreferrer');
+                  }}
+                  title="Open role tutorials in a new tab"
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    lineHeight: 1.2,
+                    color: 'rgba(255, 255, 255, 0.75)',
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.35)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Tutorials
                 </button>
               ) : null}
             </div>
