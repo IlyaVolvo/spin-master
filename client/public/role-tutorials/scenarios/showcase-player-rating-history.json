@@ -1,11 +1,11 @@
 {
   "slug": "showcase-player-rating-history",
   "role": "player",
-  "title": "Player views rating history",
-  "description": "Open history for one member from the Players list. With no opponents selected, History shows that player’s full rating timeline. Selecting opponents instead shows match history against those players.",
+  "title": "Player views match history",
+  "description": "Select a player, clear the pre-selected opponents, choose opponents with completed match history (first pick shown, then a note that more picks work the same), then open Match History. The walkthrough ends there — single-player rating charts are in View Stats.",
   "relatedSlugs": [
-    "showcase-player-score-kiosk",
-    "showcase-player-plan"
+    "showcase-player-view-stats",
+    "showcase-player-multi-stats"
   ],
   "viewport": {
     "width": 1600,
@@ -15,20 +15,20 @@
     {
       "id": "players-list",
       "title": "Players list",
-      "body": "Tutorial PlayerOnly has rating changes from the seeded completed Round Robin — a clear one-player history example.",
+      "body": "Tutorial PlayerOnly has matches and rating changes from the seeded completed Round Robin.",
       "image": "assets/showcase-player-rating-history/step-01.png",
       "kind": "context"
     },
     {
       "id": "open-history-control",
       "title": "Open history for the player",
-      "body": "Tap the scroll icon on the player’s row. That starts history selection with the player chosen (and opponents pre-selected for match history).",
+      "body": "Tap the scroll icon on the player’s row. That starts history selection with the player chosen (and opponents pre-selected).",
       "image": "assets/showcase-player-rating-history/step-02.png",
       "kind": "action",
       "actionHint": "Click the history icon on the player row",
       "hotspot": {
         "x": 17.4,
-        "y": 75.4,
+        "y": 77.3,
         "w": 1.5,
         "h": 2.7
       }
@@ -43,48 +43,79 @@
     },
     {
       "id": "deselect-opponents",
-      "title": "Clear opponents for rating history",
-      "body": "Deselect All removes opponents so View History opens the full rating timeline for this one player only.",
+      "title": "Deselect All",
+      "body": "Deselect All clears the pre-checked opponents so you can pick exactly who to compare against.",
       "image": "assets/showcase-player-rating-history/step-04.png",
       "kind": "action",
       "actionHint": "Click Deselect All",
       "hotspot": {
         "x": 51.6,
-        "y": 23.2,
+        "y": 25.1,
         "w": 5.7,
         "h": 2.7
       }
     },
     {
-      "id": "rating-mode-ready",
-      "title": "One player, no opponents",
-      "body": "With 0 opponents selected, View History will show Rating History rather than head-to-head matches.",
+      "id": "cleared-opponents",
+      "title": "Opponents cleared",
+      "body": "With 0 opponents selected, you can check the players who have match history with this member.",
       "image": "assets/showcase-player-rating-history/step-05.png",
       "kind": "result",
-      "resultNote": "Opponent count is 0 — ready for one-player rating history."
+      "resultNote": "Opponent count is 0."
+    },
+    {
+      "id": "select-first-opponent",
+      "title": "Select an opponent with history",
+      "body": "Check Alex Rivera — one opponent who has completed matches against Tutorial PlayerOnly.",
+      "image": "assets/showcase-player-rating-history/step-06.png",
+      "kind": "action",
+      "actionHint": "Click the checkbox for Alex Rivera",
+      "hotspot": {
+        "x": 16.5,
+        "y": 78.6,
+        "w": 0.8,
+        "h": 1.3
+      }
+    },
+    {
+      "id": "more-selections-same",
+      "title": "More selections work the same",
+      "body": "You can check several more opponents the same way. The next screen skips those repeated clicks and shows the result after a few similar selections.",
+      "image": "assets/showcase-player-rating-history/step-07.png",
+      "kind": "bridge",
+      "autoAdvanceMs": 3800
+    },
+    {
+      "id": "three-players-ready",
+      "title": "Three players selected",
+      "body": "Tutorial PlayerOnly plus Alex Rivera and Blair Chen — View History will list every match played against those two opponents.",
+      "image": "assets/showcase-player-rating-history/step-08.png",
+      "kind": "result",
+      "resultNote": "2 opponents selected for match history (remaining picks applied behind the scenes)."
     },
     {
       "id": "view-history",
       "title": "View History",
-      "body": "Confirm to open the Rating History page for the selected member.",
-      "image": "assets/showcase-player-rating-history/step-06.png",
+      "body": "Confirm to open Match History for the selected player against those opponents.",
+      "image": "assets/showcase-player-rating-history/step-09.png",
       "kind": "action",
       "actionHint": "Click View History",
       "hotspot": {
         "x": 59.2,
-        "y": 23.2,
+        "y": 25.1,
         "w": 6.4,
         "h": 2.7
       }
     },
     {
-      "id": "rating-history",
-      "title": "Rating History",
-      "body": "Full Rating History lists rating events (newest first), including the completed Round Robin adjustment for this player.",
-      "image": "assets/showcase-player-rating-history/step-07.png",
+      "id": "match-history",
+      "title": "Match History",
+      "body": "Match History lists all matches played against the selected opponents (scores, dates, and rating impact when available). This is the last step of the walkthrough.",
+      "image": "assets/showcase-player-rating-history/step-10.png",
       "kind": "result",
-      "resultNote": "Rating History page shows the selected player’s timeline."
+      "resultNote": "Match History page shows head-to-head results. Showcase ends here."
     }
   ],
-  "showcase": true
+  "showcase": true,
+  "hideNextShowcase": true
 }

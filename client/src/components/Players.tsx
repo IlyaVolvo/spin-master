@@ -13,8 +13,11 @@ import {
   CheckinKioskToolbar,
   CheckinPinModal,
   CheckinRowButton,
+  applyClubVisitUpdatedPatch,
   fetchCheckinTodayStatus,
+  fetchCheckinTodayStatusVersion,
   type CheckinStatusMap,
+  type ClubVisitUpdatedEvent,
 } from './players/CheckinKioskUI';
 import { parseInvalidScorePinsFromError } from '../utils/matchScorePayload';
 import { createStandaloneMatchScore } from '../utils/matchScoreSubmit';
@@ -480,30 +483,93 @@ const Players: React.FC = () => {
     });
   }, []);
 
+  const checkinPresenceVersionRef = useRef(0);
+  const checkinPresenceClubDateRef = useRef('');
+
   useEffect(() => {
     if (!isCheckinKiosk) {
       setCheckinStatusByMember({});
+      checkinPresenceVersionRef.current = 0;
+      checkinPresenceClubDateRef.current = '';
       return;
     }
     let cancelled = false;
-    const load = () => {
+
+    const applySnapshot = (snap: Awaited<ReturnType<typeof fetchCheckinTodayStatus>>) => {
+      if (cancelled) return;
+      checkinPresenceVersionRef.current = snap.version;
+      checkinPresenceClubDateRef.current = snap.clubDate;
+      setCheckinStatusByMember(snap.members);
+    };
+
+    const fullRefresh = () => {
       fetchCheckinTodayStatus()
-        .then((map) => {
-          if (!cancelled) setCheckinStatusByMember(map);
-        })
+        .then(applySnapshot)
         .catch(() => {
           if (!cancelled) setCheckinStatusByMember({});
         });
     };
-    load();
+
+    const versionCheck = () => {
+      fetchCheckinTodayStatusVersion()
+        .then(({ version, clubDate }) => {
+          if (cancelled) return;
+          if (
+            clubDate !== checkinPresenceClubDateRef.current ||
+            version !== checkinPresenceVersionRef.current
+          ) {
+            fullRefresh();
+          }
+        })
+        .catch(() => {
+          /* ignore probe errors; next interval/reconnect retries */
+        });
+    };
+
+    const onVisitUpdated = (raw: ClubVisitUpdatedEvent) => {
+      if (cancelled) return;
+      if (typeof raw?.version === 'number' && Number.isFinite(raw.version)) {
+        const incoming = raw.version;
+        const local = checkinPresenceVersionRef.current;
+        // Gap means we missed an event — reconcile with a full snapshot.
+        if (incoming > local + 1) {
+          fullRefresh();
+          return;
+        }
+        if (incoming < local) {
+          return;
+        }
+        checkinPresenceVersionRef.current = incoming;
+      }
+      setCheckinStatusByMember((prev) => {
+        const patched = applyClubVisitUpdatedPatch(
+          prev,
+          raw,
+          checkinPresenceClubDateRef.current,
+        );
+        if (patched == null) {
+          fullRefresh();
+          return prev;
+        }
+        return patched;
+      });
+    };
+
+    const onSocketConnect = () => {
+      versionCheck();
+    };
+
+    fullRefresh();
     connectSocket();
     const socket = getSocket();
-    socket?.on('club:visitUpdated', load);
-    const interval = window.setInterval(load, 30000);
+    socket?.on('club:visitUpdated', onVisitUpdated);
+    socket?.on('connect', onSocketConnect);
+    const interval = window.setInterval(versionCheck, 30000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
-      socket?.off('club:visitUpdated', load);
+      socket?.off('club:visitUpdated', onVisitUpdated);
+      socket?.off('connect', onSocketConnect);
     };
   }, [isCheckinKiosk]);
 
@@ -5098,7 +5164,11 @@ const Players: React.FC = () => {
               onRefresh={() => {
                 void refreshAllData();
                 fetchCheckinTodayStatus()
-                  .then(setCheckinStatusByMember)
+                  .then((snap) => {
+                    checkinPresenceVersionRef.current = snap.version;
+                    checkinPresenceClubDateRef.current = snap.clubDate;
+                    setCheckinStatusByMember(snap.members);
+                  })
                   .catch(() => {});
               }}
             />
@@ -6442,7 +6512,11 @@ const Players: React.FC = () => {
             setPlanScreenMemberId(null);
             if (isCheckinKiosk) {
               fetchCheckinTodayStatus()
-                .then(setCheckinStatusByMember)
+                .then((snap) => {
+                  checkinPresenceVersionRef.current = snap.version;
+                  checkinPresenceClubDateRef.current = snap.clubDate;
+                  setCheckinStatusByMember(snap.members);
+                })
                 .catch(() => {});
             } else {
               void fetchMembers();
@@ -7721,8 +7795,13 @@ const Players: React.FC = () => {
             setCheckinPinTarget(null);
             setSuccess(message);
             setError('');
+            // Socket patch usually lands first; full refresh keeps version/clubDate aligned.
             fetchCheckinTodayStatus()
-              .then(setCheckinStatusByMember)
+              .then((snap) => {
+                checkinPresenceVersionRef.current = snap.version;
+                checkinPresenceClubDateRef.current = snap.clubDate;
+                setCheckinStatusByMember(snap.members);
+              })
               .catch(() => {});
           }}
           onOpenPayment={(memberId) => {
@@ -7731,7 +7810,11 @@ const Players: React.FC = () => {
             setSuccess('');
             setPlanScreenMemberId(memberId);
             fetchCheckinTodayStatus()
-              .then(setCheckinStatusByMember)
+              .then((snap) => {
+                checkinPresenceVersionRef.current = snap.version;
+                checkinPresenceClubDateRef.current = snap.clubDate;
+                setCheckinStatusByMember(snap.members);
+              })
               .catch(() => {});
           }}
         />

@@ -2,10 +2,10 @@
   "slug": "showcase-player-checkin",
   "role": "player",
   "title": "Player checks in at the kiosk",
-  "description": "At the club check-in kiosk, a member finds their row, enters their score PIN, and joins today’s attendance.",
+  "description": "At the club check-in kiosk, a member finds their name (by typing), enters their score PIN, and joins today’s attendance.",
   "relatedSlugs": [
     "showcase-player-checkout",
-    "showcase-admin-front-desk"
+    "showcase-player-score-kiosk"
   ],
   "viewport": {
     "width": 1600,
@@ -20,33 +20,40 @@
       "kind": "context"
     },
     {
-      "id": "find-member",
+      "id": "type-name",
       "title": "Find your name",
-      "body": "Eden Brooks has an active visit pack and is not present yet, so their row shows Check-in.",
+      "body": "You can scroll the roster to find Eden Brooks, but it is more efficient to start typing in the name search.",
       "image": "assets/showcase-player-checkin/step-02.png",
-      "kind": "context"
+      "kind": "action",
+      "actionHint": "Type in the name search field",
+      "hotspot": {
+        "x": 15,
+        "y": 35.6,
+        "w": 30.4,
+        "h": 3.3
+      }
+    },
+    {
+      "id": "name-found",
+      "title": "Your row appears",
+      "body": "Typing part of the name narrows the list. Eden Brooks has an active visit pack and is not present yet, so their row shows Check-in.",
+      "image": "assets/showcase-player-checkin/step-03.png",
+      "kind": "result",
+      "resultNote": "Name filter matches the member; Check-in is ready."
     },
     {
       "id": "row-checkin-action",
       "title": "Start check-in",
       "body": "Tap Check-in on your row. The kiosk asks for your score PIN (not your login password).",
-      "image": "assets/showcase-player-checkin/step-03.png",
+      "image": "assets/showcase-player-checkin/step-04.png",
       "kind": "action",
       "actionHint": "Click Check-in on your row",
       "hotspot": {
-        "x": 69.6,
-        "y": 48.5,
+        "x": 67.6,
+        "y": 45.9,
         "w": 4.7,
         "h": 2.7
       }
-    },
-    {
-      "id": "pin-dialog",
-      "title": "PIN prompt",
-      "body": "The dialog names the member and asks for the PIN configured on their profile.",
-      "image": "assets/showcase-player-checkin/step-04.png",
-      "kind": "result",
-      "resultNote": "Check-in PIN modal is open."
     },
     {
       "id": "enter-pin-action",
@@ -64,11 +71,11 @@
     },
     {
       "id": "checked-in",
-      "title": "Checked in",
-      "body": "Attendance updates: the member is present, the row switches to Check-out, and visit-pack remaining visits decrease when this was a charged check-in.",
+      "title": "State updated",
+      "body": "The row has changed: Check-in is gone and Check-out appears. The attendance count increases, and a visit-pack remaining visit decreases when this was a charged check-in.",
       "image": "assets/showcase-player-checkin/step-06.png",
       "kind": "result",
-      "resultNote": "PIN accepted; member is in today’s present list."
+      "resultNote": "Member is present; kiosk row now offers Check-out."
     }
   ],
   "showcase": true

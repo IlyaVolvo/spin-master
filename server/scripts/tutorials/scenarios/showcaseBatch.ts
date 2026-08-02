@@ -5,6 +5,7 @@ import {
   TUTORIAL_COMPLETED_RR_NAME,
   TUTORIAL_EMAILS,
   TUTORIAL_HISTORY_MEMBER,
+  TUTORIAL_HISTORY_OPPONENTS,
   TUTORIAL_MONTHLY_PLAN_NAME,
   TUTORIAL_STATS_MEMBERS,
   TUTORIAL_PASSWORD,
@@ -16,10 +17,14 @@ import {
   applyShowcaseSystemConfigEdits,
   clearHistoryOpponents,
   clickApplyAchievementsToAll,
+  hotspotForPlayerQuickStatsButton,
   hotspotForPlayerStatsCheckbox,
   hotspotForStatsToolbar,
   hotspotForViewStatistics,
   openMultiPlayerStatistics,
+  openPlayerMatchHistory,
+  openPlayerSingleStatistics,
+  selectHistoryOpponents,
   startStatsSelection,
   togglePlayerForStats,
   enableCompletedScoreCorrection,
@@ -29,6 +34,7 @@ import {
   ensureTournamentRuleOpen,
   enterCheckinKiosk,
   enterTournamentScoreKiosk,
+  ensurePlayersNameFilterVisible,
   fillCheckinPin,
   fillMatchEntryPins,
   fillMatchEntryScores,
@@ -39,14 +45,23 @@ import {
   hotspotForFirstEmptyScoreCell,
   hotspotForFirstScoredResultCell,
   hotspotForHref,
+  hotspotForMatchEntryPinField,
   hotspotForMatchEntrySave,
+  hotspotForMatchEntryScoreField,
+  fillMatchEntryPinField,
+  fillMatchEntryScoreField,
   hotspotForMemberAttendanceButton,
   hotspotForMemberCheckinButton,
   hotspotForPinModalAttendance,
   hotspotForPinModalCheckin,
+  hotspotForPlayersNameFilter,
   hotspotForPlanFamilySegmentAdd,
+  hotspotForPlanPurchaseButton,
   hotspotForPlanSelect,
+  hotspotForPlanSelectOption,
   hotspotForPlayerHistoryButton,
+  expandPlanSelectForCapture,
+  collapsePlanSelect,
   hotspotForSystemSave,
   hotspotForSystemSection,
   hotspotForTitle,
@@ -54,7 +69,6 @@ import {
   hotspotForTournamentType,
   hotspotForViewHistory,
   openAdminMenu,
-  openPlayerRatingHistory,
   openSystemSettings,
   openFirstCompletedScoreCorrection,
   startPlayerHistorySelection,
@@ -75,16 +89,20 @@ import {
   openTournamentWizard,
   saveMatchEntry,
   saveSystemSettings,
+  scrollPlanHeading,
   selectPlanFamilyKey,
   selectPlanFormSegment,
   selectTournamentPlayers,
   selectTournamentType,
+  setPlanPayMethod,
   setSystemClubName,
   setSystemClubTimezone,
   setSystemNumericByAriaLabel,
+  setPlayersNameFilter,
   submitAttendancePinModal,
   submitCheckinPinModal,
   submitCreatePlan,
+  submitPlanPurchase,
 } from '../lib/steps';
 import { goToLoginForm } from '../lib/browser';
 
@@ -104,7 +122,7 @@ export const showcaseScenarios: ScenarioDef[] = [
     showcase: true,
     title: 'Player buys / reviews a plan',
     description:
-      'See how a member signs in, opens their club plan, picks a plan from the purchase list, and reviews payment options.',
+      'Sign in, open your plan with $, see that no current or next plan exists, pick a 5-visit pack, purchase with cash, and close.',
     relatedSlugs: ['showcase-player-checkin', 'showcase-admin-front-desk'],
     steps: [
       {
@@ -162,93 +180,146 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
-        id: 'plan-result',
+        id: 'current-plan-none',
         kind: 'result',
-        title: 'Plan screen',
-        body: 'With no current entitlement, the Purchase section lists club plans. The first plan is pre-selected in the Plan control.',
-        resultNote: 'Seeded club plans and empty “current plan” state are intentional for this demo.',
+        title: 'No current plan',
+        body: 'The plan screen opens. Current plan shows None — this member does not have an active plan yet.',
+        resultNote: 'Current plan is empty (None).',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
           await openOwnPlanScreen(ctx);
+          await scrollPlanHeading(ctx, 'Current plan');
         },
       },
       {
-        id: 'purchase-focus',
-        kind: 'context',
-        title: 'Purchase options',
-        body: 'Open the Plan list to compare options (for example Monthly membership vs a visit pack), then choose payment method.',
+        id: 'next-plan-buying',
+        kind: 'result',
+        title: 'No next plan — buy one',
+        body: 'Next plan is also None. Use the Purchase section below to buy a new plan.',
+        resultNote: 'Next plan empty; Purchase section is available.',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
           await openOwnPlanScreen(ctx);
-          await ctx.page.evaluate(() => {
-            const el = [...document.querySelectorAll('label')].find(
-              (n) => (n.textContent || '').trim() === 'Plan',
-            ) as HTMLElement | undefined;
-            el?.scrollIntoView({ block: 'center' });
-          });
-          await ctx.delay(400);
+          await scrollPlanHeading(ctx, 'Next plan');
+          await ctx.delay(200);
+          await scrollPlanHeading(ctx, 'Purchase');
         },
       },
       {
-        id: 'select-plan',
+        id: 'open-plan-list',
         kind: 'action',
-        title: 'Select a plan',
-        body: 'Choose the plan you want to buy from the Plan list. Details and price update under the control.',
-        actionHint: 'Open the Plan list and pick a plan',
+        title: 'Open the plan list',
+        body: 'Open the Plan drop-down to see every club plan and its price.',
+        actionHint: 'Open the Plan list',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
           await openOwnPlanScreen(ctx);
-          await ctx.page.evaluate(() => {
-            const el = [...document.querySelectorAll('label')].find(
-              (n) => (n.textContent || '').trim() === 'Plan',
-            ) as HTMLElement | undefined;
-            el?.scrollIntoView({ block: 'center' });
-          });
-          await ctx.delay(300);
+          await scrollPlanHeading(ctx, 'Purchase');
+          await collapsePlanSelect(ctx);
           return { hotspot: await hotspotForPlanSelect(ctx) };
         },
       },
       {
-        id: 'plan-selected',
+        id: 'plan-list-open',
         kind: 'result',
-        title: 'Plan chosen',
-        body: 'The 5-visit pack is selected. Confirm the price line, then pick Cash or Pay online before purchasing.',
-        resultNote: 'Plan list changed from the default Monthly membership to the visit pack.',
+        title: 'Plan choices',
+        body: 'The list shows Monthly membership, the 5-visit pack, and other club plans with prices.',
+        resultNote: 'Plan drop-down is expanded.',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await openOwnPlanScreen(ctx);
+          await scrollPlanHeading(ctx, 'Purchase');
+          await expandPlanSelectForCapture(ctx);
+        },
+      },
+      {
+        id: 'select-visit-pack',
+        kind: 'action',
+        title: 'Select 5-visit pack',
+        body: 'Choose the 5-visit pack from the list. Details and price update under the control.',
+        actionHint: 'Select 5-visit pack',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await openOwnPlanScreen(ctx);
+          await scrollPlanHeading(ctx, 'Purchase');
+          return { hotspot: await hotspotForPlanSelectOption(ctx, SHOWCASE_PLAN_FAMILY) };
+        },
+      },
+      {
+        id: 'visit-pack-selected',
+        kind: 'result',
+        title: '5-visit pack selected',
+        body: 'The 5-visit pack is selected. Choose Cash or Pay online, then purchase.',
+        resultNote: 'Visit pack selected in the Plan control.',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
           await openOwnPlanScreen(ctx);
           await selectPlanFamilyKey(ctx, SHOWCASE_PLAN_FAMILY);
-          await ctx.page.evaluate(() => {
-            const el = [...document.querySelectorAll('label')].find(
-              (n) => (n.textContent || '').trim() === 'Plan',
-            ) as HTMLElement | undefined;
-            el?.scrollIntoView({ block: 'center' });
-          });
+          await scrollPlanHeading(ctx, 'Purchase');
+          await ctx.delay(300);
+        },
+      },
+      {
+        id: 'purchase-cash',
+        kind: 'action',
+        title: 'Purchase with cash',
+        body: 'Tap Purchase · Cash. If you have an email and consent to online payment, Pay online would be the default instead. An administrator will accept the cash payment later — it moves from Pending to Paid.',
+        actionHint: 'Click Purchase · Cash',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await openOwnPlanScreen(ctx);
+          await selectPlanFamilyKey(ctx, SHOWCASE_PLAN_FAMILY);
+          await setPlanPayMethod(ctx, 'cash');
+          await scrollPlanHeading(ctx, 'Purchase');
+          return { hotspot: await hotspotForPlanPurchaseButton(ctx) };
+        },
+      },
+      {
+        id: 'purchase-pending',
+        kind: 'result',
+        title: 'Payment pending',
+        body: 'Cash purchase is recorded as pending. An administrator clears it at the front desk; the payment then goes from Pending to Paid.',
+        resultNote: 'Pending cash payment awaiting admin clearance.',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await openOwnPlanScreen(ctx);
+          const alreadyPending = await ctx.page.evaluate(() =>
+            /pending|awaiting admin|Purchase pending/i.test(document.body.innerText || ''),
+          );
+          if (!alreadyPending) {
+            await selectPlanFamilyKey(ctx, SHOWCASE_PLAN_FAMILY);
+            await setPlanPayMethod(ctx, 'cash');
+            await submitPlanPurchase(ctx);
+          }
+          await scrollPlanHeading(ctx, 'Current plan');
           await ctx.delay(400);
         },
       },
       {
         id: 'close-plan-action',
         kind: 'action',
-        title: 'Close the plan',
-        body: 'When finished reviewing, close the overlay to return to Players.',
+        title: 'Close',
+        body: 'Close the overlay when you are done. You can reopen $ anytime to check status.',
         actionHint: 'Click Close',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
           await openOwnPlanScreen(ctx);
-          await selectPlanFamilyKey(ctx, SHOWCASE_PLAN_FAMILY);
-          try {
-            return { hotspot: await ctx.hotspotForButton('Close') };
-          } catch {
-            return {};
+          const alreadyPending = await ctx.page.evaluate(() =>
+            /pending|awaiting admin|Purchase pending/i.test(document.body.innerText || ''),
+          );
+          if (!alreadyPending) {
+            await selectPlanFamilyKey(ctx, SHOWCASE_PLAN_FAMILY);
+            await setPlanPayMethod(ctx, 'cash');
+            await submitPlanPurchase(ctx);
           }
+          return { hotspot: await ctx.hotspotForButton('Close') };
         },
       },
       {
         id: 'back-on-players',
         kind: 'result',
         title: 'Back on Players',
-        body: 'Closing returns you to the roster. Admins can also open any member’s plan from the table.',
+        body: 'Closing returns you to the roster. The pending purchase stays with the club until an admin marks it Paid.',
         resultNote: 'Overlay dismissed; roster is interactive again.',
         capture: async (ctx) => {
           await ctx.loginAs(TUTORIAL_EMAILS.player);
@@ -265,7 +336,7 @@ export const showcaseScenarios: ScenarioDef[] = [
     showcase: true,
     title: 'Player checks in at the kiosk',
     description:
-      'At the club check-in kiosk, a member finds their row, enters their score PIN, and joins today’s attendance.',
+      'At the club check-in kiosk, a member finds their name (by typing), enters their score PIN, and joins today’s attendance.',
     relatedSlugs: ['showcase-player-checkout', 'showcase-player-score-kiosk'],
     steps: [
       {
@@ -276,15 +347,32 @@ export const showcaseScenarios: ScenarioDef[] = [
         capture: async (ctx) => {
           await ctx.loginAs(TUTORIAL_EMAILS.admin);
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await ensurePlayersNameFilterVisible(ctx);
+          await setPlayersNameFilter(ctx, '');
         },
       },
       {
-        id: 'find-member',
-        kind: 'context',
+        id: 'type-name',
+        kind: 'action',
         title: 'Find your name',
-        body: `${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName} has an active visit pack and is not present yet, so their row shows Check-in.`,
+        body: `You can scroll the roster to find ${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName}, but it is more efficient to start typing in the name search.`,
+        actionHint: 'Type in the name search field',
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await ensurePlayersNameFilterVisible(ctx);
+          await setPlayersNameFilter(ctx, '');
+          return { hotspot: await hotspotForPlayersNameFilter(ctx) };
+        },
+      },
+      {
+        id: 'name-found',
+        kind: 'result',
+        title: 'Your row appears',
+        body: `Typing part of the name narrows the list. ${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName} has an active visit pack and is not present yet, so their row shows Check-in.`,
+        resultNote: 'Name filter matches the member; Check-in is ready.',
+        capture: async (ctx) => {
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKIN_MEMBER.firstName);
           await ctx.page.evaluate((needle) => {
             const row = [...document.querySelectorAll('tr')].find((r) =>
               (r.textContent || '').includes(needle),
@@ -302,6 +390,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         actionHint: 'Click Check-in on your row',
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKIN_MEMBER.firstName);
           return {
             hotspot: await hotspotForMemberCheckinButton(
               ctx,
@@ -312,21 +401,6 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
-        id: 'pin-dialog',
-        kind: 'result',
-        title: 'PIN prompt',
-        body: 'The dialog names the member and asks for the PIN configured on their profile.',
-        resultNote: 'Check-in PIN modal is open.',
-        capture: async (ctx) => {
-          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
-          await openMemberCheckinPinModal(
-            ctx,
-            TUTORIAL_CHECKIN_MEMBER.firstName,
-            TUTORIAL_CHECKIN_MEMBER.lastName,
-          );
-        },
-      },
-      {
         id: 'enter-pin-action',
         kind: 'action',
         title: 'Enter PIN and confirm',
@@ -334,6 +408,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         actionHint: 'Click Check-in after entering the PIN',
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKIN_MEMBER.firstName);
           await openMemberCheckinPinModal(
             ctx,
             TUTORIAL_CHECKIN_MEMBER.firstName,
@@ -346,19 +421,20 @@ export const showcaseScenarios: ScenarioDef[] = [
       {
         id: 'checked-in',
         kind: 'result',
-        title: 'Checked in',
-        body: 'Attendance updates: the member is present, the row switches to Check-out, and visit-pack remaining visits decrease when this was a charged check-in.',
-        resultNote: 'PIN accepted; member is in today’s present list.',
+        title: 'State updated',
+        body: 'The row has changed: Check-in is gone and Check-out appears. The attendance count increases, and a visit-pack remaining visit decreases when this was a charged check-in.',
+        resultNote: 'Member is present; kiosk row now offers Check-out.',
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
-          // If a prior step already checked them in, show the present state; otherwise complete PIN flow.
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKIN_MEMBER.firstName);
           const needsCheckin = await ctx.page.evaluate((needle) => {
             const row = [...document.querySelectorAll('tr')].find((r) =>
               (r.textContent || '').includes(needle),
             );
-            return [...(row?.querySelectorAll('button') || [])].some(
-              (b) => (b.textContent || '').trim() === 'Check-in',
-            );
+            return [...(row?.querySelectorAll('button') || [])].some((b) => {
+              const t = (b.textContent || '').trim();
+              return t === 'Check-in' || t.includes('free re-entry');
+            });
           }, `${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName}`);
           if (needsCheckin) {
             await openMemberCheckinPinModal(
@@ -369,6 +445,18 @@ export const showcaseScenarios: ScenarioDef[] = [
             await fillCheckinPin(ctx, TUTORIAL_SCORE_PIN);
             await submitCheckinPinModal(ctx);
           }
+          await ctx.page.waitForFunction(
+            (needle) => {
+              const row = [...document.querySelectorAll('tr')].find((r) =>
+                (r.textContent || '').includes(needle),
+              );
+              return [...(row?.querySelectorAll('button') || [])].some(
+                (b) => (b.textContent || '').trim() === 'Check-out',
+              );
+            },
+            { timeout: 15000 },
+            `${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName}`,
+          );
           await ctx.page.evaluate((needle) => {
             const row = [...document.querySelectorAll('tr')].find((r) =>
               (r.textContent || '').includes(needle),
@@ -387,7 +475,7 @@ export const showcaseScenarios: ScenarioDef[] = [
     showcase: true,
     title: 'Player checks out at the kiosk',
     description:
-      'When leaving the club, a present member opens Check-out on the kiosk, enters their PIN, and leaves today’s attendance.',
+      'When leaving the club, a present member finds their name (by typing), opens Check-out, enters their PIN, and leaves today’s attendance.',
     relatedSlugs: ['showcase-player-checkin', 'showcase-player-score-kiosk'],
     steps: [
       {
@@ -398,15 +486,32 @@ export const showcaseScenarios: ScenarioDef[] = [
         capture: async (ctx) => {
           await ctx.loginAs(TUTORIAL_EMAILS.admin);
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await ensurePlayersNameFilterVisible(ctx);
+          await setPlayersNameFilter(ctx, '');
         },
       },
       {
-        id: 'find-present-member',
-        kind: 'context',
-        title: 'Find your name while present',
-        body: `${TUTORIAL_CHECKOUT_MEMBER.firstName} ${TUTORIAL_CHECKOUT_MEMBER.lastName} is already checked in for today, so their row shows Check-out.`,
+        id: 'type-name',
+        kind: 'action',
+        title: 'Find your name',
+        body: `You can scroll the roster to find ${TUTORIAL_CHECKOUT_MEMBER.firstName} ${TUTORIAL_CHECKOUT_MEMBER.lastName}, but it is more efficient to start typing in the name search.`,
+        actionHint: 'Type in the name search field',
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await ensurePlayersNameFilterVisible(ctx);
+          await setPlayersNameFilter(ctx, '');
+          return { hotspot: await hotspotForPlayersNameFilter(ctx) };
+        },
+      },
+      {
+        id: 'name-found',
+        kind: 'result',
+        title: 'Your row appears',
+        body: `Typing part of the name narrows the list. ${TUTORIAL_CHECKOUT_MEMBER.firstName} ${TUTORIAL_CHECKOUT_MEMBER.lastName} is already checked in for today, so their row shows Check-out.`,
+        resultNote: 'Name filter matches the member; Check-out is ready.',
+        capture: async (ctx) => {
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKOUT_MEMBER.firstName);
           await ctx.page.evaluate((needle) => {
             const row = [...document.querySelectorAll('tr')].find((r) =>
               (r.textContent || '').includes(needle),
@@ -424,6 +529,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         actionHint: 'Click Check-out on your row',
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKOUT_MEMBER.firstName);
           return {
             hotspot: await hotspotForMemberAttendanceButton(
               ctx,
@@ -435,22 +541,6 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
-        id: 'pin-dialog',
-        kind: 'result',
-        title: 'PIN prompt',
-        body: 'Confirm your identity with your PIN before the system records the check-out.',
-        resultNote: 'Check-out PIN modal is open.',
-        capture: async (ctx) => {
-          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
-          await openMemberAttendancePinModal(
-            ctx,
-            TUTORIAL_CHECKOUT_MEMBER.firstName,
-            TUTORIAL_CHECKOUT_MEMBER.lastName,
-            'Check-out',
-          );
-        },
-      },
-      {
         id: 'enter-pin-action',
         kind: 'action',
         title: 'Enter PIN and confirm',
@@ -458,6 +548,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         actionHint: 'Click Check-out after entering the PIN',
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKOUT_MEMBER.firstName);
           await openMemberAttendancePinModal(
             ctx,
             TUTORIAL_CHECKOUT_MEMBER.firstName,
@@ -471,11 +562,12 @@ export const showcaseScenarios: ScenarioDef[] = [
       {
         id: 'checked-out',
         kind: 'result',
-        title: 'Checked out',
-        body: 'Attendance updates: the member is no longer present, the row returns to Check-in (free re-entry if they return today), and the present count drops.',
-        resultNote: 'PIN accepted; open visit closed for this member.',
+        title: 'State updated',
+        body: 'The row has changed: Check-out is gone and Check-in returns (free re-entry if they come back today). The attendance count drops.',
+        resultNote: 'Member is no longer present; kiosk row offers Check-in again.',
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKOUT_MEMBER.firstName);
           const needsCheckout = await ctx.page.evaluate((needle) => {
             const row = [...document.querySelectorAll('tr')].find((r) =>
               (r.textContent || '').includes(needle),
@@ -494,6 +586,19 @@ export const showcaseScenarios: ScenarioDef[] = [
             await fillCheckinPin(ctx, TUTORIAL_SCORE_PIN);
             await submitAttendancePinModal(ctx, 'Check-out');
           }
+          await ctx.page.waitForFunction(
+            (needle) => {
+              const row = [...document.querySelectorAll('tr')].find((r) =>
+                (r.textContent || '').includes(needle),
+              );
+              return [...(row?.querySelectorAll('button') || [])].some((b) => {
+                const t = (b.textContent || '').trim();
+                return t === 'Check-in' || t.includes('free re-entry');
+              });
+            },
+            { timeout: 15000 },
+            `${TUTORIAL_CHECKOUT_MEMBER.firstName} ${TUTORIAL_CHECKOUT_MEMBER.lastName}`,
+          );
           await ctx.page.evaluate((needle) => {
             const row = [...document.querySelectorAll('tr')].find((r) =>
               (r.textContent || '').includes(needle),
@@ -512,14 +617,14 @@ export const showcaseScenarios: ScenarioDef[] = [
     showcase: true,
     title: 'Player enters a score via Score kiosk',
     description:
-      'On the club Score kiosk, players open a match cell, enter set scores, confirm with both participants’ PINs, and save — without an organizer login at the table.',
+      'The tournament organizer starts Score kiosk; both players stay present while entering sets and each PIN, then confirm the result.',
     relatedSlugs: ['showcase-player-rating-history', 'showcase-player-checkin'],
     steps: [
       {
         id: 'event-ready',
         kind: 'context',
         title: 'Active tournament',
-        body: 'An organizer opens Tutorial Active Round Robin. Score kiosk locks the terminal to match entry for this event.',
+        body: 'Open the active event (Tutorial Active Round Robin). Before players can enter scores at the table, the tournament organizer must switch this terminal into Score kiosk mode.',
         capture: async (ctx) => {
           await ctx.loginAs(TUTORIAL_EMAILS.organizer);
           await openSeededActiveRoundRobin(ctx);
@@ -528,13 +633,12 @@ export const showcaseScenarios: ScenarioDef[] = [
       {
         id: 'start-score-kiosk',
         kind: 'action',
-        title: 'Start Score kiosk',
-        body: 'Staff taps Score kiosk once. After that, anyone at the table can record results with participant PINs.',
+        title: 'Organizer starts Score kiosk',
+        body: 'The tournament organizer taps Score kiosk once. That locks the terminal to this event so players can record results with PINs — without an organizer login at the table.',
         actionHint: 'Click Score kiosk',
         capture: async (ctx) => {
           await ensureAdminSession(ctx, TUTORIAL_EMAILS.organizer);
           await openSeededActiveRoundRobin(ctx);
-          // Leave kiosk if a prior capture left Restore privileges visible.
           const inKiosk = await ctx.page.evaluate(() =>
             [...document.querySelectorAll('button')].some((b) =>
               (b.textContent || '').includes('Restore privileges'),
@@ -551,8 +655,8 @@ export const showcaseScenarios: ScenarioDef[] = [
       {
         id: 'score-kiosk-ready',
         kind: 'result',
-        title: 'Score kiosk mode',
-        body: 'The grid stays on this tournament. Players use Enter score on empty cells — no personal login.',
+        title: 'Both players present',
+        body: 'Score kiosk is active. Both players in the match should be present at the table when entering the score — each will enter their own PIN to confirm.',
         resultNote: 'Tournament score kiosk is active (Restore privileges visible).',
         capture: async (ctx) => {
           await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
@@ -570,21 +674,112 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
-        id: 'score-dialog',
-        kind: 'result',
-        title: 'Match Entry with PINs',
-        body: 'In kiosk mode the dialog requires both participants’ score PINs before a result can be saved.',
-        resultNote: 'Match Entry popup shows score fields and Participant PINs.',
+        id: 'enter-first-score',
+        kind: 'action',
+        title: 'Enter first player’s sets',
+        body: 'Type the first player’s set count (here 3).',
+        actionHint: 'Enter the first score',
         capture: async (ctx) => {
           await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
           await openFirstEmptyScoreEntry(ctx);
+          return { hotspot: await hotspotForMatchEntryScoreField(ctx, 1) };
         },
       },
       {
-        id: 'enter-scores-and-pins',
+        id: 'first-score-entered',
+        kind: 'result',
+        title: 'First score entered',
+        body: 'The first player’s sets are filled in (3).',
+        resultNote: 'Player 1 score field shows 3.',
+        capture: async (ctx) => {
+          await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
+          await openFirstEmptyScoreEntry(ctx);
+          await fillMatchEntryScoreField(ctx, 1, 3);
+        },
+      },
+      {
+        id: 'enter-second-score',
         kind: 'action',
-        title: 'Enter score and both PINs',
-        body: 'Type the set counts (here 3–1), each player’s PIN (same demo PIN for tutorial members), then confirm with the green checkmark.',
+        title: 'Enter second player’s sets',
+        body: 'Type the second player’s set count (here 1).',
+        actionHint: 'Enter the second score',
+        capture: async (ctx) => {
+          await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
+          await openFirstEmptyScoreEntry(ctx);
+          await fillMatchEntryScoreField(ctx, 1, 3);
+          return { hotspot: await hotspotForMatchEntryScoreField(ctx, 2) };
+        },
+      },
+      {
+        id: 'second-score-entered',
+        kind: 'result',
+        title: 'Second score entered',
+        body: 'Both set counts are in (3–1). Next each participant confirms with their score PIN.',
+        resultNote: 'Score fields show 3 and 1.',
+        capture: async (ctx) => {
+          await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
+          await openFirstEmptyScoreEntry(ctx);
+          await fillMatchEntryScores(ctx, 3, 1);
+        },
+      },
+      {
+        id: 'enter-pin-1',
+        kind: 'action',
+        title: 'Enter first PIN',
+        body: 'The first participant types their score PIN (not their login password).',
+        actionHint: 'Enter the first player’s PIN',
+        capture: async (ctx) => {
+          await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
+          await openFirstEmptyScoreEntry(ctx);
+          await fillMatchEntryScores(ctx, 3, 1);
+          return { hotspot: await hotspotForMatchEntryPinField(ctx, 0) };
+        },
+      },
+      {
+        id: 'pin-1-entered',
+        kind: 'result',
+        title: 'First PIN entered',
+        body: 'The first participant’s PIN is filled. The second player enters theirs next.',
+        resultNote: 'First PIN field is filled.',
+        capture: async (ctx) => {
+          await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
+          await openFirstEmptyScoreEntry(ctx);
+          await fillMatchEntryScores(ctx, 3, 1);
+          await fillMatchEntryPinField(ctx, 0, TUTORIAL_SCORE_PIN);
+        },
+      },
+      {
+        id: 'enter-pin-2',
+        kind: 'action',
+        title: 'Enter second PIN',
+        body: 'The second participant types their score PIN to agree with the result.',
+        actionHint: 'Enter the second player’s PIN',
+        capture: async (ctx) => {
+          await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
+          await openFirstEmptyScoreEntry(ctx);
+          await fillMatchEntryScores(ctx, 3, 1);
+          await fillMatchEntryPinField(ctx, 0, TUTORIAL_SCORE_PIN);
+          return { hotspot: await hotspotForMatchEntryPinField(ctx, 1) };
+        },
+      },
+      {
+        id: 'pin-2-entered',
+        kind: 'result',
+        title: 'Second PIN entered',
+        body: 'Both PINs are in. Confirm to save the match.',
+        resultNote: 'Both participant PIN fields are filled.',
+        capture: async (ctx) => {
+          await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
+          await openFirstEmptyScoreEntry(ctx);
+          await fillMatchEntryScores(ctx, 3, 1);
+          await fillMatchEntryPins(ctx, TUTORIAL_SCORE_PIN, TUTORIAL_SCORE_PIN);
+        },
+      },
+      {
+        id: 'confirm-score',
+        kind: 'action',
+        title: 'Confirm final score entry',
+        body: 'Tap the green checkmark to save. Both PINs must be correct for the result to record.',
         actionHint: 'Click the green checkmark to save',
         capture: async (ctx) => {
           await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
@@ -598,7 +793,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         id: 'score-saved',
         kind: 'result',
         title: 'Score recorded',
-        body: 'Both PINs accepted: the grid shows the result and the next empty match is ready for the next pair.',
+        body: 'The grid shows the saved result. The next empty match is ready for the next pair.',
         resultNote: 'Match saved from Score kiosk with participant PINs.',
         capture: async (ctx) => {
           await enterTournamentScoreKiosk(ctx, TUTORIAL_EMAILS.organizer);
@@ -626,16 +821,17 @@ export const showcaseScenarios: ScenarioDef[] = [
     slug: 'showcase-player-rating-history',
     role: 'player',
     showcase: true,
-    title: 'Player views rating history',
+    hideNextShowcase: true,
+    title: 'Player views match history',
     description:
-      'Open history for one member from the Players list. With no opponents selected, History shows that player’s full rating timeline. Selecting opponents instead shows match history against those players.',
-    relatedSlugs: ['showcase-player-multi-stats', 'showcase-player-plan'],
+      'Select a player, clear the pre-selected opponents, choose opponents with completed match history (first pick shown, then a note that more picks work the same), then open Match History. The walkthrough ends there — single-player rating charts are in View Stats.',
+    relatedSlugs: ['showcase-player-view-stats', 'showcase-player-multi-stats'],
     steps: [
       {
         id: 'players-list',
         kind: 'context',
         title: 'Players list',
-        body: `${TUTORIAL_HISTORY_MEMBER.firstName} ${TUTORIAL_HISTORY_MEMBER.lastName} has rating changes from the seeded completed Round Robin — a clear one-player history example.`,
+        body: `${TUTORIAL_HISTORY_MEMBER.firstName} ${TUTORIAL_HISTORY_MEMBER.lastName} has matches and rating changes from the seeded completed Round Robin.`,
         capture: async (ctx) => {
           await ctx.loginAs(TUTORIAL_EMAILS.player);
           await gotoPath(ctx, '/players');
@@ -652,7 +848,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         id: 'open-history-control',
         kind: 'action',
         title: 'Open history for the player',
-        body: 'Tap the scroll icon on the player’s row. That starts history selection with the player chosen (and opponents pre-selected for match history).',
+        body: 'Tap the scroll icon on the player’s row. That starts history selection with the player chosen (and opponents pre-selected).',
         actionHint: 'Click the history icon on the player row',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
@@ -687,8 +883,8 @@ export const showcaseScenarios: ScenarioDef[] = [
       {
         id: 'deselect-opponents',
         kind: 'action',
-        title: 'Clear opponents for rating history',
-        body: 'Deselect All removes opponents so View History opens the full rating timeline for this one player only.',
+        title: 'Deselect All',
+        body: 'Deselect All clears the pre-checked opponents so you can pick exactly who to compare against.',
         actionHint: 'Click Deselect All',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
@@ -702,11 +898,11 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
-        id: 'rating-mode-ready',
+        id: 'cleared-opponents',
         kind: 'result',
-        title: 'One player, no opponents',
-        body: 'With 0 opponents selected, View History will show Rating History rather than head-to-head matches.',
-        resultNote: 'Opponent count is 0 — ready for one-player rating history.',
+        title: 'Opponents cleared',
+        body: 'With 0 opponents selected, you can check the players who have match history with this member.',
+        resultNote: 'Opponent count is 0.',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
           await gotoPath(ctx, '/players');
@@ -720,10 +916,72 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
+        id: 'select-first-opponent',
+        kind: 'action',
+        title: 'Select an opponent with history',
+        body: `Check ${TUTORIAL_HISTORY_OPPONENTS[0].firstName} ${TUTORIAL_HISTORY_OPPONENTS[0].lastName} — one opponent who has completed matches against ${TUTORIAL_HISTORY_MEMBER.firstName} ${TUTORIAL_HISTORY_MEMBER.lastName}.`,
+        actionHint: `Click the checkbox for ${TUTORIAL_HISTORY_OPPONENTS[0].firstName} ${TUTORIAL_HISTORY_OPPONENTS[0].lastName}`,
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await gotoPath(ctx, '/players');
+          await startPlayerHistorySelection(
+            ctx,
+            TUTORIAL_HISTORY_MEMBER.firstName,
+            TUTORIAL_HISTORY_MEMBER.lastName,
+          );
+          await clearHistoryOpponents(ctx);
+          return {
+            hotspot: await hotspotForPlayerStatsCheckbox(
+              ctx,
+              TUTORIAL_HISTORY_OPPONENTS[0].firstName,
+              TUTORIAL_HISTORY_OPPONENTS[0].lastName,
+            ),
+          };
+        },
+      },
+      {
+        id: 'more-selections-same',
+        kind: 'bridge',
+        title: 'More selections work the same',
+        body: 'You can check several more opponents the same way. The next screen skips those repeated clicks and shows the result after a few similar selections.',
+        autoAdvanceMs: 3800,
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await gotoPath(ctx, '/players');
+          await startPlayerHistorySelection(
+            ctx,
+            TUTORIAL_HISTORY_MEMBER.firstName,
+            TUTORIAL_HISTORY_MEMBER.lastName,
+          );
+          await clearHistoryOpponents(ctx);
+          await selectHistoryOpponents(ctx, [TUTORIAL_HISTORY_OPPONENTS[0]]);
+          await ctx.delay(250);
+        },
+      },
+      {
+        id: 'three-players-ready',
+        kind: 'result',
+        title: 'Three players selected',
+        body: `${TUTORIAL_HISTORY_MEMBER.firstName} ${TUTORIAL_HISTORY_MEMBER.lastName} plus ${TUTORIAL_HISTORY_OPPONENTS.map((m) => `${m.firstName} ${m.lastName}`).join(' and ')} — View History will list every match played against those two opponents.`,
+        resultNote: '2 opponents selected for match history (remaining picks applied behind the scenes).',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await gotoPath(ctx, '/players');
+          await startPlayerHistorySelection(
+            ctx,
+            TUTORIAL_HISTORY_MEMBER.firstName,
+            TUTORIAL_HISTORY_MEMBER.lastName,
+          );
+          await clearHistoryOpponents(ctx);
+          await selectHistoryOpponents(ctx, TUTORIAL_HISTORY_OPPONENTS);
+          await ctx.delay(300);
+        },
+      },
+      {
         id: 'view-history',
         kind: 'action',
         title: 'View History',
-        body: 'Confirm to open the Rating History page for the selected member.',
+        body: 'Confirm to open Match History for the selected player against those opponents.',
         actionHint: 'Click View History',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
@@ -734,18 +992,83 @@ export const showcaseScenarios: ScenarioDef[] = [
             TUTORIAL_HISTORY_MEMBER.lastName,
           );
           await clearHistoryOpponents(ctx);
+          await selectHistoryOpponents(ctx, TUTORIAL_HISTORY_OPPONENTS);
           return { hotspot: await hotspotForViewHistory(ctx) };
         },
       },
       {
-        id: 'rating-history',
+        id: 'match-history',
         kind: 'result',
-        title: 'Rating History',
-        body: 'Full Rating History lists rating events (newest first), including the completed Round Robin adjustment for this player.',
-        resultNote: 'Rating History page shows the selected player’s timeline.',
+        title: 'Match History',
+        body: 'Match History lists all matches played against the selected opponents (scores, dates, and rating impact when available). This is the last step of the walkthrough.',
+        resultNote: 'Match History page shows head-to-head results. Showcase ends here.',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
-          await openPlayerRatingHistory(
+          await openPlayerMatchHistory(
+            ctx,
+            TUTORIAL_HISTORY_MEMBER.firstName,
+            TUTORIAL_HISTORY_MEMBER.lastName,
+            TUTORIAL_HISTORY_OPPONENTS,
+          );
+        },
+      },
+    ],
+  },
+
+  {
+    slug: 'showcase-player-view-stats',
+    role: 'player',
+    showcase: true,
+    title: 'View Stats',
+    description:
+      'Open Player Statistics for a single roster member using the chart icon on their row — the same member used in the match history showcase.',
+    relatedSlugs: ['showcase-player-rating-history', 'showcase-player-multi-stats'],
+    steps: [
+      {
+        id: 'players-list',
+        kind: 'context',
+        title: 'Players list',
+        body: `${TUTORIAL_HISTORY_MEMBER.firstName} ${TUTORIAL_HISTORY_MEMBER.lastName} has rating history from the seeded completed Round Robin. Single-player stats open from the row chart icon.`,
+        capture: async (ctx) => {
+          await ctx.loginAs(TUTORIAL_EMAILS.player);
+          await gotoPath(ctx, '/players');
+          await ctx.page.evaluate((needle) => {
+            const row = [...document.querySelectorAll('tr')].find((r) =>
+              (r.textContent || '').includes(needle),
+            );
+            row?.scrollIntoView({ block: 'center' });
+          }, `${TUTORIAL_HISTORY_MEMBER.firstName} ${TUTORIAL_HISTORY_MEMBER.lastName}`);
+          await ctx.delay(400);
+        },
+      },
+      {
+        id: 'open-quick-stats',
+        kind: 'action',
+        title: 'Open stats for the player',
+        body: 'Tap the chart icon on the player’s row to open Player Statistics for that member alone.',
+        actionHint: 'Click the chart icon on the player row',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await gotoPath(ctx, '/players');
+          await ctx.delay(400);
+          return {
+            hotspot: await hotspotForPlayerQuickStatsButton(
+              ctx,
+              TUTORIAL_HISTORY_MEMBER.firstName,
+              TUTORIAL_HISTORY_MEMBER.lastName,
+            ),
+          };
+        },
+      },
+      {
+        id: 'player-statistics',
+        kind: 'result',
+        title: 'Player Statistics',
+        body: 'Player Statistics shows rating history for the selected member. Toggle series above the chart if more than one player is loaded.',
+        resultNote: 'Statistics page opened for one player via the row chart icon.',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await openPlayerSingleStatistics(
             ctx,
             TUTORIAL_HISTORY_MEMBER.firstName,
             TUTORIAL_HISTORY_MEMBER.lastName,
@@ -761,8 +1084,8 @@ export const showcaseScenarios: ScenarioDef[] = [
     showcase: true,
     title: 'Player compares statistics for several players',
     description:
-      'Use Stats on the Players list to select multiple members, then open Player Statistics. The chart overlays rating history for everyone selected so you can compare trends side by side.',
-    relatedSlugs: ['showcase-player-rating-history', 'showcase-player-plan'],
+      'Use Stats on the Players list to select multiple members (first pick shown, then a note that more picks work the same), then open Player Statistics to compare rating trends.',
+    relatedSlugs: ['showcase-player-view-stats', 'showcase-player-rating-history'],
     steps: [
       {
         id: 'players-list',
@@ -802,10 +1125,10 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
-        id: 'select-players',
+        id: 'select-first-player',
         kind: 'action',
-        title: 'Select several players',
-        body: `Check ${TUTORIAL_STATS_MEMBERS.map((m) => `${m.firstName} ${m.lastName}`).join(', ')} — members who already have rating history from the completed Round Robin.`,
+        title: 'Select a player',
+        body: `Check ${TUTORIAL_STATS_MEMBERS[0].firstName} ${TUTORIAL_STATS_MEMBERS[0].lastName} — a member who already has rating history from the completed Round Robin.`,
         actionHint: `Click the checkbox for ${TUTORIAL_STATS_MEMBERS[0].firstName} ${TUTORIAL_STATS_MEMBERS[0].lastName}`,
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
@@ -821,11 +1144,29 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
+        id: 'more-stats-selections-same',
+        kind: 'bridge',
+        title: 'More selections work the same',
+        body: 'You can check several more players the same way. The next screen skips those repeated clicks and shows the result after a few similar selections.',
+        autoAdvanceMs: 3800,
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
+          await gotoPath(ctx, '/players');
+          await startStatsSelection(ctx);
+          await togglePlayerForStats(
+            ctx,
+            TUTORIAL_STATS_MEMBERS[0].firstName,
+            TUTORIAL_STATS_MEMBERS[0].lastName,
+          );
+          await ctx.delay(250);
+        },
+      },
+      {
         id: 'players-selected',
         kind: 'result',
         title: 'Several players selected',
         body: 'With multiple members checked, View Statistics will load a combined rating chart for the group.',
-        resultNote: `${TUTORIAL_STATS_MEMBERS.length} players selected for statistics.`,
+        resultNote: `${TUTORIAL_STATS_MEMBERS.length} players selected for statistics (remaining picks applied behind the scenes).`,
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
           await gotoPath(ctx, '/players');
@@ -1004,12 +1345,12 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
-        id: 'repeat-selection-story',
-        kind: 'context',
-        title: 'Repeat for each player',
-        body: 'Repeat this operation as many times as you need to include every player who should compete. The same checkbox action scales from a small group to a full roster.',
+        id: 'more-selections-same',
+        kind: 'bridge',
+        title: 'More selections work the same',
+        body: 'You can check several more players the same way. The next screen skips those repeated clicks and shows the roster after a few similar selections.',
+        autoAdvanceMs: 3800,
         capture: async (ctx) => {
-          // Same visual as one-selected — this step is the narrative beat about repeatable work.
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
           await openRoundRobinPlayerSelection(ctx);
           await selectTournamentPlayers(ctx, 1);

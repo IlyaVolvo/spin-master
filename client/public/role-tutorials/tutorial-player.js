@@ -10,7 +10,10 @@
     context: 'Context',
     action: 'Your action',
     result: 'Result',
+    bridge: 'Same for others',
   };
+
+  const DEFAULT_BRIDGE_MS = 3800;
 
   let scenario = null;
   let stepIndex = 0;
@@ -245,6 +248,12 @@
 
     const kind = inferKind(step);
     const hasHotspot = !!step.hotspot;
+    const autoMs =
+      typeof step.autoAdvanceMs === 'number' && step.autoAdvanceMs > 0
+        ? step.autoAdvanceMs
+        : kind === 'bridge'
+          ? DEFAULT_BRIDGE_MS
+          : 0;
 
     els.scenarioTitle.textContent = scenario.title || scenario.slug;
     els.stepMeta.textContent = 'Step ' + (stepIndex + 1) + ' of ' + scenario.steps.length;
@@ -260,10 +269,13 @@
     if (hasHotspot) {
       els.actionHint.textContent = 'Do this: ' + (step.actionHint || 'Click the highlighted control');
       show(els.actionHint, true);
+    } else if (autoMs > 0) {
+      els.actionHint.textContent = 'Continuing automatically…';
+      show(els.actionHint, true);
     } else {
       els.actionHint.textContent =
         stepIndex >= scenario.steps.length - 1
-          ? 'Click the screen to finish and return Home'
+          ? 'Click the screen to finish'
           : 'Click the screen to continue';
       show(els.actionHint, true);
     }
@@ -275,6 +287,10 @@
       els.resultNote.textContent =
         'What changed: Review the screen — this is the outcome of the previous action.';
       show(els.resultNote, true);
+    } else if (kind === 'bridge') {
+      els.resultNote.textContent =
+        'What changed: Further selections use the same control — shown next without repeating each click.';
+      show(els.resultNote, true);
     } else {
       show(els.resultNote, false);
     }
@@ -282,6 +298,12 @@
     // Back always available: first step returns to intro.
     els.btnBack.disabled = false;
     els.stage.classList.toggle('clickable-advance', !hasHotspot);
+    els.stage.classList.toggle('auto-advance', autoMs > 0);
+    if (autoMs > 0) {
+      els.stage.style.animationDuration = autoMs + 'ms';
+    } else {
+      els.stage.style.animationDuration = '';
+    }
 
     els.stage.classList.remove('frame-in');
     void els.stage.offsetWidth;
@@ -293,6 +315,11 @@
     els.img.src = step.image;
     els.img.alt = step.title || 'Tutorial step';
     if (els.img.complete) positionHotspot();
+
+    if (autoMs > 0) {
+      clearAdvanceTimer();
+      advanceTimer = setTimeout(advance, autoMs);
+    }
   }
 
   function goHome() {
@@ -318,7 +345,9 @@
     if (els.btnNextShowcase) els.btnNextShowcase.hidden = true;
     if (els.completeNextHint) els.completeNextHint.hidden = false;
 
-    if (next.kind === 'next' && next.scenario) {
+    if (scenario.hideNextShowcase) {
+      els.completeNextHint.textContent = 'Click Home to return to the catalog.';
+    } else if (next.kind === 'next' && next.scenario) {
       els.btnNextShowcase.hidden = false;
       els.btnNextShowcase.href =
         'play.html?scenario=' + encodeURIComponent(next.scenario.slug);

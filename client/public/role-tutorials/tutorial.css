@@ -444,6 +444,31 @@ code {
   color: #c8f0d8;
 }
 
+.kind-badge.kind-bridge {
+  background: rgba(180, 140, 40, 0.4);
+  color: #ffe9b0;
+}
+
+.stage.auto-advance {
+  animation: bridge-fade ease-in-out forwards;
+  animation-duration: 3.8s;
+}
+
+@keyframes bridge-fade {
+  0% {
+    opacity: 0.55;
+  }
+  12% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+
 .action-hint {
   margin: 0.75rem 0 0;
   padding: 0.6rem 0.75rem;

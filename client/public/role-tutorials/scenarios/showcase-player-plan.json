@@ -2,7 +2,7 @@
   "slug": "showcase-player-plan",
   "role": "player",
   "title": "Player buys / reviews a plan",
-  "description": "See how a member signs in, opens their club plan, picks a plan from the purchase list, and reviews payment options.",
+  "description": "Sign in, open your plan with $, see that no current or next plan exists, pick a 5-visit pack, purchase with cash, and close.",
   "relatedSlugs": [
     "showcase-player-checkin",
     "showcase-admin-front-desk"
@@ -50,33 +50,34 @@
       "actionHint": "Click the $ plan control",
       "hotspot": {
         "x": 61.3,
-        "y": 4,
+        "y": 8.3,
         "w": 2.8,
         "h": 4.4
       }
     },
     {
-      "id": "plan-result",
-      "title": "Plan screen",
-      "body": "With no current entitlement, the Purchase section lists club plans. The first plan is pre-selected in the Plan control.",
+      "id": "current-plan-none",
+      "title": "No current plan",
+      "body": "The plan screen opens. Current plan shows None — this member does not have an active plan yet.",
       "image": "assets/showcase-player-plan/step-05.png",
       "kind": "result",
-      "resultNote": "Seeded club plans and empty “current plan” state are intentional for this demo."
+      "resultNote": "Current plan is empty (None)."
     },
     {
-      "id": "purchase-focus",
-      "title": "Purchase options",
-      "body": "Open the Plan list to compare options (for example Monthly membership vs a visit pack), then choose payment method.",
+      "id": "next-plan-buying",
+      "title": "No next plan — buy one",
+      "body": "Next plan is also None. Use the Purchase section below to buy a new plan.",
       "image": "assets/showcase-player-plan/step-06.png",
-      "kind": "context"
+      "kind": "result",
+      "resultNote": "Next plan empty; Purchase section is available."
     },
     {
-      "id": "select-plan",
-      "title": "Select a plan",
-      "body": "Choose the plan you want to buy from the Plan list. Details and price update under the control.",
+      "id": "open-plan-list",
+      "title": "Open the plan list",
+      "body": "Open the Plan drop-down to see every club plan and its price.",
       "image": "assets/showcase-player-plan/step-07.png",
       "kind": "action",
-      "actionHint": "Open the Plan list and pick a plan",
+      "actionHint": "Open the Plan list",
       "hotspot": {
         "x": 35.8,
         "y": 48.9,
@@ -85,23 +86,67 @@
       }
     },
     {
-      "id": "plan-selected",
-      "title": "Plan chosen",
-      "body": "The 5-visit pack is selected. Confirm the price line, then pick Cash or Pay online before purchasing.",
+      "id": "plan-list-open",
+      "title": "Plan choices",
+      "body": "The list shows Monthly membership, the 5-visit pack, and other club plans with prices.",
       "image": "assets/showcase-player-plan/step-08.png",
       "kind": "result",
-      "resultNote": "Plan list changed from the default Monthly membership to the visit pack."
+      "resultNote": "Plan drop-down is expanded."
+    },
+    {
+      "id": "select-visit-pack",
+      "title": "Select 5-visit pack",
+      "body": "Choose the 5-visit pack from the list. Details and price update under the control.",
+      "image": "assets/showcase-player-plan/step-09.png",
+      "kind": "action",
+      "actionHint": "Select 5-visit pack",
+      "hotspot": {
+        "x": 36.4,
+        "y": 50.7,
+        "w": 27.3,
+        "h": 1.7
+      }
+    },
+    {
+      "id": "visit-pack-selected",
+      "title": "5-visit pack selected",
+      "body": "The 5-visit pack is selected. Choose Cash or Pay online, then purchase.",
+      "image": "assets/showcase-player-plan/step-10.png",
+      "kind": "result",
+      "resultNote": "Visit pack selected in the Plan control."
+    },
+    {
+      "id": "purchase-cash",
+      "title": "Purchase with cash",
+      "body": "Tap Purchase · Cash. If you have an email and consent to online payment, Pay online would be the default instead. An administrator will accept the cash payment later — it moves from Pending to Paid.",
+      "image": "assets/showcase-player-plan/step-11.png",
+      "kind": "action",
+      "actionHint": "Click Purchase · Cash",
+      "hotspot": {
+        "x": 35.8,
+        "y": 63.9,
+        "w": 9,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "purchase-pending",
+      "title": "Payment pending",
+      "body": "Cash purchase is recorded as pending. An administrator clears it at the front desk; the payment then goes from Pending to Paid.",
+      "image": "assets/showcase-player-plan/step-12.png",
+      "kind": "result",
+      "resultNote": "Pending cash payment awaiting admin clearance."
     },
     {
       "id": "close-plan-action",
-      "title": "Close the plan",
-      "body": "When finished reviewing, close the overlay to return to Players.",
-      "image": "assets/showcase-player-plan/step-09.png",
+      "title": "Close",
+      "body": "Close the overlay when you are done. You can reopen $ anytime to check status.",
+      "image": "assets/showcase-player-plan/step-13.png",
       "kind": "action",
       "actionHint": "Click Close",
       "hotspot": {
         "x": 61.3,
-        "y": 25.6,
+        "y": 18.9,
         "w": 3.7,
         "h": 2.8
       }
@@ -109,8 +154,8 @@
     {
       "id": "back-on-players",
       "title": "Back on Players",
-      "body": "Closing returns you to the roster. Admins can also open any member’s plan from the table.",
-      "image": "assets/showcase-player-plan/step-10.png",
+      "body": "Closing returns you to the roster. The pending purchase stays with the club until an admin marks it Paid.",
+      "image": "assets/showcase-player-plan/step-14.png",
       "kind": "result",
       "resultNote": "Overlay dismissed; roster is interactive again."
     }

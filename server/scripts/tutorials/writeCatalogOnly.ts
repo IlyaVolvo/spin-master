@@ -20,6 +20,7 @@ for (const def of ALL_SCENARIOS) {
       kind: s.kind,
       actionHint: s.actionHint,
       resultNote: s.resultNote,
+      autoAdvanceMs: s.autoAdvanceMs,
       image: stepImageRelPath(def.slug, i),
     })),
   );

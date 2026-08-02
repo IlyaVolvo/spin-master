@@ -9,7 +9,7 @@ const ROLE_ORDER = ['player', 'organizer', 'admin'] as const;
 const ROLE_META: Record<(typeof ROLE_ORDER)[number], { label: string; blurb: string }> = {
   player: {
     label: 'Player',
-    blurb: 'Member walkthroughs — plan, kiosk, rating history, and multi-player stats.',
+    blurb: 'Member walkthroughs — plan, kiosk, history, stats, and multi-player compare.',
   },
   organizer: {
     label: 'Organizer',
@@ -47,6 +47,7 @@ export function writeScenarioJson(
     kind?: StepKind;
     actionHint?: string;
     resultNote?: string;
+    autoAdvanceMs?: number;
     image: string;
     hotspot?: HotspotPct;
   }>,
@@ -68,16 +69,43 @@ export function writeScenarioJson(
       if (s.kind) step.kind = s.kind;
       if (s.actionHint) step.actionHint = s.actionHint;
       if (s.resultNote) step.resultNote = s.resultNote;
+      if (s.autoAdvanceMs != null && s.autoAdvanceMs > 0) step.autoAdvanceMs = s.autoAdvanceMs;
       if (s.hotspot) step.hotspot = s.hotspot;
       return step;
     }),
   };
   if (def.showcase) published.showcase = true;
+  if (def.hideNextShowcase) published.hideNextShowcase = true;
 
   fs.mkdirSync(SCENARIOS_JSON_DIR, { recursive: true });
   const out = path.join(SCENARIOS_JSON_DIR, `${def.slug}.json`);
   fs.writeFileSync(out, JSON.stringify(published, null, 2) + '\n', 'utf8');
   return published;
+}
+
+/** Preferred catalog order within a role (unknown slugs keep relative order at the end). */
+const SHOWCASE_ORDER_WITHIN_ROLE: Partial<Record<(typeof ROLE_ORDER)[number], string[]>> = {
+  player: [
+    'showcase-player-checkin',
+    'showcase-player-checkout',
+    'showcase-player-plan',
+    'showcase-player-score-kiosk',
+    'showcase-player-rating-history',
+    'showcase-player-view-stats',
+    'showcase-player-multi-stats',
+  ],
+};
+
+function orderShowcases(role: (typeof ROLE_ORDER)[number], list: ScenarioDef[]): ScenarioDef[] {
+  const preferred = SHOWCASE_ORDER_WITHIN_ROLE[role];
+  if (!preferred?.length) return list;
+  const rank = new Map(preferred.map((slug, i) => [slug, i]));
+  return [...list].sort((a, b) => {
+    const ai = rank.has(a.slug) ? rank.get(a.slug)! : preferred.length;
+    const bi = rank.has(b.slug) ? rank.get(b.slug)! : preferred.length;
+    if (ai !== bi) return ai - bi;
+    return 0;
+  });
 }
 
 export function writeCatalog(scenarios: ScenarioDef[]): void {
@@ -98,7 +126,7 @@ export function writeCatalog(scenarios: ScenarioDef[]): void {
       label: ROLE_META[id].label,
       blurb: ROLE_META[id].blurb,
       collapsed: false,
-      scenarios: (byRole.get(id) || []).map((s) => ({
+      scenarios: orderShowcases(id, byRole.get(id) || []).map((s) => ({
         slug: s.slug,
         title: s.title,
       })),

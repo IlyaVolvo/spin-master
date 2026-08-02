@@ -2,10 +2,10 @@
   "slug": "showcase-player-score-kiosk",
   "role": "player",
   "title": "Player enters a score via Score kiosk",
-  "description": "On the club Score kiosk, players open a match cell, enter set scores, confirm with both participants’ PINs, and save — without an organizer login at the table.",
+  "description": "The tournament organizer starts Score kiosk; both players stay present while entering sets and each PIN, then confirm the result.",
   "relatedSlugs": [
-    "showcase-player-checkin",
-    "showcase-admin-enter-score"
+    "showcase-player-rating-history",
+    "showcase-player-checkin"
   ],
   "viewport": {
     "width": 1600,
@@ -15,28 +15,28 @@
     {
       "id": "event-ready",
       "title": "Active tournament",
-      "body": "An organizer opens Tutorial Active Round Robin. Score kiosk locks the terminal to match entry for this event.",
+      "body": "Open the active event (Tutorial Active Round Robin). Before players can enter scores at the table, the tournament organizer must switch this terminal into Score kiosk mode.",
       "image": "assets/showcase-player-score-kiosk/step-01.png",
       "kind": "context"
     },
     {
       "id": "start-score-kiosk",
-      "title": "Start Score kiosk",
-      "body": "Staff taps Score kiosk once. After that, anyone at the table can record results with participant PINs.",
+      "title": "Organizer starts Score kiosk",
+      "body": "The tournament organizer taps Score kiosk once. That locks the terminal to this event so players can record results with PINs — without an organizer login at the table.",
       "image": "assets/showcase-player-score-kiosk/step-02.png",
       "kind": "action",
       "actionHint": "Click Score kiosk",
       "hotspot": {
         "x": 18.6,
-        "y": 26.4,
+        "y": 28.3,
         "w": 6.1,
         "h": 2.7
       }
     },
     {
       "id": "score-kiosk-ready",
-      "title": "Score kiosk mode",
-      "body": "The grid stays on this tournament. Players use Enter score on empty cells — no personal login.",
+      "title": "Both players present",
+      "body": "Score kiosk is active. Both players in the match should be present at the table when entering the score — each will enter their own PIN to confirm.",
       "image": "assets/showcase-player-score-kiosk/step-03.png",
       "kind": "result",
       "resultNote": "Tournament score kiosk is active (Restore privileges visible)."
@@ -50,24 +50,104 @@
       "actionHint": "Click an empty score cell",
       "hotspot": {
         "x": 58.6,
-        "y": 47,
+        "y": 48.8,
         "w": 3,
         "h": 2
       }
     },
     {
-      "id": "score-dialog",
-      "title": "Match Entry with PINs",
-      "body": "In kiosk mode the dialog requires both participants’ score PINs before a result can be saved.",
+      "id": "enter-first-score",
+      "title": "Enter first player’s sets",
+      "body": "Type the first player’s set count (here 3).",
       "image": "assets/showcase-player-score-kiosk/step-05.png",
-      "kind": "result",
-      "resultNote": "Match Entry popup shows score fields and Participant PINs."
+      "kind": "action",
+      "actionHint": "Enter the first score",
+      "hotspot": {
+        "x": 32.6,
+        "y": 45.4,
+        "w": 3.5,
+        "h": 3.8
+      }
     },
     {
-      "id": "enter-scores-and-pins",
-      "title": "Enter score and both PINs",
-      "body": "Type the set counts (here 3–1), each player’s PIN (same demo PIN for tutorial members), then confirm with the green checkmark.",
+      "id": "first-score-entered",
+      "title": "First score entered",
+      "body": "The first player’s sets are filled in (3).",
       "image": "assets/showcase-player-score-kiosk/step-06.png",
+      "kind": "result",
+      "resultNote": "Player 1 score field shows 3."
+    },
+    {
+      "id": "enter-second-score",
+      "title": "Enter second player’s sets",
+      "body": "Type the second player’s set count (here 1).",
+      "image": "assets/showcase-player-score-kiosk/step-07.png",
+      "kind": "action",
+      "actionHint": "Enter the second score",
+      "hotspot": {
+        "x": 41,
+        "y": 45.4,
+        "w": 3.5,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "second-score-entered",
+      "title": "Second score entered",
+      "body": "Both set counts are in (3–1). Next each participant confirms with their score PIN.",
+      "image": "assets/showcase-player-score-kiosk/step-08.png",
+      "kind": "result",
+      "resultNote": "Score fields show 3 and 1."
+    },
+    {
+      "id": "enter-pin-1",
+      "title": "Enter first PIN",
+      "body": "The first participant types their score PIN (not their login password).",
+      "image": "assets/showcase-player-score-kiosk/step-09.png",
+      "kind": "action",
+      "actionHint": "Enter the first player’s PIN",
+      "hotspot": {
+        "x": 32.6,
+        "y": 53.5,
+        "w": 11.3,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "pin-1-entered",
+      "title": "First PIN entered",
+      "body": "The first participant’s PIN is filled. The second player enters theirs next.",
+      "image": "assets/showcase-player-score-kiosk/step-10.png",
+      "kind": "result",
+      "resultNote": "First PIN field is filled."
+    },
+    {
+      "id": "enter-pin-2",
+      "title": "Enter second PIN",
+      "body": "The second participant types their score PIN to agree with the result.",
+      "image": "assets/showcase-player-score-kiosk/step-11.png",
+      "kind": "action",
+      "actionHint": "Enter the second player’s PIN",
+      "hotspot": {
+        "x": 44.6,
+        "y": 53.5,
+        "w": 11.3,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "pin-2-entered",
+      "title": "Second PIN entered",
+      "body": "Both PINs are in. Confirm to save the match.",
+      "image": "assets/showcase-player-score-kiosk/step-12.png",
+      "kind": "result",
+      "resultNote": "Both participant PIN fields are filled."
+    },
+    {
+      "id": "confirm-score",
+      "title": "Confirm final score entry",
+      "body": "Tap the green checkmark to save. Both PINs must be correct for the result to record.",
+      "image": "assets/showcase-player-score-kiosk/step-13.png",
       "kind": "action",
       "actionHint": "Click the green checkmark to save",
       "hotspot": {
@@ -80,8 +160,8 @@
     {
       "id": "score-saved",
       "title": "Score recorded",
-      "body": "Both PINs accepted: the grid shows the result and the next empty match is ready for the next pair.",
-      "image": "assets/showcase-player-score-kiosk/step-07.png",
+      "body": "The grid shows the saved result. The next empty match is ready for the next pair.",
+      "image": "assets/showcase-player-score-kiosk/step-14.png",
       "kind": "result",
       "resultNote": "Match saved from Score kiosk with participant PINs."
     }

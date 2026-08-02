@@ -3,8 +3,11 @@ import type { HotspotPct } from './hotspot';
 
 export type ScenarioRole = 'player' | 'organizer' | 'admin';
 
-/** context = orient; action = click hotspot; result = show outcome of prior action */
-export type StepKind = 'context' | 'action' | 'result';
+/**
+ * context = orient; action = click hotspot; result = outcome of prior action;
+ * bridge = brief timed note (auto-advances; used after the first of several similar selections)
+ */
+export type StepKind = 'context' | 'action' | 'result' | 'bridge';
 
 export type ScenarioStepDef = {
   id: string;
@@ -14,6 +17,11 @@ export type ScenarioStepDef = {
   actionHint?: string;
   /** Shown on result steps as “What changed”. */
   resultNote?: string;
+  /**
+   * When set, the player auto-advances after this many ms (no click required).
+   * Typical for `bridge` steps after the first of several similar selections.
+   */
+  autoAdvanceMs?: number;
   /** Prepare page state, optionally return hotspot for this step's screenshot. */
   capture: (ctx: CaptureContext) => Promise<{ hotspot?: HotspotPct } | void>;
 };
@@ -26,6 +34,8 @@ export type ScenarioDef = {
   relatedSlugs: string[];
   /** Featured evaluation examples — listed first in the catalog. */
   showcase?: boolean;
+  /** When true, the complete screen omits “Next showcase”. */
+  hideNextShowcase?: boolean;
   steps: ScenarioStepDef[];
 };
 
@@ -37,6 +47,7 @@ export type PublishedStep = {
   kind?: StepKind;
   actionHint?: string;
   resultNote?: string;
+  autoAdvanceMs?: number;
   hotspot?: HotspotPct;
 };
 
@@ -47,6 +58,7 @@ export type PublishedScenario = {
   description: string;
   relatedSlugs: string[];
   showcase?: boolean;
+  hideNextShowcase?: boolean;
   viewport: { width: number; height: number };
   steps: PublishedStep[];
 };

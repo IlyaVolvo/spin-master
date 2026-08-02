@@ -1,0 +1,46 @@
+{
+  "slug": "showcase-player-view-stats",
+  "role": "player",
+  "title": "View Stats",
+  "description": "Open Player Statistics for a single roster member using the chart icon on their row — the same member used in the match history showcase.",
+  "relatedSlugs": [
+    "showcase-player-rating-history",
+    "showcase-player-multi-stats"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "players-list",
+      "title": "Players list",
+      "body": "Tutorial PlayerOnly has rating history from the seeded completed Round Robin. Single-player stats open from the row chart icon.",
+      "image": "assets/showcase-player-view-stats/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-quick-stats",
+      "title": "Open stats for the player",
+      "body": "Tap the chart icon on the player’s row to open Player Statistics for that member alone.",
+      "image": "assets/showcase-player-view-stats/step-02.png",
+      "kind": "action",
+      "actionHint": "Click the chart icon on the player row",
+      "hotspot": {
+        "x": 15.8,
+        "y": 77.3,
+        "w": 1.5,
+        "h": 2.7
+      }
+    },
+    {
+      "id": "player-statistics",
+      "title": "Player Statistics",
+      "body": "Player Statistics shows rating history for the selected member. Toggle series above the chart if more than one player is loaded.",
+      "image": "assets/showcase-player-view-stats/step-03.png",
+      "kind": "result",
+      "resultNote": "Statistics page opened for one player via the row chart icon."
+    }
+  ],
+  "showcase": true
+}

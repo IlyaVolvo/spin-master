@@ -3,13 +3,9 @@
     {
       "id": "player",
       "label": "Player",
-      "blurb": "Member walkthroughs — plan, kiosk, rating history, and multi-player stats.",
+      "blurb": "Member walkthroughs — plan, kiosk, history, stats, and multi-player compare.",
       "collapsed": false,
       "scenarios": [
-        {
-          "slug": "showcase-player-plan",
-          "title": "Player buys / reviews a plan"
-        },
         {
           "slug": "showcase-player-checkin",
           "title": "Player checks in at the kiosk"
@@ -19,12 +15,20 @@
           "title": "Player checks out at the kiosk"
         },
         {
+          "slug": "showcase-player-plan",
+          "title": "Player buys / reviews a plan"
+        },
+        {
           "slug": "showcase-player-score-kiosk",
           "title": "Player enters a score via Score kiosk"
         },
         {
           "slug": "showcase-player-rating-history",
-          "title": "Player views rating history"
+          "title": "Player views match history"
+        },
+        {
+          "slug": "showcase-player-view-stats",
+          "title": "View Stats"
         },
         {
           "slug": "showcase-player-multi-stats",

@@ -521,6 +521,63 @@ export async function enterCheckinKiosk(ctx: CaptureContext, adminEmail: string)
   );
 }
 
+/** Expand Players filters so the name search field is visible (kiosk or normal). */
+export async function ensurePlayersNameFilterVisible(ctx: CaptureContext): Promise<void> {
+  await ctx.page.evaluate(() => {
+    try {
+      localStorage.setItem('players_filtersCollapsed', 'false');
+    } catch {
+      /* ignore */
+    }
+  });
+  const visible = await ctx.page.$('#nameFilter');
+  if (visible) return;
+  await ctx.page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(
+      (b) => b.getAttribute('title') === 'Expand filters',
+    ) as HTMLButtonElement | undefined;
+    btn?.click();
+  });
+  await ctx.delay(350);
+  const after = await ctx.page.$('#nameFilter');
+  if (!after) throw new Error('Players name filter (#nameFilter) not found');
+}
+
+/** Set the Players “Search by name…” filter (also writes localStorage like the UI). */
+export async function setPlayersNameFilter(ctx: CaptureContext, value: string): Promise<void> {
+  await ensurePlayersNameFilterVisible(ctx);
+  const ok = await ctx.page.evaluate((v) => {
+    const input = document.getElementById('nameFilter') as HTMLInputElement | null;
+    if (!input) return false;
+    const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    proto?.call(input, v);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    try {
+      localStorage.setItem('players_nameFilter', v);
+    } catch {
+      /* ignore */
+    }
+    return true;
+  }, value);
+  if (!ok) throw new Error('Players name filter (#nameFilter) not found');
+  await ctx.delay(450);
+}
+
+export async function hotspotForPlayersNameFilter(ctx: CaptureContext): Promise<HotspotPct> {
+  await ensurePlayersNameFilterVisible(ctx);
+  const handle = await ctx.page.evaluateHandle(() => document.getElementById('nameFilter'));
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Name filter input not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Name filter has no bounding box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
 function memberNameNeedle(firstName: string, lastName: string): string {
   return `${firstName} ${lastName}`;
 }
@@ -622,8 +679,54 @@ export async function clearHistoryOpponents(ctx: CaptureContext): Promise<void> 
   );
 }
 
+/** Toggle a roster row checkbox while in History opponent-selection mode. */
+export async function toggleHistoryOpponent(
+  ctx: CaptureContext,
+  firstName: string,
+  lastName: string,
+): Promise<void> {
+  await togglePlayerForStats(ctx, firstName, lastName);
+}
+
+/** After Deselect All, check specific opponents for match history. */
+export async function selectHistoryOpponents(
+  ctx: CaptureContext,
+  opponents: ReadonlyArray<{ firstName: string; lastName: string }>,
+): Promise<void> {
+  for (const m of opponents) {
+    await toggleHistoryOpponent(ctx, m.firstName, m.lastName);
+  }
+  await ctx.page.waitForFunction(
+    (n) => new RegExp(`${n} opponents? selected`, 'i').test(document.body.innerText || ''),
+    { timeout: 8000 },
+    opponents.length,
+  );
+  await ctx.delay(200);
+}
+
 export async function hotspotForViewHistory(ctx: CaptureContext): Promise<HotspotPct> {
   return ctx.hotspotForButton('View History');
+}
+
+/** Open Match History for a subject vs the given opponents. */
+export async function openPlayerMatchHistory(
+  ctx: CaptureContext,
+  firstName: string,
+  lastName: string,
+  opponents: ReadonlyArray<{ firstName: string; lastName: string }>,
+): Promise<void> {
+  await gotoPath(ctx, '/players');
+  await ctx.delay(500);
+  await startPlayerHistorySelection(ctx, firstName, lastName);
+  await clearHistoryOpponents(ctx);
+  await selectHistoryOpponents(ctx, opponents);
+  const opened = await ctx.clickButtonContaining('View History');
+  if (!opened) throw new Error('View History button missing');
+  await ctx.page.waitForFunction(
+    () => /Match History/i.test(document.body.innerText || ''),
+    { timeout: 20000 },
+  );
+  await ctx.delay(600);
 }
 
 /** Open one-player Rating History (select player, clear opponents, View History). */
@@ -751,6 +854,91 @@ export async function openMultiPlayerStatistics(
   }
   const opened = await ctx.clickButtonContaining('View Statistics');
   if (!opened) throw new Error('View Statistics button missing');
+  await ctx.page.waitForFunction(
+    () => /Player Statistics|Rating History for/i.test(document.body.innerText || ''),
+    { timeout: 20000 },
+  );
+  await ctx.delay(700);
+}
+
+const PLAYER_QUICK_STATS_LABEL = 'Show statistics for a player';
+
+/** Hotspot for the row 📊 quick-stats control. */
+export async function hotspotForPlayerQuickStatsButton(
+  ctx: CaptureContext,
+  firstName: string,
+  lastName: string,
+): Promise<HotspotPct> {
+  await ctx.page.evaluate(
+    (first, last, label) => {
+      const row = [...document.querySelectorAll('tr')].find((r) => {
+        const t = r.textContent || '';
+        return t.includes(first) && t.includes(last);
+      });
+      const btn = [...(row?.querySelectorAll('button') || [])].find(
+        (b) => b.getAttribute('aria-label') === label || b.getAttribute('title') === label,
+      ) as HTMLElement | undefined;
+      btn?.scrollIntoView({ block: 'center' });
+    },
+    firstName,
+    lastName,
+    PLAYER_QUICK_STATS_LABEL,
+  );
+  await ctx.delay(200);
+  const handle = await ctx.page.evaluateHandle(
+    (first, last, label) => {
+      const row = [...document.querySelectorAll('tr')].find((r) => {
+        const t = r.textContent || '';
+        return t.includes(first) && t.includes(last);
+      });
+      return (
+        [...(row?.querySelectorAll('button') || [])].find(
+          (b) => b.getAttribute('aria-label') === label || b.getAttribute('title') === label,
+        ) || null
+      );
+    },
+    firstName,
+    lastName,
+    PLAYER_QUICK_STATS_LABEL,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error(`Quick stats button not found for ${firstName} ${lastName}`);
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error(`Quick stats button has no bounding box for ${firstName} ${lastName}`);
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+/** Open Player Statistics for a single roster member via the row 📊 control. */
+export async function openPlayerSingleStatistics(
+  ctx: CaptureContext,
+  firstName: string,
+  lastName: string,
+): Promise<void> {
+  await gotoPath(ctx, '/players');
+  await ctx.delay(500);
+  const clicked = await ctx.page.evaluate(
+    (first, last, label) => {
+      const row = [...document.querySelectorAll('tr')].find((r) => {
+        const t = r.textContent || '';
+        return t.includes(first) && t.includes(last);
+      });
+      const btn = [...(row?.querySelectorAll('button') || [])].find(
+        (b) => b.getAttribute('aria-label') === label || b.getAttribute('title') === label,
+      ) as HTMLButtonElement | undefined;
+      if (!btn) return false;
+      btn.scrollIntoView({ block: 'center' });
+      btn.click();
+      return true;
+    },
+    firstName,
+    lastName,
+    PLAYER_QUICK_STATS_LABEL,
+  );
+  if (!clicked) throw new Error(`Quick stats button not found for ${firstName} ${lastName}`);
   await ctx.page.waitForFunction(
     () => /Player Statistics|Rating History for/i.test(document.body.innerText || ''),
     { timeout: 20000 },
@@ -993,6 +1181,60 @@ export async function hotspotForPlanSelect(ctx: CaptureContext): Promise<Hotspot
   return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
 }
 
+/** Scroll a plan-overlay section heading (`h4`) into view. */
+export async function scrollPlanHeading(ctx: CaptureContext, heading: string): Promise<void> {
+  await ctx.page.evaluate((h) => {
+    const el = [...document.querySelectorAll('h4')].find(
+      (n) => (n.textContent || '').trim() === h,
+    ) as HTMLElement | undefined;
+    el?.scrollIntoView({ block: 'center' });
+  }, heading);
+  await ctx.delay(250);
+}
+
+/**
+ * Expand the Plan <select> for screenshots (native open menus are not captured by Puppeteer).
+ * Sets `size` to show all options as a list.
+ */
+export async function expandPlanSelectForCapture(ctx: CaptureContext): Promise<void> {
+  const el = await planSelectElement(ctx);
+  await el.evaluate((node) => {
+    const select = node as HTMLSelectElement;
+    select.size = Math.max(select.options.length, 2);
+  });
+  await el.dispose();
+  await ctx.delay(250);
+}
+
+export async function collapsePlanSelect(ctx: CaptureContext): Promise<void> {
+  const el = await planSelectElement(ctx);
+  await el.evaluate((node) => {
+    (node as HTMLSelectElement).size = 1;
+  });
+  await el.dispose();
+  await ctx.delay(150);
+}
+
+/** Hotspot for one option in the (expanded) Plan select. */
+export async function hotspotForPlanSelectOption(
+  ctx: CaptureContext,
+  familyKey: string,
+): Promise<HotspotPct> {
+  await expandPlanSelectForCapture(ctx);
+  const el = await planSelectElement(ctx);
+  const box = await el.evaluate((node, key) => {
+    const select = node as HTMLSelectElement;
+    const opt = [...select.options].find((o) => o.value === key);
+    if (!opt) return null;
+    const r = opt.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }, familyKey);
+  await el.dispose();
+  if (!box) throw new Error(`Plan option familyKey=${familyKey} has no box`);
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
 /** Choose a plan familyKey in the Purchase panel select. */
 export async function selectPlanFamilyKey(ctx: CaptureContext, familyKey: string): Promise<void> {
   const el = await planSelectElement(ctx);
@@ -1007,6 +1249,7 @@ export async function selectPlanFamilyKey(ctx: CaptureContext, familyKey: string
     const select = node as HTMLSelectElement;
     const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
     proto?.call(select, key);
+    select.size = 1;
     select.dispatchEvent(new Event('input', { bubbles: true }));
     select.dispatchEvent(new Event('change', { bubbles: true }));
   }, familyKey);
@@ -1016,6 +1259,71 @@ export async function selectPlanFamilyKey(ctx: CaptureContext, familyKey: string
     throw new Error(`Could not select plan familyKey=${familyKey} (got ${value})`);
   }
   await ctx.delay(400);
+}
+
+/** Set Cash vs Pay online on the member plan purchase panel. */
+export async function setPlanPayMethod(
+  ctx: CaptureContext,
+  method: 'cash' | 'online',
+): Promise<void> {
+  const ok = await ctx.page.evaluate((m) => {
+    const label = [...document.querySelectorAll('label')].find((l) => {
+      const t = (l.textContent || '').replace(/\s+/g, ' ').trim();
+      return m === 'cash' ? t.includes('Cash') : t.includes('Pay online');
+    });
+    const input = label?.querySelector('input[type="radio"]') as HTMLInputElement | undefined;
+    if (!input || input.disabled) return false;
+    input.click();
+    return true;
+  }, method);
+  if (!ok) throw new Error(`Could not set pay method=${method}`);
+  await ctx.delay(200);
+}
+
+/** Hotspot for the primary Purchase · Cash / Purchase · Online button. */
+export async function hotspotForPlanPurchaseButton(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) =>
+      /^Purchase\s*·/i.test((b.textContent || '').trim()),
+    ) as HTMLElement | undefined;
+    btn?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(() =>
+    [...document.querySelectorAll('button')].find((b) =>
+      /^Purchase\s*·/i.test((b.textContent || '').trim()),
+    ) || null,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Purchase button not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Purchase button has no box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+/** Click Purchase · Cash / Online and wait for a pending payment line. */
+export async function submitPlanPurchase(ctx: CaptureContext): Promise<void> {
+  const clicked = await ctx.page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) =>
+      /^Purchase\s*·/i.test((b.textContent || '').trim()),
+    ) as HTMLButtonElement | undefined;
+    if (!btn || btn.disabled) return false;
+    btn.click();
+    return true;
+  });
+  if (!clicked) throw new Error('Purchase button missing or disabled');
+  await ctx.page.waitForFunction(
+    () => {
+      const text = document.body.innerText || '';
+      return /pending|awaiting admin|Purchase pending/i.test(text);
+    },
+    { timeout: 20000 },
+  );
+  await ctx.delay(500);
 }
 
 /** Open + Tournament → choose type → player selection step. */
@@ -1311,13 +1619,93 @@ export async function fillMatchEntryScores(
   player1Sets: number,
   player2Sets: number,
 ): Promise<void> {
-  await ctx.page.waitForSelector('#match-entry-player1-score', { timeout: 10000 });
-  await ctx.page.click('#match-entry-player1-score', { clickCount: 3 });
-  await ctx.page.keyboard.type(String(player1Sets), { delay: 40 });
+  await fillMatchEntryScoreField(ctx, 1, player1Sets);
+  await fillMatchEntryScoreField(ctx, 2, player2Sets);
+}
+
+export async function fillMatchEntryScoreField(
+  ctx: CaptureContext,
+  player: 1 | 2,
+  sets: number,
+): Promise<void> {
+  const sel = player === 1 ? '#match-entry-player1-score' : '#match-entry-player2-score';
+  await ctx.page.waitForSelector(sel, { timeout: 10000 });
+  await ctx.page.click(sel, { clickCount: 3 });
+  await ctx.page.keyboard.type(String(sets), { delay: 40 });
   await ctx.delay(150);
-  await ctx.page.click('#match-entry-player2-score', { clickCount: 3 });
-  await ctx.page.keyboard.type(String(player2Sets), { delay: 40 });
+}
+
+export async function hotspotForMatchEntryScoreField(
+  ctx: CaptureContext,
+  player: 1 | 2,
+): Promise<HotspotPct> {
+  const sel = player === 1 ? '#match-entry-player1-score' : '#match-entry-player2-score';
+  await ctx.page.waitForSelector(sel, { timeout: 10000 });
+  return ctx.hotspotFor(sel);
+}
+
+async function matchEntryPinInputs(ctx: CaptureContext): Promise<void> {
+  await ctx.page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('input[type="password"]')].filter((el) =>
+        /PIN/i.test((el as HTMLInputElement).placeholder || ''),
+      ).length >= 2,
+    { timeout: 10000 },
+  );
+}
+
+export async function fillMatchEntryPinField(
+  ctx: CaptureContext,
+  index: 0 | 1,
+  pin: string,
+): Promise<void> {
+  await matchEntryPinInputs(ctx);
+  const filled = await ctx.page.evaluate(
+    (i, p) => {
+      const inputs = [...document.querySelectorAll('input[type="password"]')].filter((el) =>
+        /PIN/i.test((el as HTMLInputElement).placeholder || ''),
+      ) as HTMLInputElement[];
+      if (inputs.length <= i) return false;
+      const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      proto?.call(inputs[i], p);
+      inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+      inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+      return inputs[i].value === p;
+    },
+    index,
+    pin,
+  );
+  if (!filled) throw new Error(`Could not fill participant PIN field ${index + 1}`);
   await ctx.delay(200);
+}
+
+export async function hotspotForMatchEntryPinField(
+  ctx: CaptureContext,
+  index: 0 | 1,
+): Promise<HotspotPct> {
+  await matchEntryPinInputs(ctx);
+  await ctx.page.evaluate((i) => {
+    const inputs = [...document.querySelectorAll('input[type="password"]')].filter((el) =>
+      /PIN/i.test((el as HTMLInputElement).placeholder || ''),
+    ) as HTMLElement[];
+    inputs[i]?.scrollIntoView({ block: 'center' });
+  }, index);
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle((i) => {
+    const inputs = [...document.querySelectorAll('input[type="password"]')].filter((el) =>
+      /PIN/i.test((el as HTMLInputElement).placeholder || ''),
+    );
+    return inputs[i] || null;
+  }, index);
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error(`PIN field ${index + 1} not found`);
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error(`PIN field ${index + 1} has no box`);
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
 }
 
 /** Hotspot for the Match Entry save (checkmark) control. */

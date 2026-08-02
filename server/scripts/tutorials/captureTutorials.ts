@@ -42,6 +42,7 @@ async function captureOne(
       kind?: import('./lib/types').StepKind;
       actionHint?: string;
       resultNote?: string;
+      autoAdvanceMs?: number;
       image: string;
       hotspot?: HotspotPct;
     }> = [];
@@ -60,6 +61,7 @@ async function captureOne(
         kind: stepDef.kind,
         actionHint: stepDef.actionHint,
         resultNote: stepDef.resultNote,
+        autoAdvanceMs: stepDef.autoAdvanceMs,
         image: rel,
         hotspot: result.hotspot,
       });

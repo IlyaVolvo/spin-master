@@ -33,6 +33,15 @@ export const TUTORIAL_HISTORY_MEMBER = {
   lastName: 'PlayerOnly',
 } as const;
 
+/**
+ * Opponents with completed-RR match history vs TUTORIAL_HISTORY_MEMBER.
+ * Subject + these two = three players for the match-history showcase.
+ */
+export const TUTORIAL_HISTORY_OPPONENTS = [
+  { firstName: 'Alex', lastName: 'Rivera' },
+  { firstName: 'Blair', lastName: 'Chen' },
+] as const;
+
 /** Members used for multi-player Statistics (all have completed-RR rating history). */
 export const TUTORIAL_STATS_MEMBERS = [
   { firstName: 'Tutorial', lastName: 'PlayerOnly' },

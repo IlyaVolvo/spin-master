@@ -14,6 +14,22 @@ export type CheckinMemberStatus = {
 
 export type CheckinStatusMap = Record<number, CheckinMemberStatus>;
 
+export type CheckinTodayStatusSnapshot = {
+  clubDate: string;
+  version: number;
+  members: CheckinStatusMap;
+};
+
+export type ClubVisitUpdatedEvent = {
+  memberId: number;
+  action?: string;
+  clubDate?: string | null;
+  version?: number;
+  present?: boolean;
+  visitedToday?: boolean;
+  lastCheckInAt?: string | null;
+};
+
 type EntitlementSummary = {
   type: string;
   visitsRemaining: number | null;
@@ -83,7 +99,7 @@ export function formatPinToggleMessage(data: PinToggleResponse): string {
   return parts.join(' ');
 }
 
-export async function fetchCheckinTodayStatus(): Promise<CheckinStatusMap> {
+export async function fetchCheckinTodayStatus(): Promise<CheckinTodayStatusSnapshot> {
   const res = await api.get('/club/kiosk/today-status');
   const members = Array.isArray(res.data?.members) ? res.data.members : [];
   const map: CheckinStatusMap = {};
@@ -96,7 +112,62 @@ export async function fetchCheckinTodayStatus(): Promise<CheckinStatusMap> {
       lastCheckInAt: typeof row.lastCheckInAt === 'string' ? row.lastCheckInAt : null,
     };
   }
-  return map;
+  return {
+    clubDate: typeof res.data?.clubDate === 'string' ? res.data.clubDate : '',
+    version: Number.isFinite(Number(res.data?.version)) ? Number(res.data.version) : 0,
+    members: map,
+  };
+}
+
+/** Cheap out-of-band probe; full today-status only when version/clubDate drift. */
+export async function fetchCheckinTodayStatusVersion(): Promise<{
+  clubDate: string;
+  version: number;
+}> {
+  const res = await api.get('/club/kiosk/today-status/version');
+  return {
+    clubDate: typeof res.data?.clubDate === 'string' ? res.data.clubDate : '',
+    version: Number.isFinite(Number(res.data?.version)) ? Number(res.data.version) : 0,
+  };
+}
+
+/** Apply a club:visitUpdated patch; returns null if a full refresh is required. */
+export function applyClubVisitUpdatedPatch(
+  map: CheckinStatusMap,
+  event: ClubVisitUpdatedEvent,
+  currentClubDate: string,
+): CheckinStatusMap | null {
+  if (event.clubDate && currentClubDate && event.clubDate !== currentClubDate) {
+    return null;
+  }
+  const memberId = Number(event.memberId);
+  if (!Number.isInteger(memberId) || memberId < 1) return map;
+
+  const prev = map[memberId] ?? {
+    present: false,
+    visitedToday: false,
+    lastCheckInAt: null,
+  };
+  const next: CheckinMemberStatus = { ...prev };
+
+  if (typeof event.present === 'boolean') {
+    next.present = event.present;
+  }
+  if (typeof event.visitedToday === 'boolean') {
+    next.visitedToday = event.visitedToday;
+  }
+  if (event.lastCheckInAt !== undefined) {
+    next.lastCheckInAt =
+      typeof event.lastCheckInAt === 'string' ? event.lastCheckInAt : null;
+  }
+
+  // Drop members with no presence signal so presentCount stays accurate.
+  if (!next.present && !next.visitedToday && !next.lastCheckInAt) {
+    const { [memberId]: _removed, ...rest } = map;
+    return rest;
+  }
+
+  return { ...map, [memberId]: next };
 }
 
 type CheckinKioskToolbarProps = {

@@ -2,10 +2,10 @@
   "slug": "showcase-player-checkout",
   "role": "player",
   "title": "Player checks out at the kiosk",
-  "description": "When leaving the club, a present member opens Check-out on the kiosk, enters their PIN, and leaves today’s attendance.",
+  "description": "When leaving the club, a present member finds their name (by typing), opens Check-out, enters their PIN, and leaves today’s attendance.",
   "relatedSlugs": [
     "showcase-player-checkin",
-    "showcase-admin-front-desk"
+    "showcase-player-score-kiosk"
   ],
   "viewport": {
     "width": 1600,
@@ -20,33 +20,40 @@
       "kind": "context"
     },
     {
-      "id": "find-present-member",
-      "title": "Find your name while present",
-      "body": "Alex Rivera is already checked in for today, so their row shows Check-out.",
+      "id": "type-name",
+      "title": "Find your name",
+      "body": "You can scroll the roster to find Alex Rivera, but it is more efficient to start typing in the name search.",
       "image": "assets/showcase-player-checkout/step-02.png",
-      "kind": "context"
+      "kind": "action",
+      "actionHint": "Type in the name search field",
+      "hotspot": {
+        "x": 15,
+        "y": 35.6,
+        "w": 30.4,
+        "h": 3.3
+      }
+    },
+    {
+      "id": "name-found",
+      "title": "Your row appears",
+      "body": "Typing part of the name narrows the list. Alex Rivera is already checked in for today, so their row shows Check-out.",
+      "image": "assets/showcase-player-checkout/step-03.png",
+      "kind": "result",
+      "resultNote": "Name filter matches the member; Check-out is ready."
     },
     {
       "id": "row-checkout-action",
       "title": "Start check-out",
       "body": "Tap Check-out on your row. The kiosk asks for the same score PIN used at check-in.",
-      "image": "assets/showcase-player-checkout/step-03.png",
+      "image": "assets/showcase-player-checkout/step-04.png",
       "kind": "action",
       "actionHint": "Click Check-out on your row",
       "hotspot": {
-        "x": 69.4,
-        "y": 79.3,
+        "x": 66.4,
+        "y": 45.9,
         "w": 5.2,
         "h": 2.7
       }
-    },
-    {
-      "id": "pin-dialog",
-      "title": "PIN prompt",
-      "body": "Confirm your identity with your PIN before the system records the check-out.",
-      "image": "assets/showcase-player-checkout/step-04.png",
-      "kind": "result",
-      "resultNote": "Check-out PIN modal is open."
     },
     {
       "id": "enter-pin-action",
@@ -64,11 +71,11 @@
     },
     {
       "id": "checked-out",
-      "title": "Checked out",
-      "body": "Attendance updates: the member is no longer present, the row returns to Check-in (free re-entry if they return today), and the present count drops.",
+      "title": "State updated",
+      "body": "The row has changed: Check-out is gone and Check-in returns (free re-entry if they come back today). The attendance count drops.",
       "image": "assets/showcase-player-checkout/step-06.png",
       "kind": "result",
-      "resultNote": "PIN accepted; open visit closed for this member."
+      "resultNote": "Member is no longer present; kiosk row offers Check-in again."
     }
   ],
   "showcase": true
