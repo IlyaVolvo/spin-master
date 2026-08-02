@@ -1046,6 +1046,51 @@ function Header({
   
   return (
     <>
+    {clubName ? (
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          padding: '0 16px 10px',
+          maxWidth: '100%',
+        }}
+      >
+        <span
+          className="app-header-club"
+          style={{
+            display: 'inline-block',
+            boxSizing: 'border-box',
+            maxWidth: '100%',
+            padding: '6px 16px',
+            backgroundColor: '#2c3e50',
+            color: 'white',
+            borderRadius: '999px',
+            fontSize: '17px',
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            lineHeight: 1.25,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+          title={todayHours.comment || undefined}
+        >
+          {clubName}
+          <span
+            style={{
+              fontSize: '12px',
+              fontWeight: 500,
+              color: 'rgba(255, 255, 255, 0.8)',
+              letterSpacing: '0.01em',
+              marginLeft: '0.35em',
+            }}
+          >
+            ({todayHours.label}
+            {todayHours.comment ? ` · ${todayHours.comment}` : ''})
+          </span>
+        </span>
+      </div>
+    ) : null}
     <div className="header" style={{
       position: 'sticky',
       top: 0,
@@ -1274,7 +1319,6 @@ function Header({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'flex-start',
-          gap: '10px',
           flex: 1,
         }}>
           <div className="app-header-logo-wrap" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
@@ -1359,39 +1403,6 @@ function Header({
             </span>
             <span className="app-header-paddle">🏓</span>
           </div>
-          {clubName ? (
-            <span
-              className="app-header-club"
-              style={{
-                display: 'block',
-                fontSize: '17px',
-                fontWeight: 600,
-                color: '#B8D9F0',
-                textAlign: 'center',
-                letterSpacing: '0.02em',
-                lineHeight: 1.25,
-                maxWidth: '420px',
-                margin: '0 auto',
-                textShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
-                whiteSpace: 'nowrap',
-              }}
-              title={todayHours.comment || undefined}
-            >
-              {clubName}
-              <span
-                style={{
-                  fontSize: '12px',
-                  fontWeight: 500,
-                  color: 'rgba(184, 217, 240, 0.88)',
-                  letterSpacing: '0.01em',
-                  marginLeft: '0.35em',
-                }}
-              >
-                ({todayHours.label}
-                {todayHours.comment ? ` · ${todayHours.comment}` : ''})
-              </span>
-            </span>
-          ) : null}
         </h1>
         <div className="app-header-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
           <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

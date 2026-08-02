@@ -112,7 +112,6 @@ html {
 
   .app-header-title {
     order: 1;
-    gap: 10px !important;
   }
 
   .app-header-user {

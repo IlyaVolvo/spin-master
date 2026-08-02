@@ -60,15 +60,16 @@ function writeSessionBool(key: string, value: boolean): void {
 
 type NumericInputProps = {
   label: string;
+  tooltip?: string;
   value: number;
   min?: number;
   max?: number;
   onChange: (value: number) => void;
 };
 
-function NumericInput({ label, value, min = 0, max, onChange }: NumericInputProps) {
+function NumericInput({ label, tooltip, value, min = 0, max, onChange }: NumericInputProps) {
   return (
-    <FieldRow label={label}>
+    <FieldRow label={label} tooltip={tooltip}>
       <BoundedNumericInput
         value={value}
         min={min}
@@ -92,7 +93,7 @@ const valueInputStyle = {
   fontWeight: 600,
 } as const;
 
-function FieldRow({ label, children }: { label: string; children: ReactNode }) {
+function FieldRow({ label, tooltip, children }: { label: string; tooltip?: string; children: ReactNode }) {
   return (
     <div style={{
       display: 'grid',
@@ -102,11 +103,14 @@ function FieldRow({ label, children }: { label: string; children: ReactNode }) {
       padding: '12px 0',
       borderBottom: '1px solid #edf1f5',
     }}>
-      <div style={{
-        color: '#2d6f8f',
-        fontWeight: 700,
-        letterSpacing: '0.01em',
-      }}>
+      <div
+        title={tooltip}
+        style={{
+          color: '#2d6f8f',
+          fontWeight: 700,
+          letterSpacing: '0.01em',
+        }}
+      >
         {label}
       </div>
       <div style={{ color: '#17324d' }}>
@@ -118,12 +122,14 @@ function FieldRow({ label, children }: { label: string; children: ReactNode }) {
 
 function Section({
   title,
+  tooltip,
   sectionId,
   open,
   onToggle,
   children,
 }: {
   title: string;
+  tooltip?: string;
   sectionId: string;
   open: boolean;
   onToggle: (id: string) => void;
@@ -135,6 +141,7 @@ function Section({
         type="button"
         onClick={() => onToggle(sectionId)}
         aria-expanded={open}
+        title={tooltip}
         style={{
           width: '100%',
           margin: 0,
@@ -328,85 +335,96 @@ export default function SystemSettings() {
   return (
     <div style={{ paddingBottom: dirty ? '88px' : '16px' }}>
       <div style={{ marginBottom: '16px' }}>
-        <h2 style={{ margin: 0 }}>System Settings</h2>
-        <p style={{ margin: '6px 0 0', color: '#666' }}>
-          Open a section to edit. Use Save when your changes are ready.
-        </p>
+        <h2
+          style={{ margin: 0 }}
+          title="Open a section to edit. Use Save when your changes are ready."
+        >
+          System Settings
+        </h2>
       </div>
 
       {error ? <div className="error-message" style={{ marginBottom: '16px' }}>{error}</div> : null}
       {message ? <div className="success-message" style={{ marginBottom: '16px' }}>{message}</div> : null}
 
-      <div style={{ marginBottom: '18px' }}>
-        <label style={{ display: 'block', fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Club Name
-        </label>
-        <input
-          data-testid="system-settings-club-name"
-          value={config.branding.clubName ?? ''}
-          onChange={(event) => updateConfig(draft => {
-            draft.branding.clubName = event.target.value.trim() === '' ? null : event.target.value;
-          })}
-          style={{ ...valueInputStyle, fontSize: '22px', fontWeight: 600, color: '#2980b9', padding: '10px 14px' }}
-        />
-      </div>
-
-      <div style={{ marginBottom: '18px' }}>
-        <label
-          htmlFor="system-settings-club-timezone"
-          style={{ display: 'block', fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}
-        >
-          Club Timezone
-        </label>
-        <select
-          id="system-settings-club-timezone"
-          data-testid="system-settings-club-timezone"
-          value={config.branding.clubTimezone || 'UTC'}
-          onChange={(event) => updateConfig((draft) => {
-            draft.branding.clubTimezone = event.target.value;
-          })}
-          style={{ ...valueInputStyle, fontSize: '14px', fontWeight: 500, maxWidth: '420px' }}
-        >
-          {(() => {
-            const known = [
-              'UTC',
-              'America/Los_Angeles',
-              'America/Denver',
-              'America/Phoenix',
-              'America/Chicago',
-              'America/New_York',
-              'America/Anchorage',
-              'Pacific/Honolulu',
-              'Europe/London',
-              'Europe/Paris',
-              'Asia/Tokyo',
-              'Australia/Sydney',
-            ];
-            const current = config.branding.clubTimezone || 'UTC';
-            const options = known.includes(current) ? known : [current, ...known];
-            const labels: Record<string, string> = {
-              UTC: 'UTC',
-              'America/Los_Angeles': 'America/Los_Angeles (Pacific)',
-              'America/Denver': 'America/Denver (Mountain)',
-              'America/Phoenix': 'America/Phoenix (Arizona)',
-              'America/Chicago': 'America/Chicago (Central)',
-              'America/New_York': 'America/New_York (Eastern)',
-              'America/Anchorage': 'America/Anchorage',
-              'Pacific/Honolulu': 'Pacific/Honolulu',
-              'Europe/London': 'Europe/London',
-              'Europe/Paris': 'Europe/Paris',
-              'Asia/Tokyo': 'Asia/Tokyo',
-              'Australia/Sydney': 'Australia/Sydney',
-            };
-            return options.map((tz) => (
-              <option key={tz} value={tz}>{labels[tz] || tz}</option>
-            ));
-          })()}
-        </select>
-        <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#666' }}>
-          Used for club calendar days (check-in, trials, midnight jobs). Defaults from{' '}
-          <code>CLUB_TIMEZONE</code> env if unset.
-        </p>
+      <div
+        style={{
+          marginBottom: '18px',
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: '16px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+          <label
+            style={{ display: 'block', fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+            title="Shown above the main panel for members (and on login / public pages)."
+          >
+            Club Name
+          </label>
+          <input
+            data-testid="system-settings-club-name"
+            value={config.branding.clubName ?? ''}
+            onChange={(event) => updateConfig(draft => {
+              draft.branding.clubName = event.target.value.trim() === '' ? null : event.target.value;
+            })}
+            style={{ ...valueInputStyle, fontSize: '22px', fontWeight: 600, color: '#2980b9', padding: '10px 14px' }}
+          />
+        </div>
+        <div style={{ flex: '0 0 auto', marginLeft: 'auto', textAlign: 'right' }}>
+          <label
+            htmlFor="system-settings-club-timezone"
+            style={{ display: 'block', fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+            title="Used for club calendar days (check-in, trials, midnight jobs). Defaults from CLUB_TIMEZONE env if unset."
+          >
+            Club Timezone
+          </label>
+          <select
+            id="system-settings-club-timezone"
+            data-testid="system-settings-club-timezone"
+            value={config.branding.clubTimezone || 'UTC'}
+            onChange={(event) => updateConfig((draft) => {
+              draft.branding.clubTimezone = event.target.value;
+            })}
+            style={{ ...valueInputStyle, fontSize: '14px', fontWeight: 500, width: 'auto', minWidth: '220px', maxWidth: '320px' }}
+          >
+            {(() => {
+              const known = [
+                'UTC',
+                'America/Los_Angeles',
+                'America/Denver',
+                'America/Phoenix',
+                'America/Chicago',
+                'America/New_York',
+                'America/Anchorage',
+                'Pacific/Honolulu',
+                'Europe/London',
+                'Europe/Paris',
+                'Asia/Tokyo',
+                'Australia/Sydney',
+              ];
+              const current = config.branding.clubTimezone || 'UTC';
+              const options = known.includes(current) ? known : [current, ...known];
+              const labels: Record<string, string> = {
+                UTC: 'UTC',
+                'America/Los_Angeles': 'America/Los_Angeles (Pacific)',
+                'America/Denver': 'America/Denver (Mountain)',
+                'America/Phoenix': 'America/Phoenix (Arizona)',
+                'America/Chicago': 'America/Chicago (Central)',
+                'America/New_York': 'America/New_York (Eastern)',
+                'America/Anchorage': 'America/Anchorage',
+                'Pacific/Honolulu': 'Pacific/Honolulu',
+                'Europe/London': 'Europe/London',
+                'Europe/Paris': 'Europe/Paris',
+                'Asia/Tokyo': 'Asia/Tokyo',
+                'Australia/Sydney': 'Australia/Sydney',
+              };
+              return options.map((tz) => (
+                <option key={tz} value={tz}>{labels[tz] || tz}</option>
+              ));
+            })()}
+          </select>
+        </div>
       </div>
       <div style={{
         marginBottom: '18px',
@@ -420,6 +438,7 @@ export default function SystemSettings() {
           onClick={toggleHoursOpen}
           aria-expanded={hoursOpen}
           data-testid="system-settings-hours-toggle"
+          title="Per weekday schedule in the club timezone. Same-day open/close only (no overnight). Date overrides replace that day’s default."
           style={{
             width: '100%',
             margin: 0,
@@ -447,9 +466,6 @@ export default function SystemSettings() {
         </button>
         {hoursOpen ? (
           <div style={{ padding: '12px 14px 16px' }}>
-            <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#666' }}>
-              Per weekday schedule in the club timezone. Same-day open/close only (no overnight). Date overrides replace that day’s default.
-            </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '18px' }}>
               {WEEKDAY_ROWS.map(({ key, label }) => {
                 const day = config.branding.weeklyHours[key];
@@ -506,7 +522,10 @@ export default function SystemSettings() {
               })}
             </div>
 
-            <div style={{ fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '8px' }}>
+            <div
+              style={{ fontWeight: 700, fontSize: '13px', color: '#2c3e50', marginBottom: '8px' }}
+              title="Replace the weekday default for a specific date. Optional comment is shown next to the club name for members."
+            >
               Date overrides
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -639,6 +658,7 @@ export default function SystemSettings() {
 
       <Section
         title="Tournament Rules"
+        tooltip="Limits and defaults for each tournament type (player counts, group sizes, match scores)."
         sectionId="tournament-rules"
         open={openSectionId === 'tournament-rules'}
         onToggle={toggleSection}
@@ -745,14 +765,11 @@ export default function SystemSettings() {
 
       <Section
         title="Public Achievements"
+        tooltip="How many results to show for each board on the public achievements page. Use 0 to hide a board. Positive values include the board and cap the list length."
         sectionId="public-achievements"
         open={openSectionId === 'public-achievements'}
         onToggle={toggleSection}
       >
-        <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#666' }}>
-          How many results to show for each board on the public achievements page.
-          Use 0 to hide a board. Positive values include the board and cap the list length.
-        </p>
         <FieldRow label="Set all to">
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
             <BoundedNumericInput
@@ -807,6 +824,7 @@ export default function SystemSettings() {
 
       <Section
         title="Core Settings"
+        tooltip="Authentication, score PIN, privilege auto-relinquish, preregistration defaults, and rating validation."
         sectionId="core"
         open={openSectionId === 'core'}
         onToggle={toggleSection}
@@ -843,13 +861,11 @@ export default function SystemSettings() {
         </FieldRow>
         <NumericInput
           label="Auto Relinquish Idle (minutes)"
+          tooltip="After restoring privileges, return to kiosk after this many idle minutes (0 = only on login)."
           min={0}
           value={config.authPolicy.autoRelinquishIdleMinutes}
           onChange={(value) => updateConfig(draft => { draft.authPolicy.autoRelinquishIdleMinutes = value; })}
         />
-        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#666' }}>
-          After restoring privileges, return to kiosk after this many idle minutes (0 = only on login).
-        </p>
         <NumericInput
           label="Preregistration Date Offset (days)"
           value={config.preregistration.defaultTournamentOffsetDays}
@@ -900,6 +916,7 @@ export default function SystemSettings() {
 
       <Section
         title="Operations Settings"
+        tooltip="Client runtime tuning: tournaments list cache TTL and socket reconnection behavior."
         sectionId="operational"
         open={openSectionId === 'operational'}
         onToggle={toggleSection}
