@@ -27,6 +27,7 @@ import {
   writeSessionCheckinPaymentUnlock,
 } from '../utils/checkinPaymentUnlock';
 import { memberHasPaymentLogin } from '../utils/paymentLoginEligibility';
+import { invalidateMemberCheckInStub } from '../payments/checkInStateCache';
 
 const router = express.Router();
 
@@ -584,6 +585,7 @@ router.post('/member/reset-password-with-token', [
         passwordResetTokenExpiry: null,
       } as any,
     });
+    invalidateMemberCheckInStub(member.id);
 
     logger.info('Password reset via token successful', { memberId: member.id });
     return res.json({ message: 'Password has been reset successfully' });
@@ -751,6 +753,7 @@ router.post('/member/change-password', [
         mustResetPassword: false, // Clear the reset flag after password change
       } as any,
     });
+    invalidateMemberCheckInStub(memberId);
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
@@ -833,6 +836,7 @@ router.post('/member/:id/reset-password', [
           passwordResetTokenExpiry: null,
         },
       });
+      invalidateMemberCheckInStub(memberId);
 
       return res.json({ message: 'Password reset successfully' });
     } else {
@@ -856,6 +860,7 @@ router.post('/member/:id/reset-password', [
           passwordResetTokenExpiry: expiresAt,
         },
       });
+      invalidateMemberCheckInStub(memberId);
 
       try {
         await sendPasswordResetEmail({

@@ -21,10 +21,7 @@ import {
   trialPlanStartYmd,
 } from '../payments/memberTrial';
 import { confirmPayment } from '../payments/confirmPayment';
-import { emitPaymentUpdated, emitClubVisitUpdated } from '../services/socketService';
-import { getExpiryWarning } from '../payments/checkInReminders';
-import { createTrialVisit, resolveFirstVisitOfDay } from '../payments/checkInAccess';
-import { recordRejectedCheckIn } from '../payments/recordRejectedCheckIn';
+import { emitPaymentUpdated } from '../services/socketService';
 import { runAutoCheckout, runCloseClub } from '../payments/autoCheckout';
 import {
   attendanceStatusWhere,
@@ -32,6 +29,16 @@ import {
 } from '../payments/attendanceLogFilters';
 import { getClubDate, getClubTimezone, clubLocalDayRangeUtc } from '../utils/clubDate';
 import { memberHasPaymentLogin } from '../utils/paymentLoginEligibility';
+import {
+  memberContextFromStub,
+  toggleVisit,
+} from '../payments/checkInToggle';
+import {
+  getCachedMemberCheckInStub,
+  invalidateCurrentEntitlement,
+  setCachedMemberCheckInStub,
+  type MemberCheckInStub,
+} from '../payments/checkInStateCache';
 
 const router = express.Router();
 
@@ -53,179 +60,6 @@ function isAdmin(req: AuthRequest): boolean {
  */
 async function getActiveEntitlement(memberId: number) {
   return refreshCurrentEntitlement(memberId);
-}
-
-/**
- * Core check-in/check-out logic for a member.
- * Returns the visit and status info.
- * First check-in of the club-local day may debit entitlement; later check-ins are free.
- */
-async function toggleVisit(memberId: number, closedByMethod: 'SCAN' | 'MANUAL') {
-  const clubDate = getClubDate();
-
-  const finish = <T extends { action: string; visit?: { id: number } | null }>(result: T): T => {
-    emitClubVisitUpdated({
-      memberId,
-      action: result.action,
-      clubDate,
-      visitId: result.visit?.id ?? null,
-    });
-    return result;
-  };
-
-  // Any still-open visit means the member is inside, even if it began on an earlier
-  // club date (day rollover, missed auto-checkout) — ignore rejected attempts
-  const openVisit = await prisma.clubVisit.findFirst({
-    where: { memberId, checkOutAt: null, rejectedAt: null },
-    orderBy: { checkInAt: 'desc' },
-  });
-
-  if (openVisit) {
-    // CHECK-OUT: close the open visit
-    const updatedVisit = await prisma.clubVisit.update({
-      where: { id: openVisit.id },
-      data: { checkOutAt: new Date(), closedBy: closedByMethod },
-    });
-    const entitlement = await getActiveEntitlement(memberId);
-    return finish({
-      action: 'CHECK_OUT' as const,
-      visit: updatedVisit,
-      warning: null,
-      charged: false,
-      entitlement: entitlement
-        ? {
-            type: entitlement.type,
-            visitsRemaining: entitlement.visitsRemaining,
-            validTo: entitlement.validTo,
-          }
-        : null,
-      courtesy: openVisit.isCourtesy,
-      canPay: false,
-      paymentInProgress: false,
-    });
-  }
-
-  // CHECK-IN: determine if this is the first successful visit of the day
-  const existingVisitsToday = await prisma.clubVisit.count({
-    where: { memberId, clubDate, rejectedAt: null },
-  });
-  const isFirstVisitOfDay = existingVisitsToday === 0;
-
-  let dailyPaymentApplied = false;
-  let warning: string | null = null;
-
-  if (isFirstVisitOfDay) {
-    const memberTrial = await prisma.member.findUnique({
-      where: { id: memberId },
-      select: { trialEndsOn: true, email: true },
-    });
-
-    const entitlement = await getActiveEntitlement(memberId);
-    const outcome = await resolveFirstVisitOfDay({
-      memberId,
-      clubDate,
-      entitlement: entitlement
-        ? {
-            id: entitlement.id,
-            type: entitlement.type,
-            visitsRemaining: entitlement.visitsRemaining,
-          }
-        : null,
-      trialEndsOn: memberTrial?.trialEndsOn,
-      memberEmail: memberTrial?.email,
-    });
-
-    if (outcome.kind === 'trial') {
-      const visit = await createTrialVisit(memberId, clubDate);
-      return finish({
-        action: 'CHECK_IN' as const,
-        visit,
-        warning: outcome.warning,
-        charged: false,
-        entitlement: null,
-        courtesy: false,
-        canPay: outcome.canPay,
-        paymentInProgress: false,
-      });
-    }
-
-    if (outcome.kind === 'courtesy') {
-      const visit = await prisma.clubVisit.findUnique({ where: { id: outcome.visitId } });
-      return finish({
-        action: 'CHECK_IN' as const,
-        visit,
-        warning: outcome.warning,
-        charged: false,
-        entitlement: null,
-        courtesy: true,
-        canPay: outcome.canPay,
-        paymentInProgress: outcome.paymentInProgress,
-      });
-    }
-
-    if (outcome.kind === 'payment_required') {
-      const rejectedVisit = await recordRejectedCheckIn({
-        memberId,
-        clubDate,
-        closedBy: closedByMethod,
-        reason: outcome.warning || 'Check-in rejected',
-      });
-      return finish({
-        action: 'PAYMENT_REQUIRED' as const,
-        visit: rejectedVisit,
-        warning: outcome.warning,
-        charged: false,
-        entitlement: null,
-        courtesy: false,
-        canPay: outcome.canPay,
-        paymentInProgress: false,
-      });
-    }
-
-    // covered
-    dailyPaymentApplied = true;
-    const refreshedEntitlement = await prisma.clubEntitlement.findUnique({
-      where: { id: outcome.entitlementId },
-    });
-    if (refreshedEntitlement) {
-      warning = getExpiryWarning(refreshedEntitlement);
-    }
-  }
-
-  // Create the visit record
-  const visit = await prisma.clubVisit.create({
-    data: {
-      memberId,
-      clubDate,
-      dailyPaymentApplied,
-    },
-  });
-
-  const entitlementAfter = await getActiveEntitlement(memberId);
-  if (!warning && entitlementAfter) {
-    warning = getExpiryWarning(entitlementAfter);
-  }
-
-  const pendingCheckout = await prisma.clubPayment.findFirst({
-    where: { memberId, status: 'PENDING', externalRef: { not: null } },
-  });
-
-  return finish({
-    action: 'CHECK_IN' as const,
-    visit,
-    warning,
-    charged: dailyPaymentApplied,
-    entitlement: entitlementAfter
-      ? {
-          type: entitlementAfter.type,
-          visitsRemaining: entitlementAfter.visitsRemaining,
-          validTo: entitlementAfter.validTo,
-        }
-      : null,
-    courtesy: false,
-    canPay: false,
-    paymentInProgress: Boolean(pendingCheckout),
-  });
 }
 
 // ─── Public Endpoints (no auth) ──────────────────────────────────────────────
@@ -338,21 +172,26 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'scorePin is required' });
     }
 
-    const member = await prisma.member.findUnique({
-      where: { id: memberId },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        isActive: true,
-        scorePin: true,
-        email: true,
-        password: true,
-      },
-    });
-
+    let member: MemberCheckInStub | undefined = getCachedMemberCheckInStub(memberId);
     if (!member) {
-      return res.status(401).json({ error: 'Invalid PIN' });
+      const loaded = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          isActive: true,
+          scorePin: true,
+          email: true,
+          password: true,
+          trialEndsOn: true,
+        },
+      });
+      if (!loaded) {
+        return res.status(401).json({ error: 'Invalid PIN' });
+      }
+      member = loaded;
+      setCachedMemberCheckInStub(member);
     }
 
     if (!scorePinsEqual(scorePin, member.scorePin)) {
@@ -363,7 +202,7 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Member account is inactive' });
     }
 
-    const result = await toggleVisit(member.id, 'MANUAL');
+    const result = await toggleVisit(member.id, 'MANUAL', memberContextFromStub(member));
     const paymentLoginAvailable = memberHasPaymentLogin(member);
 
     if (result.action === 'PAYMENT_REQUIRED') {
@@ -819,6 +658,7 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
         });
       }
 
+      invalidateCurrentEntitlement(Number(memberId));
       return res.status(201).json(entitlement);
     }
 
@@ -878,6 +718,7 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
       });
     }
 
+    invalidateCurrentEntitlement(Number(memberId));
     res.status(201).json(entitlement);
   } catch (error) {
     logger.error('Error creating entitlement', { error: error instanceof Error ? error.message : String(error) });

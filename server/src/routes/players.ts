@@ -28,6 +28,7 @@ import { isOrganizer as sharedIsOrganizer } from '../utils/organizerAccess';
 import { getPaymentsConfig } from '../services/systemConfigService';
 import { computePlanIndicator, type PlanIndicator } from '../payments/planIndicator';
 import { resolveNewMemberTrialEndsOn } from '../payments/memberTrial';
+import { invalidateMemberCheckInStub } from '../payments/checkInStateCache';
 
 const router = express.Router();
 const importUpload = multer({ storage: multer.memoryStorage() });
@@ -1371,6 +1372,7 @@ router.post('/:id/regenerate-score-pin', async (req: AuthRequest, res: Response)
       data: { scorePin: newPin },
       select: { id: true, scorePin: true },
     });
+    invalidateMemberCheckInStub(memberId);
     return res.json({ memberId: member.id, scorePin: member.scorePin });
   } catch (error) {
     logger.error('Error regenerating score PIN', { error: error instanceof Error ? error.message : String(error) });
@@ -1403,6 +1405,7 @@ router.post('/:id/set-score-pin', async (req: AuthRequest, res: Response) => {
       data: { scorePin: newPin },
       select: { id: true, scorePin: true },
     });
+    invalidateMemberCheckInStub(memberId);
     return res.json({ memberId: member.id, scorePin: member.scorePin });
   } catch (error) {
     logger.error('Error updating score PIN', { error: error instanceof Error ? error.message : String(error) });
@@ -1421,6 +1424,7 @@ router.patch('/:id/deactivate', async (req: AuthRequest, res) => {
       where: { id: memberId },
       data: { isActive: false },
     });
+    invalidateMemberCheckInStub(memberId);
 
     const memberWithoutPassword = stripSensitiveMemberFields(member);
     
@@ -1596,6 +1600,7 @@ router.patch('/:id/activate', async (req: AuthRequest, res) => {
       where: { id: memberId },
       data: { isActive: true },
     });
+    invalidateMemberCheckInStub(memberId);
 
     const memberWithoutPassword = stripSensitiveMemberFields(member);
     
@@ -1895,6 +1900,17 @@ router.patch('/:id', [
       where: { id: memberId },
       data: updateData,
     });
+
+    // Kiosk PIN stub fields: name, email, active, trial
+    if (
+      updateData.firstName !== undefined ||
+      updateData.lastName !== undefined ||
+      updateData.email !== undefined ||
+      updateData.isActive !== undefined ||
+      updateData.trialEndsOn !== undefined
+    ) {
+      invalidateMemberCheckInStub(memberId);
+    }
 
     // If rating was changed by an admin, create a RatingHistory entry
     if (rating !== undefined && hasAdminAccess) {

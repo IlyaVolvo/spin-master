@@ -1,5 +1,6 @@
 import { prisma } from '../index';
 import type { ClubEntitlement, ClubEntitlementStatus } from '@prisma/client';
+import { invalidateCurrentEntitlement } from './checkInStateCache';
 
 export async function getEntitlementByStatus(
   memberId: number,
@@ -21,10 +22,11 @@ export async function getFutureEntitlement(memberId: number): Promise<ClubEntitl
 
 /** Mark entitlement ENDED and inactive. */
 export async function endEntitlement(id: number): Promise<void> {
-  await prisma.clubEntitlement.update({
+  const ended = await prisma.clubEntitlement.update({
     where: { id },
     data: { status: 'ENDED', active: false },
   });
+  invalidateCurrentEntitlement(ended.memberId);
 }
 
 /**

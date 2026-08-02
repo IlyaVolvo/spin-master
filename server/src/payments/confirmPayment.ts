@@ -7,6 +7,7 @@ import {
   getFutureEntitlement,
   refreshCurrentEntitlement,
 } from './entitlementQueue';
+import { invalidateCurrentEntitlement } from './checkInStateCache';
 import { resolvePlanLabelForProduct, sendPaymentProcessedEmail } from './paymentReceiptEmail';
 import type { ConfirmEvent, CheckoutProduct, PaymentMetadata } from './types';
 
@@ -54,6 +55,7 @@ async function createEntitlementFromProduct(
         metadata: { coveredByCheckout: true },
       },
     });
+    invalidateCurrentEntitlement(memberId);
     return;
   }
 
@@ -139,6 +141,8 @@ async function createEntitlementFromProduct(
       data: { autoRenewEnabled: false, autoRenewFamilyKey: null },
     });
   }
+
+  invalidateCurrentEntitlement(memberId);
 }
 
 /**

@@ -9,6 +9,7 @@ import {
 import { runMemberCheckout } from './runCheckout';
 import { notifyCompletedTrials } from './memberTrial';
 import { getClubDate } from '../utils/clubDate';
+import { invalidateCurrentEntitlement } from './checkInStateCache';
 
 function addClubDays(clubDate: string, deltaDays: number): string {
   // Interpret clubDate as noon UTC then shift — good enough for YYYY-MM-DD arithmetic
@@ -96,6 +97,7 @@ export async function runClubMidnightJobs(options?: {
         ...(future.type === 'VISIT_PACK' ? { validFrom: now } : {}),
       },
     });
+    invalidateCurrentEntitlement(future.memberId);
     promoted += 1;
   }
 

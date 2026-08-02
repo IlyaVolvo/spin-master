@@ -56,7 +56,12 @@ describe('resolveFirstVisitOfDay', () => {
       trialEndsOn: null,
       memberEmail: 'p@ex.com',
     });
-    expect(out).toEqual({ kind: 'covered', dailyPaymentApplied: true, entitlementId: 5 });
+    expect(out).toMatchObject({
+      kind: 'covered',
+      dailyPaymentApplied: true,
+      entitlementId: 5,
+      paymentPurpose: 'Covered visit (MONTHLY)',
+    });
     expect(prisma.clubPayment.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         amountCents: 0,
@@ -64,6 +69,20 @@ describe('resolveFirstVisitOfDay', () => {
         status: 'SUCCEEDED',
       }),
     });
+  });
+
+  it('defers covered writes when deferWrites is true', async () => {
+    const out = await resolveFirstVisitOfDay({
+      memberId: 10,
+      clubDate,
+      entitlement: { id: 5, type: 'MONTHLY', visitsRemaining: null },
+      trialEndsOn: null,
+      memberEmail: 'p@ex.com',
+      deferWrites: true,
+    });
+    expect(out).toMatchObject({ kind: 'covered', entitlementId: 5 });
+    expect(prisma.clubPayment.create).not.toHaveBeenCalled();
+    expect(prisma.clubEntitlement.update).not.toHaveBeenCalled();
   });
 
   it('decrements visit pack and ends when last visit used', async () => {
@@ -177,7 +196,12 @@ describe('resolveFirstVisitOfDay', () => {
       trialEndsOn: null,
       memberEmail: null,
     });
-    expect(out).toEqual({ kind: 'covered', dailyPaymentApplied: true, entitlementId: 9 });
+    expect(out).toMatchObject({
+      kind: 'covered',
+      dailyPaymentApplied: true,
+      entitlementId: 9,
+      paymentPurpose: null,
+    });
   });
 
   it('createTrialVisit writes a free non-courtesy visit', async () => {
