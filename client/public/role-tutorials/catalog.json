@@ -1,242 +1,78 @@
 {
   "roles": [
     {
-      "id": "showcase",
-      "label": "Showcase",
-      "blurb": "Primary walkthroughs. Context → action (hotspot click advances) → result. Prefer these for day-to-day use.",
+      "id": "player",
+      "label": "Player",
+      "blurb": "Member walkthroughs — plan, kiosk, rating history, and multi-player stats.",
       "collapsed": false,
       "scenarios": [
         {
           "slug": "showcase-player-plan",
-          "title": "Showcase: Player buys / reviews a plan"
+          "title": "Player buys / reviews a plan"
         },
         {
-          "slug": "showcase-organizer-create-rr",
-          "title": "Showcase: Organizer creates a Round Robin"
+          "slug": "showcase-player-checkin",
+          "title": "Player checks in at the kiosk"
         },
         {
-          "slug": "showcase-admin-front-desk",
-          "title": "Showcase: Admin front desk (payments + attendance + kiosk)"
-        }
-      ]
-    },
-    {
-      "id": "player",
-      "label": "Player",
-      "blurb": "Basic member flows — especially payments and check-in.",
-      "collapsed": true,
-      "scenarios": [
-        {
-          "slug": "player-sign-in",
-          "title": "Sign in as a player"
+          "slug": "showcase-player-checkout",
+          "title": "Player checks out at the kiosk"
         },
         {
-          "slug": "player-open-own-plan",
-          "title": "Open your club plan"
+          "slug": "showcase-player-score-kiosk",
+          "title": "Player enters a score via Score kiosk"
         },
         {
-          "slug": "player-plan-purchase-options",
-          "title": "Plan purchase options"
+          "slug": "showcase-player-rating-history",
+          "title": "Player views rating history"
         },
         {
-          "slug": "player-payments-nav",
-          "title": "Players cannot open Payment Log"
-        },
-        {
-          "slug": "player-record-match",
-          "title": "Record a casual match"
-        },
-        {
-          "slug": "player-tournaments-list",
-          "title": "Browse tournaments"
-        },
-        {
-          "slug": "player-statistics",
-          "title": "Statistics"
-        },
-        {
-          "slug": "player-history",
-          "title": "Match history"
-        },
-        {
-          "slug": "player-edit-profile",
-          "title": "Edit your profile"
-        },
-        {
-          "slug": "player-public-achievements",
-          "title": "Public achievements"
+          "slug": "showcase-player-multi-stats",
+          "title": "Player compares statistics for several players"
         }
       ]
     },
     {
       "id": "organizer",
       "label": "Organizer",
-      "blurb": "Tournaments, day-of scoring, and event management.",
-      "collapsed": true,
+      "blurb": "Tournament walkthroughs — create events and correct completed scores.",
+      "collapsed": false,
       "scenarios": [
         {
-          "slug": "organizer-sign-in",
-          "title": "Sign in as an organizer"
+          "slug": "showcase-organizer-create-rr",
+          "title": "Organizer creates a Round Robin"
         },
         {
-          "slug": "organizer-create-round-robin",
-          "title": "Create Round Robin"
+          "slug": "showcase-organizer-create-multi-rr",
+          "title": "Organizer creates a Multi Round Robin"
         },
         {
-          "slug": "organizer-create-playoff",
-          "title": "Create Playoff / Bracket"
-        },
-        {
-          "slug": "organizer-create-swiss",
-          "title": "Create Swiss"
-        },
-        {
-          "slug": "organizer-create-multi-rr",
-          "title": "Create Multi Round Robin"
-        },
-        {
-          "slug": "organizer-create-prelim-rr-final",
-          "title": "Create Preliminary + RR Final"
-        },
-        {
-          "slug": "organizer-create-prelim-playoff-final",
-          "title": "Create Preliminary + Playoff Final"
-        },
-        {
-          "slug": "organizer-preregistration",
-          "title": "Pre-registration mode"
-        },
-        {
-          "slug": "organizer-player-selection",
-          "title": "Select tournament players"
-        },
-        {
-          "slug": "organizer-record-match",
-          "title": "Record a casual match"
-        },
-        {
-          "slug": "organizer-tournaments-active",
-          "title": "Active tournaments"
-        },
-        {
-          "slug": "organizer-tournaments-prereg",
-          "title": "Pre-registration tournaments"
-        },
-        {
-          "slug": "organizer-tournaments-completed",
-          "title": "Completed tournaments"
-        },
-        {
-          "slug": "organizer-individual-matches",
-          "title": "Individual matches"
-        },
-        {
-          "slug": "organizer-open-active-tournament",
-          "title": "Open an active tournament"
-        },
-        {
-          "slug": "organizer-day-of-tools",
-          "title": "Day-of tournament tools"
-        },
-        {
-          "slug": "organizer-abandon-hint",
-          "title": "Abandon / stop controls"
-        },
-        {
-          "slug": "organizer-repeat-hint",
-          "title": "Repeat a past setup"
-        },
-        {
-          "slug": "organizer-browse-kiosk",
-          "title": "Enter browse kiosk"
-        },
-        {
-          "slug": "organizer-stats",
-          "title": "Organizer statistics"
+          "slug": "showcase-organizer-correct-completed-score",
+          "title": "Organizer corrects a completed tournament score"
         }
       ]
     },
     {
       "id": "admin",
       "label": "Administrator",
-      "blurb": "Club settings, members, and payment configuration.",
-      "collapsed": true,
+      "blurb": "Front desk, plans, system settings, kiosk, and tournament scores.",
+      "collapsed": false,
       "scenarios": [
         {
-          "slug": "admin-sign-in",
-          "title": "Sign in as administrator"
+          "slug": "showcase-admin-create-junior-plan",
+          "title": "Admin creates a Junior plan price"
         },
         {
-          "slug": "admin-header-menu",
-          "title": "Admin header menu"
+          "slug": "showcase-admin-system-config",
+          "title": "Admin updates System Settings"
         },
         {
-          "slug": "admin-system-settings",
-          "title": "System Settings overview"
+          "slug": "showcase-admin-front-desk",
+          "title": "Admin front desk (payments + attendance + kiosk)"
         },
         {
-          "slug": "admin-settings-hours",
-          "title": "Club open / close hours"
-        },
-        {
-          "slug": "admin-settings-tournament-rules",
-          "title": "Tournament rules settings"
-        },
-        {
-          "slug": "admin-settings-core",
-          "title": "Core & operations settings"
-        },
-        {
-          "slug": "admin-settings-public-achievements",
-          "title": "Public achievements settings"
-        },
-        {
-          "slug": "admin-payment-log",
-          "title": "Payment Log"
-        },
-        {
-          "slug": "admin-payment-plans",
-          "title": "Payment Plans"
-        },
-        {
-          "slug": "admin-payment-provider",
-          "title": "Payment provider & courtesy settings"
-        },
-        {
-          "slug": "admin-courtesy-visits",
-          "title": "Courtesy visits"
-        },
-        {
-          "slug": "admin-attendance-log",
-          "title": "Attendance Log"
-        },
-        {
-          "slug": "admin-close-club",
-          "title": "Close club"
-        },
-        {
-          "slug": "admin-add-player",
-          "title": "Add a player"
-        },
-        {
-          "slug": "admin-edit-member",
-          "title": "Edit a member"
-        },
-        {
-          "slug": "admin-member-plan",
-          "title": "Open a member plan"
-        },
-        {
-          "slug": "admin-enter-checkin-kiosk",
-          "title": "Enter check-in kiosk"
-        },
-        {
-          "slug": "admin-checkin-present-filter",
-          "title": "Kiosk Present filter"
-        },
-        {
-          "slug": "admin-players-toolbar",
-          "title": "Admin Players toolbar"
+          "slug": "showcase-admin-enter-score",
+          "title": "Admin enters a tournament score"
         }
       ]
     }

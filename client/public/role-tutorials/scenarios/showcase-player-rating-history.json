@@ -1,0 +1,90 @@
+{
+  "slug": "showcase-player-rating-history",
+  "role": "player",
+  "title": "Player views rating history",
+  "description": "Open history for one member from the Players list. With no opponents selected, History shows that player’s full rating timeline. Selecting opponents instead shows match history against those players.",
+  "relatedSlugs": [
+    "showcase-player-score-kiosk",
+    "showcase-player-plan"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "players-list",
+      "title": "Players list",
+      "body": "Tutorial PlayerOnly has rating changes from the seeded completed Round Robin — a clear one-player history example.",
+      "image": "assets/showcase-player-rating-history/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-history-control",
+      "title": "Open history for the player",
+      "body": "Tap the scroll icon on the player’s row. That starts history selection with the player chosen (and opponents pre-selected for match history).",
+      "image": "assets/showcase-player-rating-history/step-02.png",
+      "kind": "action",
+      "actionHint": "Click the history icon on the player row",
+      "hotspot": {
+        "x": 17.4,
+        "y": 75.4,
+        "w": 1.5,
+        "h": 2.7
+      }
+    },
+    {
+      "id": "history-selection",
+      "title": "History selection",
+      "body": "The toolbar shows the selected player and how many opponents are checked. Match history uses opponents; rating history needs none.",
+      "image": "assets/showcase-player-rating-history/step-03.png",
+      "kind": "result",
+      "resultNote": "History selection mode is active with the player selected."
+    },
+    {
+      "id": "deselect-opponents",
+      "title": "Clear opponents for rating history",
+      "body": "Deselect All removes opponents so View History opens the full rating timeline for this one player only.",
+      "image": "assets/showcase-player-rating-history/step-04.png",
+      "kind": "action",
+      "actionHint": "Click Deselect All",
+      "hotspot": {
+        "x": 51.6,
+        "y": 23.2,
+        "w": 5.7,
+        "h": 2.7
+      }
+    },
+    {
+      "id": "rating-mode-ready",
+      "title": "One player, no opponents",
+      "body": "With 0 opponents selected, View History will show Rating History rather than head-to-head matches.",
+      "image": "assets/showcase-player-rating-history/step-05.png",
+      "kind": "result",
+      "resultNote": "Opponent count is 0 — ready for one-player rating history."
+    },
+    {
+      "id": "view-history",
+      "title": "View History",
+      "body": "Confirm to open the Rating History page for the selected member.",
+      "image": "assets/showcase-player-rating-history/step-06.png",
+      "kind": "action",
+      "actionHint": "Click View History",
+      "hotspot": {
+        "x": 59.2,
+        "y": 23.2,
+        "w": 6.4,
+        "h": 2.7
+      }
+    },
+    {
+      "id": "rating-history",
+      "title": "Rating History",
+      "body": "Full Rating History lists rating events (newest first), including the completed Round Robin adjustment for this player.",
+      "image": "assets/showcase-player-rating-history/step-07.png",
+      "kind": "result",
+      "resultNote": "Rating History page shows the selected player’s timeline."
+    }
+  ],
+  "showcase": true
+}

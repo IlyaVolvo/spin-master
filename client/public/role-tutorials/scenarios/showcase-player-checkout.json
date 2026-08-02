@@ -1,0 +1,75 @@
+{
+  "slug": "showcase-player-checkout",
+  "role": "player",
+  "title": "Player checks out at the kiosk",
+  "description": "When leaving the club, a present member opens Check-out on the kiosk, enters their PIN, and leaves today’s attendance.",
+  "relatedSlugs": [
+    "showcase-player-checkin",
+    "showcase-admin-front-desk"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "kiosk-ready",
+      "title": "Check-in kiosk",
+      "body": "The same kiosk mode handles leaving: members who are present see Check-out on their row.",
+      "image": "assets/showcase-player-checkout/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "find-present-member",
+      "title": "Find your name while present",
+      "body": "Alex Rivera is already checked in for today, so their row shows Check-out.",
+      "image": "assets/showcase-player-checkout/step-02.png",
+      "kind": "context"
+    },
+    {
+      "id": "row-checkout-action",
+      "title": "Start check-out",
+      "body": "Tap Check-out on your row. The kiosk asks for the same score PIN used at check-in.",
+      "image": "assets/showcase-player-checkout/step-03.png",
+      "kind": "action",
+      "actionHint": "Click Check-out on your row",
+      "hotspot": {
+        "x": 69.4,
+        "y": 79.3,
+        "w": 5.2,
+        "h": 2.7
+      }
+    },
+    {
+      "id": "pin-dialog",
+      "title": "PIN prompt",
+      "body": "Confirm your identity with your PIN before the system records the check-out.",
+      "image": "assets/showcase-player-checkout/step-04.png",
+      "kind": "result",
+      "resultNote": "Check-out PIN modal is open."
+    },
+    {
+      "id": "enter-pin-action",
+      "title": "Enter PIN and confirm",
+      "body": "Type the PIN, then confirm Check-out. A correct PIN ends the open visit for today.",
+      "image": "assets/showcase-player-checkout/step-05.png",
+      "kind": "action",
+      "actionHint": "Click Check-out after entering the PIN",
+      "hotspot": {
+        "x": 55.4,
+        "y": 53.2,
+        "w": 6.5,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "checked-out",
+      "title": "Checked out",
+      "body": "Attendance updates: the member is no longer present, the row returns to Check-in (free re-entry if they return today), and the present count drops.",
+      "image": "assets/showcase-player-checkout/step-06.png",
+      "kind": "result",
+      "resultNote": "PIN accepted; open visit closed for this member."
+    }
+  ],
+  "showcase": true
+}

@@ -1,10 +1,10 @@
 {
   "slug": "showcase-player-plan",
   "role": "player",
-  "title": "Showcase: Player buys / reviews a plan",
-  "description": "See how a member signs in, opens their club plan from the header, and reviews purchase options when they have no active entitlement.",
+  "title": "Player buys / reviews a plan",
+  "description": "See how a member signs in, opens their club plan, picks a plan from the purchase list, and reviews payment options.",
   "relatedSlugs": [
-    "showcase-organizer-create-rr",
+    "showcase-player-checkin",
     "showcase-admin-front-desk"
   ],
   "viewport": {
@@ -58,7 +58,7 @@
     {
       "id": "plan-result",
       "title": "Plan screen",
-      "body": "Tutorial player has no current entitlement, so purchase options (Monthly membership, 5-visit pack) are visible with cash / online methods.",
+      "body": "With no current entitlement, the Purchase section lists club plans. The first plan is pre-selected in the Plan control.",
       "image": "assets/showcase-player-plan/step-05.png",
       "kind": "result",
       "resultNote": "Seeded club plans and empty “current plan” state are intentional for this demo."
@@ -66,20 +66,42 @@
     {
       "id": "purchase-focus",
       "title": "Purchase options",
-      "body": "Scroll the plan dialog if needed. Note list prices, payment method (Cash vs Pay online), and consent for online pay.",
+      "body": "Open the Plan list to compare options (for example Monthly membership vs a visit pack), then choose payment method.",
       "image": "assets/showcase-player-plan/step-06.png",
       "kind": "context"
+    },
+    {
+      "id": "select-plan",
+      "title": "Select a plan",
+      "body": "Choose the plan you want to buy from the Plan list. Details and price update under the control.",
+      "image": "assets/showcase-player-plan/step-07.png",
+      "kind": "action",
+      "actionHint": "Open the Plan list and pick a plan",
+      "hotspot": {
+        "x": 35.8,
+        "y": 48.9,
+        "w": 28.4,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "plan-selected",
+      "title": "Plan chosen",
+      "body": "The 5-visit pack is selected. Confirm the price line, then pick Cash or Pay online before purchasing.",
+      "image": "assets/showcase-player-plan/step-08.png",
+      "kind": "result",
+      "resultNote": "Plan list changed from the default Monthly membership to the visit pack."
     },
     {
       "id": "close-plan-action",
       "title": "Close the plan",
       "body": "When finished reviewing, close the overlay to return to Players.",
-      "image": "assets/showcase-player-plan/step-07.png",
+      "image": "assets/showcase-player-plan/step-09.png",
       "kind": "action",
       "actionHint": "Click Close",
       "hotspot": {
         "x": 61.3,
-        "y": 18.9,
+        "y": 25.6,
         "w": 3.7,
         "h": 2.8
       }
@@ -88,7 +110,7 @@
       "id": "back-on-players",
       "title": "Back on Players",
       "body": "Closing returns you to the roster. Admins can also open any member’s plan from the table.",
-      "image": "assets/showcase-player-plan/step-08.png",
+      "image": "assets/showcase-player-plan/step-10.png",
       "kind": "result",
       "resultNote": "Overlay dismissed; roster is interactive again."
     }

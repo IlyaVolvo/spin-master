@@ -9,15 +9,15 @@ const ROLE_ORDER = ['player', 'organizer', 'admin'] as const;
 const ROLE_META: Record<(typeof ROLE_ORDER)[number], { label: string; blurb: string }> = {
   player: {
     label: 'Player',
-    blurb: 'Basic member flows — especially payments and check-in.',
+    blurb: 'Member walkthroughs — plan, kiosk, rating history, and multi-player stats.',
   },
   organizer: {
     label: 'Organizer',
-    blurb: 'Tournaments, day-of scoring, and event management.',
+    blurb: 'Tournament walkthroughs — create events and correct completed scores.',
   },
   admin: {
     label: 'Administrator',
-    blurb: 'Club settings, members, and payment configuration.',
+    blurb: 'Front desk, plans, system settings, kiosk, and tournament scores.',
   },
 };
 
@@ -81,37 +81,28 @@ export function writeScenarioJson(
 }
 
 export function writeCatalog(scenarios: ScenarioDef[]): void {
-  const showcase = scenarios.filter((s) => s.showcase);
+  // Public catalog lists showcases only, grouped by role. Short isolation clips stay in
+  // capture modules for maintainers but are not linked from the index.
   const byRole = new Map<string, ScenarioDef[]>();
   for (const id of ROLE_ORDER) byRole.set(id, []);
   for (const s of scenarios) {
-    if (s.showcase) continue;
+    if (!s.showcase) continue;
     const list = byRole.get(s.role) || [];
     list.push(s);
     byRole.set(s.role, list);
   }
 
   const catalog = {
-    roles: [
-      {
-        id: 'showcase',
-        label: 'Showcase',
-        blurb:
-          'Primary walkthroughs. Context → action (hotspot click advances) → result. Prefer these for day-to-day use.',
-        collapsed: false,
-        scenarios: showcase.map((s) => ({ slug: s.slug, title: s.title })),
-      },
-      ...ROLE_ORDER.map((id) => ({
-        id,
-        label: ROLE_META[id].label,
-        blurb: ROLE_META[id].blurb,
-        collapsed: true,
-        scenarios: (byRole.get(id) || []).map((s) => ({
-          slug: s.slug,
-          title: s.title,
-        })),
+    roles: ROLE_ORDER.map((id) => ({
+      id,
+      label: ROLE_META[id].label,
+      blurb: ROLE_META[id].blurb,
+      collapsed: false,
+      scenarios: (byRole.get(id) || []).map((s) => ({
+        slug: s.slug,
+        title: s.title,
       })),
-    ],
+    })),
   };
 
   fs.writeFileSync(CATALOG_PATH, JSON.stringify(catalog, null, 2) + '\n', 'utf8');

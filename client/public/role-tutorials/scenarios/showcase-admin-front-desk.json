@@ -1,7 +1,7 @@
 {
   "slug": "showcase-admin-front-desk",
   "role": "admin",
-  "title": "Showcase: Admin front desk (payments + attendance + kiosk)",
+  "title": "Admin front desk (payments + attendance + kiosk)",
   "description": "See the front-desk path: open Payment Log and Attendance Log with seeded rows, then enter check-in kiosk mode.",
   "relatedSlugs": [
     "showcase-player-plan",

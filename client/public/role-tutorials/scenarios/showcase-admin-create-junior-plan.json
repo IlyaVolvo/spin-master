@@ -1,0 +1,68 @@
+{
+  "slug": "showcase-admin-create-junior-plan",
+  "role": "admin",
+  "title": "Admin creates a Junior plan price",
+  "description": "Add a Junior price to an existing club plan from Payment Plans. Note: the same plan can exist for different member categories (segments) — one family key (for example Monthly) holds Regular, Junior, and other segment prices side by side. Junior must already be enabled under Segments before you can select it.",
+  "relatedSlugs": [
+    "showcase-admin-front-desk",
+    "showcase-player-plan"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "plans-home",
+      "title": "Payment Plans",
+      "body": "Club plans are managed under Admin → Payment Plans. Seeded Monthly membership already has a Regular price.",
+      "image": "assets/showcase-admin-create-junior-plan/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "add-segment-action",
+      "title": "Add a segment price",
+      "body": "On Monthly membership, use + Segment to attach another category price to the same plan family — not a separate unrelated plan.",
+      "image": "assets/showcase-admin-create-junior-plan/step-02.png",
+      "kind": "action",
+      "actionHint": "Click + Segment on Monthly membership",
+      "hotspot": {
+        "x": 79.2,
+        "y": 48.9,
+        "w": 5.1,
+        "h": 2.2
+      }
+    },
+    {
+      "id": "junior-form",
+      "title": "Junior plan form",
+      "body": "The New Plan form reuses the Monthly name and family key. Segment is Junior (same offer, different category price).",
+      "image": "assets/showcase-admin-create-junior-plan/step-03.png",
+      "kind": "result",
+      "resultNote": "Same plan family for different categories — Regular and Junior share one Monthly offer with separate prices."
+    },
+    {
+      "id": "set-price-create",
+      "title": "Set Junior price and create",
+      "body": "Enter the Junior total price (here $50.00), then Create Plan. Members in the Junior segment see this amount for Monthly.",
+      "image": "assets/showcase-admin-create-junior-plan/step-04.png",
+      "kind": "action",
+      "actionHint": "Click Create Plan",
+      "hotspot": {
+        "x": 77.9,
+        "y": 48.4,
+        "w": 6.3,
+        "h": 3.1
+      }
+    },
+    {
+      "id": "junior-created",
+      "title": "Junior price on Monthly",
+      "body": "Monthly membership now lists Regular and Junior. Players are charged the price for their member segment.",
+      "image": "assets/showcase-admin-create-junior-plan/step-05.png",
+      "kind": "result",
+      "resultNote": "Junior plan created on the same Monthly family — one plan, multiple category prices."
+    }
+  ],
+  "showcase": true
+}

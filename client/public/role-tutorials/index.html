@@ -13,8 +13,7 @@
   <div class="page-top">
     <h1>Spin Master tutorials</h1>
     <p class="lead">
-      Start with <strong>Showcase</strong>. Player / Organizer / Administrator lists are optional and collapsed by default.
-      Follow the amber circle and click the hotspot to advance; use <strong>Back</strong> to repeat a step.
+      Walkthroughs are grouped by role. Follow the amber circle and click the hotspot to advance; use <strong>Back</strong> to repeat a step.
       On context/result screens, click the image to continue.
     </p>
   </div>
@@ -69,13 +68,12 @@
         root.textContent = '';
 
         (data.roles || []).forEach(function (role) {
-          const isShowcase = role.id === 'showcase';
-          const startCollapsed = role.collapsed === true || (!isShowcase && role.collapsed !== false);
+          const startCollapsed = role.collapsed === true;
           const scenarios = role.scenarios || [];
           const count = scenarios.length;
 
           const details = document.createElement('details');
-          details.className = 'role-section' + (isShowcase ? ' showcase' : ' role-collapsible');
+          details.className = 'role-section showcase';
           details.id = 'role-' + role.id;
           if (!startCollapsed) details.open = true;
 

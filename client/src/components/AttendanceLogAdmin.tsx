@@ -20,12 +20,20 @@ type VisitRow = {
   rejectionReason: string | null;
 };
 
-type StatusFilter = 'all' | 'present' | 'rejected';
+type AttendanceStatusValue = 'present' | 'out' | 'rejected';
+
+const ALL_ATTENDANCE_STATUSES: AttendanceStatusValue[] = ['present', 'out', 'rejected'];
 
 type MemberAttendanceTarget = {
   memberId: number;
   memberName: string;
 };
+
+function visitMatchesStatuses(v: VisitRow, selected: Set<AttendanceStatusValue>): boolean {
+  if (v.rejectedAt) return selected.has('rejected');
+  if (!v.checkOutAt) return selected.has('present');
+  return selected.has('out');
+}
 
 const thStyle: CSSProperties = {
   textAlign: 'left',
@@ -354,7 +362,9 @@ export default function AttendanceLogAdmin() {
   const [memberFilter, setMemberFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusSelected, setStatusSelected] = useState<Set<AttendanceStatusValue>>(
+    () => new Set(ALL_ATTENDANCE_STATUSES),
+  );
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [presentCount, setPresentCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -418,19 +428,16 @@ export default function AttendanceLogAdmin() {
       if (q) params.q = q;
       if (dateFrom) params.from = dateFrom;
       if (dateTo) params.to = dateTo;
-      if (statusFilter !== 'all') params.status = statusFilter;
+      const statusList = ALL_ATTENDANCE_STATUSES.filter((s) => statusSelected.has(s));
+      if (statusList.length > 0 && statusList.length < ALL_ATTENDANCE_STATUSES.length) {
+        params.status = statusList.join(',');
+      }
       api
         .get('/club/admin/visits', { params })
         .then((res) => {
           if (seq !== requestSeq.current) return;
           const rows: VisitRow[] = Array.isArray(res.data?.visits) ? res.data.visits : [];
-          const filtered =
-            statusFilter === 'present'
-              ? rows.filter((v) => !v.rejectedAt && !v.checkOutAt)
-              : statusFilter === 'rejected'
-                ? rows.filter((v) => Boolean(v.rejectedAt))
-                : rows;
-          setVisits(filtered);
+          setVisits(rows.filter((v) => visitMatchesStatuses(v, statusSelected)));
           setError('');
         })
         .catch((err) => {
@@ -448,17 +455,31 @@ export default function AttendanceLogAdmin() {
         window.clearTimeout(debounceRef.current);
       }
     };
-  }, [memberFilter, dateFrom, dateTo, statusFilter, refreshToken]);
+  }, [memberFilter, dateFrom, dateTo, statusSelected, refreshToken]);
 
   if (!isAdmin()) {
     return <div className="card error-message">Admin access required</div>;
   }
 
-  const filtersActive = Boolean(memberFilter.trim() || dateFrom || dateTo || statusFilter !== 'all');
+  const allStatusesSelected = ALL_ATTENDANCE_STATUSES.every((s) => statusSelected.has(s));
+  const filtersActive = Boolean(memberFilter.trim() || dateFrom || dateTo || !allStatusesSelected);
   const presentLabel =
     presentCount == null
       ? 'Attendance Log'
       : `Attendance Log (${presentCount} Present)`;
+
+  const toggleStatus = (value: AttendanceStatusValue) => {
+    setStatusSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) {
+        if (next.size <= 1) return prev;
+        next.delete(value);
+      } else {
+        next.add(value);
+      }
+      return next;
+    });
+  };
 
   const openCloseClubModal = () => {
     setCloseClubPassword('');
@@ -711,34 +732,60 @@ export default function AttendanceLogAdmin() {
           />
         </div>
         <div>
-          <label
-            htmlFor="attendance-status-filter"
+          <span
+            id="attendance-status-filter-label"
             style={{ display: 'block', margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}
           >
             Status
-          </label>
-          <select
-            id="attendance-status-filter"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            aria-label="Filter attendance by status"
+          </span>
+          <div
+            role="group"
+            aria-labelledby="attendance-status-filter-label"
             style={{
-              padding: '8px 12px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              backgroundColor: '#fff',
-              color: '#333',
-              fontSize: '13px',
-              fontWeight: 400,
-              fontFamily: 'inherit',
-              minWidth: '150px',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '10px 14px',
+              alignItems: 'center',
               minHeight: '38px',
+              padding: '4px 0',
             }}
           >
-            <option value="all">All</option>
-            <option value="present">Only Present</option>
-            <option value="rejected">Only Rejected</option>
-          </select>
+            {(
+              [
+                { value: 'present' as const, label: 'Present' },
+                { value: 'out' as const, label: 'Out' },
+                { value: 'rejected' as const, label: 'Rejected' },
+              ] as const
+            ).map(({ value, label }) => {
+              const checked = statusSelected.has(value);
+              const onlyOne = statusSelected.size === 1 && checked;
+              return (
+                <label
+                  key={value}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    color: '#17324d',
+                    cursor: onlyOne ? 'default' : 'pointer',
+                    userSelect: 'none',
+                  }}
+                  title={onlyOne ? 'At least one status must stay selected' : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={onlyOne}
+                    onChange={() => toggleStatus(value)}
+                    aria-label={`Show ${label} visits`}
+                  />
+                  {label}
+                </label>
+              );
+            })}
+          </div>
         </div>
       </div>
 

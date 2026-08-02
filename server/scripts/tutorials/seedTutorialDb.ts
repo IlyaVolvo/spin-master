@@ -7,7 +7,13 @@ import { createHash } from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
 import { assertTutorialDatabaseUrl, redactDatabaseUrl } from './lib/safety';
-import { TUTORIAL_CLUB_NAME, TUTORIAL_EMAILS, TUTORIAL_PASSWORD } from './lib/constants';
+import {
+  TUTORIAL_CHECKIN_MEMBER,
+  TUTORIAL_CLUB_NAME,
+  TUTORIAL_EMAILS,
+  TUTORIAL_PASSWORD,
+  TUTORIAL_SCORE_PIN,
+} from './lib/constants';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -65,7 +71,8 @@ const MEMBER_SPECS = [
     email: TUTORIAL_EMAILS.admin,
     firstName: 'Tutorial',
     lastName: 'Administrator',
-    roles: ['PLAYER', 'ADMIN'] as string[],
+    // ORGANIZER included so admin can enter tournament scores (product gate is organizer).
+    roles: ['PLAYER', 'ADMIN', 'ORGANIZER'] as string[],
     rating: 1800,
     qrSuffix: 'admin',
   },
@@ -129,9 +136,10 @@ async function main() {
         tournamentRules: toJson({}),
         clientRuntime: toJson({}),
         clubPlans: toJson({
-          segments: ['Regular'],
+          segments: ['Regular', 'Junior'],
           visitPricingFormula: {
             Regular: { basePricePerVisitCents: 1000, exponent: 0.08 },
+            Junior: { basePricePerVisitCents: 600, exponent: 0.08 },
           },
         }),
         publicAccess: toJson({ achievements: {} }),
@@ -174,7 +182,7 @@ async function main() {
         sortOrder: 1,
       },
     });
-    await prisma.clubPlan.create({
+    const visitPackPlan = await prisma.clubPlan.create({
       data: {
         familyKey: 'visit-pack-5',
         name: '5-visit pack',
@@ -203,7 +211,7 @@ async function main() {
           rating: s.rating,
           isActive: true,
           qrTokenHash: qrHash(s.qrSuffix),
-          scorePin: '1234',
+          scorePin: TUTORIAL_SCORE_PIN,
           mustResetPassword: false,
         },
       });
@@ -226,7 +234,7 @@ async function main() {
           rating,
           isActive: true,
           qrTokenHash: qrHash(`roster-${i}`),
-          scorePin: '1234',
+          scorePin: TUTORIAL_SCORE_PIN,
           mustResetPassword: false,
         },
       });
@@ -270,12 +278,14 @@ async function main() {
       },
     });
 
+    // Completed RR with a full scored matrix — used for score-correction showcase.
+    // Must remain the latest rating event for its participants (no later history).
     const completedParticipants = [player.id, ...rosterIds.slice(0, 3)];
-    await prisma.tournament.create({
+    const completed = await prisma.tournament.create({
       data: {
         name: 'Tutorial Completed Round Robin',
         type: 'ROUND_ROBIN',
-        status: 'COMPLETED',
+        status: 'ACTIVE',
         participants: {
           create: completedParticipants.map((memberId) => ({
             memberId,
@@ -284,6 +294,43 @@ async function main() {
         },
       },
     });
+    const completedScores: Array<[number, number]> = [
+      [3, 1],
+      [3, 0],
+      [3, 2],
+      [3, 1],
+      [3, 0],
+      [3, 1],
+    ];
+    let scoreIdx = 0;
+    for (let a = 0; a < completedParticipants.length; a++) {
+      for (let b = a + 1; b < completedParticipants.length; b++) {
+        const [player1Sets, player2Sets] = completedScores[scoreIdx++] ?? [3, 1];
+        await prisma.match.create({
+          data: {
+            tournamentId: completed.id,
+            member1Id: completedParticipants[a],
+            member2Id: completedParticipants[b],
+            player1Sets,
+            player2Sets,
+            player1Forfeit: false,
+            player2Forfeit: false,
+            notPlayed: false,
+          },
+        });
+      }
+    }
+    const recordedAt = new Date();
+    await prisma.tournament.update({
+      where: { id: completed.id },
+      data: { status: 'COMPLETED', recordedAt },
+    });
+    const { createRatingHistoryForRoundRobinTournament } = await import(
+      '../../src/services/usattRatingService'
+    );
+    await createRatingHistoryForRoundRobinTournament(completed.id);
+    const { recalculateRankings } = await import('../../src/services/rankingService');
+    await recalculateRankings(completed.id);
 
     const admin = await prisma.member.findUniqueOrThrow({
       where: { email: TUTORIAL_EMAILS.admin },
@@ -316,6 +363,31 @@ async function main() {
       },
     });
 
+    // Visit pack for the kiosk check-in showcase member (not present today).
+    const checkinMember = await prisma.member.findFirstOrThrow({
+      where: {
+        firstName: TUTORIAL_CHECKIN_MEMBER.firstName,
+        lastName: TUTORIAL_CHECKIN_MEMBER.lastName,
+      },
+    });
+    await prisma.clubEntitlement.create({
+      data: {
+        memberId: checkinMember.id,
+        type: 'VISIT_PACK',
+        status: 'CURRENT',
+        label: '5-visit pack',
+        validFrom,
+        validTo: null,
+        visitsRemaining: 5,
+        visitsTotal: 5,
+        amountPaidCents: 4000,
+        familyKey: 'visit-pack-5',
+        active: true,
+        planId: visitPackPlan.id,
+        planSegment: 'Regular',
+      },
+    });
+
     await prisma.clubPayment.create({
       data: {
         memberId: organizer.id,
@@ -329,9 +401,11 @@ async function main() {
         metadata: { tutorialSeed: true },
       },
     });
+    // Pending cash payment on a roster member (not the tutorial player) so Payment Log
+    // still has a clear/reject example while the player plan showcase can select a plan.
     await prisma.clubPayment.create({
       data: {
-        memberId: player.id,
+        memberId: rosterIds[0],
         amountCents: 4000,
         listAmountCents: 4000,
         creditAppliedCents: 0,
@@ -374,7 +448,13 @@ async function main() {
     });
 
     console.log('[tutorials:seed] Club:', TUTORIAL_CLUB_NAME);
-    console.log('[tutorials:seed] Sample tournaments: active id', active.id, '+ prereg + completed');
+    console.log(
+      '[tutorials:seed] Sample tournaments: active id',
+      active.id,
+      '+ prereg + completed id',
+      completed.id,
+      '(scored)',
+    );
     console.log('[tutorials:seed] Payments + visits for clubDate', clubDate);
     console.log('[tutorials:seed] Password (all tutorial accounts):', TUTORIAL_PASSWORD);
   } finally {

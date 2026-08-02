@@ -1,0 +1,112 @@
+{
+  "slug": "showcase-organizer-correct-completed-score",
+  "role": "organizer",
+  "title": "Organizer corrects a completed tournament score",
+  "description": "Conditions: the event is Completed and not cancelled; you are signed in as an Organizer; the results matrix already has recorded scores; and no participant’s rating has changed after this tournament (a later completed event or a manual rating adjustment blocks correction). When those hold, turn on Correct scores, click a highlighted result, edit the sets, and save — ratings for this event are recalculated.",
+  "relatedSlugs": [
+    "showcase-admin-enter-score",
+    "showcase-organizer-create-rr"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "completed-list",
+      "title": "Completed tournaments",
+      "body": "Open the Completed stage to find finished events. Score correction is only offered here — not while the tournament is still Active.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-completed-event",
+      "title": "Open the completed event",
+      "body": "Tutorial Completed Round Robin is seeded with a full results matrix and standings.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-02.png",
+      "kind": "action",
+      "actionHint": "Open Tutorial Completed Round Robin",
+      "hotspot": {
+        "x": 15,
+        "y": 28.1,
+        "w": 70,
+        "h": 5.1
+      }
+    },
+    {
+      "id": "results-matrix",
+      "title": "Final results",
+      "body": "Standings and the Results Matrix show every recorded match. Correction stays locked until you enable Correct scores.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-03.png",
+      "kind": "result",
+      "resultNote": "Completed Round Robin results are visible."
+    },
+    {
+      "id": "enable-correction",
+      "title": "Enable Correct scores",
+      "body": "Tap the wrench (Correct scores). The banner appears and correctable cells get a highlight outline.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-04.png",
+      "kind": "action",
+      "actionHint": "Click Correct scores",
+      "hotspot": {
+        "x": 16,
+        "y": 26.3,
+        "w": 2.1,
+        "h": 2.5
+      }
+    },
+    {
+      "id": "correction-mode",
+      "title": "Correction mode on",
+      "body": "Highlighted cells are safe to edit under the current eligibility rules. If a later rating event blocked correction, the banner explains why instead.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-05.png",
+      "kind": "result",
+      "resultNote": "Score correction banner is active with highlighted results."
+    },
+    {
+      "id": "open-result-cell",
+      "title": "Open a recorded result",
+      "body": "Click a highlighted score cell (pencil icon). The Match Entry dialog opens with the existing sets.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-06.png",
+      "kind": "action",
+      "actionHint": "Click a highlighted result cell",
+      "hotspot": {
+        "x": 33.7,
+        "y": 69.3,
+        "w": 5.4,
+        "h": 3.2
+      }
+    },
+    {
+      "id": "edit-dialog",
+      "title": "Edit the score",
+      "body": "Change the set counts as needed. If the winner changes, you will confirm before ratings recalculate for this tournament.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-07.png",
+      "kind": "result",
+      "resultNote": "Match Entry is open on an existing completed result."
+    },
+    {
+      "id": "save-correction",
+      "title": "Save the correction",
+      "body": "Change the sets (here to 2–0, same winner — no extra confirm). Confirm with the green checkmark to recalculate ratings for this event.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-08.png",
+      "kind": "action",
+      "actionHint": "Click the green checkmark to save",
+      "hotspot": {
+        "x": 64.6,
+        "y": 48.2,
+        "w": 2.8,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "score-corrected",
+      "title": "Score corrected",
+      "body": "The matrix and standings refresh with the new sets. Correction remains available until a later rating event for any participant.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-09.png",
+      "kind": "result",
+      "resultNote": "Completed result updated; ratings recalculated for this tournament."
+    }
+  ],
+  "showcase": true
+}

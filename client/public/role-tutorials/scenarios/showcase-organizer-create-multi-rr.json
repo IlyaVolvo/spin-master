@@ -1,0 +1,200 @@
+{
+  "slug": "showcase-organizer-create-multi-rr",
+  "role": "organizer",
+  "title": "Organizer creates a Multi Round Robin",
+  "description": "Create a Multi Round Robin: choose the format, select a full roster, set players per group, confirm rating-based groups, and open the new compound event.",
+  "relatedSlugs": [
+    "showcase-organizer-create-rr",
+    "showcase-admin-front-desk"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "org-home",
+      "title": "Organizer on Players",
+      "body": "Multi Round Robin needs a larger field than a single table. The tutorial roster is large enough to form multiple groups.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-wizard",
+      "title": "Start a tournament",
+      "body": "Open the type modal to pick Multi Round Robin instead of a single Round Robin.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-02.png",
+      "kind": "action",
+      "actionHint": "Click + Tournament",
+      "hotspot": {
+        "x": 38.9,
+        "y": 19.4,
+        "w": 6.6,
+        "h": 2.5
+      }
+    },
+    {
+      "id": "type-modal",
+      "title": "Tournament type modal",
+      "body": "Multi Round Robin sits alongside Round Robin, Playoff, Swiss, and Preliminary compounds.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-03.png",
+      "kind": "result",
+      "resultNote": "Wizard opened from + Tournament."
+    },
+    {
+      "id": "pick-multi-rr",
+      "title": "Choose Multi Round Robin",
+      "body": "Select Multi Round Robin to split the field into several rating-based Round Robin groups under one parent event.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-04.png",
+      "kind": "action",
+      "actionHint": "Select Multi Round Robin",
+      "hotspot": {
+        "x": 37.1,
+        "y": 48.7,
+        "w": 0.8,
+        "h": 1.3
+      }
+    },
+    {
+      "id": "multi-rr-selected",
+      "title": "Multi Round Robin selected",
+      "body": "The format is highlighted. Optionally name the event, then continue to player selection.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-05.png",
+      "kind": "result",
+      "resultNote": "MULTI_ROUND_ROBINS radio is checked."
+    },
+    {
+      "id": "next-players",
+      "title": "Continue to players",
+      "body": "Advance to the shared player picker. Multi Round Robin typically needs more players than a single table.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-06.png",
+      "kind": "action",
+      "actionHint": "Click Next",
+      "hotspot": {
+        "x": 59.4,
+        "y": 75.4,
+        "w": 4.4,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "player-picker",
+      "title": "Player selection",
+      "body": "Select enough members for at least two groups (default rules require six or more).",
+      "image": "assets/showcase-organizer-create-multi-rr/step-07.png",
+      "kind": "result",
+      "resultNote": "Wizard moved to the player selection step."
+    },
+    {
+      "id": "select-roster",
+      "title": "Select the roster",
+      "body": "For a full field, Select All is the fastest path. You can still check players one by one as in the Round Robin showcase.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-08.png",
+      "kind": "action",
+      "actionHint": "Click Select All",
+      "hotspot": {
+        "x": 46.6,
+        "y": 34.1,
+        "w": 5.4,
+        "h": 2.9
+      }
+    },
+    {
+      "id": "roster-selected",
+      "title": "Roster selected",
+      "body": "With enough players selected, Continue opens Multi Round Robin group configuration.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-09.png",
+      "kind": "result",
+      "resultNote": "Selection count meets the Multi RR minimum."
+    },
+    {
+      "id": "continue-config",
+      "title": "Continue to group size",
+      "body": "Leave player selection and configure how many players go in each Round Robin group.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-10.png",
+      "kind": "action",
+      "actionHint": "Click Continue",
+      "hotspot": {
+        "x": 74.5,
+        "y": 37.2,
+        "w": 5.8,
+        "h": 3.2
+      }
+    },
+    {
+      "id": "group-size",
+      "title": "Players per group",
+      "body": "Set the target group size. The summary shows how many groups rating-based splitting will create.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-11.png",
+      "kind": "result",
+      "resultNote": "Multi Round Robin Configuration panel is open."
+    },
+    {
+      "id": "continue-groups",
+      "title": "Build groups",
+      "body": "Continue to preview the rating-based groups. Strongest players land in Group 1, then Group 2, and so on.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-12.png",
+      "kind": "action",
+      "actionHint": "Click Continue",
+      "hotspot": {
+        "x": 44.2,
+        "y": 63.6,
+        "w": 6.3,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "confirm-groups",
+      "title": "Confirm groups",
+      "body": "Review each group. Drag players between groups if you need to rearrange before creating.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-13.png",
+      "kind": "result",
+      "resultNote": "Confirm Groups step lists the proposed Round Robin tables."
+    },
+    {
+      "id": "continue-final",
+      "title": "Continue to confirm",
+      "body": "When the groupings look right, continue to the final create confirmation.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-14.png",
+      "kind": "action",
+      "actionHint": "Click Continue",
+      "hotspot": {
+        "x": 44.2,
+        "y": 74.9,
+        "w": 6.3,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "final-confirm",
+      "title": "Confirm tournament",
+      "body": "Review type, total players, and group count, then create the Multi Round Robin parent event.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-15.png",
+      "kind": "result",
+      "resultNote": "Final confirmation with Create Tournament is visible."
+    },
+    {
+      "id": "create-tournament",
+      "title": "Create the tournament",
+      "body": "Finalize creation. The app opens the new Multi Round Robin (parent) tournament page.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-16.png",
+      "kind": "action",
+      "actionHint": "Click Create Tournament",
+      "hotspot": {
+        "x": 68.2,
+        "y": 77.1,
+        "w": 10.5,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "tournament-page",
+      "title": "Tournament page",
+      "body": "You land on the compound event with child Round Robin groups ready for day-of tools and scoring.",
+      "image": "assets/showcase-organizer-create-multi-rr/step-17.png",
+      "kind": "result",
+      "resultNote": "Create Tournament succeeded; detail page shows the Multi RR event."
+    }
+  ],
+  "showcase": true
+}

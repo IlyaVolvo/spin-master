@@ -1,0 +1,112 @@
+{
+  "slug": "showcase-admin-enter-score",
+  "role": "admin",
+  "title": "Admin enters a tournament score",
+  "description": "Open the seeded active Round Robin, click an empty match cell, enter the set scores, and save the result.",
+  "relatedSlugs": [
+    "showcase-admin-front-desk",
+    "showcase-organizer-create-rr"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "admin-home",
+      "title": "Admin on Players",
+      "body": "Club admins who also organize can open active tournaments and enter match scores from the event page.",
+      "image": "assets/showcase-admin-enter-score/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-tournaments",
+      "title": "Open Tournaments",
+      "body": "Go to the tournaments list to find the active Round Robin seeded for tutorials.",
+      "image": "assets/showcase-admin-enter-score/step-02.png",
+      "kind": "action",
+      "actionHint": "Click Tournaments",
+      "hotspot": {
+        "x": 21,
+        "y": 4,
+        "w": 10.1,
+        "h": 4.4
+      }
+    },
+    {
+      "id": "tournaments-list",
+      "title": "Active tournaments",
+      "body": "Tutorial Active Round Robin is already running with a full matrix of empty match cells.",
+      "image": "assets/showcase-admin-enter-score/step-03.png",
+      "kind": "result",
+      "resultNote": "Tournaments list shows the Active stage."
+    },
+    {
+      "id": "open-event",
+      "title": "Open the active event",
+      "body": "Open Tutorial Active Round Robin to reach the scoring grid.",
+      "image": "assets/showcase-admin-enter-score/step-04.png",
+      "kind": "action",
+      "actionHint": "Open Tutorial Active Round Robin",
+      "hotspot": {
+        "x": 0,
+        "y": 0,
+        "w": 100,
+        "h": 100
+      }
+    },
+    {
+      "id": "rr-grid",
+      "title": "Round Robin score grid",
+      "body": "Each empty cell is a match yet to be played. Click a cell to open the score entry dialog.",
+      "image": "assets/showcase-admin-enter-score/step-05.png",
+      "kind": "result",
+      "resultNote": "Active Round Robin matrix is visible with Enter score controls."
+    },
+    {
+      "id": "open-score-cell",
+      "title": "Open a match cell",
+      "body": "Choose any empty match. The Match Entry dialog opens for the two participants.",
+      "image": "assets/showcase-admin-enter-score/step-06.png",
+      "kind": "action",
+      "actionHint": "Click an empty score cell",
+      "hotspot": {
+        "x": 58.6,
+        "y": 42.6,
+        "w": 3,
+        "h": 2
+      }
+    },
+    {
+      "id": "score-dialog",
+      "title": "Match Entry dialog",
+      "body": "Enter each player’s sets won. Organizers can also mark a forfeit when needed.",
+      "image": "assets/showcase-admin-enter-score/step-07.png",
+      "kind": "result",
+      "resultNote": "Match Entry popup is open with both score fields."
+    },
+    {
+      "id": "enter-scores",
+      "title": "Enter the score",
+      "body": "Type the set counts (here 3–1), then confirm with the green checkmark to record the match.",
+      "image": "assets/showcase-admin-enter-score/step-08.png",
+      "kind": "action",
+      "actionHint": "Click the green checkmark to save",
+      "hotspot": {
+        "x": 64.6,
+        "y": 48.2,
+        "w": 2.8,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "score-saved",
+      "title": "Score recorded",
+      "body": "The grid updates with the result (green for the row winner, red for the loser). Progress advances toward completing the Round Robin.",
+      "image": "assets/showcase-admin-enter-score/step-09.png",
+      "kind": "result",
+      "resultNote": "Match saved; at least one cell now shows a recorded score."
+    }
+  ],
+  "showcase": true
+}

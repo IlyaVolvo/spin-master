@@ -1,10 +1,10 @@
 {
   "slug": "showcase-organizer-create-rr",
   "role": "organizer",
-  "title": "Showcase: Organizer creates a Round Robin",
+  "title": "Organizer creates a Round Robin",
   "description": "Create a Round Robin end-to-end: pick the format, select players one by one (with a note on repeating), finalize, and open the new tournament page.",
   "relatedSlugs": [
-    "showcase-player-plan",
+    "showcase-organizer-create-multi-rr",
     "showcase-admin-front-desk"
   ],
   "viewport": {

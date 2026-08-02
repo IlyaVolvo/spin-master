@@ -1,0 +1,75 @@
+{
+  "slug": "showcase-player-checkin",
+  "role": "player",
+  "title": "Player checks in at the kiosk",
+  "description": "At the club check-in kiosk, a member finds their row, enters their score PIN, and joins today’s attendance.",
+  "relatedSlugs": [
+    "showcase-player-checkout",
+    "showcase-admin-front-desk"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "kiosk-ready",
+      "title": "Check-in kiosk",
+      "body": "The front desk leaves the Players list in check-in kiosk mode. Members use the Check-in control on their row — not a personal login.",
+      "image": "assets/showcase-player-checkin/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "find-member",
+      "title": "Find your name",
+      "body": "Eden Brooks has an active visit pack and is not present yet, so their row shows Check-in.",
+      "image": "assets/showcase-player-checkin/step-02.png",
+      "kind": "context"
+    },
+    {
+      "id": "row-checkin-action",
+      "title": "Start check-in",
+      "body": "Tap Check-in on your row. The kiosk asks for your score PIN (not your login password).",
+      "image": "assets/showcase-player-checkin/step-03.png",
+      "kind": "action",
+      "actionHint": "Click Check-in on your row",
+      "hotspot": {
+        "x": 69.6,
+        "y": 48.5,
+        "w": 4.7,
+        "h": 2.7
+      }
+    },
+    {
+      "id": "pin-dialog",
+      "title": "PIN prompt",
+      "body": "The dialog names the member and asks for the PIN configured on their profile.",
+      "image": "assets/showcase-player-checkin/step-04.png",
+      "kind": "result",
+      "resultNote": "Check-in PIN modal is open."
+    },
+    {
+      "id": "enter-pin-action",
+      "title": "Enter PIN and confirm",
+      "body": "Type the PIN, then confirm Check-in. A correct PIN records attendance for today.",
+      "image": "assets/showcase-player-checkin/step-05.png",
+      "kind": "action",
+      "actionHint": "Click Check-in after entering the PIN",
+      "hotspot": {
+        "x": 55.9,
+        "y": 53.2,
+        "w": 6,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "checked-in",
+      "title": "Checked in",
+      "body": "Attendance updates: the member is present, the row switches to Check-out, and visit-pack remaining visits decrease when this was a charged check-in.",
+      "image": "assets/showcase-player-checkin/step-06.png",
+      "kind": "result",
+      "resultNote": "PIN accepted; member is in today’s present list."
+    }
+  ],
+  "showcase": true
+}

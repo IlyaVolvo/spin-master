@@ -379,10 +379,13 @@
       const res = await fetch('catalog.json', { cache: 'no-cache' });
       if (!res.ok) return;
       const data = await res.json();
-      const role = (data.roles || []).find(function (r) {
-        return r.id === 'showcase';
+      // Catalog is role-grouped showcases; flatten in page order for Next.
+      showcaseList = [];
+      (data.roles || []).forEach(function (role) {
+        (role.scenarios || []).forEach(function (s) {
+          showcaseList.push(s);
+        });
       });
-      showcaseList = role && role.scenarios ? role.scenarios : [];
     } catch (e) {
       showcaseList = [];
     }
