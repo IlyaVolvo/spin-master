@@ -87,22 +87,35 @@ describe('rejected attendance path', () => {
 
   describe('attendanceStatusWhere / parseAttendanceStatusFilter', () => {
     it('parses status query and legacy present flags', () => {
-      expect(parseAttendanceStatusFilter({ status: 'rejected' })).toBe('rejected');
-      expect(parseAttendanceStatusFilter({ status: 'PRESENT' })).toBe('present');
-      expect(parseAttendanceStatusFilter({ present: '1' })).toBe('present');
-      expect(parseAttendanceStatusFilter({ onlyPresent: 'true' })).toBe('present');
-      expect(parseAttendanceStatusFilter({})).toBe('all');
+      expect(parseAttendanceStatusFilter({ status: 'rejected' })).toEqual(['rejected']);
+      expect(parseAttendanceStatusFilter({ status: 'PRESENT' })).toEqual(['present']);
+      expect(parseAttendanceStatusFilter({ present: '1' })).toEqual(['present']);
+      expect(parseAttendanceStatusFilter({ onlyPresent: 'true' })).toEqual(['present']);
+      expect(parseAttendanceStatusFilter({})).toEqual(['present', 'out', 'rejected']);
+      expect(parseAttendanceStatusFilter({ status: 'all' })).toEqual(['present', 'out', 'rejected']);
+      expect(parseAttendanceStatusFilter({ status: 'present,out' })).toEqual(['present', 'out']);
+      expect(parseAttendanceStatusFilter({ status: ['out', 'rejected'] })).toEqual(['out', 'rejected']);
     });
 
-    it('maps filters so rejected rows are isolated from Present', () => {
-      expect(attendanceStatusWhere('present')).toEqual({
+    it('maps filters so rejected rows are isolated from Present and Out', () => {
+      expect(attendanceStatusWhere(['present'])).toEqual({
         checkOutAt: null,
         rejectedAt: null,
       });
-      expect(attendanceStatusWhere('rejected')).toEqual({
+      expect(attendanceStatusWhere(['out'])).toEqual({
+        checkOutAt: { not: null },
+        rejectedAt: null,
+      });
+      expect(attendanceStatusWhere(['rejected'])).toEqual({
         rejectedAt: { not: null },
       });
-      expect(attendanceStatusWhere('all')).toEqual({});
+      expect(attendanceStatusWhere(['present', 'out', 'rejected'])).toEqual({});
+      expect(attendanceStatusWhere(['present', 'out'])).toEqual({
+        OR: [
+          { checkOutAt: null, rejectedAt: null },
+          { checkOutAt: { not: null }, rejectedAt: null },
+        ],
+      });
     });
   });
 });

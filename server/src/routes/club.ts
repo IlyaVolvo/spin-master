@@ -1787,7 +1787,7 @@ router.get('/admin/members/search', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** GET /api/club/admin/visits — attendance log, newest first; optional `q`, `memberId`, `from`, `to`, `status=all|present|rejected` */
+/** GET /api/club/admin/visits — attendance log, newest first; optional `q`, `memberId`, `from`, `to`, `status=present,out,rejected` */
 router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) {
