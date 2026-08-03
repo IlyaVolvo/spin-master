@@ -244,17 +244,63 @@ export async function saveSystemSettings(ctx: CaptureContext): Promise<void> {
   await ctx.delay(500);
 }
 
-/** Apply the showcase System Settings edits (branding, RR, Multi RR, achievements). */
+/** Apply the showcase System Settings edits (Public Achievements only). */
 export async function applyShowcaseSystemConfigEdits(ctx: CaptureContext): Promise<void> {
-  await setSystemClubName(ctx, TUTORIAL_UPDATED_CLUB_NAME);
-  await setSystemClubTimezone(ctx, TUTORIAL_UPDATED_TIMEZONE);
-  await ensureTournamentRuleOpen(ctx, 'Round Robin');
-  await setSystemNumericByAriaLabel(ctx, 'Early Complete Min %', '80');
-  await ensureTournamentRuleOpen(ctx, 'Multi Round Robins');
-  await setSystemNumericByAriaLabel(ctx, 'Default Size', '5');
   await ensureSystemSectionOpen(ctx, 'Public Achievements');
-  await setSystemNumericByAriaLabel(ctx, 'Set all achievement counts', '10');
+  await setSystemNumericByAriaLabel(ctx, 'Set all achievement counts', '3');
   await clickApplyAchievementsToAll(ctx);
+  await setSystemNumericByAriaLabel(ctx, 'Biggest upset', '1');
+}
+
+export async function hotspotForSystemNumericByAriaLabel(
+  ctx: CaptureContext,
+  ariaLabel: string,
+): Promise<HotspotPct> {
+  await ctx.page.evaluate((label) => {
+    const input = document.querySelector(
+      `input[aria-label="${label}"]`,
+    ) as HTMLElement | null;
+    input?.scrollIntoView({ block: 'center' });
+  }, ariaLabel);
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(
+    (label) => document.querySelector(`input[aria-label="${label}"]`) || null,
+    ariaLabel,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error(`Numeric field "${ariaLabel}" not found for hotspot`);
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error(`Numeric field "${ariaLabel}" has no bounding box`);
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function hotspotForApplyAchievementsToAll(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) =>
+      (b.textContent || '').includes('Apply to all'),
+    ) as HTMLElement | undefined;
+    btn?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(
+    () =>
+      [...document.querySelectorAll('button')].find((b) =>
+        (b.textContent || '').includes('Apply to all'),
+      ) || null,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Apply to all button not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Apply to all has no bounding box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
 }
 
 /** Admin → Payment Plans tab. */
@@ -270,6 +316,276 @@ export async function openPaymentPlans(ctx: CaptureContext, adminEmail: string):
       ),
     { timeout: 20000 },
   );
+}
+
+/** Admin → Payment Log (default payments tab). */
+export async function openPaymentLog(ctx: CaptureContext, adminEmail: string): Promise<void> {
+  await ensureAdminSession(ctx, adminEmail);
+  await gotoPath(ctx, '/payments');
+  await ctx.delay(800);
+  await ctx.page.waitForFunction(
+    () =>
+      /Payment Log/i.test(document.body.innerText || '') &&
+      Boolean(document.querySelector('input[aria-label="Show pending payments"]')),
+    { timeout: 20000 },
+  );
+}
+
+export async function hotspotForAdminMenuItem(
+  ctx: CaptureContext,
+  label: string,
+): Promise<HotspotPct> {
+  await openAdminMenu(ctx);
+  await ctx.delay(200);
+  const handle = await ctx.page.evaluateHandle((text) => {
+    const el = [...document.querySelectorAll('a, button')].find(
+      (x) => (x.textContent || '').trim() === text,
+    ) as HTMLElement | undefined;
+    el?.scrollIntoView({ block: 'nearest' });
+    return el || null;
+  }, label);
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error(`Admin menu item "${label}" not found`);
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error(`Admin menu item "${label}" has no bounding box`);
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+/** Pending-only: Paid off, Pending on. */
+export async function setPaymentLogPendingOnly(ctx: CaptureContext): Promise<void> {
+  await ctx.page.evaluate(() => {
+    const paid = document.querySelector(
+      'input[aria-label="Show paid payments"]',
+    ) as HTMLInputElement | null;
+    const pending = document.querySelector(
+      'input[aria-label="Show pending payments"]',
+    ) as HTMLInputElement | null;
+    if (!paid || !pending) throw new Error('Payment status filters missing');
+    if (!pending.checked) {
+      pending.click();
+    }
+    if (paid.checked) {
+      paid.click();
+    }
+  });
+  await ctx.delay(300);
+}
+
+export async function hotspotForPaymentLogPaidFilter(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    document
+      .querySelector('input[aria-label="Show paid payments"]')
+      ?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(
+    () => document.querySelector('input[aria-label="Show paid payments"]') || null,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Show paid payments checkbox not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Show paid payments has no bounding box');
+  return boxToPct(
+    { x: box.x - 4, y: box.y - 4, width: Math.max(box.width + 48, 70), height: box.height + 8 },
+    VIEWPORT.width,
+    VIEWPORT.height,
+  );
+}
+
+export async function hotspotForFirstPaymentClear(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(
+      (b) => (b.textContent || '').trim() === 'Clear',
+    ) as HTMLElement | undefined;
+    btn?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(
+    () =>
+      [...document.querySelectorAll('button')].find(
+        (b) => (b.textContent || '').trim() === 'Clear',
+      ) || null,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Clear button not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Clear button has no bounding box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function clearFirstPendingCashPayment(ctx: CaptureContext): Promise<void> {
+  const clicked = await ctx.page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(
+      (b) => (b.textContent || '').trim() === 'Clear' && !(b as HTMLButtonElement).disabled,
+    ) as HTMLButtonElement | undefined;
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  if (!clicked) throw new Error('No Clear button available');
+  await ctx.delay(900);
+  await ctx.page.waitForFunction(
+    () => {
+      const clears = [...document.querySelectorAll('button')].filter(
+        (b) => (b.textContent || '').trim() === 'Clear',
+      );
+      return clears.length <= 1;
+    },
+    { timeout: 15000 },
+  );
+  await ctx.delay(400);
+}
+
+/** Admin → Attendance Log. */
+export async function openAttendanceLog(ctx: CaptureContext, adminEmail: string): Promise<void> {
+  await ensureAdminSession(ctx, adminEmail);
+  await gotoPath(ctx, '/attendance-log');
+  await ctx.delay(800);
+  await ctx.page.waitForFunction(
+    () =>
+      /Attendance Log/i.test(document.body.innerText || '') &&
+      Boolean(document.querySelector('input[aria-label="Show Present visits"]')),
+    { timeout: 20000 },
+  );
+}
+
+export async function hotspotForAttendanceStatusFilters(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    document
+      .querySelector('[aria-labelledby="attendance-status-filter-label"]')
+      ?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(
+    () => document.querySelector('[aria-labelledby="attendance-status-filter-label"]') || null,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Attendance status filter group not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Attendance status filters have no bounding box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function hotspotForAttendanceDateFrom(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    document
+      .querySelector('#attendance-date-from')
+      ?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(() => {
+    const from = document.querySelector('#attendance-date-from') as HTMLElement | null;
+    const to = document.querySelector('#attendance-date-to') as HTMLElement | null;
+    if (!from) return null;
+    if (!to) return from;
+    const a = from.getBoundingClientRect();
+    const b = to.getBoundingClientRect();
+    const left = Math.min(a.left, b.left);
+    const top = Math.min(a.top, b.top);
+    const right = Math.max(a.right, b.right);
+    const bottom = Math.max(a.bottom, b.bottom);
+    // Synthetic element proxy via from; bounding box computed below from both.
+    (from as HTMLElement & { __merged?: DOMRect }).__merged = new DOMRect(
+      left,
+      top,
+      right - left,
+      bottom - top,
+    );
+    return from;
+  });
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Attendance From date not found');
+  }
+  const merged = await ctx.page.evaluate((node) => {
+    const m = (node as HTMLElement & { __merged?: DOMRect }).__merged;
+    if (m) return { x: m.x, y: m.y, width: m.width, height: m.height };
+    const r = (node as HTMLElement).getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }, el);
+  await handle.dispose();
+  return boxToPct(merged, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function hotspotForAttendanceStatusCheckbox(
+  ctx: CaptureContext,
+  label: 'Present' | 'Out' | 'Rejected',
+): Promise<HotspotPct> {
+  const aria = `Show ${label} visits`;
+  await ctx.page.evaluate((a) => {
+    document.querySelector(`input[aria-label="${a}"]`)?.scrollIntoView({ block: 'center' });
+  }, aria);
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(
+    (a) => document.querySelector(`input[aria-label="${a}"]`) || null,
+    aria,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error(`Attendance status checkbox "${label}" not found`);
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error(`Attendance status checkbox "${label}" has no bounding box`);
+  return boxToPct(
+    { x: box.x - 4, y: box.y - 4, width: Math.max(box.width + 64, 80), height: box.height + 8 },
+    VIEWPORT.width,
+    VIEWPORT.height,
+  );
+}
+
+/** Leave only one Attendance Log status checked. */
+export async function setAttendanceStatusOnly(
+  ctx: CaptureContext,
+  keep: 'Present' | 'Out' | 'Rejected',
+): Promise<void> {
+  const labels = ['Present', 'Out', 'Rejected'] as const;
+  await ctx.page.evaluate(
+    (keepLabel, allLabels) => {
+      for (const label of allLabels) {
+        const input = document.querySelector(
+          `input[aria-label="Show ${label} visits"]`,
+        ) as HTMLInputElement | null;
+        if (!input) throw new Error(`Missing status ${label}`);
+        const want = label === keepLabel;
+        if (input.checked !== want && !input.disabled) {
+          input.click();
+        }
+      }
+      // Second pass if first click left two selected (toggle order).
+      for (const label of allLabels) {
+        const input = document.querySelector(
+          `input[aria-label="Show ${label} visits"]`,
+        ) as HTMLInputElement | null;
+        if (!input) continue;
+        const want = label === keepLabel;
+        if (input.checked !== want && !input.disabled) {
+          input.click();
+        }
+      }
+    },
+    keep,
+    labels,
+  );
+  await ctx.delay(500);
 }
 
 /** Hotspot for + Segment on a named plan family card. */
@@ -310,7 +626,7 @@ export async function hotspotForPlanFamilySegmentAdd(
   return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
 }
 
-/** Open New Plan form via + Segment on an existing family (presets Junior when available). */
+/** Open plan form via + Segment on an existing family (name/kind/duration locked). */
 export async function openPlanFamilySegmentForm(
   ctx: CaptureContext,
   planName = TUTORIAL_MONTHLY_PLAN_NAME,
@@ -331,19 +647,24 @@ export async function openPlanFamilySegmentForm(
   await ctx.delay(500);
   await ctx.page.waitForFunction(
     () =>
-      [...document.querySelectorAll('h4')].some((h) =>
-        (h.textContent || '').includes('New Plan'),
-      ),
+      [...document.querySelectorAll('h4')].some((h) => {
+        const t = h.textContent || '';
+        return t.includes('Add category price') || t.includes('New Plan');
+      }),
     { timeout: 10000 },
   );
 }
 
-/** Ensure the New Plan form segment select is Junior. */
+/** Ensure the plan form segment select is set. */
 export async function selectPlanFormSegment(ctx: CaptureContext, segment: string): Promise<void> {
   const ok = await ctx.page.evaluate((seg) => {
-    const labels = [...document.querySelectorAll('label')];
-    const label = labels.find((l) => (l.textContent || '').trim() === 'Segment');
-    const select = label?.parentElement?.querySelector('select') as HTMLSelectElement | null;
+    const select =
+      (document.querySelector('[data-tutorial="plan-form-segment"]') as HTMLSelectElement | null) ||
+      (() => {
+        const labels = [...document.querySelectorAll('label')];
+        const label = labels.find((l) => (l.textContent || '').trim() === 'Segment');
+        return label?.parentElement?.querySelector('select') as HTMLSelectElement | null;
+      })();
     if (!select) return false;
     const opt = [...select.options].find((o) => o.value === seg || o.textContent === seg);
     if (!opt) return false;
@@ -355,12 +676,82 @@ export async function selectPlanFormSegment(ctx: CaptureContext, segment: string
   await ctx.delay(200);
 }
 
+export async function hotspotForPlanFormSegment(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    const el =
+      (document.querySelector('[data-tutorial="plan-form-segment"]') as HTMLElement | null) ||
+      (() => {
+        const labels = [...document.querySelectorAll('label')];
+        const label = labels.find((l) => (l.textContent || '').trim() === 'Segment');
+        return label?.parentElement?.querySelector('select') as HTMLElement | null;
+      })();
+    el?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(() => {
+    return (
+      document.querySelector('[data-tutorial="plan-form-segment"]') ||
+      (() => {
+        const labels = [...document.querySelectorAll('label')];
+        const label = labels.find((l) => (l.textContent || '').trim() === 'Segment');
+        return label?.parentElement?.querySelector('select') || null;
+      })()
+    );
+  });
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Plan form Segment select not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Plan form Segment has no bounding box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function hotspotForPlanFormTotalPrice(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    const el =
+      (document.querySelector('[data-tutorial="plan-form-price"]') as HTMLElement | null) ||
+      (() => {
+        const labels = [...document.querySelectorAll('label')];
+        const label = labels.find((l) => /Total price/i.test(l.textContent || ''));
+        return label?.parentElement?.querySelector('input') as HTMLElement | null;
+      })();
+    el?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(() => {
+    return (
+      document.querySelector('[data-tutorial="plan-form-price"]') ||
+      (() => {
+        const labels = [...document.querySelectorAll('label')];
+        const label = labels.find((l) => /Total price/i.test(l.textContent || ''));
+        return label?.parentElement?.querySelector('input') || null;
+      })()
+    );
+  });
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Plan form Total price input not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Plan form Total price has no bounding box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
 /** Set the Total price ($) field on the plan form (TIME plans). */
 export async function fillPlanFormTotalPrice(ctx: CaptureContext, dollars: string): Promise<void> {
   const filled = await ctx.page.evaluate((val) => {
-    const labels = [...document.querySelectorAll('label')];
-    const label = labels.find((l) => /Total price/i.test(l.textContent || ''));
-    const input = label?.parentElement?.querySelector('input') as HTMLInputElement | null;
+    const input =
+      (document.querySelector('[data-tutorial="plan-form-price"]') as HTMLInputElement | null) ||
+      (() => {
+        const labels = [...document.querySelectorAll('label')];
+        const label = labels.find((l) => /Total price/i.test(l.textContent || ''));
+        return label?.parentElement?.querySelector('input') as HTMLInputElement | null;
+      })();
     if (!input) return false;
     const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     proto?.call(input, val);
@@ -375,45 +766,49 @@ export async function fillPlanFormTotalPrice(ctx: CaptureContext, dollars: strin
 
 export async function hotspotForCreatePlan(ctx: CaptureContext): Promise<HotspotPct> {
   await ctx.page.evaluate(() => {
-    const btn = [...document.querySelectorAll('button')].find((b) =>
-      (b.textContent || '').includes('Create Plan'),
-    ) as HTMLElement | undefined;
+    const btn = [...document.querySelectorAll('button')].find((b) => {
+      const t = b.textContent || '';
+      return t.includes('Create Plan') || t.includes('Add price');
+    }) as HTMLElement | undefined;
     btn?.scrollIntoView({ block: 'center' });
   });
   await ctx.delay(150);
   const handle = await ctx.page.evaluateHandle(
     () =>
-      [...document.querySelectorAll('button')].find((b) =>
-        (b.textContent || '').includes('Create Plan'),
-      ) || null,
+      [...document.querySelectorAll('button')].find((b) => {
+        const t = b.textContent || '';
+        return t.includes('Create Plan') || t.includes('Add price');
+      }) || null,
   );
   const el = handle.asElement();
   if (!el) {
     await handle.dispose();
-    throw new Error('Create Plan button not found');
+    throw new Error('Create Plan / Add price button not found');
   }
   const box = await el.boundingBox();
   await handle.dispose();
-  if (!box) throw new Error('Create Plan has no bounding box');
+  if (!box) throw new Error('Create Plan / Add price has no bounding box');
   return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
 }
 
 export async function submitCreatePlan(ctx: CaptureContext): Promise<void> {
   const clicked = await ctx.page.evaluate(() => {
-    const btn = [...document.querySelectorAll('button')].find((b) =>
-      (b.textContent || '').trim() === 'Create Plan',
-    ) as HTMLButtonElement | undefined;
+    const btn = [...document.querySelectorAll('button')].find((b) => {
+      const t = (b.textContent || '').trim();
+      return t === 'Create Plan' || t === 'Add price';
+    }) as HTMLButtonElement | undefined;
     if (!btn || btn.disabled) return false;
     btn.click();
     return true;
   });
-  if (!clicked) throw new Error('Create Plan button missing or disabled');
+  if (!clicked) throw new Error('Create Plan / Add price button missing or disabled');
   await ctx.delay(900);
   await ctx.page.waitForFunction(
     () =>
-      ![...document.querySelectorAll('h4')].some((h) =>
-        (h.textContent || '').includes('New Plan'),
-      ) || /Plan created/i.test(document.body.innerText || ''),
+      ![...document.querySelectorAll('h4')].some((h) => {
+        const t = h.textContent || '';
+        return t.includes('New Plan') || t.includes('Add category price');
+      }) || /Plan created|price added|created/i.test(document.body.innerText || ''),
     { timeout: 15000 },
   );
   await ctx.delay(400);
@@ -1393,6 +1788,60 @@ export async function openRoundRobinConfirm(
   );
 }
 
+/** Open + Tournament → Playoff → player selection step. */
+export async function openPlayoffPlayerSelection(ctx: CaptureContext): Promise<void> {
+  await openTournamentPlayerSelection(ctx, 'PLAYOFF');
+}
+
+/** Reach Playoff bracket organize / preview after selecting players. */
+export async function openPlayoffBracketOrganize(
+  ctx: CaptureContext,
+  playerCount = 8,
+): Promise<void> {
+  await openPlayoffPlayerSelection(ctx);
+  const n = await selectTournamentPlayers(ctx, playerCount);
+  if (n < 4) throw new Error(`Need ≥4 players for Playoff, got ${n}`);
+  const continued = await ctx.clickButtonContaining('Continue');
+  if (!continued) throw new Error('Continue after player selection missing');
+  await ctx.delay(1000);
+  await ctx.page.waitForFunction(
+    () => {
+      const text = document.body.innerText || '';
+      if (/Loading bracket preview/i.test(text)) return false;
+      return (
+        [...document.querySelectorAll('button')].filter((b) =>
+          (b.textContent || '').trim() === 'Continue',
+        ).length > 0 &&
+        (/BYE|vs|seed|bracket/i.test(text) ||
+          document.querySelectorAll('[draggable="true"]').length > 0)
+      );
+    },
+    { timeout: 30000 },
+  );
+  await ctx.delay(400);
+}
+
+/** Reach Playoff “First Round Matches” confirmation before Create Tournament. */
+export async function openPlayoffFirstRoundConfirm(
+  ctx: CaptureContext,
+  playerCount = 8,
+): Promise<void> {
+  await openPlayoffBracketOrganize(ctx, playerCount);
+  const continued = await ctx.clickButtonContaining('Continue');
+  if (!continued) throw new Error('Continue from bracket organize missing');
+  await ctx.delay(800);
+  await ctx.page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('h3')].some((h) =>
+        /First Round Matches/i.test(h.textContent || ''),
+      ) ||
+      [...document.querySelectorAll('button')].some((b) =>
+        (b.textContent || '').includes('Create Tournament'),
+      ),
+    { timeout: 15000 },
+  );
+}
+
 /** Reach Multi RR “Players per group” config after selecting players. */
 export async function openMultiRrGroupSize(
   ctx: CaptureContext,
@@ -1424,6 +1873,9 @@ export async function openMultiRrConfirmGroups(
   await ctx.delay(800);
   await ctx.page.waitForFunction(
     () =>
+      [...document.querySelectorAll('h5')].some((h) =>
+        /^Group\s+\d+/i.test((h.textContent || '').trim()),
+      ) &&
       [...document.querySelectorAll('h3')].some((h) =>
         /Confirm Groups/i.test(h.textContent || ''),
       ),
@@ -1431,12 +1883,123 @@ export async function openMultiRrConfirmGroups(
   );
 }
 
+/** Hotspot for a draggable player row inside Confirm Groups (0-based group/player). */
+export async function hotspotForMultiRrGroupPlayer(
+  ctx: CaptureContext,
+  groupIndex: number,
+  playerIndex = 0,
+): Promise<HotspotPct> {
+  await ctx.page.evaluate(
+    (gIdx, pIdx) => {
+      const headers = [...document.querySelectorAll('h5')].filter((h) =>
+        /^Group\s+\d+/i.test((h.textContent || '').trim()),
+      );
+      const root = headers[gIdx]?.parentElement;
+      const row = root
+        ? ([...root.querySelectorAll(':scope > div[draggable="true"]')][pIdx] as HTMLElement | undefined)
+        : undefined;
+      row?.scrollIntoView({ block: 'center' });
+    },
+    groupIndex,
+    playerIndex,
+  );
+  await ctx.delay(200);
+  const handle = await ctx.page.evaluateHandle(
+    (gIdx, pIdx) => {
+      const headers = [...document.querySelectorAll('h5')].filter((h) =>
+        /^Group\s+\d+/i.test((h.textContent || '').trim()),
+      );
+      const root = headers[gIdx]?.parentElement;
+      if (!root) return null;
+      return [...root.querySelectorAll(':scope > div[draggable="true"]')][pIdx] || null;
+    },
+    groupIndex,
+    playerIndex,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error(`Multi RR group player not found (group ${groupIndex}, player ${playerIndex})`);
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) {
+    throw new Error(`Multi RR group player has no box (group ${groupIndex}, player ${playerIndex})`);
+  }
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+/**
+ * Move one player from group A to group B on Confirm Groups (HTML5 drag).
+ * Default demo: first player in Group 1 → Group 2 (keeps both groups ≥2 when roster is 8).
+ */
+export async function moveMultiRrPlayerBetweenGroups(
+  ctx: CaptureContext,
+  fromGroupIndex = 0,
+  playerIndex = 0,
+  toGroupIndex = 1,
+): Promise<void> {
+  const result = await ctx.page.evaluate(
+    async (fromG, pIdx, toG) => {
+      const headers = [...document.querySelectorAll('h5')].filter((h) =>
+        /^Group\s+\d+/i.test((h.textContent || '').trim()),
+      );
+      const fromRoot = headers[fromG]?.parentElement;
+      const toRoot = headers[toG]?.parentElement;
+      if (!fromRoot || !toRoot) return { ok: false, reason: 'group roots missing' };
+      const source = [...fromRoot.querySelectorAll(':scope > div[draggable="true"]')][
+        pIdx
+      ] as HTMLElement | undefined;
+      if (!source) return { ok: false, reason: 'source player missing' };
+      const name = (source.textContent || '').trim();
+      const dt = new DataTransfer();
+      source.dispatchEvent(
+        new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }),
+      );
+      await new Promise((r) => setTimeout(r, 120));
+      toRoot.dispatchEvent(
+        new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }),
+      );
+      await new Promise((r) => setTimeout(r, 40));
+      toRoot.dispatchEvent(
+        new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }),
+      );
+      source.dispatchEvent(
+        new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }),
+      );
+      await new Promise((r) => setTimeout(r, 80));
+      const needle = name.slice(0, Math.min(16, name.length));
+      const landed = (toRoot.textContent || '').includes(needle);
+      return { ok: landed, reason: landed ? '' : 'player did not appear in target group', name };
+    },
+    fromGroupIndex,
+    playerIndex,
+    toGroupIndex,
+  );
+
+  if (!result.ok) {
+    throw new Error(
+      `Cannot rearrange Multi RR groups (from ${fromGroupIndex}:${playerIndex} → ${toGroupIndex}): ${result.reason}`,
+    );
+  }
+  await ctx.delay(300);
+}
+
+/** Confirm Groups after the showcase rearrange demo (Group 1 → Group 2). */
+export async function openMultiRrConfirmGroupsRearranged(
+  ctx: CaptureContext,
+  playerCount = 8,
+): Promise<void> {
+  await openMultiRrConfirmGroups(ctx, playerCount);
+  await moveMultiRrPlayerBetweenGroups(ctx);
+}
+
 /** Reach Multi RR final Create Tournament confirmation. */
 export async function openMultiRrFinalConfirm(
   ctx: CaptureContext,
   playerCount = 8,
 ): Promise<void> {
-  await openMultiRrConfirmGroups(ctx, playerCount);
+  await openMultiRrConfirmGroupsRearranged(ctx, playerCount);
   const continued = await ctx.clickButtonContaining('Continue');
   if (!continued) throw new Error('Continue from confirm groups missing');
   await ctx.delay(800);
@@ -1590,6 +2153,31 @@ export async function confirmModifyMatchResult(ctx: CaptureContext): Promise<voi
     { timeout: 20000 },
   );
   await ctx.delay(700);
+}
+
+export async function hotspotForModifyMatchResult(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('button')].some((b) =>
+        (b.textContent || '').includes('Modify Result'),
+      ),
+    { timeout: 10000 },
+  );
+  return ctx.hotspotForButton('Modify Result');
+}
+
+/** Click Match Entry save without waiting for the dialog to close (winner-change confirm may open). */
+export async function clickMatchEntrySave(ctx: CaptureContext): Promise<void> {
+  const clicked = await ctx.page.evaluate(() => {
+    const btn =
+      (document.querySelector('button[title="Enter Score & Complete Match"]') as HTMLButtonElement | null) ||
+      (document.querySelector('button[title="Save Changes"]') as HTMLButtonElement | null);
+    if (!btn || btn.disabled) return false;
+    btn.click();
+    return true;
+  });
+  if (!clicked) throw new Error('Match Entry save button missing or disabled');
+  await ctx.delay(400);
 }
 
 /** Hotspot for the first empty Round Robin score-entry control. */

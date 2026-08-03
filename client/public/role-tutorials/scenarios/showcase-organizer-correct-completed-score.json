@@ -2,7 +2,7 @@
   "slug": "showcase-organizer-correct-completed-score",
   "role": "organizer",
   "title": "Organizer corrects a completed tournament score",
-  "description": "Conditions: the event is Completed and not cancelled; you are signed in as an Organizer; the results matrix already has recorded scores; and no participant’s rating has changed after this tournament (a later completed event or a manual rating adjustment blocks correction). When those hold, turn on Correct scores, click a highlighted result, edit the sets, and save — ratings for this event are recalculated.",
+  "description": "On a Completed event, enable Correct scores only when none of the players have later matches that changed their ratings. Open a result, change each set count so the other player wins 3 games, confirm the winner change, and save — rankings for this tournament are recalculated.",
   "relatedSlugs": [
     "showcase-admin-enter-score",
     "showcase-organizer-create-rr"
@@ -28,7 +28,7 @@
       "actionHint": "Open Tutorial Completed Round Robin",
       "hotspot": {
         "x": 15,
-        "y": 28.1,
+        "y": 30,
         "w": 70,
         "h": 5.1
       }
@@ -42,15 +42,22 @@
       "resultNote": "Completed Round Robin results are visible."
     },
     {
+      "id": "attention-eligibility",
+      "title": "When correction is allowed",
+      "body": "Correct scores is available only if none of these players have played any later matches that changed their ratings. A later completed event or a manual rating change blocks correction.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-04.png",
+      "kind": "attention"
+    },
+    {
       "id": "enable-correction",
       "title": "Enable Correct scores",
       "body": "Tap the wrench (Correct scores). The banner appears and correctable cells get a highlight outline.",
-      "image": "assets/showcase-organizer-correct-completed-score/step-04.png",
+      "image": "assets/showcase-organizer-correct-completed-score/step-05.png",
       "kind": "action",
       "actionHint": "Click Correct scores",
       "hotspot": {
         "x": 16,
-        "y": 26.3,
+        "y": 28.2,
         "w": 2.1,
         "h": 2.5
       }
@@ -59,15 +66,15 @@
       "id": "correction-mode",
       "title": "Correction mode on",
       "body": "Highlighted cells are safe to edit under the current eligibility rules. If a later rating event blocked correction, the banner explains why instead.",
-      "image": "assets/showcase-organizer-correct-completed-score/step-05.png",
+      "image": "assets/showcase-organizer-correct-completed-score/step-06.png",
       "kind": "result",
       "resultNote": "Score correction banner is active with highlighted results."
     },
     {
       "id": "open-result-cell",
       "title": "Open a recorded result",
-      "body": "Click a highlighted score cell (pencil icon). The Match Entry dialog opens with the existing sets.",
-      "image": "assets/showcase-organizer-correct-completed-score/step-06.png",
+      "body": "Click a highlighted score cell (pencil icon). The Match Entry dialog opens with the existing sets (seeded here as 3–1).",
+      "image": "assets/showcase-organizer-correct-completed-score/step-07.png",
       "kind": "action",
       "actionHint": "Click a highlighted result cell",
       "hotspot": {
@@ -79,17 +86,61 @@
     },
     {
       "id": "edit-dialog",
-      "title": "Edit the score",
-      "body": "Change the set counts as needed. If the winner changes, you will confirm before ratings recalculate for this tournament.",
-      "image": "assets/showcase-organizer-correct-completed-score/step-07.png",
+      "title": "Existing score",
+      "body": "Match Entry shows the recorded sets. Change each player’s set count to correct the result.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-08.png",
       "kind": "result",
       "resultNote": "Match Entry is open on an existing completed result."
     },
     {
+      "id": "change-first-score",
+      "title": "Change the first player’s sets",
+      "body": "Edit the first player’s set count (here from 3 down to 1 — they will no longer be the winner).",
+      "image": "assets/showcase-organizer-correct-completed-score/step-09.png",
+      "kind": "action",
+      "actionHint": "Enter the first score",
+      "hotspot": {
+        "x": 32.6,
+        "y": 49.2,
+        "w": 3.5,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "first-score-changed",
+      "title": "First score updated",
+      "body": "The first player’s sets now show 1.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-10.png",
+      "kind": "result",
+      "resultNote": "Player 1 score field shows 1."
+    },
+    {
+      "id": "change-second-score",
+      "title": "Change the second player’s sets",
+      "body": "Edit the second player’s set count so they win with 3 games (here 1–3).",
+      "image": "assets/showcase-organizer-correct-completed-score/step-11.png",
+      "kind": "action",
+      "actionHint": "Enter the second score",
+      "hotspot": {
+        "x": 41,
+        "y": 49.2,
+        "w": 3.5,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "second-score-changed",
+      "title": "Winner flipped",
+      "body": "Sets are now 1–3 — the other player wins with 3 games. Saving will ask you to confirm because the winner changed.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-12.png",
+      "kind": "result",
+      "resultNote": "Score fields show 1 and 3."
+    },
+    {
       "id": "save-correction",
       "title": "Save the correction",
-      "body": "Change the sets (here to 2–0, same winner — no extra confirm). Confirm with the green checkmark to recalculate ratings for this event.",
-      "image": "assets/showcase-organizer-correct-completed-score/step-08.png",
+      "body": "Confirm with the green checkmark. Because the winner changed, a confirmation dialog appears next.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-13.png",
       "kind": "action",
       "actionHint": "Click the green checkmark to save",
       "hotspot": {
@@ -100,12 +151,26 @@
       }
     },
     {
+      "id": "confirm-winner-change",
+      "title": "Confirm winner change",
+      "body": "Modify Result accepts the new winner. Rankings for this tournament will be recalculated.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-14.png",
+      "kind": "action",
+      "actionHint": "Click Modify Result",
+      "hotspot": {
+        "x": 54.7,
+        "y": 54.6,
+        "w": 7.8,
+        "h": 3.6
+      }
+    },
+    {
       "id": "score-corrected",
       "title": "Score corrected",
-      "body": "The matrix and standings refresh with the new sets. Correction remains available until a later rating event for any participant.",
-      "image": "assets/showcase-organizer-correct-completed-score/step-09.png",
+      "body": "The matrix and standings refresh with 1–3. Rankings (and ratings) for this tournament are recalculated from the corrected result.",
+      "image": "assets/showcase-organizer-correct-completed-score/step-15.png",
       "kind": "result",
-      "resultNote": "Completed result updated; ratings recalculated for this tournament."
+      "resultNote": "Completed result updated; rankings recalculated for this tournament."
     }
   ],
   "showcase": true

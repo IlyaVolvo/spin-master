@@ -139,10 +139,12 @@ function MoneyInput({
   cents,
   onCentsChange,
   inputKey,
+  dataTutorial,
 }: {
   cents: number;
   onCentsChange: (cents: number) => void;
   inputKey: string;
+  dataTutorial?: string;
 }) {
   const [text, setText] = useState(() => (cents / 100).toFixed(2));
 
@@ -166,6 +168,7 @@ function MoneyInput({
       inputMode="decimal"
       style={inputStyle}
       value={text}
+      data-tutorial={dataTutorial}
       onFocus={(e) => e.target.select()}
       onChange={(e) => {
         const v = e.target.value.replace(/[^0-9.]/g, '');
@@ -194,6 +197,7 @@ export default function ClubPlanManager() {
 
   const [editingPlanId, setEditingPlanId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [formMode, setFormMode] = useState<'create' | 'edit' | 'add-segment'>('create');
   const [form, setForm] = useState<PlanFormData>(getEmptyForm());
   const [saving, setSaving] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
@@ -225,6 +229,7 @@ export default function ClubPlanManager() {
 
   const openCreate = (preset?: Partial<PlanFormData>) => {
     setEditingPlanId(null);
+    setFormMode(preset?.familyKey ? 'add-segment' : 'create');
     setForm({ ...getEmptyForm('Regular'), ...preset });
     setPriceFieldKey((k) => k + 1);
     setShowForm(true);
@@ -233,6 +238,7 @@ export default function ClubPlanManager() {
 
   const openEdit = (plan: ClubPlan) => {
     setEditingPlanId(plan.id);
+    setFormMode('edit');
     setForm(planToForm(plan));
     setPriceFieldKey((k) => k + 1);
     setShowForm(true);
@@ -333,8 +339,17 @@ export default function ClubPlanManager() {
       {showForm && (
         <div className="card" style={{ marginBottom: '16px', border: '2px solid #3498db', padding: '16px' }}>
           <h4 style={{ margin: '0 0 14px', color: '#2c3e50' }}>
-            {editingPlanId !== null ? 'Edit Plan' : 'New Plan'}
+            {editingPlanId !== null
+              ? 'Edit Plan'
+              : formMode === 'add-segment'
+                ? 'Add category price'
+                : 'New Plan'}
           </h4>
+          {formMode === 'add-segment' && (
+            <p style={{ margin: '0 0 12px', fontSize: '0.9rem', color: '#546e7a' }}>
+              Adding a category to <strong>{form.name || 'this plan'}</strong>. Name, kind, and duration stay the same — choose segment and set price.
+            </p>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
             <div>
@@ -344,6 +359,8 @@ export default function ClubPlanManager() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="e.g. Monthly, 10-Visit Pack"
+                disabled={formMode === 'add-segment'}
+                data-tutorial="plan-form-name"
               />
             </div>
             <div>
@@ -353,7 +370,7 @@ export default function ClubPlanManager() {
                 value={form.familyKey}
                 onChange={(e) => setForm({ ...form, familyKey: e.target.value })}
                 placeholder="auto from name if empty"
-                disabled={editingPlanId !== null}
+                disabled={editingPlanId !== null || formMode === 'add-segment'}
               />
             </div>
           </div>
@@ -365,6 +382,7 @@ export default function ClubPlanManager() {
                 style={inputStyle}
                 value={form.kind}
                 onChange={(e) => setForm({ ...form, kind: e.target.value as 'TIME' | 'VISIT' })}
+                disabled={formMode === 'add-segment'}
               >
                 <option value="TIME">Time</option>
                 <option value="VISIT">Visit pack</option>
@@ -376,6 +394,7 @@ export default function ClubPlanManager() {
                 style={inputStyle}
                 value={form.segment}
                 onChange={(e) => setForm({ ...form, segment: e.target.value })}
+                data-tutorial="plan-form-segment"
               >
                 {segments.map((seg) => (
                   <option key={seg} value={seg}>{seg}</option>
@@ -392,6 +411,7 @@ export default function ClubPlanManager() {
                   style={inputStyle}
                   value={form.durationUnit}
                   onChange={(e) => setForm({ ...form, durationUnit: e.target.value as PlanFormData['durationUnit'] })}
+                  disabled={formMode === 'add-segment'}
                 >
                   {DURATION_UNITS.map((u) => (
                     <option key={u} value={u}>{u.charAt(0) + u.slice(1).toLowerCase()}</option>
@@ -406,6 +426,7 @@ export default function ClubPlanManager() {
                   style={inputStyle}
                   value={form.durationValue}
                   onChange={(e) => setForm({ ...form, durationValue: Number(e.target.value) })}
+                  disabled={formMode === 'add-segment'}
                 />
               </div>
               <div>
@@ -414,6 +435,7 @@ export default function ClubPlanManager() {
                   inputKey={`time-${priceFieldKey}`}
                   cents={form.priceCents}
                   onCentsChange={(priceCents) => setForm({ ...form, priceCents })}
+                  dataTutorial="plan-form-price"
                 />
               </div>
             </div>
@@ -426,6 +448,7 @@ export default function ClubPlanManager() {
                   min={1}
                   style={inputStyle}
                   value={form.visitCount}
+                  disabled={formMode === 'add-segment'}
                   onChange={(e) => setForm({ ...form, visitCount: Number(e.target.value) })}
                 />
               </div>
@@ -456,6 +479,7 @@ export default function ClubPlanManager() {
               style={{ ...inputStyle, maxWidth: '120px' }}
               value={form.sortOrder}
               onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })}
+              disabled={formMode === 'add-segment'}
             />
           </div>
 
@@ -467,7 +491,13 @@ export default function ClubPlanManager() {
               Cancel
             </button>
             <button onClick={handleSave} disabled={saving} style={{ padding: '8px 16px', fontSize: '13px' }}>
-              {saving ? 'Saving...' : (editingPlanId !== null ? 'Update Plan' : 'Create Plan')}
+              {saving
+                ? 'Saving...'
+                : editingPlanId !== null
+                  ? 'Update Plan'
+                  : formMode === 'add-segment'
+                    ? 'Add price'
+                    : 'Create Plan'}
             </button>
           </div>
         </div>

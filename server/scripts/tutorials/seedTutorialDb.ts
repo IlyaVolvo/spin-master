@@ -388,6 +388,21 @@ async function main() {
       },
     });
 
+    // Payment Log showcase: mix of pending cash (clearable) + paid cash/online.
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000);
+    const visitProduct = {
+      kind: 'plan' as const,
+      familyKey: 'visit-pack-5',
+      planId: visitPackPlan.id,
+      planSegment: 'Regular',
+    };
+    const monthlyProduct = {
+      kind: 'plan' as const,
+      familyKey: 'monthly',
+      planId: monthlyPlan.id,
+      planSegment: 'Regular',
+    };
+
     await prisma.clubPayment.create({
       data: {
         memberId: organizer.id,
@@ -395,34 +410,133 @@ async function main() {
         listAmountCents: 8000,
         creditAppliedCents: 0,
         currency: 'USD',
-        provider: 'manual',
+        provider: 'cash',
         status: 'SUCCEEDED',
-        purpose: 'Monthly membership',
-        metadata: { tutorialSeed: true },
-      },
-    });
-    // Pending cash payment on a roster member (not the tutorial player) so Payment Log
-    // still has a clear/reject example while the player plan showcase can select a plan.
-    await prisma.clubPayment.create({
-      data: {
-        memberId: rosterIds[0],
-        amountCents: 4000,
-        listAmountCents: 4000,
-        creditAppliedCents: 0,
-        currency: 'USD',
-        provider: 'manual',
-        status: 'PENDING',
-        purpose: '5-visit pack (cash)',
-        metadata: { tutorialSeed: true, awaitingClear: true },
+        purpose: 'Plan purchase: Monthly membership (Regular)',
+        externalRef: 'tutorial_cash_paid_organizer_monthly',
+        recordedAt: hoursAgo(48),
+        metadata: {
+          tutorialSeed: true,
+          kind: 'checkout',
+          product: monthlyProduct,
+          planId: monthlyPlan.id,
+          familyKey: 'monthly',
+          planSegment: 'Regular',
+          paymentMethod: 'cash',
+        },
       },
     });
 
-    // Open visit for a roster member + admin already present for Attendance Log / kiosk.
+    // Paid online (test provider) + paid cash for roster members.
+    const paidSeeds: Array<{
+      memberId: number;
+      provider: string;
+      amountCents: number;
+      purpose: string;
+      product: typeof visitProduct | typeof monthlyProduct;
+      hours: number;
+      ref: string;
+    }> = [
+      {
+        memberId: rosterIds[0],
+        provider: 'test',
+        amountCents: 4000,
+        purpose: 'Plan purchase: 5-visit pack (Regular)',
+        product: visitProduct,
+        hours: 36,
+        ref: 'tutorial_test_paid_visit_0',
+      },
+      {
+        memberId: rosterIds[1],
+        provider: 'test',
+        amountCents: 8000,
+        purpose: 'Plan purchase: Monthly membership (Regular)',
+        product: monthlyProduct,
+        hours: 30,
+        ref: 'tutorial_test_paid_monthly_1',
+      },
+      {
+        memberId: rosterIds[2],
+        provider: 'cash',
+        amountCents: 4000,
+        purpose: 'Plan purchase: 5-visit pack (Regular)',
+        product: visitProduct,
+        hours: 24,
+        ref: 'tutorial_cash_paid_visit_2',
+      },
+      {
+        memberId: checkinMember.id,
+        provider: 'test',
+        amountCents: 4000,
+        purpose: 'Plan purchase: 5-visit pack (Regular)',
+        product: visitProduct,
+        hours: 20,
+        ref: 'tutorial_test_paid_checkin_member',
+      },
+    ];
+    for (const row of paidSeeds) {
+      await prisma.clubPayment.create({
+        data: {
+          memberId: row.memberId,
+          amountCents: row.amountCents,
+          listAmountCents: row.amountCents,
+          creditAppliedCents: 0,
+          currency: 'USD',
+          provider: row.provider,
+          status: 'SUCCEEDED',
+          purpose: row.purpose,
+          externalRef: row.ref,
+          recordedAt: hoursAgo(row.hours),
+          metadata: {
+            tutorialSeed: true,
+            kind: 'checkout',
+            product: row.product,
+            planId: row.product.planId,
+            familyKey: row.product.familyKey,
+            planSegment: 'Regular',
+            paymentMethod: row.provider === 'cash' ? 'cash' : 'online',
+          },
+        },
+      });
+    }
+
+    // Two unconfirmed cash payments — Clearable in Payment Log (member can check in after Clear).
+    const pendingCashMembers = [rosterIds[3], rosterIds[4]] as const;
+    for (let i = 0; i < pendingCashMembers.length; i++) {
+      const memberId = pendingCashMembers[i];
+      await prisma.clubPayment.create({
+        data: {
+          memberId,
+          amountCents: 4000,
+          listAmountCents: 4000,
+          creditAppliedCents: 0,
+          currency: 'USD',
+          provider: 'cash',
+          status: 'PENDING',
+          purpose: 'Plan purchase: 5-visit pack (Regular)',
+          externalRef: `tutorial_cash_pending_visit_${i}`,
+          recordedAt: hoursAgo(2 - i),
+          metadata: {
+            tutorialSeed: true,
+            awaitingClear: true,
+            kind: 'checkout',
+            product: visitProduct,
+            planId: visitPackPlan.id,
+            familyKey: 'visit-pack-5',
+            planSegment: 'Regular',
+            paymentMethod: 'cash',
+          },
+        },
+      });
+    }
+
+    // Attendance Log showcase: a few Present, two Out, one Rejected (today's club date).
+    const visitHoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000);
     await prisma.clubVisit.create({
       data: {
         memberId: rosterIds[0],
         clubDate,
-        checkInAt: new Date(),
+        checkInAt: visitHoursAgo(0.5),
         dailyPaymentApplied: true,
       },
     });
@@ -430,18 +544,45 @@ async function main() {
       data: {
         memberId: admin.id,
         clubDate,
-        checkInAt: new Date(Date.now() - 60 * 60 * 1000),
+        checkInAt: visitHoursAgo(1),
         dailyPaymentApplied: true,
       },
     });
-    // Rejected check-in example for filters
+    await prisma.clubVisit.create({
+      data: {
+        memberId: organizer.id,
+        clubDate,
+        checkInAt: visitHoursAgo(1.5),
+        dailyPaymentApplied: true,
+      },
+    });
+    await prisma.clubVisit.create({
+      data: {
+        memberId: rosterIds[1],
+        clubDate,
+        checkInAt: visitHoursAgo(4),
+        checkOutAt: visitHoursAgo(2),
+        closedBy: 'MANUAL',
+        dailyPaymentApplied: true,
+      },
+    });
+    await prisma.clubVisit.create({
+      data: {
+        memberId: rosterIds[2],
+        clubDate,
+        checkInAt: visitHoursAgo(5),
+        checkOutAt: visitHoursAgo(3),
+        closedBy: 'AUTO',
+        dailyPaymentApplied: true,
+      },
+    });
     await prisma.clubVisit.create({
       data: {
         memberId: player.id,
         clubDate,
-        checkInAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-        checkOutAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-        rejectedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        checkInAt: visitHoursAgo(2),
+        checkOutAt: visitHoursAgo(2),
+        rejectedAt: visitHoursAgo(2),
         rejectionReason: 'Payment required',
         dailyPaymentApplied: false,
       },

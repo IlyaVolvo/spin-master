@@ -449,6 +449,11 @@ code {
   color: #ffe9b0;
 }
 
+.kind-badge.kind-attention {
+  background: rgba(200, 80, 50, 0.45);
+  color: #ffd4c8;
+}
+
 .stage.auto-advance {
   animation: bridge-fade ease-in-out forwards;
   animation-duration: 3.8s;
@@ -466,6 +471,90 @@ code {
   }
   100% {
     opacity: 0.35;
+  }
+}
+
+.cinema-stage.attention-mode img {
+  filter: brightness(0.22) saturate(0.4);
+}
+
+.attention-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 2.5rem;
+  text-align: center;
+  pointer-events: none;
+  background: rgba(8, 12, 18, 0.55);
+}
+
+.attention-overlay[hidden] {
+  display: none !important;
+}
+
+.attention-eyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffb39a;
+}
+
+.attention-title {
+  margin: 0 0 0.85rem;
+  font-family: Fraunces, Georgia, serif;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  font-weight: 700;
+  color: #fff7f2;
+  max-width: 28ch;
+}
+
+.attention-message {
+  margin: 0;
+  font-size: clamp(1rem, 1.6vw, 1.2rem);
+  line-height: 1.45;
+  color: #e8e2dc;
+  max-width: 42ch;
+}
+
+.attention-continue {
+  margin: 1.35rem 0 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #b7c2ce;
+}
+
+.attention-overlay.flash-twice .attention-title,
+.attention-overlay.flash-twice .attention-message {
+  animation: attention-flash 1.5s ease-in-out 1;
+}
+
+@keyframes attention-flash {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  18% {
+    opacity: 0.2;
+    transform: scale(0.985);
+  }
+  32% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.2;
+    transform: scale(0.985);
+  }
+  64% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 

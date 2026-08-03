@@ -1,0 +1,95 @@
+{
+  "slug": "showcase-admin-attendance-log",
+  "role": "admin",
+  "title": "Admin reviews Attendance Log",
+  "description": "Open Attendance Log, filter to Present (who is in the club now), then note the date filters for reviewing what happened in the past.",
+  "relatedSlugs": [
+    "showcase-admin-payment-log",
+    "showcase-player-checkin"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "admin-home",
+      "title": "Admin home",
+      "body": "Attendance Log is under the Admin menu alongside Payment Log and Plans.",
+      "image": "assets/showcase-admin-attendance-log/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-attendance-log",
+      "title": "Open Attendance Log",
+      "body": "Attendance Log lists check-ins for the club — who is Present, who is Out, and rejected attempts.",
+      "image": "assets/showcase-admin-attendance-log/step-02.png",
+      "kind": "action",
+      "actionHint": "Click Attendance Log",
+      "hotspot": {
+        "x": 32.4,
+        "y": 17.2,
+        "w": 15.2,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "attendance-mixed",
+      "title": "Today’s visits",
+      "body": "The seeded log mixes Present members, people who already checked Out, and a Rejected attempt. Status filters narrow that list.",
+      "image": "assets/showcase-admin-attendance-log/step-03.png",
+      "kind": "result",
+      "resultNote": "Title Present count reflects who is still in the club right now."
+    },
+    {
+      "id": "filter-present",
+      "title": "Show Present only",
+      "body": "Turn off Out and Rejected so only Present remains — the most useful day-of view of who is in the club now.",
+      "image": "assets/showcase-admin-attendance-log/step-04.png",
+      "kind": "action",
+      "actionHint": "Leave only Present checked",
+      "hotspot": {
+        "x": 48.5,
+        "y": 26.9,
+        "w": 5,
+        "h": 2.1
+      }
+    },
+    {
+      "id": "present-only",
+      "title": "Who is Present",
+      "body": "Only Present rows remain. This is the practical front-desk view while the club is open.",
+      "image": "assets/showcase-admin-attendance-log/step-05.png",
+      "kind": "result",
+      "resultNote": "Present filter on; Out and Rejected off."
+    },
+    {
+      "id": "date-filters",
+      "title": "Date filters",
+      "body": "From and To sit next to Status. Use them when you need a specific club day instead of the default recent window.",
+      "image": "assets/showcase-admin-attendance-log/step-06.png",
+      "kind": "action",
+      "actionHint": "Look at From and To",
+      "hotspot": {
+        "x": 27.8,
+        "y": 26.1,
+        "w": 19.5,
+        "h": 3.7
+      }
+    },
+    {
+      "id": "attention-past",
+      "title": "Look back in time",
+      "body": "You could also check what happened in the past. Set From and To to an earlier club date to review who was Present, Out, or Rejected that day.",
+      "image": "assets/showcase-admin-attendance-log/step-07.png",
+      "kind": "attention",
+      "hotspot": {
+        "x": 27.8,
+        "y": 26.1,
+        "w": 19.5,
+        "h": 3.7
+      }
+    }
+  ],
+  "showcase": true
+}

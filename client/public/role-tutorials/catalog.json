@@ -39,12 +39,16 @@
     {
       "id": "organizer",
       "label": "Organizer",
-      "blurb": "Tournament walkthroughs — create events and correct completed scores.",
+      "blurb": "Tournament walkthroughs — create Round Robin, Playoff, Multi RR, and correct completed scores.",
       "collapsed": false,
       "scenarios": [
         {
           "slug": "showcase-organizer-create-rr",
           "title": "Organizer creates a Round Robin"
+        },
+        {
+          "slug": "showcase-organizer-create-playoff",
+          "title": "Organizer creates a Playoff"
         },
         {
           "slug": "showcase-organizer-create-multi-rr",
@@ -63,16 +67,20 @@
       "collapsed": false,
       "scenarios": [
         {
+          "slug": "showcase-admin-payment-log",
+          "title": "Admin clears a cash payment"
+        },
+        {
+          "slug": "showcase-admin-attendance-log",
+          "title": "Admin reviews Attendance Log"
+        },
+        {
           "slug": "showcase-admin-create-junior-plan",
           "title": "Admin creates a Junior plan price"
         },
         {
           "slug": "showcase-admin-system-config",
           "title": "Admin updates System Settings"
-        },
-        {
-          "slug": "showcase-admin-front-desk",
-          "title": "Admin front desk (payments + attendance + kiosk)"
         },
         {
           "slug": "showcase-admin-enter-score",

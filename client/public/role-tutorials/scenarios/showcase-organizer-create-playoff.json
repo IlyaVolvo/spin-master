@@ -1,0 +1,201 @@
+{
+  "slug": "showcase-organizer-create-playoff",
+  "role": "organizer",
+  "title": "Organizer creates a Playoff",
+  "description": "Create a Playoff end-to-end: pick the format, select players one by one (with a note on repeating), review the rating-seeded bracket (and rearrange rules), confirm first-round matches, and open the new tournament page.",
+  "relatedSlugs": [
+    "showcase-organizer-create-rr",
+    "showcase-organizer-create-multi-rr"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "org-home",
+      "title": "Organizer on Players",
+      "body": "Organizers see + Tournament. Playoff builds a single-elimination bracket from the selected roster.",
+      "image": "assets/showcase-organizer-create-playoff/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-wizard",
+      "title": "Start a tournament",
+      "body": "Open the type modal. You will choose Playoff before naming and selecting players.",
+      "image": "assets/showcase-organizer-create-playoff/step-02.png",
+      "kind": "action",
+      "actionHint": "Click + Tournament",
+      "hotspot": {
+        "x": 38.9,
+        "y": 21.3,
+        "w": 6.6,
+        "h": 2.5
+      }
+    },
+    {
+      "id": "type-modal",
+      "title": "Tournament type modal",
+      "body": "Formats include Round Robin, Playoff, Multi RR, Preliminary compounds, and Swiss.",
+      "image": "assets/showcase-organizer-create-playoff/step-03.png",
+      "kind": "result",
+      "resultNote": "Wizard opened from + Tournament."
+    },
+    {
+      "id": "pick-playoff",
+      "title": "Choose Playoff",
+      "body": "Select Playoff / Bracket for a single-elimination event with automatic winner advancement.",
+      "image": "assets/showcase-organizer-create-playoff/step-04.png",
+      "kind": "action",
+      "actionHint": "Select Playoff / Bracket",
+      "hotspot": {
+        "x": 37.1,
+        "y": 43.3,
+        "w": 0.8,
+        "h": 1.3
+      }
+    },
+    {
+      "id": "playoff-selected",
+      "title": "Playoff selected",
+      "body": "The selected format is highlighted. Optionally set a name, then continue to player selection.",
+      "image": "assets/showcase-organizer-create-playoff/step-05.png",
+      "kind": "result",
+      "resultNote": "PLAYOFF radio is checked."
+    },
+    {
+      "id": "next-players",
+      "title": "Continue to players",
+      "body": "Advance to the shared player picker. Playoff needs at least four players (eight fills a clean power-of-two bracket).",
+      "image": "assets/showcase-organizer-create-playoff/step-06.png",
+      "kind": "action",
+      "actionHint": "Click Next",
+      "hotspot": {
+        "x": 59.4,
+        "y": 75.4,
+        "w": 4.4,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "player-picker",
+      "title": "Player selection",
+      "body": "Each row has a checkbox. You build the field by selecting members one at a time.",
+      "image": "assets/showcase-organizer-create-playoff/step-07.png",
+      "kind": "result",
+      "resultNote": "Wizard moved to the player selection step."
+    },
+    {
+      "id": "pick-one-player",
+      "title": "Select a player",
+      "body": "Check one member to add them to the Playoff field.",
+      "image": "assets/showcase-organizer-create-playoff/step-08.png",
+      "kind": "action",
+      "actionHint": "Click a player checkbox",
+      "hotspot": {
+        "x": 17.1,
+        "y": 56,
+        "w": 0.8,
+        "h": 1.3
+      }
+    },
+    {
+      "id": "one-selected",
+      "title": "One player included",
+      "body": "That member is now counted in the selection total. Playoff still needs more players before you can continue.",
+      "image": "assets/showcase-organizer-create-playoff/step-09.png",
+      "kind": "result",
+      "resultNote": "First checkbox applied; selection count increased by one."
+    },
+    {
+      "id": "more-selections-same",
+      "title": "More selections work the same",
+      "body": "You can check several more players the same way. The next screen skips those repeated clicks and shows a full enough roster for the bracket.",
+      "image": "assets/showcase-organizer-create-playoff/step-10.png",
+      "kind": "bridge",
+      "autoAdvanceMs": 3800
+    },
+    {
+      "id": "roster-selected",
+      "title": "Roster filled in",
+      "body": "After repeating the selection, enough members are checked. Continue opens the seeded bracket preview.",
+      "image": "assets/showcase-organizer-create-playoff/step-11.png",
+      "kind": "result",
+      "resultNote": "Multiple players selected behind the scenes for the Playoff field."
+    },
+    {
+      "id": "continue-bracket",
+      "title": "Continue to bracket",
+      "body": "Leave player selection and open the bracket organizer. Seeds are placed automatically; you can drag to rearrange.",
+      "image": "assets/showcase-organizer-create-playoff/step-12.png",
+      "kind": "action",
+      "actionHint": "Click Continue",
+      "hotspot": {
+        "x": 74.5,
+        "y": 39.1,
+        "w": 5.8,
+        "h": 3.2
+      }
+    },
+    {
+      "id": "bracket-preview",
+      "title": "Bracket preview",
+      "body": "The bracket shows first-round slots (and BYEs when the field is not a power of two). Initial pairing comes from ratings; you can rearrange before continuing.",
+      "image": "assets/showcase-organizer-create-playoff/step-13.png",
+      "kind": "result",
+      "resultNote": "Playoff bracket organize step is open with a seeded preview."
+    },
+    {
+      "id": "attention-rearrange",
+      "title": "Rearranging the bracket",
+      "body": "Initial pairing is based on ratings. You can rearrange by dragging players from one spot to another. Rules: (1) No pair can be left without players — a match cannot end up empty. (2) To replace a player, move them to the temporary drop zone first, introduce the new opponent into the freed slot, then move the held player against their intended opponent.",
+      "image": "assets/showcase-organizer-create-playoff/step-14.png",
+      "kind": "attention"
+    },
+    {
+      "id": "continue-first-round",
+      "title": "Continue to first round",
+      "body": "When the bracket looks right, continue to review the first-round matchups.",
+      "image": "assets/showcase-organizer-create-playoff/step-15.png",
+      "kind": "action",
+      "actionHint": "Click Continue",
+      "hotspot": {
+        "x": 43.9,
+        "y": 77.8,
+        "w": 6.3,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "first-round-confirm",
+      "title": "First round matches",
+      "body": "Review who plays whom in round one, then create the Playoff.",
+      "image": "assets/showcase-organizer-create-playoff/step-16.png",
+      "kind": "result",
+      "resultNote": "First Round Matches list and Create Tournament are visible."
+    },
+    {
+      "id": "create-tournament",
+      "title": "Create the tournament",
+      "body": "Finalize creation. The app opens the new Playoff page with the live bracket.",
+      "image": "assets/showcase-organizer-create-playoff/step-17.png",
+      "kind": "action",
+      "actionHint": "Click Create Tournament",
+      "hotspot": {
+        "x": 41.8,
+        "y": 64.3,
+        "w": 10.5,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "tournament-page",
+      "title": "Tournament page",
+      "body": "You land on the Playoff detail view with the bracket ready for day-of scoring.",
+      "image": "assets/showcase-organizer-create-playoff/step-18.png",
+      "kind": "result",
+      "resultNote": "Create Tournament succeeded; detail page shows the Playoff event."
+    }
+  ],
+  "showcase": true
+}

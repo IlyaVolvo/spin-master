@@ -11,6 +11,7 @@
     action: 'Your action',
     result: 'Result',
     bridge: 'Same for others',
+    attention: 'Attention',
   };
 
   const DEFAULT_BRIDGE_MS = 3800;
@@ -50,6 +51,9 @@
     completeBody: document.getElementById('complete-body'),
     btnNextShowcase: document.getElementById('btn-next-showcase'),
     completeNextHint: document.getElementById('complete-next-hint'),
+    attentionOverlay: document.getElementById('attention-overlay'),
+    attentionTitle: document.getElementById('attention-title'),
+    attentionMessage: document.getElementById('attention-message'),
   };
 
   function slugFromQuery() {
@@ -248,6 +252,7 @@
 
     const kind = inferKind(step);
     const hasHotspot = !!step.hotspot;
+    const isAttention = kind === 'attention';
     const autoMs =
       typeof step.autoAdvanceMs === 'number' && step.autoAdvanceMs > 0
         ? step.autoAdvanceMs
@@ -266,39 +271,57 @@
       show(els.stepKind, true);
     }
 
-    if (hasHotspot) {
-      els.actionHint.textContent = 'Do this: ' + (step.actionHint || 'Click the highlighted control');
+    if (isAttention) {
+      if (els.attentionTitle) els.attentionTitle.textContent = step.title || 'Attention';
+      if (els.attentionMessage) els.attentionMessage.textContent = step.body || '';
+      show(els.attentionOverlay, true);
+      if (els.attentionOverlay) {
+        els.attentionOverlay.classList.remove('flash-twice');
+        void els.attentionOverlay.offsetWidth;
+        els.attentionOverlay.classList.add('flash-twice');
+      }
+      els.actionHint.textContent = 'Click anywhere to continue';
       show(els.actionHint, true);
-    } else if (autoMs > 0) {
-      els.actionHint.textContent = 'Continuing automatically…';
-      show(els.actionHint, true);
-    } else {
-      els.actionHint.textContent =
-        stepIndex >= scenario.steps.length - 1
-          ? 'Click the screen to finish'
-          : 'Click the screen to continue';
-      show(els.actionHint, true);
-    }
-
-    if (step.resultNote) {
-      els.resultNote.textContent = 'What changed: ' + step.resultNote;
-      show(els.resultNote, true);
-    } else if (kind === 'result') {
-      els.resultNote.textContent =
-        'What changed: Review the screen — this is the outcome of the previous action.';
-      show(els.resultNote, true);
-    } else if (kind === 'bridge') {
-      els.resultNote.textContent =
-        'What changed: Further selections use the same control — shown next without repeating each click.';
-      show(els.resultNote, true);
-    } else {
       show(els.resultNote, false);
+    } else {
+      show(els.attentionOverlay, false);
+      if (els.attentionOverlay) els.attentionOverlay.classList.remove('flash-twice');
+
+      if (hasHotspot) {
+        els.actionHint.textContent = 'Do this: ' + (step.actionHint || 'Click the highlighted control');
+        show(els.actionHint, true);
+      } else if (autoMs > 0) {
+        els.actionHint.textContent = 'Continuing automatically…';
+        show(els.actionHint, true);
+      } else {
+        els.actionHint.textContent =
+          stepIndex >= scenario.steps.length - 1
+            ? 'Click the screen to finish'
+            : 'Click the screen to continue';
+        show(els.actionHint, true);
+      }
+
+      if (step.resultNote) {
+        els.resultNote.textContent = 'What changed: ' + step.resultNote;
+        show(els.resultNote, true);
+      } else if (kind === 'result') {
+        els.resultNote.textContent =
+          'What changed: Review the screen — this is the outcome of the previous action.';
+        show(els.resultNote, true);
+      } else if (kind === 'bridge') {
+        els.resultNote.textContent =
+          'What changed: Further selections use the same control — shown next without repeating each click.';
+        show(els.resultNote, true);
+      } else {
+        show(els.resultNote, false);
+      }
     }
 
     // Back always available: first step returns to intro.
     els.btnBack.disabled = false;
     els.stage.classList.toggle('clickable-advance', !hasHotspot);
     els.stage.classList.toggle('auto-advance', autoMs > 0);
+    els.stage.classList.toggle('attention-mode', isAttention);
     if (autoMs > 0) {
       els.stage.style.animationDuration = autoMs + 'ms';
     } else {

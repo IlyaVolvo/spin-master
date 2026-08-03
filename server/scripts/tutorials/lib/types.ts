@@ -5,9 +5,10 @@ export type ScenarioRole = 'player' | 'organizer' | 'admin';
 
 /**
  * context = orient; action = click hotspot; result = outcome of prior action;
- * bridge = brief timed note (auto-advances; used after the first of several similar selections)
+ * bridge = brief timed note (auto-advances; used after the first of several similar selections);
+ * attention = message-first beat (flashes; advances only on click anywhere)
  */
-export type StepKind = 'context' | 'action' | 'result' | 'bridge';
+export type StepKind = 'context' | 'action' | 'result' | 'bridge' | 'attention';
 
 export type ScenarioStepDef = {
   id: string;

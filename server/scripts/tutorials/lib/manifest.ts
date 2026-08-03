@@ -13,7 +13,7 @@ const ROLE_META: Record<(typeof ROLE_ORDER)[number], { label: string; blurb: str
   },
   organizer: {
     label: 'Organizer',
-    blurb: 'Tournament walkthroughs — create events and correct completed scores.',
+    blurb: 'Tournament walkthroughs — create Round Robin, Playoff, Multi RR, and correct completed scores.',
   },
   admin: {
     label: 'Administrator',
@@ -93,6 +93,19 @@ const SHOWCASE_ORDER_WITHIN_ROLE: Partial<Record<(typeof ROLE_ORDER)[number], st
     'showcase-player-rating-history',
     'showcase-player-view-stats',
     'showcase-player-multi-stats',
+  ],
+  organizer: [
+    'showcase-organizer-create-rr',
+    'showcase-organizer-create-playoff',
+    'showcase-organizer-create-multi-rr',
+    'showcase-organizer-correct-completed-score',
+  ],
+  admin: [
+    'showcase-admin-payment-log',
+    'showcase-admin-attendance-log',
+    'showcase-admin-create-junior-plan',
+    'showcase-admin-system-config',
+    'showcase-admin-enter-score',
   ],
 };
 

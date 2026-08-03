@@ -4,8 +4,8 @@
   "title": "Organizer creates a Round Robin",
   "description": "Create a Round Robin end-to-end: pick the format, select players one by one (with a note on repeating), finalize, and open the new tournament page.",
   "relatedSlugs": [
-    "showcase-organizer-create-multi-rr",
-    "showcase-admin-front-desk"
+    "showcase-organizer-create-playoff",
+    "showcase-organizer-create-multi-rr"
   ],
   "viewport": {
     "width": 1600,

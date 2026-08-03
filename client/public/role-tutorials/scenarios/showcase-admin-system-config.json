@@ -2,10 +2,10 @@
   "slug": "showcase-admin-system-config",
   "role": "admin",
   "title": "Admin updates System Settings",
-  "description": "Update club branding and tournament defaults from System Settings: Club Name, Club Timezone, Round Robin and Multi Round Robin rules, and Public Achievements. Changes stay local until you Save.",
+  "description": "Update Public Achievements from System Settings: Apply Set all to 3, change Biggest upset to 1, then Save — the values stay after save.",
   "relatedSlugs": [
-    "showcase-admin-front-desk",
-    "showcase-admin-create-junior-plan"
+    "showcase-admin-create-junior-plan",
+    "showcase-admin-payment-log"
   ],
   "viewport": {
     "width": 1600,
@@ -15,103 +15,73 @@
     {
       "id": "settings-home",
       "title": "System Settings",
-      "body": "Club Name and Timezone stay at the top. Tournament Rules and Public Achievements are expandable sections below.",
+      "body": "Club Name and Timezone stay at the top. Expandable sections below include Tournament Rules and Public Achievements.",
       "image": "assets/showcase-admin-system-config/step-01.png",
       "kind": "context"
-    },
-    {
-      "id": "edit-club-name",
-      "title": "Edit Club Name",
-      "body": "Club Name appears in the header and public surfaces. Type the new display name for the club.",
-      "image": "assets/showcase-admin-system-config/step-02.png",
-      "kind": "action",
-      "actionHint": "Focus the Club Name field",
-      "hotspot": {
-        "x": 13.8,
-        "y": 26.3,
-        "w": 72.5,
-        "h": 4.8
-      }
-    },
-    {
-      "id": "branding-updated",
-      "title": "Name and timezone",
-      "body": "Set Club Name to “Portland TT Club Showcase” and Club Timezone to America/New_York. Timezone drives club calendar days for check-in and midnight jobs.",
-      "image": "assets/showcase-admin-system-config/step-03.png",
-      "kind": "result",
-      "resultNote": "Club Name and Timezone updated in the form (not saved yet)."
-    },
-    {
-      "id": "open-tournament-rules",
-      "title": "Open Tournament Rules",
-      "body": "Expand Tournament Rules to tune format minima used when organizers create events.",
-      "image": "assets/showcase-admin-system-config/step-04.png",
-      "kind": "action",
-      "actionHint": "Click Tournament Rules",
-      "hotspot": {
-        "x": 13.8,
-        "y": 48.4,
-        "w": 72.5,
-        "h": 4.8
-      }
-    },
-    {
-      "id": "rr-settings",
-      "title": "Round Robin settings",
-      "body": "Round Robin controls min/max players and Early Complete Min %. Here Early Complete is set to 80%.",
-      "image": "assets/showcase-admin-system-config/step-05.png",
-      "kind": "result",
-      "resultNote": "Round Robin subsection open with Early Complete Min % = 80."
-    },
-    {
-      "id": "open-multi-rr",
-      "title": "Open Multi Round Robins",
-      "body": "Multi Round Robins settings include minimum roster size and the default players-per-group size.",
-      "image": "assets/showcase-admin-system-config/step-06.png",
-      "kind": "action",
-      "actionHint": "Click Multi Round Robins",
-      "hotspot": {
-        "x": 14.9,
-        "y": 56.3,
-        "w": 70.1,
-        "h": 3.6
-      }
-    },
-    {
-      "id": "multi-rr-settings",
-      "title": "Multi RR settings",
-      "body": "Default Size is the suggested group size when creating a Multi Round Robin. Here it is set to 5.",
-      "image": "assets/showcase-admin-system-config/step-07.png",
-      "kind": "result",
-      "resultNote": "Multi Round Robins open with Default Size = 5."
     },
     {
       "id": "open-achievements",
       "title": "Open Public Achievements",
       "body": "Public Achievements controls how many results each board shows on the public achievements page (0 hides a board).",
-      "image": "assets/showcase-admin-system-config/step-08.png",
+      "image": "assets/showcase-admin-system-config/step-02.png",
       "kind": "action",
       "actionHint": "Click Public Achievements",
       "hotspot": {
         "x": 13.8,
-        "y": 77.8,
+        "y": 44.2,
         "w": 72.5,
         "h": 4.8
       }
     },
     {
-      "id": "achievements-updated",
-      "title": "Achievements configured",
-      "body": "Use Set all to and Apply to all to publish every board with the same list length — here 10 results each.",
-      "image": "assets/showcase-admin-system-config/step-09.png",
+      "id": "set-all-to-3",
+      "title": "Set all boards to 3",
+      "body": "Enter 3 in Set all to, then Apply to all so every achievement board uses the same list length.",
+      "image": "assets/showcase-admin-system-config/step-03.png",
+      "kind": "action",
+      "actionHint": "Click Apply to all",
+      "hotspot": {
+        "x": 45.2,
+        "y": 48.1,
+        "w": 6.9,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "all-set-to-3",
+      "title": "All boards at 3",
+      "body": "Every achievement board now shows 3. Next, override one board individually.",
+      "image": "assets/showcase-admin-system-config/step-04.png",
       "kind": "result",
-      "resultNote": "Public Achievements set to 10 for all boards via Apply to all."
+      "resultNote": "Apply to all filled each board with 3."
+    },
+    {
+      "id": "click-biggest-upset",
+      "title": "Select Biggest upset",
+      "body": "Click the Biggest upset value to edit that board only. It still shows 3 from Apply to all.",
+      "image": "assets/showcase-admin-system-config/step-05.png",
+      "kind": "action",
+      "actionHint": "Click Biggest upset",
+      "hotspot": {
+        "x": 38.5,
+        "y": 48.2,
+        "w": 46.6,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "biggest-upset-to-1",
+      "title": "Biggest upset set to 1",
+      "body": "Change Biggest upset to 1. Other boards remain at 3.",
+      "image": "assets/showcase-admin-system-config/step-06.png",
+      "kind": "result",
+      "resultNote": "Biggest upset → 1; other boards still 3 (unsaved)."
     },
     {
       "id": "save-settings",
       "title": "Save System Settings",
-      "body": "Apply all of the branding, tournament-rule, and achievement edits, then Save. The floating bar shows Unsaved changes until you confirm.",
-      "image": "assets/showcase-admin-system-config/step-10.png",
+      "body": "The floating bar shows Unsaved changes. Click Save to persist Biggest upset = 1 and the other boards at 3.",
+      "image": "assets/showcase-admin-system-config/step-07.png",
       "kind": "action",
       "actionHint": "Click Save",
       "hotspot": {
@@ -124,10 +94,10 @@
     {
       "id": "settings-saved",
       "title": "Settings saved",
-      "body": "The bar returns to All saved. Club Name, Timezone, RR / Multi RR defaults, and achievement boards are now live for the club.",
-      "image": "assets/showcase-admin-system-config/step-11.png",
+      "body": "After Save, the values stay the same: Biggest upset is still 1 and the other boards are still 3. The bar shows All saved.",
+      "image": "assets/showcase-admin-system-config/step-08.png",
       "kind": "result",
-      "resultNote": "System Settings saved successfully."
+      "resultNote": "Saved values unchanged — Biggest upset 1, others 3."
     }
   ],
   "showcase": true
