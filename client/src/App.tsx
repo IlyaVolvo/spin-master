@@ -1046,49 +1046,122 @@ function Header({
   
   return (
     <>
-    {clubName ? (
+    {(clubName || userName) ? (
       <div
         style={{
           display: 'flex',
-          justifyContent: 'center',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
           padding: '0 16px 10px',
           maxWidth: '100%',
         }}
       >
-        <span
-          className="app-header-club"
+        <div style={{ flex: '1 1 0', minWidth: 0 }} aria-hidden="true" />
+        <div
           style={{
-            display: 'inline-block',
-            boxSizing: 'border-box',
-            maxWidth: '100%',
-            padding: '6px 16px',
-            backgroundColor: '#2c3e50',
-            color: 'white',
-            borderRadius: '999px',
-            fontSize: '17px',
-            fontWeight: 600,
-            letterSpacing: '0.02em',
-            lineHeight: 1.25,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            flex: '0 1 auto',
+            minWidth: 0,
+            display: 'flex',
+            justifyContent: 'center',
           }}
-          title={todayHours.comment || undefined}
         >
-          {clubName}
-          <span
-            style={{
-              fontSize: '12px',
-              fontWeight: 500,
-              color: 'rgba(255, 255, 255, 0.8)',
-              letterSpacing: '0.01em',
-              marginLeft: '0.35em',
-            }}
-          >
-            ({todayHours.label}
-            {todayHours.comment ? ` · ${todayHours.comment}` : ''})
-          </span>
-        </span>
+          {clubName ? (
+            <span
+              className="app-header-club"
+              style={{
+                display: 'inline-block',
+                boxSizing: 'border-box',
+                maxWidth: '100%',
+                padding: '6px 16px',
+                backgroundColor: '#2c3e50',
+                color: 'white',
+                borderRadius: '999px',
+                fontSize: '17px',
+                fontWeight: 600,
+                letterSpacing: '0.02em',
+                lineHeight: 1.25,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={todayHours.comment || undefined}
+            >
+              {clubName}
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: 'rgba(255, 255, 255, 0.8)',
+                  letterSpacing: '0.01em',
+                  marginLeft: '0.35em',
+                }}
+              >
+                ({todayHours.label}
+                {todayHours.comment ? ` · ${todayHours.comment}` : ''})
+              </span>
+            </span>
+          ) : null}
+        </div>
+        <div
+          style={{
+            flex: '1 1 0',
+            minWidth: 0,
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          {userName ? (
+            <span
+              className="app-header-club"
+              style={{
+                display: 'inline-block',
+                boxSizing: 'border-box',
+                maxWidth: '100%',
+                padding: '6px 16px',
+                backgroundColor: '#2c3e50',
+                color: 'white',
+                borderRadius: '999px',
+                fontSize: '17px',
+                fontWeight: 600,
+                letterSpacing: '0.02em',
+                lineHeight: 1.25,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={userName}
+            >
+              {userName}
+              {userRoles.length > 0 && !kioskMode ? (
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    letterSpacing: '0.01em',
+                    marginLeft: '0.35em',
+                  }}
+                >
+                  ({formatRoles(userRoles)})
+                </span>
+              ) : null}
+              {kioskMode ? (
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    letterSpacing: '0.01em',
+                    marginLeft: '0.35em',
+                  }}
+                >
+                  (Kiosk{kioskKind ? `: ${kioskKind}` : ''})
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
       </div>
     ) : null}
     <div className="header" style={{
@@ -1406,9 +1479,7 @@ function Header({
         </h1>
         <div className="app-header-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
           <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {userName && (
-                <>
-                  {!kioskMode && (
+              {userName && !kioskMode && (
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       <button
                         type="button"
@@ -1479,36 +1550,6 @@ function Header({
                         ⚙️
                       </button>
                     </div>
-                  )}
-                  <span style={{
-                    ...headerIconControlSize,
-                    color: 'white',
-                    fontWeight: '500',
-                    padding: '10px 12px 12px 12px',
-                    minWidth: 'auto',
-                    height: '44px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    borderRadius: '4px',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {userName}
-                    {userRoles.length > 0 && !kioskMode && (
-                      <span style={{
-                        fontSize: '12px',
-                        fontWeight: 'normal',
-                        marginLeft: '4px',
-                        opacity: 0.9
-                      }}>
-                        ({formatRoles(userRoles)})
-                      </span>
-                    )}
-                    {kioskMode && (
-                      <span style={{ fontSize: '12px', marginLeft: '6px', opacity: 0.95 }}>
-                        (Kiosk{kioskKind ? `: ${kioskKind}` : ''})
-                      </span>
-                    )}
-                  </span>
-                </>
               )}
               {!kioskMode && (
                 <button
