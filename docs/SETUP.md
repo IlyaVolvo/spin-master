@@ -7,15 +7,15 @@
 
 ## Interactive role tutorials (optional)
 
-Static walkthroughs live at `/role-tutorials/` (no auth). To re-record from the real UI:
+Static walkthroughs live at `/role-tutorials/` (no auth). To re-record showcases from the real UI after a layout change:
 
 1. Create a dedicated DB whose name includes `tutorial` (e.g. `createdb spin_master_tutorials`).
 2. Set `DATABASE_URL_TUTORIAL` in `server/.env` (see `server/env.example`).
-3. `cd server && npm run tutorials:reset-seed`
-4. Start the API with `DATABASE_URL` pointing at that same tutorial database (and the Vite client as usual).
-5. `cd server && npm run tutorials:capture`
+3. `cd server && npm run tutorials:recapture-showcases`
 
-Details: `docs/INTERACTIVE_ROLE_TUTORIALS_PLAN.md`.
+That one command resets/seeds the tutorial DB, starts ephemeral API+Vite on ports 3011/3010, captures all showcase scenarios, refreshes the catalog, and stops those servers. Your normal dev servers are left alone.
+
+Manual steps (or subset capture) are still available via `tutorials:reset-seed` + `tutorials:capture` — see `docs/INTERACTIVE_ROLE_TUTORIALS_PLAN.md`.
 
 ## 1) Install dependencies
 

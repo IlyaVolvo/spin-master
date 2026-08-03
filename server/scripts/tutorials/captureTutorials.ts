@@ -101,12 +101,20 @@ async function main() {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  const showcasesOnly =
+    process.env.TUTORIAL_CAPTURE_SHOWCASES === '1' ||
+    process.env.TUTORIAL_CAPTURE_SHOWCASES_ONLY === '1';
   const queue = only.length
     ? ALL_SCENARIOS.filter((s) => only.includes(s.slug))
-    : ALL_SCENARIOS;
+    : showcasesOnly
+      ? ALL_SCENARIOS.filter((s) => s.showcase)
+      : ALL_SCENARIOS;
   if (only.length && queue.length !== only.length) {
     const missing = only.filter((s) => !queue.some((q) => q.slug === s));
     console.warn('[tutorials:capture] Unknown slugs in TUTORIAL_CAPTURE_ONLY:', missing.join(', '));
+  }
+  if (!only.length && showcasesOnly) {
+    console.log(`[tutorials:capture] Showcases only (${queue.length} scenarios)`);
   }
 
   const results: Array<{ slug: string; ok: boolean; error?: string }> = [];
