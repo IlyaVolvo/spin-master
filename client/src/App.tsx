@@ -1176,11 +1176,115 @@ function Header({
         className="app-header-row"
         style={{
         display: 'flex',
-        alignItems: 'flex-start',
+        alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
-        gap: '15px'
+        gap: '15px',
+        paddingBottom: '22px',
       }}>
+        <div
+          className="app-header-left"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            flexShrink: 0,
+            minWidth: 0,
+          }}
+        >
+        <h1
+          className="app-header-title"
+          style={{
+          margin: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          justifyContent: 'flex-start',
+          flex: '0 0 auto',
+        }}>
+          <div className="app-header-logo-wrap" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
+            <span
+              aria-label={`Build ${changesetId}`}
+              title={changesetId}
+              style={{
+                position: 'absolute',
+                left: '50%',
+                bottom: 'calc(100% + 3px)',
+                transform: 'translateX(-50%)',
+                color: 'rgba(255, 255, 255, 0.45)',
+                fontSize: '9px',
+                fontFamily: 'monospace',
+                letterSpacing: '0.06em',
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+            >
+              {changesetId}
+            </span>
+            <span className="app-header-paddle">🏓</span>
+            <span
+              className="app-header-logo-box"
+              style={{
+              background: 'linear-gradient(to bottom, #4682B4 0%, #5F9EA0 50%, #4682B4 100%)',
+              color: 'white',
+              padding: '17px 8px',
+              borderRadius: '10px',
+              border: '1px solid white',
+              position: 'relative',
+              boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              width: '170px'
+            }}>
+              <div style={{ 
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                zIndex: 2
+              }}>
+                <span
+                  className="app-header-logo-text"
+                  style={{
+                  fontSize: '22px',
+                  fontWeight: '600',
+                  marginLeft: '15px'
+                }}>Spin</span>
+              </div>
+              <span style={{ 
+                position: 'absolute', 
+                left: '50%', 
+                top: '0',
+                bottom: '0',
+                transform: 'translateX(-50%)',
+                width: '3px',
+                background: 'white',
+                zIndex: 1
+              }}></span>
+              <div style={{ 
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                zIndex: 2
+              }}>
+                <span
+                  className="app-header-logo-text"
+                  style={{
+                  fontSize: '22px',
+                  fontWeight: '600',
+                  marginLeft: '5px'
+                }}>Master</span>
+              </div>
+            </span>
+            <span className="app-header-paddle">🏓</span>
+          </div>
+        </h1>
         <div
           className="app-header-tabs"
           style={{
@@ -1268,7 +1372,7 @@ function Header({
           </a>
           )}
           {isAdminUser ? (
-            <div ref={adminMenuRef} style={{ position: 'relative', marginLeft: '18px' }}>
+            <div ref={adminMenuRef} style={{ position: 'relative', marginLeft: '8px' }}>
               <button
                 type="button"
                 className="app-header-tab"
@@ -1385,100 +1489,19 @@ function Header({
           ) : null}
           </div>
         </div>
-        <h1
-          className="app-header-title"
+        </div>
+        <div
+          className="app-header-user"
           style={{
-          margin: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          flex: 1,
-        }}>
-          <div className="app-header-logo-wrap" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
-            <span
-              aria-label={`Build ${changesetId}`}
-              title={changesetId}
-              style={{
-                position: 'absolute',
-                left: '50%',
-                bottom: 'calc(100% + 3px)',
-                transform: 'translateX(-50%)',
-                color: 'rgba(255, 255, 255, 0.45)',
-                fontSize: '9px',
-                fontFamily: 'monospace',
-                letterSpacing: '0.06em',
-                lineHeight: 1,
-                whiteSpace: 'nowrap',
-                pointerEvents: 'none',
-                userSelect: 'none',
-              }}
-            >
-              {changesetId}
-            </span>
-            <span className="app-header-paddle">🏓</span>
-            <span
-              className="app-header-logo-box"
-              style={{
-              background: 'linear-gradient(to bottom, #4682B4 0%, #5F9EA0 50%, #4682B4 100%)',
-              color: 'white',
-              padding: '17px 8px',
-              borderRadius: '10px',
-              border: '1px solid white',
-              position: 'relative',
-              boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-              overflow: 'hidden',
-              display: 'flex',
-              alignItems: 'center',
-              width: '170px'
-            }}>
-              <div style={{ 
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-                zIndex: 2
-              }}>
-                <span
-                  className="app-header-logo-text"
-                  style={{
-                  fontSize: '22px',
-                  fontWeight: '600',
-                  marginLeft: '15px'
-                }}>Spin</span>
-              </div>
-              <span style={{ 
-                position: 'absolute', 
-                left: '50%', 
-                top: '0',
-                bottom: '0',
-                transform: 'translateX(-50%)',
-                width: '3px',
-                background: 'white',
-                zIndex: 1
-              }}></span>
-              <div style={{ 
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-                zIndex: 2
-              }}>
-                <span
-                  className="app-header-logo-text"
-                  style={{
-                  fontSize: '22px',
-                  fontWeight: '600',
-                  marginLeft: '5px'
-                }}>Master</span>
-              </div>
-            </span>
-            <span className="app-header-paddle">🏓</span>
-          </div>
-        </h1>
-        <div className="app-header-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            marginLeft: 'auto',
+            flexShrink: 0,
+          }}
+        >
           <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               {userName && !kioskMode && (
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -1555,17 +1578,17 @@ function Header({
               )}
               {!kioskMode && (
                 <button
+                  type="button"
                   onClick={onLogout}
+                  title="Logout"
+                  aria-label="Logout"
                   style={{
                     ...headerIconControlSize,
-                    minWidth: 'auto',
-                    padding: '10px 16px 12px 16px',
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
                     color: 'white',
                     border: 'none',
                     borderRadius: '4px',
                     cursor: 'pointer',
-                    fontWeight: 500,
                     transition: 'background-color 0.2s',
                   }}
                   onMouseEnter={(e) => {
@@ -1575,17 +1598,34 @@ function Header({
                     e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
                   }}
                 >
-                  Logout
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
                 </button>
               )}
             </div>
             <div
+              className="app-header-user-links"
               style={{
+                position: 'absolute',
+                top: 'calc(100% + 4px)',
+                right: 0,
                 display: 'flex',
                 flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'flex-start',
-                alignSelf: 'flex-start',
+                justifyContent: 'flex-end',
                 gap: '6px',
                 minHeight: '18px',
               }}

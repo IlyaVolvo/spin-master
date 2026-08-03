@@ -68,8 +68,12 @@ html {
   }
 }
 
-/* --- App shell header (Players / Tournaments + title + user) --- */
+/* --- App shell header (logo + Tournaments/Admin | Players + user) --- */
 .app-header-row {
+  min-width: 0;
+}
+
+.app-header-left {
   min-width: 0;
 }
 
@@ -103,20 +107,37 @@ html {
     gap: 12px !important;
   }
 
+  .app-header-left {
+    order: 1;
+    flex-direction: column !important;
+    align-items: center !important;
+    width: 100%;
+    gap: 10px !important;
+  }
+
   .app-header-tabs {
-    order: 2;
     justify-content: center;
+    align-items: center !important;
     width: 100%;
     margin-bottom: 0 !important;
   }
 
   .app-header-title {
-    order: 1;
+    align-items: center !important;
   }
 
   .app-header-user {
-    order: 3;
+    order: 2;
     align-items: center !important;
+    position: relative !important;
+  }
+
+  .app-header-user-links {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
+    justify-content: center !important;
+    margin-top: 6px;
   }
 
   .app-header-user-row {
