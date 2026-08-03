@@ -13,6 +13,7 @@ import { getErrorMessage } from './utils/errorHandler';
 import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail } from './utils/tournamentNavState';
 import { lazyWithReload } from './utils/lazyWithReload';
 import { PlayersKioskEntryButton } from './components/PlayersKioskEntryButton';
+import { HeaderSelfCheckinButton } from './components/HeaderSelfCheckinButton';
 
 // Lazy load route components for code splitting (auto-reload once if deploy invalidated chunks)
 const Players = lazyWithReload(() => import('./components/Players'));
@@ -1549,6 +1550,7 @@ function Header({
                       >
                         ⚙️
                       </button>
+                      <HeaderSelfCheckinButton controlStyle={headerIconControlSize} />
                     </div>
               )}
               {!kioskMode && (

@@ -504,11 +504,18 @@ router.get('/self/today', async (req: AuthRequest, res: Response) => {
       orderBy: { checkInAt: 'asc' },
     });
 
+    const openVisit = await prisma.clubVisit.findFirst({
+      where: { memberId, checkOutAt: null, rejectedAt: null },
+      orderBy: { checkInAt: 'desc' },
+      select: { id: true },
+    });
+
     const entitlement = await getActiveEntitlement(memberId);
 
     res.json({
       clubDate,
       visits,
+      present: Boolean(openVisit),
       entitlement: entitlement ? {
         id: entitlement.id,
         type: entitlement.type,
