@@ -27,8 +27,8 @@
       "kind": "action",
       "actionHint": "Click Payment Log",
       "hotspot": {
-        "x": 32.4,
-        "y": 13.6,
+        "x": 48.4,
+        "y": 14.5,
         "w": 15.2,
         "h": 3.6
       }
@@ -50,7 +50,7 @@
       "actionHint": "Uncheck Paid",
       "hotspot": {
         "x": 62.3,
-        "y": 26.7,
+        "y": 28.2,
         "w": 4.4,
         "h": 2.1
       }
@@ -72,7 +72,7 @@
       "actionHint": "Click Clear",
       "hotspot": {
         "x": 78.2,
-        "y": 35.9,
+        "y": 37.4,
         "w": 3.4,
         "h": 2.4
       }

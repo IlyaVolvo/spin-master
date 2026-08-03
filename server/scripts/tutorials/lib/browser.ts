@@ -42,7 +42,13 @@ export async function launchTutorialBrowser(): Promise<Browser> {
 
 async function waitForLoggedIn(page: Page, timeout = 45000): Promise<void> {
   await page.waitForFunction(
-    () => [...document.querySelectorAll('button')].some((b) => (b.textContent || '').includes('Logout')),
+    () =>
+      [...document.querySelectorAll('button')].some((b) => {
+        const label = (b.getAttribute('aria-label') || '').trim();
+        const title = (b.getAttribute('title') || '').trim();
+        const text = (b.textContent || '').trim();
+        return label === 'Logout' || title === 'Logout' || text.includes('Logout');
+      }),
     { timeout },
   );
 }
@@ -54,7 +60,15 @@ async function waitForLoginForm(page: Page, timeout = 20000): Promise<void> {
 export async function clickButtonContaining(page: Page, text: string): Promise<boolean> {
   return page.evaluate((t) => {
     const buttons = [...document.querySelectorAll('button')] as HTMLButtonElement[];
-    const b = buttons.find((x) => (x.textContent || '').includes(t));
+    const b = buttons.find((x) => {
+      const label = (x.getAttribute('aria-label') || '').trim();
+      const title = (x.getAttribute('title') || '').trim();
+      const body = (x.textContent || '').trim();
+      if (t === 'Logout') {
+        return label === 'Logout' || title === 'Logout' || body.includes('Logout');
+      }
+      return body.includes(t) || label.includes(t) || title.includes(t);
+    });
     if (!b) return false;
     b.click();
     return true;
@@ -91,7 +105,12 @@ export async function logout(page: Page): Promise<void> {
   await clickButtonContaining(page, 'Restore privileges');
   await delay(400);
   const hasLogout = await page.evaluate(() =>
-    [...document.querySelectorAll('button')].some((b) => (b.textContent || '').includes('Logout')),
+    [...document.querySelectorAll('button')].some((b) => {
+      const label = (b.getAttribute('aria-label') || '').trim();
+      const title = (b.getAttribute('title') || '').trim();
+      const text = (b.textContent || '').trim();
+      return label === 'Logout' || title === 'Logout' || text.includes('Logout');
+    }),
   );
   if (hasLogout) {
     await clickButtonContaining(page, 'Logout');

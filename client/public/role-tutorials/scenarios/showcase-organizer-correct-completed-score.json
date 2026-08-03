@@ -28,7 +28,7 @@
       "actionHint": "Open Tutorial Completed Round Robin",
       "hotspot": {
         "x": 15,
-        "y": 30,
+        "y": 31.5,
         "w": 70,
         "h": 5.1
       }
@@ -57,7 +57,7 @@
       "actionHint": "Click Correct scores",
       "hotspot": {
         "x": 16,
-        "y": 28.2,
+        "y": 29.7,
         "w": 2.1,
         "h": 2.5
       }

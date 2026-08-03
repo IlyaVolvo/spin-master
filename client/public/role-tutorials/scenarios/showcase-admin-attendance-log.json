@@ -27,8 +27,8 @@
       "kind": "action",
       "actionHint": "Click Attendance Log",
       "hotspot": {
-        "x": 32.4,
-        "y": 17.2,
+        "x": 48.4,
+        "y": 18.1,
         "w": 15.2,
         "h": 3.6
       }
@@ -50,7 +50,7 @@
       "actionHint": "Leave only Present checked",
       "hotspot": {
         "x": 48.5,
-        "y": 26.9,
+        "y": 28.4,
         "w": 5,
         "h": 2.1
       }
@@ -72,7 +72,7 @@
       "actionHint": "Look at From and To",
       "hotspot": {
         "x": 27.8,
-        "y": 26.1,
+        "y": 27.6,
         "w": 19.5,
         "h": 3.7
       }
@@ -85,7 +85,7 @@
       "kind": "attention",
       "hotspot": {
         "x": 27.8,
-        "y": 26.1,
+        "y": 27.6,
         "w": 19.5,
         "h": 3.7
       }

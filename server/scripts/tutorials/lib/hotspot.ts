@@ -20,7 +20,15 @@ export async function hotspotForSelector(page: Page, selector: string): Promise<
 export async function hotspotForButtonText(page: Page, text: string): Promise<HotspotPct> {
   const box = await page.evaluate((t) => {
     const buttons = [...document.querySelectorAll('button')] as HTMLButtonElement[];
-    const b = buttons.find((x) => (x.textContent || '').includes(t));
+    const b = buttons.find((x) => {
+      const label = (x.getAttribute('aria-label') || '').trim();
+      const title = (x.getAttribute('title') || '').trim();
+      const body = (x.textContent || '').trim();
+      if (t === 'Logout') {
+        return label === 'Logout' || title === 'Logout' || body.includes('Logout');
+      }
+      return body.includes(t) || label.includes(t) || title.includes(t);
+    });
     if (!b) return null;
     const r = b.getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height };

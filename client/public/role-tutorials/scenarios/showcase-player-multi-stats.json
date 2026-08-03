@@ -28,7 +28,7 @@
       "actionHint": "Click Stats",
       "hotspot": {
         "x": 48.2,
-        "y": 21.3,
+        "y": 22.8,
         "w": 3.2,
         "h": 2.5
       }
@@ -50,7 +50,7 @@
       "actionHint": "Click the checkbox for Tutorial PlayerOnly",
       "hotspot": {
         "x": 17.1,
-        "y": 74.8,
+        "y": 76.3,
         "w": 0.8,
         "h": 1.3
       }
@@ -80,7 +80,7 @@
       "actionHint": "Click View Statistics",
       "hotspot": {
         "x": 46.3,
-        "y": 25.6,
+        "y": 27.1,
         "w": 6.7,
         "h": 2.7
       }

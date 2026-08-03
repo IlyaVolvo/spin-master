@@ -28,7 +28,7 @@
       "actionHint": "Click + Tournament",
       "hotspot": {
         "x": 38.9,
-        "y": 21.3,
+        "y": 22.8,
         "w": 6.6,
         "h": 2.5
       }
@@ -94,7 +94,7 @@
       "actionHint": "Click a player checkbox",
       "hotspot": {
         "x": 17.1,
-        "y": 56,
+        "y": 57.5,
         "w": 0.8,
         "h": 1.3
       }
@@ -132,7 +132,7 @@
       "actionHint": "Click Continue",
       "hotspot": {
         "x": 74.5,
-        "y": 39.1,
+        "y": 40.6,
         "w": 5.8,
         "h": 3.2
       }

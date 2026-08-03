@@ -37,7 +37,12 @@ export function loginFormStep(
 
 export async function ensureLoggedIn(ctx: CaptureContext, email: string): Promise<void> {
   const loggedIn = await ctx.page.evaluate(() =>
-    [...document.querySelectorAll('button')].some((b) => (b.textContent || '').includes('Logout')),
+    [...document.querySelectorAll('button')].some((b) => {
+      const label = (b.getAttribute('aria-label') || '').trim();
+      const title = (b.getAttribute('title') || '').trim();
+      const text = (b.textContent || '').trim();
+      return label === 'Logout' || title === 'Logout' || text.includes('Logout');
+    }),
   );
   if (!loggedIn) {
     await ctx.loginAs(email);
@@ -880,10 +885,15 @@ export async function hotspotForTournamentType(
  */
 export async function ensureAdminSession(ctx: CaptureContext, email: string): Promise<void> {
   const state = await ctx.page.evaluate(() => {
-    const buttons = [...document.querySelectorAll('button')].map((b) => b.textContent || '');
+    const buttons = [...document.querySelectorAll('button')];
     return {
-      logout: buttons.some((t) => t.includes('Logout')),
-      restore: buttons.some((t) => t.includes('Restore privileges')),
+      logout: buttons.some((b) => {
+        const label = (b.getAttribute('aria-label') || '').trim();
+        const title = (b.getAttribute('title') || '').trim();
+        const text = (b.textContent || '').trim();
+        return label === 'Logout' || title === 'Logout' || text.includes('Logout');
+      }),
+      restore: buttons.some((b) => (b.textContent || '').includes('Restore privileges')),
     };
   });
   if (state.logout || state.restore) return;
