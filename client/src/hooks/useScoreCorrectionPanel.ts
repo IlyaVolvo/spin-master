@@ -3,6 +3,7 @@ import { useScoreCorrectionModeActive } from '../contexts/ScoreCorrectionModeCon
 import { isOrganizer } from '../utils/auth';
 import { correctCompletedMatchScore } from '../utils/correctMatchScoreApi';
 import api from '../utils/api';
+import { setCachedTournamentDetail } from '../utils/tournamentDetailCache';
 import {
   getCorrectionBannerText,
   isMatchCorrectable,
@@ -87,6 +88,9 @@ export function useScoreCorrectionPanel(
       callbacks.onSuccess?.('Score corrected successfully');
       try {
         const response = await api.get(`/tournaments/${tournament.id}`);
+        if (!response.data?.parentTournamentId) {
+          setCachedTournamentDetail(response.data);
+        }
         callbacks.onTournamentUpdate?.(response.data);
       } catch {
         callbacks.onTournamentUpdate?.(tournament);

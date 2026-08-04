@@ -40,6 +40,12 @@ import {
   upsertTournamentMatchScore,
 } from '../utils/matchScoreSubmit';
 import {
+  getCachedTournamentDetail,
+  invalidateTournamentDetailCache,
+  setCachedTournamentDetail,
+  shouldNetworkRefreshCachedTournament,
+} from '../utils/tournamentDetailCache';
+import {
   MATCH_RESULT_ALREADY_ENTERED_MESSAGE,
   isDuplicateScoreMessage,
   normalizeDuplicateScoreMessage,
@@ -271,13 +277,23 @@ const TournamentDetailPage: React.FC = () => {
   const { id: idParam } = useParams<{ id: string }>();
   const tournamentId = parseInt(idParam || '', 10);
   const [isUserOrganizer, setIsUserOrganizer] = useState<boolean>(false);
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [activeTournaments, setActiveTournaments] = useState<Tournament[]>([]);
+  const initialCached =
+    Number.isFinite(tournamentId) && tournamentId > 0
+      ? getCachedTournamentDetail(tournamentId)
+      : null;
+  const initialRoot =
+    initialCached && initialCached.id === tournamentId ? initialCached : null;
+  const [tournaments, setTournaments] = useState<Tournament[]>(() =>
+    initialRoot && initialRoot.status !== 'ACTIVE' ? [initialRoot] : [],
+  );
+  const [activeTournaments, setActiveTournaments] = useState<Tournament[]>(() =>
+    initialRoot && initialRoot.status === 'ACTIVE' ? [initialRoot] : [],
+  );
   const [standaloneMatches, setStandaloneMatches] = useState<StandaloneMatchFromAPI[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialRoot);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(() => initialRoot);
   const [expandedDetails, setExpandedDetails] = useState<Set<number>>(new Set());
   const [editingTournamentName, setEditingTournamentName] = useState<number | null>(null);
   const [tournamentNameEdit, setTournamentNameEdit] = useState('');
@@ -662,8 +678,9 @@ const TournamentDetailPage: React.FC = () => {
     checkOrganizerStatus();
   }, []);
 
-  const fetchData = useCallback(async (options?: { silent?: boolean }) => {
-    const silent = options?.silent === true;
+  const fetchData = useCallback(async (options?: { silent?: boolean; force?: boolean }) => {
+    let silent = options?.silent === true;
+    const force = options?.force === true;
 
     if (!Number.isFinite(tournamentId) || tournamentId <= 0) {
       saveShouldRestoreDetail(false);
@@ -672,18 +689,7 @@ const TournamentDetailPage: React.FC = () => {
       return;
     }
 
-    try {
-      if (!silent) {
-        setLoading(true);
-      }
-      const response = await api.get(`/tournaments/${tournamentId}`);
-      const tournament: Tournament = response.data;
-
-      if ((tournament as { parentTournamentId?: number | null }).parentTournamentId) {
-        navigate(`/tournaments/${(tournament as { parentTournamentId?: number | null }).parentTournamentId}`, { replace: true });
-        return;
-      }
-
+    const applyTournament = (tournament: Tournament) => {
       if (tournament.status === 'ACTIVE') {
         setActiveTournaments([tournament]);
         setTournaments([]);
@@ -700,7 +706,6 @@ const TournamentDetailPage: React.FC = () => {
 
       const idsInTree = collectTournamentAndChildIds(tournament);
       const idSet = new Set(idsInTree);
-      // First load: expand everything. Later refreshes: keep collapse state; only expand newly appeared children.
       setExpandedDetails((prev) => {
         if (prev.size === 0) {
           return new Set(idsInTree);
@@ -726,14 +731,49 @@ const TournamentDetailPage: React.FC = () => {
         setActiveSectionCollapsed(false);
         setCompletedSectionCollapsed(false);
       }
-
       setError('');
+    };
+
+    const cached = !force ? getCachedTournamentDetail(tournamentId) : null;
+    if (cached) {
+      if (cached.id !== tournamentId) {
+        navigate(`/tournaments/${cached.id}`, { replace: true });
+        return;
+      }
+      applyTournament(cached);
+      setLoading(false);
+      if (!shouldNetworkRefreshCachedTournament(cached)) {
+        return;
+      }
+      // Stale-while-revalidate for non-completed tournaments.
+      silent = true;
+    }
+
+    try {
+      if (!silent) {
+        setLoading(true);
+      }
+      const response = await api.get(`/tournaments/${tournamentId}`);
+      const tournament: Tournament = response.data;
+
+      if ((tournament as { parentTournamentId?: number | null }).parentTournamentId) {
+        navigate(`/tournaments/${(tournament as { parentTournamentId?: number | null }).parentTournamentId}`, { replace: true });
+        return;
+      }
+
+      setCachedTournamentDetail(tournament);
+      applyTournament(tournament);
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number; data?: { error?: string } } })?.response?.status;
       if (status === 400 || status === 404) {
+        invalidateTournamentDetailCache(tournamentId);
         saveShouldRestoreDetail(false);
         saveLastTournamentId(null);
         navigate('/tournaments', { replace: true });
+        return;
+      }
+      // Keep showing cached data if the background refresh failed.
+      if (cached) {
         return;
       }
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data';
@@ -748,7 +788,7 @@ const TournamentDetailPage: React.FC = () => {
   }, [tournamentId, navigate]);
 
   const fetchDataPreservingScroll = useCallback(
-    () => withWindowScrollPreserved(() => fetchData({ silent: true })),
+    () => withWindowScrollPreserved(() => fetchData({ silent: true, force: true })),
     [fetchData]
   );
 
@@ -806,12 +846,14 @@ const TournamentDetailPage: React.FC = () => {
         return;
       }
       console.log(logLabel, data);
+      const eventTournamentId = data.tournamentId ?? data.id ?? tournamentId;
+      invalidateTournamentDetailCache(eventTournamentId);
       if (refreshTimeout !== null) {
         window.clearTimeout(refreshTimeout);
       }
       refreshTimeout = window.setTimeout(() => {
         refreshTimeout = null;
-        void withWindowScrollPreserved(() => fetchData({ silent: true })).catch((err) => {
+        void withWindowScrollPreserved(() => fetchData({ silent: true, force: true })).catch((err) => {
           console.error(`Error refreshing data after ${logLabel}`, err);
         });
       }, SOCKET_REFRESH_DEBOUNCE_MS);
@@ -1286,10 +1328,13 @@ const TournamentDetailPage: React.FC = () => {
       
       await withWindowScrollPreserved(async () => {
         setEditingMatch(null);
-        await fetchData({ silent: true });
+        await fetchData({ silent: true, force: true });
         if (selectedTournament) {
           try {
             const updated = await api.get(`/tournaments/${selectedTournament.id}`);
+            if (!updated.data?.parentTournamentId) {
+              setCachedTournamentDetail(updated.data);
+            }
             setSelectedTournament(updated.data);
           } catch {
             /* keep prior selection if refetch fails */
@@ -1344,10 +1389,13 @@ const TournamentDetailPage: React.FC = () => {
 
         await withWindowScrollPreserved(async () => {
           setEditingMatch(null);
-          await fetchData({ silent: true });
+          await fetchData({ silent: true, force: true });
           if (selectedTournament) {
             try {
               const updated = await api.get(`/tournaments/${selectedTournament.id}`);
+              if (!updated.data?.parentTournamentId) {
+                setCachedTournamentDetail(updated.data);
+              }
               setSelectedTournament(updated.data);
             } catch {
               /* keep prior selection if refetch fails */
@@ -1553,10 +1601,13 @@ const TournamentDetailPage: React.FC = () => {
       });
       setMatchResultAlreadyEnteredModal(normalizeDuplicateScoreMessage(message));
       void withWindowScrollPreserved(async () => {
-        await fetchData({ silent: true });
+        await fetchData({ silent: true, force: true });
         if (selectedTournament) {
           try {
             const updated = await api.get(`/tournaments/${selectedTournament.id}`);
+            if (!updated.data?.parentTournamentId) {
+              setCachedTournamentDetail(updated.data);
+            }
             setSelectedTournament(updated.data);
           } catch {
             /* keep prior selection if refetch fails */

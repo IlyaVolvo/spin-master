@@ -10,6 +10,7 @@ import {
   isScorePinAuthErrorMessage,
   ScorePinAuthError,
 } from './matchScorePayload';
+import { setCachedTournamentDetail, invalidateTournamentDetailCache } from './tournamentDetailCache';
 
 export type MatchScoreData = {
   member1Id: number;
@@ -109,7 +110,15 @@ async function refreshTournament(
   if (!onTournamentUpdate) return;
   try {
     const response = await api.get(`/tournaments/${tournamentId}`);
-    onTournamentUpdate(response.data);
+    const tournament = response.data;
+    if (tournament?.parentTournamentId) {
+      invalidateTournamentDetailCache(Number(tournament.parentTournamentId));
+    } else if (tournament?.id != null) {
+      setCachedTournamentDetail(tournament);
+    } else {
+      invalidateTournamentDetailCache(tournamentId);
+    }
+    onTournamentUpdate(tournament);
   } catch (err) {
     console.error('Failed to refresh tournament:', err);
   }
