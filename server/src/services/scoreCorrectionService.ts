@@ -314,7 +314,7 @@ async function triggerParentFinalPhaseRecreate(prisma: any, parentTournamentId: 
 
 export { assertNoRatingDriftAfterTournament } from '../utils/scoreCorrectionMatchUtils';
 
-/** Attach cached correction eligibility on every tournament fetch (active + completed). */
+/** Attach correction eligibility recursively (lazy endpoint / list paths that still need it). */
 export async function attachCorrectionEligibility(tournament: any, prisma: any): Promise<any> {
   const enriched = { ...tournament };
   enriched.correctionEligibility = await getCorrectionEligibility(prisma, enriched);
@@ -335,14 +335,17 @@ export async function attachCorrectionEligibility(tournament: any, prisma: any):
   return enriched;
 }
 
-/** Full plugin enrichment + correction eligibility for API responses (GET /:id, complete, etc.). */
+/**
+ * Plugin enrichment for API responses (GET /:id, complete, public results).
+ * Correction eligibility is intentionally omitted — use GET .../correction-eligibility
+ * when COMPLETED correction mode needs it.
+ */
 export async function enrichTournamentForApi(prisma: any, tournament: any): Promise<any> {
   const plugin = tournamentPluginRegistry.get(tournament.type);
   let enriched: any;
 
   if (tournament.status === 'COMPLETED') {
-    const postRatingMap = new Map<string, number | null>();
-    const { getPostTournamentRating } = await import('./usattRatingService');
+    const { getPostTournamentRatingsBatch } = await import('./usattRatingService');
 
     const ratingTargets: Array<{ tournamentId: number; memberId: number }> = [];
     for (const p of tournament.participants ?? []) {
@@ -354,17 +357,15 @@ export async function enrichTournamentForApi(prisma: any, tournament: any): Prom
       }
     }
 
-    await Promise.all(
-      ratingTargets.map(async ({ tournamentId, memberId }) => {
-        const key = `${tournamentId}-${memberId}`;
-        const rating = await getPostTournamentRating(tournamentId, memberId);
-        postRatingMap.set(key, rating ?? null);
-      }),
-    );
+    const batch = await getPostTournamentRatingsBatch(ratingTargets);
+    const postRatingMap = new Map<string, number | null>();
+    for (const [key, rating] of batch.entries()) {
+      postRatingMap.set(key, rating ?? null);
+    }
     enriched = await plugin.enrichCompletedTournament({ tournament, postRatingMap, prisma });
   } else {
     enriched = await plugin.enrichActiveTournament({ tournament, prisma });
   }
 
-  return attachCorrectionEligibility(enriched, prisma);
+  return enriched;
 }

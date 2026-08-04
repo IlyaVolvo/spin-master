@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
 import { logger } from '../utils/logger';
 import { bumpPresenceBoardVersion } from '../payments/presenceBoardVersion';
+import { invalidateTournamentDetailCache } from './tournamentDetailCache';
 
 let ioInstance: Server | null = null;
 
@@ -48,6 +49,9 @@ export function emitToRoom(room: string, event: string, data: any) {
  * Notifies clients that tournament data has changed and cache should be refreshed
  */
 export function emitCacheInvalidation(tournamentId?: number) {
+  if (typeof tournamentId === 'number') {
+    invalidateTournamentDetailCache(tournamentId);
+  }
   emitToAll('cache:invalidate', {
     tournamentId,
     timestamp: Date.now(),
@@ -68,8 +72,12 @@ export function emitSystemConfigUpdated() {
  * Emit tournament update event
  */
 export function emitTournamentUpdate(tournament: any) {
+  const id = typeof tournament === 'number' ? tournament : tournament.id;
+  if (typeof id === 'number') {
+    invalidateTournamentDetailCache(id);
+  }
   emitToAll('tournament:updated', {
-    id: typeof tournament === 'number' ? tournament : tournament.id,
+    id,
     name: typeof tournament === 'number' ? undefined : tournament.name,
     status: typeof tournament === 'number' ? undefined : tournament.status,
     type: typeof tournament === 'number' ? undefined : tournament.type,
@@ -105,6 +113,7 @@ export function emitTournamentCreated(tournament: any) {
  * Emit tournament deletion event
  */
 export function emitTournamentDeleted(tournamentId: number) {
+  invalidateTournamentDetailCache(tournamentId);
   emitToAll('tournament:deleted', {
     id: tournamentId,
     timestamp: Date.now(),
@@ -130,6 +139,9 @@ export function emitTournamentStateChanged(tournament: any, previousStatus?: str
  * Emit match update event
  */
 export function emitMatchUpdate(match: any, tournamentId: number | null) {
+  if (typeof tournamentId === 'number') {
+    invalidateTournamentDetailCache(tournamentId);
+  }
   emitToAll('match:updated', {
     id: match.id,
     tournamentId,

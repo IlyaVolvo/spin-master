@@ -728,6 +728,187 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
   return resolved;
 }
 
+export type PostTournamentRatingPair = { tournamentId: number; memberId: number };
+
+/**
+ * Batch display-only post-tournament ratings (same semantics as getPostTournamentRating).
+ * Splits by plugin.preferCompletionRatingHistory — no type-string hardcoding.
+ */
+export async function getPostTournamentRatingsBatch(
+  pairs: PostTournamentRatingPair[],
+): Promise<Map<string, number | null | undefined>> {
+  const { getCachedPostTournamentRating, setCachedPostTournamentRating } = await import('./cacheService');
+  const { tournamentPluginRegistry } = await import('../plugins/TournamentPluginRegistry');
+
+  const result = new Map<string, number | null | undefined>();
+  if (pairs.length === 0) return result;
+
+  const uniqueKeys = new Map<string, PostTournamentRatingPair>();
+  for (const pair of pairs) {
+    uniqueKeys.set(`${pair.tournamentId}-${pair.memberId}`, pair);
+  }
+  const uniquePairs = Array.from(uniqueKeys.values());
+  const tournamentIds = [...new Set(uniquePairs.map((p) => p.tournamentId))];
+  const memberIds = [...new Set(uniquePairs.map((p) => p.memberId))];
+
+  const tournaments = await prisma.tournament.findMany({
+    where: { id: { in: tournamentIds } },
+    select: {
+      id: true,
+      type: true,
+      participants: {
+        where: { memberId: { in: memberIds } },
+        select: { memberId: true, playerRatingAtTime: true },
+      },
+    },
+  });
+
+  const tournamentById = new Map(tournaments.map((t) => [t.id, t]));
+  const preferCompletionPairs: PostTournamentRatingPair[] = [];
+  const otherPairs: PostTournamentRatingPair[] = [];
+
+  for (const pair of uniquePairs) {
+    const key = `${pair.tournamentId}-${pair.memberId}`;
+    const tournamentInfo = tournamentById.get(pair.tournamentId);
+    if (!tournamentInfo) {
+      result.set(key, undefined);
+      continue;
+    }
+    const participant = tournamentInfo.participants.find((p) => p.memberId === pair.memberId);
+    if (!participant) {
+      result.set(key, undefined);
+      continue;
+    }
+    if (participant.playerRatingAtTime === null) {
+      result.set(key, null);
+      continue;
+    }
+
+    const preferCompletion = Boolean(
+      tournamentPluginRegistry.get(tournamentInfo.type).preferCompletionRatingHistory,
+    );
+    if (preferCompletion) {
+      preferCompletionPairs.push(pair);
+    } else {
+      otherPairs.push(pair);
+    }
+  }
+
+  const resolveFromHistory = (
+    rows: Array<{ tournamentId: number | null; memberId: number; rating: number | null }>,
+    pairList: PostTournamentRatingPair[],
+  ): void => {
+    const best = new Map<string, number | null>();
+    for (const row of rows) {
+      if (row.tournamentId == null) continue;
+      const key = `${row.tournamentId}-${row.memberId}`;
+      if (!best.has(key)) {
+        best.set(key, row.rating);
+      }
+    }
+    for (const pair of pairList) {
+      const key = `${pair.tournamentId}-${pair.memberId}`;
+      if (result.has(key)) continue;
+      if (!best.has(key)) continue;
+      const tournamentInfo = tournamentById.get(pair.tournamentId)!;
+      const participant = tournamentInfo.participants.find((p) => p.memberId === pair.memberId)!;
+      const resolved = best.get(key) ?? participant.playerRatingAtTime;
+      result.set(key, resolved);
+      setCachedPostTournamentRating(pair.tournamentId, pair.memberId, resolved);
+      postTournamentRatings.set(key, resolved);
+    }
+  };
+
+  if (preferCompletionPairs.length > 0) {
+    const preferTournamentIds = [...new Set(preferCompletionPairs.map((p) => p.tournamentId))];
+    const preferMemberIds = [...new Set(preferCompletionPairs.map((p) => p.memberId))];
+
+    const completionRows = await (prisma as any).ratingHistory.findMany({
+      where: {
+        tournamentId: { in: preferTournamentIds },
+        memberId: { in: preferMemberIds },
+        reason: 'TOURNAMENT_COMPLETED',
+      },
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      select: { tournamentId: true, memberId: true, rating: true },
+    });
+    resolveFromHistory(completionRows, preferCompletionPairs);
+
+    const missingPrefer = preferCompletionPairs.filter((p) => {
+      const key = `${p.tournamentId}-${p.memberId}`;
+      return !result.has(key);
+    });
+    if (missingPrefer.length > 0) {
+      const missingTIds = [...new Set(missingPrefer.map((p) => p.tournamentId))];
+      const missingMIds = [...new Set(missingPrefer.map((p) => p.memberId))];
+      const fallbackRows = await (prisma as any).ratingHistory.findMany({
+        where: {
+          tournamentId: { in: missingTIds },
+          memberId: { in: missingMIds },
+        },
+        orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+        select: { tournamentId: true, memberId: true, rating: true },
+      });
+      resolveFromHistory(fallbackRows, missingPrefer);
+
+      for (const pair of missingPrefer) {
+        const key = `${pair.tournamentId}-${pair.memberId}`;
+        if (result.has(key)) continue;
+        const tournamentInfo = tournamentById.get(pair.tournamentId)!;
+        const participant = tournamentInfo.participants.find((p) => p.memberId === pair.memberId)!;
+        const resolved = participant.playerRatingAtTime;
+        result.set(key, resolved);
+        setCachedPostTournamentRating(pair.tournamentId, pair.memberId, resolved);
+        postTournamentRatings.set(key, resolved);
+      }
+    }
+  }
+
+  const otherNeedingDb: PostTournamentRatingPair[] = [];
+  for (const pair of otherPairs) {
+    const key = `${pair.tournamentId}-${pair.memberId}`;
+    const cached = getCachedPostTournamentRating(pair.tournamentId, pair.memberId);
+    if (cached !== undefined) {
+      result.set(key, cached);
+      postTournamentRatings.set(key, cached);
+      continue;
+    }
+    const memoryCached = postTournamentRatings.get(key);
+    if (memoryCached !== undefined) {
+      result.set(key, memoryCached);
+      continue;
+    }
+    otherNeedingDb.push(pair);
+  }
+
+  if (otherNeedingDb.length > 0) {
+    const otherTIds = [...new Set(otherNeedingDb.map((p) => p.tournamentId))];
+    const otherMIds = [...new Set(otherNeedingDb.map((p) => p.memberId))];
+    const otherRows = await (prisma as any).ratingHistory.findMany({
+      where: {
+        tournamentId: { in: otherTIds },
+        memberId: { in: otherMIds },
+      },
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      select: { tournamentId: true, memberId: true, rating: true },
+    });
+    resolveFromHistory(otherRows, otherNeedingDb);
+
+    for (const pair of otherNeedingDb) {
+      const key = `${pair.tournamentId}-${pair.memberId}`;
+      if (result.has(key)) continue;
+      const tournamentInfo = tournamentById.get(pair.tournamentId)!;
+      const participant = tournamentInfo.participants.find((p) => p.memberId === pair.memberId)!;
+      const resolved = participant.playerRatingAtTime;
+      result.set(key, resolved);
+      setCachedPostTournamentRating(pair.tournamentId, pair.memberId, resolved);
+      postTournamentRatings.set(key, resolved);
+    }
+  }
+
+  return result;
+}
+
 /**
  * Get current rating for a player (from database)
  */

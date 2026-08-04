@@ -134,6 +134,29 @@ function findTournamentInTree(root: Tournament, id: number): Tournament | null {
   return null;
 }
 
+type CorrectionEligibilityPayload = {
+  id: number;
+  correctionEligibility?: Tournament['correctionEligibility'];
+  childTournaments?: CorrectionEligibilityPayload[];
+};
+
+/** Merge lazy GET /correction-eligibility into an already-loaded tournament tree. */
+function mergeCorrectionEligibilityIntoTree(
+  tournament: Tournament,
+  payload: CorrectionEligibilityPayload,
+): Tournament {
+  if (tournament.id !== payload.id) return tournament;
+  const childPayloadById = new Map((payload.childTournaments ?? []).map((c) => [c.id, c]));
+  return {
+    ...tournament,
+    correctionEligibility: payload.correctionEligibility,
+    childTournaments: tournament.childTournaments?.map((child) => {
+      const childPayload = childPayloadById.get(child.id);
+      return childPayload ? mergeCorrectionEligibilityIntoTree(child, childPayload) : child;
+    }),
+  };
+}
+
 function ScoreCorrectionModeToggle({
   active,
   onChange,
@@ -863,6 +886,29 @@ const TournamentDetailPage: React.FC = () => {
     },
     [scheduleSilentRefresh],
   );
+
+  const handleCompletedScoreCorrectionChange = useCallback(async (active: boolean) => {
+    setCompletedScoreCorrectionChecked(active);
+    if (!active) return;
+
+    const completedRoots = tournaments.filter((t) => t.status === 'COMPLETED');
+    await Promise.all(
+      completedRoots.map(async (root) => {
+        if (root.correctionEligibility) return;
+        try {
+          const { data } = await api.get(`/tournaments/${root.id}/correction-eligibility`);
+          setTournaments((prev) =>
+            prev.map((t) => (t.id === root.id ? mergeCorrectionEligibilityIntoTree(t, data) : t)),
+          );
+          setSelectedTournament((prev) =>
+            prev && prev.id === root.id ? mergeCorrectionEligibilityIntoTree(prev, data) : prev,
+          );
+        } catch (err) {
+          console.error('Failed to load correction eligibility', err);
+        }
+      }),
+    );
+  }, [tournaments]);
 
   // Child match socket events use the child tournament id; keep the open tree ids here.
   const openTreeIdsRef = useRef<Set<number>>(new Set([tournamentId]));
@@ -3038,7 +3084,7 @@ const TournamentDetailPage: React.FC = () => {
                                   {isUserOrganizer && (
                                     <ScoreCorrectionModeToggle
                                       active={completedScoreCorrectionChecked}
-                                      onChange={setCompletedScoreCorrectionChecked}
+                                      onChange={handleCompletedScoreCorrectionChange}
                                       title="Correct scores"
                                     />
                                   )}
@@ -3055,7 +3101,7 @@ const TournamentDetailPage: React.FC = () => {
                                   {isUserOrganizer && (
                                     <ScoreCorrectionModeToggle
                                       active={completedScoreCorrectionChecked}
-                                      onChange={setCompletedScoreCorrectionChecked}
+                                      onChange={handleCompletedScoreCorrectionChange}
                                       title="Correct scores"
                                     />
                                   )}
@@ -3256,7 +3302,7 @@ const TournamentDetailPage: React.FC = () => {
                               {isUserOrganizer && (
                                 <ScoreCorrectionModeToggle
                                   active={completedScoreCorrectionChecked}
-                                  onChange={setCompletedScoreCorrectionChecked}
+                                  onChange={handleCompletedScoreCorrectionChange}
                                   title="Correct scores"
                                 />
                               )}
@@ -3273,7 +3319,7 @@ const TournamentDetailPage: React.FC = () => {
                               {isUserOrganizer && (
                                 <ScoreCorrectionModeToggle
                                   active={completedScoreCorrectionChecked}
-                                  onChange={setCompletedScoreCorrectionChecked}
+                                  onChange={handleCompletedScoreCorrectionChange}
                                   title="Correct scores"
                                 />
                               )}

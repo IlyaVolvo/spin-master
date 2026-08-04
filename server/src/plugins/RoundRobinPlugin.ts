@@ -69,9 +69,10 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
   async enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
     const { tournament, prisma } = context;
 
-    // Attach rating history to matches
+    // Attach rating history to matches (skipped if compound parent already batched)
     if (prisma) {
-      await this.attachRatingHistoryToMatches(tournament.matches, prisma);
+      const { attachMatchRatingHistory } = await import('../utils/matchRatingHistoryAttach');
+      await attachMatchRatingHistory(tournament.matches, prisma);
     }
 
     return { ...tournament, bracketMatches: [] };
@@ -127,9 +128,10 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
       };
     });
 
-    // Attach rating history to matches
+    // Attach rating history to matches (skipped if compound parent already batched)
     if (prisma) {
-      await this.attachRatingHistoryToMatches(tournament.matches, prisma);
+      const { attachMatchRatingHistory } = await import('../utils/matchRatingHistoryAttach');
+      await attachMatchRatingHistory(tournament.matches, prisma);
     }
 
     return {
@@ -137,35 +139,6 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
       participants: participantsWithPostRating,
       bracketMatches: [],
     };
-  }
-
-  private async attachRatingHistoryToMatches(matches: any[], prisma: any): Promise<void> {
-    const matchIds = (matches || [])
-      .filter((m: any) => m.id)
-      .map((m: any) => m.id);
-
-    if (matchIds.length === 0) return;
-
-    const allRatingHistory = await prisma.ratingHistory.findMany({
-      where: { matchId: { in: matchIds } },
-    });
-
-    const historyByMatch = new Map<number, any[]>();
-    for (const h of allRatingHistory) {
-      if (!h.matchId) continue;
-      if (!historyByMatch.has(h.matchId)) historyByMatch.set(h.matchId, []);
-      historyByMatch.get(h.matchId)!.push(h);
-    }
-
-    for (const match of matches) {
-      const entries = historyByMatch.get(match.id) || [];
-      const h1 = entries.find((e: any) => e.memberId === match.member1Id);
-      const h2 = entries.find((e: any) => e.memberId === match.member2Id);
-      match.player1RatingBefore = h1 ? h1.rating - h1.ratingChange : null;
-      match.player1RatingChange = h1 ? h1.ratingChange : null;
-      match.player2RatingBefore = h2 ? h2.rating - h2.ratingChange : null;
-      match.player2RatingChange = h2 ? h2.ratingChange : null;
-    }
   }
 
   isComplete(tournament: any): boolean {

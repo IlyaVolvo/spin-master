@@ -183,9 +183,9 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
   async enrichActiveTournament(context: TournamentEnrichmentContext): Promise<EnrichedTournament> {
     const { tournament, prisma } = context;
     
-    // Fetch child tournaments if not already loaded (treat empty array as unloaded)
+    // Fetch children only when not already present (detail include sets [] when none)
     let children = tournament.childTournaments;
-    if (!Array.isArray(children) || children.length === 0) {
+    if (!Array.isArray(children)) {
       children = await prisma.tournament.findMany({
         where: { parentTournamentId: tournament.id },
         include: {
@@ -203,36 +203,28 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
 
     // For compound tournaments, enrich child tournaments using their respective plugins
     if (children && children.length > 0) {
+      const { attachMatchRatingHistoryBatch } = await import('../utils/matchRatingHistoryAttach');
+      await attachMatchRatingHistoryBatch(
+        children.map((child: any) => child.matches),
+        prisma,
+      );
+
       const postRatingMap = new Map<string, number | null>();
 
       // Build post-ratings for completed children so completed panels can show deltas
       const completedChildren = children.filter((child: any) => child.status === 'COMPLETED');
       if (completedChildren.length > 0) {
-        const { getCachedPostTournamentRating } = await import('../services/cacheService');
-        const { getPostTournamentRating } = await import('../services/usattRatingService');
-
-        const postRatingPromises: Array<Promise<[string, number | null | undefined]>> = [];
-
+        const { getPostTournamentRatingsBatch } = await import('../services/usattRatingService');
+        const pairs: Array<{ tournamentId: number; memberId: number }> = [];
         for (const child of completedChildren) {
           for (const participant of child.participants || []) {
-            const key = `${child.id}-${participant.memberId}`;
-            const cached = getCachedPostTournamentRating(child.id, participant.memberId);
-            if (cached !== undefined) {
-              postRatingMap.set(key, cached);
-            } else {
-              postRatingPromises.push(
-                getPostTournamentRating(child.id, participant.memberId).then(
-                  rating => [key, rating] as [string, number | null | undefined]
-                )
-              );
-            }
+            pairs.push({ tournamentId: child.id, memberId: participant.memberId });
           }
         }
-
-        const postRatingResults = await Promise.all(postRatingPromises);
-        postRatingResults.forEach(([key, rating]) => {
+        const batch = await getPostTournamentRatingsBatch(pairs);
+        for (const [key, rating] of batch.entries()) {
           postRatingMap.set(key, rating ?? null);
-        });
+        }
       }
 
       const enrichedChildren = await Promise.all(
@@ -272,9 +264,9 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       };
     });
 
-    // Fetch child tournaments if not already loaded (treat empty array as unloaded)
+    // Fetch children only when not already present (detail include sets [] when none)
     let children = tournament.childTournaments;
-    if (!Array.isArray(children) || children.length === 0) {
+    if (!Array.isArray(children)) {
       children = await prisma.tournament.findMany({
         where: { parentTournamentId: tournament.id },
         include: {
@@ -292,6 +284,12 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
 
     // Enrich child tournaments
     if (children && children.length > 0) {
+      const { attachMatchRatingHistoryBatch } = await import('../utils/matchRatingHistoryAttach');
+      await attachMatchRatingHistoryBatch(
+        children.map((child: any) => child.matches),
+        prisma,
+      );
+
       const enrichedChildren = await Promise.all(
         children.map(async (child: any) => {
           const childPlugin = tournamentPluginRegistry.get(child.type);

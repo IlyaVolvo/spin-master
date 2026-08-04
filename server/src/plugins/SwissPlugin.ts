@@ -102,36 +102,10 @@ export class SwissPlugin extends BaseTournamentPlugin {
     }
 
     // Attach rating history to matches so client can show rating changes per match
-    const matchIds = enriched.matches.map((m: any) => m.id);
-    if (matchIds.length > 0) {
-      const allRatingHistory = await (prisma as any).ratingHistory.findMany({
-        where: {
-          matchId: { in: matchIds },
-          tournamentId: tournament.id,
-        },
-      });
-
-      // Build map: matchId -> memberId -> ratingHistory entry
-      const historyMap = new Map<number, Map<number, any>>();
-      for (const rh of allRatingHistory) {
-        if (!rh.matchId) continue;
-        if (!historyMap.has(rh.matchId)) historyMap.set(rh.matchId, new Map());
-        historyMap.get(rh.matchId)!.set(rh.memberId, rh);
-      }
-
-      enriched.matches = enriched.matches.map((match: any) => {
-        const matchHistory = historyMap.get(match.id);
-        if (!matchHistory) return match;
-        const h1 = matchHistory.get(match.member1Id);
-        const h2 = match.member2Id ? matchHistory.get(match.member2Id) : null;
-        return {
-          ...match,
-          player1RatingBefore: h1 ? (h1.rating - h1.ratingChange) : null,
-          player1RatingChange: h1 ? h1.ratingChange : null,
-          player2RatingBefore: h2 ? (h2.rating - h2.ratingChange) : null,
-          player2RatingChange: h2 ? h2.ratingChange : null,
-        };
-      });
+    // (skipped if compound parent already batched onto the same matches array)
+    if (prisma && enriched.matches) {
+      const { attachMatchRatingHistory } = await import('../utils/matchRatingHistoryAttach');
+      await attachMatchRatingHistory(enriched.matches, prisma);
     }
 
     return { ...enriched, bracketMatches: [] };

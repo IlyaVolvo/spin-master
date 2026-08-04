@@ -42,6 +42,10 @@ import {
   correctCompletedMatchScore,
   enrichTournamentForApi,
 } from '../services/scoreCorrectionService';
+import {
+  getTournamentDetailCache,
+  setTournamentDetailCache,
+} from '../services/tournamentDetailCache';
 import { ensureUniqueTournamentNameInDb } from '../utils/tournamentNameUniqueness';
 import { createPreregistrationFinalizePrisma } from '../utils/preregistrationFinalizePrisma';
 import { matchHasCompetitiveResult } from '../utils/scoreCorrectionMatchUtils';
@@ -128,6 +132,33 @@ function tournamentListInclude() {
       select: {
         participants: true,
         matches: true,
+      },
+    },
+  };
+}
+
+/** Lean detail include: no registrations/_count; nests children for compounds. */
+function tournamentDetailInclude() {
+  return {
+    participants: {
+      include: {
+        member: true,
+      },
+    },
+    matches: true,
+    swissData: true,
+    bracketMatches: { include: { match: true } },
+    childTournaments: {
+      orderBy: [{ groupNumber: 'asc' as const }, { id: 'asc' as const }],
+      include: {
+        participants: {
+          include: {
+            member: true,
+          },
+        },
+        matches: true,
+        swissData: true,
+        bracketMatches: { include: { match: true } },
       },
     },
   };
@@ -775,22 +806,64 @@ router.get('/:id', async (req, res) => {
     if (isNaN(tournamentId)) {
       return res.status(400).json({ error: 'Invalid tournament ID' });
     }
+
+    const cached = getTournamentDetailCache(tournamentId);
+    if (cached) {
+      return res.json(cached);
+    }
     
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
-      include: tournamentListInclude(),
+      include: tournamentDetailInclude(),
     });
 
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
     }
 
-    // Use plugin-based enrichment with correction eligibility
     const enrichedTournament = await enrichTournamentForApi(prisma, tournament);
+    setTournamentDetailCache(tournamentId, enrichedTournament);
 
     res.json(enrichedTournament);
   } catch (error) {
     logger.error('Error fetching tournament', { error: error instanceof Error ? error.message : String(error), tournamentId: req.params.id });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** Lazy correction eligibility for COMPLETED correction mode (not on detail hot path). */
+router.get('/:id/correction-eligibility', async (req, res) => {
+  try {
+    const tournamentId = parseInt(req.params.id);
+    if (isNaN(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: tournamentDetailInclude(),
+    });
+
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    const withEligibility = await attachCorrectionEligibility(tournament, prisma);
+
+    const stripToEligibility = (t: any): any => ({
+      id: t.id,
+      correctionEligibility: t.correctionEligibility,
+      childTournaments: Array.isArray(t.childTournaments)
+        ? t.childTournaments.map(stripToEligibility)
+        : undefined,
+    });
+
+    res.json(stripToEligibility(withEligibility));
+  } catch (error) {
+    logger.error('Error fetching correction eligibility', {
+      error: error instanceof Error ? error.message : String(error),
+      tournamentId: req.params.id,
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
