@@ -9,10 +9,13 @@ import {
 // Use relative path to leverage Vite proxy, or absolute URL if VITE_API_URL is set
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+/** Boot default before System Config loads; overridden by clientRuntime.apiRequestTimeoutMs. */
+export const DEFAULT_API_REQUEST_TIMEOUT_MS = 300000;
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true, // Important: Send cookies (sessions) with requests
-  timeout: 10000, // 10 second timeout
+  timeout: DEFAULT_API_REQUEST_TIMEOUT_MS,
 });
 
 api.interceptors.request.use((config) => {

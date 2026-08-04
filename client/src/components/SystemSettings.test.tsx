@@ -48,6 +48,7 @@ const mockConfig = {
     tournamentsListCacheTtlMs: 30000,
     socketReconnectionDelayMs: 1000,
     socketReconnectionAttempts: 5,
+    apiRequestTimeoutMs: 300000,
   },
 };
 

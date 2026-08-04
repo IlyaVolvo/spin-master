@@ -1,4 +1,4 @@
-import api from './api';
+import api, { DEFAULT_API_REQUEST_TIMEOUT_MS } from './api';
 
 export const ACHIEVEMENT_CATEGORY_IDS = [
   'biggest_upset',
@@ -100,6 +100,7 @@ export type SystemConfig = {
     tournamentsListCacheTtlMs: number;
     socketReconnectionDelayMs: number;
     socketReconnectionAttempts: number;
+    apiRequestTimeoutMs: number;
   };
   clubPlans: {
     segments: string[];
@@ -222,6 +223,7 @@ const defaultSystemConfig: SystemConfig = {
     tournamentsListCacheTtlMs: 30000,
     socketReconnectionDelayMs: 1000,
     socketReconnectionAttempts: 5,
+    apiRequestTimeoutMs: DEFAULT_API_REQUEST_TIMEOUT_MS,
   },
   clubPlans: {
     segments: ['Regular'],
@@ -301,6 +303,7 @@ function setCachedSystemConfig(config: unknown): SystemConfig {
     raw.tournamentRules = rules;
   }
   cachedSystemConfig = deepMerge(defaultSystemConfig, raw);
+  api.defaults.timeout = cachedSystemConfig.clientRuntime.apiRequestTimeoutMs;
   listeners.forEach(listener => listener(cachedSystemConfig));
   return cachedSystemConfig;
 }

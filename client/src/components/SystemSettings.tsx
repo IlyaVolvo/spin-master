@@ -916,11 +916,12 @@ export default function SystemSettings() {
 
       <Section
         title="Operations Settings"
-        tooltip="Client runtime tuning: tournaments list cache TTL and socket reconnection behavior."
+        tooltip="Client runtime tuning: API request timeout, tournaments list cache TTL, and socket reconnection behavior."
         sectionId="operational"
         open={openSectionId === 'operational'}
         onToggle={toggleSection}
       >
+        <NumericInput label="API Request Timeout (ms)" value={config.clientRuntime.apiRequestTimeoutMs} onChange={(value) => updateConfig(draft => { draft.clientRuntime.apiRequestTimeoutMs = value; })} />
         <NumericInput label="Tournaments Cache TTL (ms)" value={config.clientRuntime.tournamentsListCacheTtlMs} onChange={(value) => updateConfig(draft => { draft.clientRuntime.tournamentsListCacheTtlMs = value; })} />
         <NumericInput label="Socket Reconnection Delay (ms)" value={config.clientRuntime.socketReconnectionDelayMs} onChange={(value) => updateConfig(draft => { draft.clientRuntime.socketReconnectionDelayMs = value; })} />
         <NumericInput label="Socket Reconnection Attempts" value={config.clientRuntime.socketReconnectionAttempts} onChange={(value) => updateConfig(draft => { draft.clientRuntime.socketReconnectionAttempts = value; })} />

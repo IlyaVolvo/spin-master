@@ -216,6 +216,7 @@ function getBootstrapSystemConfig() {
       tournamentsListCacheTtlMs: 30000,
       socketReconnectionDelayMs: 1000,
       socketReconnectionAttempts: 5,
+      apiRequestTimeoutMs: 300000,
     },
     publicAccess: {
       achievements: {

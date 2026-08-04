@@ -114,6 +114,8 @@ export type ClientRuntimeConfig = {
   tournamentsListCacheTtlMs: number;
   socketReconnectionDelayMs: number;
   socketReconnectionAttempts: number;
+  /** Axios default request timeout (ms) for the SPA API client. */
+  apiRequestTimeoutMs: number;
 };
 
 export type VisitPricingFormulaParams = {
@@ -295,6 +297,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       tournamentsListCacheTtlMs: 30000,
       socketReconnectionDelayMs: 1000,
       socketReconnectionAttempts: 5,
+      apiRequestTimeoutMs: 300000,
     },
     clubPlans: {
       segments: ['Regular'],
@@ -649,6 +652,7 @@ function validateClientRuntime(value: unknown): ClientRuntimeConfig {
     tournamentsListCacheTtlMs: requireInteger(config.tournamentsListCacheTtlMs, 'clientRuntime.tournamentsListCacheTtlMs', 0),
     socketReconnectionDelayMs: requireInteger(config.socketReconnectionDelayMs, 'clientRuntime.socketReconnectionDelayMs', 0),
     socketReconnectionAttempts: requireInteger(config.socketReconnectionAttempts, 'clientRuntime.socketReconnectionAttempts', 0),
+    apiRequestTimeoutMs: requireInteger(config.apiRequestTimeoutMs, 'clientRuntime.apiRequestTimeoutMs', 0),
   };
 }
 
