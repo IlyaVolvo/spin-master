@@ -8,17 +8,37 @@ ALTER TABLE "club_visits" ADD COLUMN IF NOT EXISTS "isCourtesy" BOOLEAN NOT NULL
 ALTER TABLE "club_visits" ADD COLUMN IF NOT EXISTS "courtesyClearedAt" TIMESTAMP(3);
 ALTER TABLE "club_visits" ADD COLUMN IF NOT EXISTS "obligationPaymentId" INTEGER;
 
--- Convert provider enum to text
-ALTER TABLE "club_payments" ALTER COLUMN "provider" DROP DEFAULT;
-ALTER TABLE "club_payments" ALTER COLUMN "provider" TYPE TEXT USING (
-  CASE "provider"::text
-    WHEN 'MANUAL' THEN 'manual'
-    WHEN 'EXTERNAL_CHECKOUT' THEN 'external_checkout'
-    WHEN 'STRIPE' THEN 'stripe'
-    ELSE lower("provider"::text)
-  END
-);
-ALTER TABLE "club_payments" ALTER COLUMN "provider" SET DEFAULT 'manual';
+-- provider: add as TEXT on clean migrate history; convert enum→text on legacy DBs that had ClubPaymentProvider
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'club_payments'
+      AND column_name = 'provider'
+  ) THEN
+    ALTER TABLE "club_payments" ADD COLUMN "provider" TEXT NOT NULL DEFAULT 'manual';
+  ELSIF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'club_payments'
+      AND column_name = 'provider'
+      AND udt_name = 'ClubPaymentProvider'
+  ) THEN
+    ALTER TABLE "club_payments" ALTER COLUMN "provider" DROP DEFAULT;
+    ALTER TABLE "club_payments" ALTER COLUMN "provider" TYPE TEXT USING (
+      CASE "provider"::text
+        WHEN 'MANUAL' THEN 'manual'
+        WHEN 'EXTERNAL_CHECKOUT' THEN 'external_checkout'
+        WHEN 'STRIPE' THEN 'stripe'
+        ELSE lower("provider"::text)
+      END
+    );
+    ALTER TABLE "club_payments" ALTER COLUMN "provider" SET DEFAULT 'manual';
+  END IF;
+END $$;
 
 DROP TYPE IF EXISTS "ClubPaymentProvider";
 
