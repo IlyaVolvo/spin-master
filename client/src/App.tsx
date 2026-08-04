@@ -6,6 +6,11 @@ import { getToken, setToken, removeToken, getMember, removeMember, setMember, is
 import { enterKioskMode, defaultKioskKindForRoles } from './utils/kioskEntry';
 import api from './utils/api';
 import { connectSocket } from './utils/socket';
+import {
+  applyTournamentNameListSocketEvent,
+  clearTournamentNameListCache,
+  ensureTournamentNameListLoaded,
+} from './utils/tournamentNameListCache';
 import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig, hasAnyPublicAchievementEnabled } from './utils/systemConfig';
 import { todayHoursHeaderLabel } from './utils/clubHoursDisplay';
 import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPosition';
@@ -158,6 +163,32 @@ function App() {
     };
   }, [isAuth]);
 
+  // Lean tournament name list for list-page autocomplete: load once per session, patch via sockets.
+  useEffect(() => {
+    if (!isAuth) {
+      clearTournamentNameListCache();
+      return;
+    }
+    void ensureTournamentNameListLoaded().catch((err) => {
+      console.error('Failed to load tournament name list', err);
+    });
+    const socket = connectSocket();
+    const onCreated = (data: any) => applyTournamentNameListSocketEvent('tournament:created', data || {});
+    const onUpdated = (data: any) => applyTournamentNameListSocketEvent('tournament:updated', data || {});
+    const onStateChanged = (data: any) => applyTournamentNameListSocketEvent('tournament:stateChanged', data || {});
+    const onDeleted = (data: any) => applyTournamentNameListSocketEvent('tournament:deleted', data || {});
+    socket?.on('tournament:created', onCreated);
+    socket?.on('tournament:updated', onUpdated);
+    socket?.on('tournament:stateChanged', onStateChanged);
+    socket?.on('tournament:deleted', onDeleted);
+    return () => {
+      socket?.off('tournament:created', onCreated);
+      socket?.off('tournament:updated', onUpdated);
+      socket?.off('tournament:stateChanged', onStateChanged);
+      socket?.off('tournament:deleted', onDeleted);
+    };
+  }, [isAuth]);
+
   useEffect(() => {
     const resetParams = new URLSearchParams(window.location.search);
     const isResetLinkFlow = resetParams.get('reset') === '1' && !!resetParams.get('token');
@@ -297,6 +328,7 @@ function App() {
     } catch (err) {
       // Ignore errors, continue with cleanup
     }
+    clearTournamentNameListCache();
     removeToken();
     removeMember();
     setIsAuth(false);

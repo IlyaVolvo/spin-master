@@ -37,10 +37,17 @@ import {
   countForStage,
   type StageCounts,
 } from './tournaments/TournamentStageTabs';
+import {
+  ensureTournamentNameListLoaded,
+  getTournamentNameList,
+  subscribeTournamentNameList,
+  type TournamentNameListItem,
+} from '../utils/tournamentNameListCache';
 
 /** Shared list columns so header labels align over Type / Date. */
 const TOURNAMENT_LIST_GRID_COLUMNS = 'minmax(0, 1fr) 11rem 9.5rem';
 const TOURNAMENT_LIST_ROW_HOVER_BG = '#bbdefb';
+const NAME_SUGGESTION_LIMIT = 12;
 
 function applyTournamentListRowIdleStyle(el: HTMLElement, rowBg: string) {
   el.style.backgroundColor = rowBg;
@@ -115,6 +122,8 @@ const Tournaments: React.FC = () => {
   const [dateFilterEnd, setDateFilterEnd] = useState(() => localStorage.getItem('tournaments_dateFilterEnd') || '');
   const [tournamentNameFilter, setTournamentNameFilter] = useState(() => localStorage.getItem('tournaments_nameFilter') || '');
   const [cancelledFilter, setCancelledFilter] = useState<CancelledFilterMode>(() => loadCancelledFilterMode());
+  const [nameListTick, setNameListTick] = useState(0);
+  const [nameSuggestOpen, setNameSuggestOpen] = useState(false);
 
   const effectiveDateRange = useMemo(() => {
     const today = clubTodayYmd();
@@ -246,6 +255,34 @@ const Tournaments: React.FC = () => {
     };
   }, [refresh, stage]);
 
+  useEffect(() => {
+    void ensureTournamentNameListLoaded().catch(() => {});
+    return subscribeTournamentNameList(() => setNameListTick((n) => n + 1));
+  }, []);
+
+  const nameSuggestions = useMemo((): TournamentNameListItem[] => {
+    if (stage === 'MATCHES') return [];
+    const q = tournamentNameFilter.trim().toLowerCase();
+    if (!q) return [];
+    const status = STATUS_FOR_STAGE[stage];
+    let list = getTournamentNameList().filter((t) => t.status === status);
+    // Re-read tick so suggestions refresh when the shared cache patches.
+    void nameListTick;
+    if (stage === 'COMPLETED') {
+      if (cancelledFilter === 'hidden') list = list.filter((t) => !t.cancelled);
+      else if (cancelledFilter === 'only') list = list.filter((t) => t.cancelled);
+    }
+    list = list.filter((t) => (t.name || '').toLowerCase().includes(q));
+    if (effectiveDateRange) {
+      list = list.filter((t) => {
+        const dateStr = stage === 'COMPLETED' ? (t.recordedAt || t.createdAt) : (t.tournamentDate || t.createdAt);
+        if (!dateStr) return false;
+        return isDateInRange(new Date(dateStr), effectiveDateRange.start, effectiveDateRange.end);
+      });
+    }
+    return list.slice(0, NAME_SUGGESTION_LIMIT);
+  }, [stage, cancelledFilter, tournamentNameFilter, effectiveDateRange, nameListTick]);
+
   const selectStage = (next: TournamentStageTab) => {
     if (countForStage(counts, next) === 0) return;
     setStage(next);
@@ -306,6 +343,7 @@ const Tournaments: React.FC = () => {
     setDateFilterStart('');
     setDateFilterEnd('');
     setTournamentNameFilter('');
+    setNameSuggestOpen(false);
     localStorage.setItem('tournaments_dateFilterType', 'all');
     localStorage.removeItem('tournaments_dateFilterStart');
     localStorage.removeItem('tournaments_dateFilterEnd');
@@ -314,20 +352,80 @@ const Tournaments: React.FC = () => {
 
   const renderFilters = (includeCancelled: boolean) => (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', position: 'relative' }}>
         <label style={{ fontSize: '13px', fontWeight: 600 }}>Name:</label>
-        <input
-          type="text"
-          value={tournamentNameFilter}
-          onChange={(e) => {
-            const value = e.target.value;
-            setTournamentNameFilter(value);
-            if (value) localStorage.setItem('tournaments_nameFilter', value);
-            else localStorage.removeItem('tournaments_nameFilter');
-          }}
-          placeholder="Filter by name"
-          style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', width: '160px' }}
-        />
+        <div style={{ position: 'relative' }}>
+          <input
+            type="text"
+            value={tournamentNameFilter}
+            onChange={(e) => {
+              const value = e.target.value;
+              setTournamentNameFilter(value);
+              setNameSuggestOpen(true);
+              if (value) localStorage.setItem('tournaments_nameFilter', value);
+              else localStorage.removeItem('tournaments_nameFilter');
+            }}
+            onFocus={() => setNameSuggestOpen(true)}
+            onBlur={() => {
+              // Allow suggestion mousedown to fire before closing.
+              window.setTimeout(() => setNameSuggestOpen(false), 150);
+            }}
+            placeholder="Filter by name"
+            autoComplete="off"
+            style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px', width: '160px' }}
+          />
+          {stage !== 'MATCHES' && nameSuggestOpen && nameSuggestions.length > 0 && (
+            <ul
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: '100%',
+                zIndex: 20,
+                margin: 0,
+                padding: '4px 0',
+                listStyle: 'none',
+                minWidth: '220px',
+                maxWidth: '320px',
+                maxHeight: '240px',
+                overflowY: 'auto',
+                background: '#fff',
+                border: '1px solid #bbb',
+                borderRadius: '4px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+              }}
+            >
+              {nameSuggestions.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      openTournament(item.id);
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      border: 'none',
+                      background: 'transparent',
+                      padding: '6px 10px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#e3f2fd';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    {item.name || `Tournament #${item.id}`}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
         <label style={{ fontSize: '13px', fontWeight: 600 }}>Date:</label>

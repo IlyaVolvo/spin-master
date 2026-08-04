@@ -5,6 +5,31 @@ import { invalidateTournamentDetailCache } from './tournamentDetailCache';
 
 let ioInstance: Server | null = null;
 
+function toIsoOrNull(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  return null;
+}
+
+/** Lean fields for client tournament name-list cache patching. */
+function leanNameListSocketFields(tournament: any): Record<string, unknown> {
+  if (typeof tournament === 'number') {
+    return { id: tournament };
+  }
+  return {
+    id: tournament.id,
+    name: tournament.name ?? null,
+    status: tournament.status,
+    type: tournament.type,
+    cancelled: Boolean(tournament.cancelled),
+    parentTournamentId: tournament.parentTournamentId ?? null,
+    createdAt: toIsoOrNull(tournament.createdAt),
+    recordedAt: toIsoOrNull(tournament.recordedAt),
+    tournamentDate: toIsoOrNull(tournament.tournamentDate),
+  };
+}
+
 /**
  * Set the Socket.io server instance
  */
@@ -77,10 +102,7 @@ export function emitTournamentUpdate(tournament: any) {
     invalidateTournamentDetailCache(id);
   }
   emitToAll('tournament:updated', {
-    id,
-    name: typeof tournament === 'number' ? undefined : tournament.name,
-    status: typeof tournament === 'number' ? undefined : tournament.status,
-    type: typeof tournament === 'number' ? undefined : tournament.type,
+    ...leanNameListSocketFields(tournament),
     timestamp: Date.now(),
   });
 }
@@ -101,10 +123,7 @@ export function emitPreregistrationChanged(tournamentId?: number) {
  */
 export function emitTournamentCreated(tournament: any) {
   emitToAll('tournament:created', {
-    id: tournament.id,
-    name: tournament.name,
-    status: tournament.status,
-    type: tournament.type,
+    ...leanNameListSocketFields(tournament),
     timestamp: Date.now(),
   });
 }
@@ -125,12 +144,8 @@ export function emitTournamentDeleted(tournamentId: number) {
  */
 export function emitTournamentStateChanged(tournament: any, previousStatus?: string | null) {
   emitToAll('tournament:stateChanged', {
-    id: tournament.id,
-    name: tournament.name,
-    type: tournament.type,
+    ...leanNameListSocketFields(tournament),
     previousStatus,
-    status: tournament.status,
-    cancelled: tournament.cancelled,
     timestamp: Date.now(),
   });
 }

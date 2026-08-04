@@ -755,6 +755,34 @@ router.get('/stage-counts', async (_req, res) => {
   }
 });
 
+/**
+ * Lean root-tournament name list for client autocomplete cache.
+ * No matches/participants — id, name, status, cancelled, dates only.
+ */
+router.get('/names', async (_req, res) => {
+  try {
+    const tournaments = await prisma.tournament.findMany({
+      where: { parentTournamentId: null },
+      orderBy: { id: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        cancelled: true,
+        createdAt: true,
+        recordedAt: true,
+        tournamentDate: true,
+      },
+    });
+    res.json(tournaments);
+  } catch (error) {
+    logger.error('Error fetching tournament name list', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 /** Lightweight tournament index for stage list pages (no matches/standings enrichment). */
 router.get('/index', async (req, res) => {
   try {
@@ -799,10 +827,10 @@ router.get('/index', async (req, res) => {
   }
 });
 
-// Get single tournament
-router.get('/:id', async (req, res) => {
+// Get single tournament (numeric id only so /names, /index, etc. are never swallowed)
+router.get('/:id(\\d+)', async (req, res) => {
   try {
-    const tournamentId = parseInt(req.params.id);
+    const tournamentId = parseInt(req.params.id, 10);
     if (isNaN(tournamentId)) {
       return res.status(400).json({ error: 'Invalid tournament ID' });
     }
@@ -832,9 +860,9 @@ router.get('/:id', async (req, res) => {
 });
 
 /** Lazy correction eligibility for COMPLETED correction mode (not on detail hot path). */
-router.get('/:id/correction-eligibility', async (req, res) => {
+router.get('/:id(\\d+)/correction-eligibility', async (req, res) => {
   try {
-    const tournamentId = parseInt(req.params.id);
+    const tournamentId = parseInt(req.params.id, 10);
     if (isNaN(tournamentId)) {
       return res.status(400).json({ error: 'Invalid tournament ID' });
     }
