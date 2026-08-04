@@ -116,10 +116,14 @@ export class RoundRobinPlugin extends BaseTournamentPlugin {
       const postRatingFromMap = postRatingMap && postRatingMap.has(key)
         ? postRatingMap.get(key)
         : undefined;
-      // Prefer cache map; else current member rating; else snapshot at signup (map miss should not mask updated rating).
-      const postRating =
-        postRatingFromMap ?? participant.member?.rating ?? participant.playerRatingAtTime ?? null;
       const tc = completionByMember.get(participant.memberId);
+      // Prefer this event's completion history so standings don't show later tournaments' ratings.
+      const postRating =
+        tc?.rating ??
+        postRatingFromMap ??
+        participant.member?.rating ??
+        participant.playerRatingAtTime ??
+        null;
       return {
         ...participant,
         postRatingAtTime: postRating,

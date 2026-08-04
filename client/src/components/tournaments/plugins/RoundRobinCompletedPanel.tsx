@@ -310,8 +310,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
             </tbody>
           </table>
           <p style={{ marginTop: '8px', fontSize: '11px', color: '#666', maxWidth: '720px' }}>
-            Rating: (current) (at signup / (adjustment when this RR completed; optional change from
-            rated play during the event before that step; optional change after if your profile moved)).
+            Rating: (after this event) (at signup / (this event&apos;s adjustment)).
           </p>
         </div>
 

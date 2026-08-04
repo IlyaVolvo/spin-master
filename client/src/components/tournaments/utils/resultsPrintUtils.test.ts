@@ -147,9 +147,10 @@ describe('resultsPrintUtils', () => {
         {
           id: 101,
           memberId: 1,
-          member: { id: 1, firstName: 'Alice', lastName: 'Alpha', rating: 1520, birthDate: null, isActive: true },
+          // Live member rating differs from completion (later event) — must not appear in line
+          member: { id: 1, firstName: 'Alice', lastName: 'Alpha', rating: 1460, birthDate: null, isActive: true },
           playerRatingAtTime: 1500,
-          postRatingAtTime: 1520,
+          postRatingAtTime: 1460,
           rrCompletionRating: 1520,
           rrCompletionRatingChange: 20,
         } as any,
