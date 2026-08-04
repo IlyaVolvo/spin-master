@@ -761,6 +761,7 @@ router.get('/stage-counts', async (_req, res) => {
  */
 router.get('/names', async (_req, res) => {
   try {
+    const startedAt = Date.now();
     const tournaments = await prisma.tournament.findMany({
       where: { parentTournamentId: null },
       orderBy: { id: 'desc' },
@@ -773,6 +774,11 @@ router.get('/names', async (_req, res) => {
         recordedAt: true,
         tournamentDate: true,
       },
+    });
+    logger.info('tournament_name_list_db_load', {
+      event: 'tournament_name_list_db_load',
+      count: tournaments.length,
+      durationMs: Date.now() - startedAt,
     });
     res.json(tournaments);
   } catch (error) {
@@ -839,7 +845,8 @@ router.get('/:id(\\d+)', async (req, res) => {
     if (cached) {
       return res.json(cached);
     }
-    
+
+    const startedAt = Date.now();
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: tournamentDetailInclude(),
@@ -851,6 +858,17 @@ router.get('/:id(\\d+)', async (req, res) => {
 
     const enrichedTournament = await enrichTournamentForApi(prisma, tournament);
     setTournamentDetailCache(tournamentId, enrichedTournament);
+
+    logger.info('tournament_detail_db_load', {
+      event: 'tournament_detail_db_load',
+      tournamentId,
+      status: tournament.status,
+      type: tournament.type,
+      childCount: Array.isArray((tournament as any).childTournaments)
+        ? (tournament as any).childTournaments.length
+        : undefined,
+      durationMs: Date.now() - startedAt,
+    });
 
     res.json(enrichedTournament);
   } catch (error) {
