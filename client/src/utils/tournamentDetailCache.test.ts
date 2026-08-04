@@ -4,6 +4,7 @@ import {
   clearTournamentDetailCache,
   getCachedTournamentDetail,
   invalidateTournamentDetailCache,
+  replaceTournamentInTree,
   setCachedTournamentDetail,
   shouldNetworkRefreshCachedTournament,
 } from './tournamentDetailCache';
@@ -53,6 +54,43 @@ describe('tournamentDetailCache', () => {
     invalidateTournamentDetailCache(11);
     expect(getCachedTournamentDetail(10)).toBeNull();
     expect(getCachedTournamentDetail(11)).toBeNull();
+  });
+
+  it('does not cache a child payload as a root', () => {
+    const parent = makeTournament({
+      id: 10,
+      status: TournamentStatus.ACTIVE,
+      childTournaments: [makeTournament({ id: 11, status: TournamentStatus.ACTIVE })],
+    });
+    setCachedTournamentDetail(parent);
+    setCachedTournamentDetail({
+      ...makeTournament({ id: 11, status: TournamentStatus.ACTIVE }),
+      parentTournamentId: 10,
+    } as Tournament);
+    expect(getCachedTournamentDetail(10)).toBeNull();
+    expect(getCachedTournamentDetail(11)).toBeNull();
+  });
+
+  it('replaces a nested child in the tree', () => {
+    const root = makeTournament({
+      id: 10,
+      status: TournamentStatus.ACTIVE,
+      childTournaments: [
+        makeTournament({
+          id: 11,
+          status: TournamentStatus.ACTIVE,
+          matches: [],
+        }),
+      ],
+    });
+    const updatedChild = makeTournament({
+      id: 11,
+      status: TournamentStatus.ACTIVE,
+      matches: [{ id: 1 } as never],
+    });
+    const next = replaceTournamentInTree(root, updatedChild);
+    expect(next).not.toBe(root);
+    expect(next.childTournaments?.[0]?.matches?.length).toBe(1);
   });
 
   it('skips network refresh for completed tournaments', () => {

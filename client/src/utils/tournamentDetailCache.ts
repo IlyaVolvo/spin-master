@@ -42,7 +42,36 @@ export function getCachedTournamentDetail(tournamentId: number): Tournament | nu
   return byRootId.get(rootId)?.tournament ?? null;
 }
 
+/**
+ * Replace a node (root or nested child) that matches `updated.id` inside a tournament tree.
+ * Returns the original reference when nothing changed.
+ */
+export function replaceTournamentInTree(root: Tournament, updated: Tournament): Tournament {
+  if (root.id === updated.id) return updated;
+  const children = root.childTournaments;
+  if (!children?.length) return root;
+  let changed = false;
+  const nextChildren = children.map((child) => {
+    const next = replaceTournamentInTree(child, updated);
+    if (next !== child) changed = true;
+    return next;
+  });
+  if (!changed) return root;
+  return { ...root, childTournaments: nextChildren };
+}
+
+/**
+ * Cache a root tournament detail payload. Never cache a child (parentTournamentId set) —
+ * invalidate the parent instead so the next load refetches the full tree.
+ */
 export function setCachedTournamentDetail(tournament: Tournament): void {
+  const parentId = (tournament as { parentTournamentId?: number | null }).parentTournamentId;
+  if (parentId != null) {
+    invalidateTournamentDetailCache(Number(parentId));
+    invalidateTournamentDetailCache(tournament.id);
+    return;
+  }
+
   const existing = byRootId.get(tournament.id);
   if (existing) {
     clearChildIndexForRoot(tournament.id, existing.tournament);

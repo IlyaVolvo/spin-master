@@ -111,12 +111,12 @@ async function refreshTournament(
   try {
     const response = await api.get(`/tournaments/${tournamentId}`);
     const tournament = response.data;
-    if (tournament?.parentTournamentId) {
+    // Always drop stale cache for this write target (and its parent tree).
+    invalidateTournamentDetailCache(tournamentId);
+    if (tournament?.parentTournamentId != null) {
       invalidateTournamentDetailCache(Number(tournament.parentTournamentId));
     } else if (tournament?.id != null) {
       setCachedTournamentDetail(tournament);
-    } else {
-      invalidateTournamentDetailCache(tournamentId);
     }
     onTournamentUpdate(tournament);
   } catch (err) {

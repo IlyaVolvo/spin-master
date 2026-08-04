@@ -42,6 +42,7 @@ import {
 import {
   getCachedTournamentDetail,
   invalidateTournamentDetailCache,
+  replaceTournamentInTree,
   setCachedTournamentDetail,
   shouldNetworkRefreshCachedTournament,
 } from '../utils/tournamentDetailCache';
@@ -806,6 +807,63 @@ const TournamentDetailPage: React.FC = () => {
     }, 50);
   }, [fetchDataPreservingScroll]);
 
+  /**
+   * Apply a tournament (root or child) returned after a mutation into React state + cache,
+   * then reconcile with a forced silent network refresh. Never leave stale completed cache in place.
+   */
+  const applyTournamentUpdate = useCallback(
+    (updatedTournament: Tournament) => {
+      invalidateTournamentDetailCache(updatedTournament.id);
+      const parentId = (updatedTournament as { parentTournamentId?: number | null }).parentTournamentId;
+      if (parentId != null) {
+        invalidateTournamentDetailCache(Number(parentId));
+      }
+
+      const mergeRoots = (roots: Tournament[]): Tournament[] =>
+        roots.map((root) => {
+          if (root.id === updatedTournament.id) return updatedTournament;
+          return replaceTournamentInTree(root, updatedTournament);
+        });
+
+      if (updatedTournament.status === 'COMPLETED' && parentId == null) {
+        setActiveTournaments((prev) => prev.filter((t) => t.id !== updatedTournament.id));
+        setTournaments((prev) => [updatedTournament, ...prev.filter((t) => t.id !== updatedTournament.id)]);
+        setCachedTournamentDetail(updatedTournament);
+      } else if (updatedTournament.status === 'ACTIVE' && parentId == null) {
+        setTournaments((prev) => prev.filter((t) => t.id !== updatedTournament.id));
+        setActiveTournaments((prev) => {
+          const has = prev.some((t) => t.id === updatedTournament.id);
+          return has
+            ? prev.map((t) => (t.id === updatedTournament.id ? updatedTournament : t))
+            : [updatedTournament, ...prev];
+        });
+        setCachedTournamentDetail(updatedTournament);
+      } else {
+        setActiveTournaments((prev) => {
+          const next = mergeRoots(prev);
+          const changed = next.find((root, i) => root !== prev[i]);
+          if (changed) setCachedTournamentDetail(changed);
+          return next;
+        });
+        setTournaments((prev) => {
+          const next = mergeRoots(prev);
+          const changed = next.find((root, i) => root !== prev[i]);
+          if (changed) setCachedTournamentDetail(changed);
+          return next;
+        });
+      }
+
+      setSelectedTournament((prev) => {
+        if (!prev) return prev;
+        if (prev.id === updatedTournament.id) return updatedTournament;
+        return prev;
+      });
+
+      scheduleSilentRefresh();
+    },
+    [scheduleSilentRefresh],
+  );
+
   // Child match socket events use the child tournament id; keep the open tree ids here.
   const openTreeIdsRef = useRef<Set<number>>(new Set([tournamentId]));
   useEffect(() => {
@@ -1328,14 +1386,13 @@ const TournamentDetailPage: React.FC = () => {
       
       await withWindowScrollPreserved(async () => {
         setEditingMatch(null);
+        invalidateTournamentDetailCache(selectedTournament.id);
+        invalidateTournamentDetailCache(tournamentId);
         await fetchData({ silent: true, force: true });
         if (selectedTournament) {
           try {
             const updated = await api.get(`/tournaments/${selectedTournament.id}`);
-            if (!updated.data?.parentTournamentId) {
-              setCachedTournamentDetail(updated.data);
-            }
-            setSelectedTournament(updated.data);
+            applyTournamentUpdate(updated.data);
           } catch {
             /* keep prior selection if refetch fails */
           }
@@ -1389,14 +1446,13 @@ const TournamentDetailPage: React.FC = () => {
 
         await withWindowScrollPreserved(async () => {
           setEditingMatch(null);
+          invalidateTournamentDetailCache(selectedTournament.id);
+          invalidateTournamentDetailCache(tournamentId);
           await fetchData({ silent: true, force: true });
           if (selectedTournament) {
             try {
               const updated = await api.get(`/tournaments/${selectedTournament.id}`);
-              if (!updated.data?.parentTournamentId) {
-                setCachedTournamentDetail(updated.data);
-              }
-              setSelectedTournament(updated.data);
+              applyTournamentUpdate(updated.data);
             } catch {
               /* keep prior selection if refetch fails */
             }
@@ -1601,14 +1657,13 @@ const TournamentDetailPage: React.FC = () => {
       });
       setMatchResultAlreadyEnteredModal(normalizeDuplicateScoreMessage(message));
       void withWindowScrollPreserved(async () => {
+        invalidateTournamentDetailCache(selectedTournament?.id ?? tournamentId);
+        invalidateTournamentDetailCache(tournamentId);
         await fetchData({ silent: true, force: true });
         if (selectedTournament) {
           try {
             const updated = await api.get(`/tournaments/${selectedTournament.id}`);
-            if (!updated.data?.parentTournamentId) {
-              setCachedTournamentDetail(updated.data);
-            }
-            setSelectedTournament(updated.data);
+            applyTournamentUpdate(updated.data);
           } catch {
             /* keep prior selection if refetch fails */
           }
@@ -2226,8 +2281,8 @@ const TournamentDetailPage: React.FC = () => {
                                       {child.status === 'COMPLETED'
                                         ? childPlugin.createCompletedPanel({
                                             tournament: child as any,
-                                            onTournamentUpdate: () => {
-                                              scheduleSilentRefresh();
+                                            onTournamentUpdate: (updatedTournament) => {
+                                              applyTournamentUpdate(updatedTournament as Tournament);
                                             },
                                             onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
@@ -2236,8 +2291,8 @@ const TournamentDetailPage: React.FC = () => {
                                           })
                                         : childPlugin.createActivePanel({
                                             tournament: child as any,
-                                            onTournamentUpdate: () => {
-                                              scheduleSilentRefresh();
+                                            onTournamentUpdate: (updatedTournament) => {
+                                              applyTournamentUpdate(updatedTournament as Tournament);
                                             },
                                             onMatchUpdate: () => {
                                               scheduleSilentRefresh();
@@ -2260,8 +2315,8 @@ const TournamentDetailPage: React.FC = () => {
                                         onPrintSchedule: childHasPrintableSchedule(child)
                                           ? () => handlePrintSchedule(child, tournament.name)
                                           : undefined,
-                                        onTournamentUpdate: () => {
-                                          scheduleSilentRefresh();
+                                        onTournamentUpdate: (updatedTournament) => {
+                                          applyTournamentUpdate(updatedTournament as Tournament);
                                         },
                                         onError: (err) => handleTournamentError(err),
                                         onSuccess: (msg) => { console.log(msg); },
@@ -2567,20 +2622,7 @@ const TournamentDetailPage: React.FC = () => {
                           const result = plugin.createCompletedPanel({
                             tournament: tournament as any,
                             onTournamentUpdate: (updatedTournament) => {
-                              setTournaments(prev =>
-                                prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
-                              );
-                              if (updatedTournament.status === 'COMPLETED') {
-                                setActiveTournaments(prev => prev.filter(t => t.id !== updatedTournament.id));
-                                setTournaments(prev => {
-                                  const without = prev.filter(t => t.id !== updatedTournament.id);
-                                  return [updatedTournament as Tournament, ...without];
-                                });
-                              } else {
-                                setActiveTournaments(prev =>
-                                  prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
-                                );
-                              }
+                              applyTournamentUpdate(updatedTournament as Tournament);
                             },
                             onError: (error) => handleTournamentError(error),
                             onSuccess: (message) => console.log('Success:', message),
@@ -2611,21 +2653,7 @@ const TournamentDetailPage: React.FC = () => {
                                   participantCount: updatedTournament.participants?.length || 0
                                 }
                               });
-                              
-                              if (updatedTournament.status === 'COMPLETED') {
-                                setActiveTournaments(prev => prev.filter(t => t.id !== updatedTournament.id));
-                                setTournaments(prev => {
-                                  const without = prev.filter(t => t.id !== updatedTournament.id);
-                                  return [updatedTournament as Tournament, ...without];
-                                });
-                              } else {
-                                setTournaments(prev =>
-                                  prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
-                                );
-                                setActiveTournaments(prev =>
-                                  prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
-                                );
-                              }
+                              applyTournamentUpdate(updatedTournament as Tournament);
                             },
                             onError: (error) => {
                               console.error(`❌ Plugin Error:`, {
@@ -2742,12 +2770,7 @@ const TournamentDetailPage: React.FC = () => {
                               participantCount: updatedTournament.participants?.length || 0
                             }
                           });
-                          setTournaments(prev => 
-                            prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
-                          );
-                          setActiveTournaments(prev => 
-                            prev.map(t => t.id === updatedTournament.id ? updatedTournament as Tournament : t)
-                          );
+                          applyTournamentUpdate(updatedTournament as Tournament);
                         },
                         onError: (error) => {
                           console.error(`❌ Schedule Plugin Error:`, {
@@ -3199,8 +3222,8 @@ const TournamentDetailPage: React.FC = () => {
                                         <div style={{ marginTop: '5px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
                                           {childPlugin.createCompletedPanel({
                                             tournament: child as any,
-                                            onTournamentUpdate: () => {
-                                              scheduleSilentRefresh();
+                                            onTournamentUpdate: (updatedTournament) => {
+                                              applyTournamentUpdate(updatedTournament as Tournament);
                                             },
                                             onError: (err) => handleTournamentError(err),
                                             onSuccess: (msg) => { console.log(msg); },
@@ -3379,9 +3402,7 @@ const TournamentDetailPage: React.FC = () => {
                             {plugin.createCompletedPanel({
                               tournament: tournament as any,
                               onTournamentUpdate: (updatedTournament) => {
-                                setTournaments(prev => 
-                                  prev.map(t => t.id === updatedTournament.id ? updatedTournament as any : t)
-                                );
+                                applyTournamentUpdate(updatedTournament as Tournament);
                               },
                               onError: (error) => handleTournamentError(error),
                               onSuccess: (message) => {
