@@ -69,6 +69,7 @@ import {
   isValidRatingInput,
 } from '../../../server/src/utils/memberValidation';
 import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
+import { useBusyAction } from '../hooks/useBusyAction';
 import './tournaments/plugins';
 
 // membersCache is imported from ./hooks/usePlayerData
@@ -221,6 +222,12 @@ const Players: React.FC = () => {
   const [headerHeight, setHeaderHeight] = useState<number>(40);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const { busy: playerSaveBusy, runBusy: runPlayerSaveBusy } = useBusyAction();
+  const { busy: playerDeleteBusy, runBusy: runPlayerDeleteBusy } = useBusyAction();
+  const { busy: activeToggleBusy, runBusy: runActiveToggleBusy } = useBusyAction();
+  const { busy: preregBusy, runBusy: runPreregBusy } = useBusyAction();
+  const { busy: passwordBusy, runBusy: runPasswordBusy } = useBusyAction();
+  const { busy: importBusy, runBusy: runImportBusy } = useBusyAction();
   const [segmentNames, setSegmentNames] = useState<string[]>(() => getSystemConfig().clubPlans.segments);
   const { members, setMembers, loading, setLoading, fetchMembers } = usePlayerData({ setError });
   const currentMember = getMember();
@@ -1663,67 +1670,69 @@ const Players: React.FC = () => {
 
     const playerData = buildAddPlayerData();
 
-    try {
-      const currentDuplicateCheck = await fetchAddDuplicateCheck();
-      if (currentDuplicateCheck && applyAddDuplicateFieldErrors(currentDuplicateCheck)) {
-        return;
-      }
+    await runPlayerSaveBusy(async () => {
+      try {
+        const currentDuplicateCheck = await fetchAddDuplicateCheck();
+        if (currentDuplicateCheck && applyAddDuplicateFieldErrors(currentDuplicateCheck)) {
+          return;
+        }
 
-      if (currentDuplicateCheck?.similarNames.length) {
-        setSimilarNames(currentDuplicateCheck.similarNames);
-        setPendingPlayerData(buildPendingAddPlayerData(playerData));
-        setShowConfirmation(true);
-        return;
-      }
+        if (currentDuplicateCheck?.similarNames.length) {
+          setSimilarNames(currentDuplicateCheck.similarNames);
+          setPendingPlayerData(buildPendingAddPlayerData(playerData));
+          setShowConfirmation(true);
+          return;
+        }
 
-      const response = await api.post('/players', playerData);
-      
-      // Check if confirmation is required
-      if (response.data.requiresConfirmation) {
-        setSimilarNames(response.data.similarNames);
-        setPendingPlayerData(response.data.proposedMemberData || buildPendingAddPlayerData(playerData));
-        setShowConfirmation(true);
-        return;
-      }
+        const response = await api.post('/players', playerData);
+        
+        // Check if confirmation is required
+        if (response.data.requiresConfirmation) {
+          setSimilarNames(response.data.similarNames);
+          setPendingPlayerData(response.data.proposedMemberData || buildPendingAddPlayerData(playerData));
+          setShowConfirmation(true);
+          return;
+        }
 
-      // No similar names, proceed normally
-      setSuccess(
-        response.data.passwordResetEmailSent
-          ? 'Member created and invitation email sent'
-          : 'Member saved as an active player (no email — no invitation sent)'
-      );
-      setNewPlayerFirstName('');
-      setNewPlayerLastName('');
-      setNewPlayerBirthDate(null);
-      setNewPlayerRating('');
-      setLastConfirmedAddRating('');
-      setNewPlayerEmail('');
-      setNewPlayerTournamentNotificationsEnabled(false);
-      setNewPlayerGender('NOT_SPECIFIED');
-      setNewPlayerRoles(['PLAYER']);
-      setNewPlayerPhone('');
-      setNewPlayerAddress('');
-      setNewPlayerSegment('Regular');
-      setNewPlayerPicture('');
-      setAddFieldErrors({});
-      setAddFieldTouched({});
-      setAddDuplicateCheck(null);
-      setShowAddForm(false);
-      fetchMembers();
-    } catch (err: any) {
-      const fieldErrors = err.response?.data?.fieldErrors;
-      if (fieldErrors && typeof fieldErrors === 'object') {
-        const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
-          acc[field] = true;
-          return acc;
-        }, {});
-        setAddFieldErrors(prev => ({ ...prev, ...fieldErrors }));
-        setAddFieldTouched(prev => ({ ...prev, ...touchedFields }));
-        return;
+        // No similar names, proceed normally
+        setSuccess(
+          response.data.passwordResetEmailSent
+            ? 'Member created and invitation email sent'
+            : 'Member saved as an active player (no email — no invitation sent)'
+        );
+        setNewPlayerFirstName('');
+        setNewPlayerLastName('');
+        setNewPlayerBirthDate(null);
+        setNewPlayerRating('');
+        setLastConfirmedAddRating('');
+        setNewPlayerEmail('');
+        setNewPlayerTournamentNotificationsEnabled(false);
+        setNewPlayerGender('NOT_SPECIFIED');
+        setNewPlayerRoles(['PLAYER']);
+        setNewPlayerPhone('');
+        setNewPlayerAddress('');
+        setNewPlayerSegment('Regular');
+        setNewPlayerPicture('');
+        setAddFieldErrors({});
+        setAddFieldTouched({});
+        setAddDuplicateCheck(null);
+        setShowAddForm(false);
+        fetchMembers();
+      } catch (err: any) {
+        const fieldErrors = err.response?.data?.fieldErrors;
+        if (fieldErrors && typeof fieldErrors === 'object') {
+          const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
+            acc[field] = true;
+            return acc;
+          }, {});
+          setAddFieldErrors(prev => ({ ...prev, ...fieldErrors }));
+          setAddFieldTouched(prev => ({ ...prev, ...touchedFields }));
+          return;
+        }
+        const errorMessage = err.response?.data?.error || 'Failed to add player';
+        setError(errorMessage);
       }
-      const errorMessage = err.response?.data?.error || 'Failed to add player';
-      setError(errorMessage);
-    }
+    });
   };
 
   const handleExportPlayers = () => {
@@ -1819,38 +1828,40 @@ const Players: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    try {
-      setError('');
-      setSuccess('');
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('sendEmail', importSendEmail ? 'true' : 'false');
+    await runImportBusy(async () => {
+      try {
+        setError('');
+        setSuccess('');
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('sendEmail', importSendEmail ? 'true' : 'false');
 
-      const response = await api.post('/players/import', formData, {
-        timeout: 10000,
-      });
-      setImportModal({
-        kind: 'results',
-        results: {
-          ...response.data,
-          emailSent: importSendEmail,
-          addedWithoutEmail: response.data.addedWithoutEmail ?? 0,
-        },
-      });
-      await fetchMembers(); // Refresh player list
+        const response = await api.post('/players/import', formData, {
+          timeout: 10000,
+        });
+        setImportModal({
+          kind: 'results',
+          results: {
+            ...response.data,
+            emailSent: importSendEmail,
+            addedWithoutEmail: response.data.addedWithoutEmail ?? 0,
+          },
+        });
+        await fetchMembers(); // Refresh player list
 
-      // Reset file input
-      event.target.value = '';
-    } catch (err: any) {
-      const data = err.response?.data;
-      const errorMessage = data?.error || err.message || 'Failed to import players';
-      setImportModal({
-        kind: 'error',
-        message: errorMessage,
-        importValidation: data?.importValidation,
-      });
-      event.target.value = '';
-    }
+        // Reset file input
+        event.target.value = '';
+      } catch (err: any) {
+        const data = err.response?.data;
+        const errorMessage = data?.error || err.message || 'Failed to import players';
+        setImportModal({
+          kind: 'error',
+          message: errorMessage,
+          importValidation: data?.importValidation,
+        });
+        event.target.value = '';
+      }
+    });
   };
 
   const handleExportClubArchive = async () => {
@@ -1897,104 +1908,108 @@ const Players: React.FC = () => {
       return;
     }
 
-    try {
-      setError('');
-      setSuccess('');
-      const formData = new FormData();
-      formData.append('file', file);
-      const response = await api.post('/club-archive/import', formData, {
-        timeout: 300000,
-      });
-      const r = response.data;
-      setSuccess(
-        `Club archive imported: ${r.membersCreated} members created, ${r.membersUpdated} updated, ` +
-          `${r.tournamentsCreated} tournaments, ${r.matchesCreated} matches` +
-          (r.standaloneMatchesCreated ? `, ${r.standaloneMatchesCreated} standalone matches` : ''),
-      );
-      await fetchMembers();
-      event.target.value = '';
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Failed to import club archive');
-      event.target.value = '';
-    }
+    await runImportBusy(async () => {
+      try {
+        setError('');
+        setSuccess('');
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await api.post('/club-archive/import', formData, {
+          timeout: 300000,
+        });
+        const r = response.data;
+        setSuccess(
+          `Club archive imported: ${r.membersCreated} members created, ${r.membersUpdated} updated, ` +
+            `${r.tournamentsCreated} tournaments, ${r.matchesCreated} matches` +
+            (r.standaloneMatchesCreated ? `, ${r.standaloneMatchesCreated} standalone matches` : ''),
+        );
+        await fetchMembers();
+        event.target.value = '';
+      } catch (err: any) {
+        setError(err.response?.data?.error || err.message || 'Failed to import club archive');
+        event.target.value = '';
+      }
+    });
   };
 
   const handleConfirmAdd = async () => {
     if (!pendingPlayerData) return;
 
-    try {
-      const playerData: any = {
-        firstName: pendingPlayerData.firstName,
-        lastName: pendingPlayerData.lastName,
-        gender: pendingPlayerData.gender,
-        roles: pendingPlayerData.roles,
-      };
+    await runPlayerSaveBusy(async () => {
+      try {
+        const playerData: any = {
+          firstName: pendingPlayerData.firstName,
+          lastName: pendingPlayerData.lastName,
+          gender: pendingPlayerData.gender,
+          roles: pendingPlayerData.roles,
+        };
 
-      if (pendingPlayerData.email && pendingPlayerData.email.trim()) {
-        playerData.email = pendingPlayerData.email.trim();
-        playerData.tournamentNotificationsEnabled = Boolean(pendingPlayerData.tournamentNotificationsEnabled);
-      }
-      
-      if (pendingPlayerData.birthDate) {
-        playerData.birthDate = pendingPlayerData.birthDate;
-      }
-      
-      if (pendingPlayerData.rating !== null) {
-        playerData.rating = pendingPlayerData.rating;
-      }
-      if (pendingPlayerData.phone) {
-        playerData.phone = pendingPlayerData.phone;
-      }
-      if (pendingPlayerData.address) {
-        playerData.address = pendingPlayerData.address;
-      }
-      if (pendingPlayerData.picture) {
-        playerData.picture = pendingPlayerData.picture;
-      }
+        if (pendingPlayerData.email && pendingPlayerData.email.trim()) {
+          playerData.email = pendingPlayerData.email.trim();
+          playerData.tournamentNotificationsEnabled = Boolean(pendingPlayerData.tournamentNotificationsEnabled);
+        }
+        
+        if (pendingPlayerData.birthDate) {
+          playerData.birthDate = pendingPlayerData.birthDate;
+        }
+        
+        if (pendingPlayerData.rating !== null) {
+          playerData.rating = pendingPlayerData.rating;
+        }
+        if (pendingPlayerData.phone) {
+          playerData.phone = pendingPlayerData.phone;
+        }
+        if (pendingPlayerData.address) {
+          playerData.address = pendingPlayerData.address;
+        }
+        if (pendingPlayerData.picture) {
+          playerData.picture = pendingPlayerData.picture;
+        }
 
-      // Make a second request with a flag to skip similarity check
-      const confirmRes = await api.post('/players', { ...playerData, skipSimilarityCheck: true });
-      setSuccess(
-        confirmRes.data.passwordResetEmailSent
-          ? 'Member created and invitation email sent'
-          : 'Member saved as an active player (no email — no invitation sent)'
-      );
-      setNewPlayerFirstName('');
-      setNewPlayerLastName('');
-      setNewPlayerBirthDate(null);
-      setNewPlayerRating('');
-      setNewPlayerEmail('');
-      setNewPlayerTournamentNotificationsEnabled(false);
-      setNewPlayerGender('NOT_SPECIFIED');
-      setNewPlayerRoles(['PLAYER']);
-      setNewPlayerPhone('');
-      setNewPlayerAddress('');
-      setNewPlayerSegment('Regular');
-      setNewPlayerPicture('');
-      setAddFieldErrors({});
-      setAddFieldTouched({});
-      setAddDuplicateCheck(null);
-      setShowAddForm(false);
-      setShowConfirmation(false);
-      setSimilarNames([]);
-      setPendingPlayerData(null);
-      fetchMembers();
-    } catch (err: any) {
-      const fieldErrors = err.response?.data?.fieldErrors;
-      if (fieldErrors && typeof fieldErrors === 'object') {
-        const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
-          acc[field] = true;
-          return acc;
-        }, {});
-        setAddFieldErrors(prev => ({ ...prev, ...fieldErrors }));
-        setAddFieldTouched(prev => ({ ...prev, ...touchedFields }));
+        // Make a second request with a flag to skip similarity check
+        const confirmRes = await api.post('/players', { ...playerData, skipSimilarityCheck: true });
+        setSuccess(
+          confirmRes.data.passwordResetEmailSent
+            ? 'Member created and invitation email sent'
+            : 'Member saved as an active player (no email — no invitation sent)'
+        );
+        setNewPlayerFirstName('');
+        setNewPlayerLastName('');
+        setNewPlayerBirthDate(null);
+        setNewPlayerRating('');
+        setNewPlayerEmail('');
+        setNewPlayerTournamentNotificationsEnabled(false);
+        setNewPlayerGender('NOT_SPECIFIED');
+        setNewPlayerRoles(['PLAYER']);
+        setNewPlayerPhone('');
+        setNewPlayerAddress('');
+        setNewPlayerSegment('Regular');
+        setNewPlayerPicture('');
+        setAddFieldErrors({});
+        setAddFieldTouched({});
+        setAddDuplicateCheck(null);
+        setShowAddForm(false);
         setShowConfirmation(false);
-        return;
+        setSimilarNames([]);
+        setPendingPlayerData(null);
+        fetchMembers();
+      } catch (err: any) {
+        const fieldErrors = err.response?.data?.fieldErrors;
+        if (fieldErrors && typeof fieldErrors === 'object') {
+          const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
+            acc[field] = true;
+            return acc;
+          }, {});
+          setAddFieldErrors(prev => ({ ...prev, ...fieldErrors }));
+          setAddFieldTouched(prev => ({ ...prev, ...touchedFields }));
+          setShowConfirmation(false);
+          return;
+        }
+        const errorMessage = err.response?.data?.error || 'Failed to add player';
+        setError(errorMessage);
+        setShowConfirmation(false);
       }
-      const errorMessage = err.response?.data?.error || 'Failed to add player';
-      setError(errorMessage);
-      setShowConfirmation(false);
-    }
+    });
   };
 
   const handleCancelAdd = () => {
@@ -2239,22 +2254,24 @@ const Players: React.FC = () => {
 
   const handleConfirmToggleActive = async () => {
     if (!pendingActiveToggle) return;
-    
-    setShowActiveConfirmation(false);
-    setError('');
-    setSuccess('');
 
-    try {
-      const endpoint = pendingActiveToggle.isActive ? 'deactivate' : 'activate';
-      await api.patch(`/players/${pendingActiveToggle.playerId}/${endpoint}`);
-      const activatedWithOverride = !pendingActiveToggle.isActive && !pendingActiveToggle.emailConfirmedAt;
-      setSuccess(activatedWithOverride ? 'Player activated before email confirmation' : `Player ${pendingActiveToggle.isActive ? 'deactivated' : 'reactivated'} successfully`);
-      fetchMembers();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update player');
-    } finally {
-      setPendingActiveToggle(null);
-    }
+    await runActiveToggleBusy(async () => {
+      setError('');
+      setSuccess('');
+
+      try {
+        const endpoint = pendingActiveToggle.isActive ? 'deactivate' : 'activate';
+        await api.patch(`/players/${pendingActiveToggle.playerId}/${endpoint}`);
+        const activatedWithOverride = !pendingActiveToggle.isActive && !pendingActiveToggle.emailConfirmedAt;
+        setSuccess(activatedWithOverride ? 'Player activated before email confirmation' : `Player ${pendingActiveToggle.isActive ? 'deactivated' : 'reactivated'} successfully`);
+        fetchMembers();
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to update player');
+      } finally {
+        setShowActiveConfirmation(false);
+        setPendingActiveToggle(null);
+      }
+    });
   };
 
   const handleCancelToggleActive = () => {
@@ -2376,18 +2393,20 @@ const Players: React.FC = () => {
 
   const handleDeleteMember = async () => {
     if (!editingPlayerId) return;
-    
-    try {
-      await api.delete(`/players/${editingPlayerId}`);
-      setSuccess('Member deleted successfully');
-      setShowDeleteConfirm(false);
-      handleCancelEdit();
-      fetchMembers(); // Refresh the list
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.error || 'Failed to delete member';
-      setError(errorMessage);
-      setShowDeleteConfirm(false);
-    }
+
+    await runPlayerDeleteBusy(async () => {
+      try {
+        await api.delete(`/players/${editingPlayerId}`);
+        setSuccess('Member deleted successfully');
+        setShowDeleteConfirm(false);
+        handleCancelEdit();
+        fetchMembers(); // Refresh the list
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.error || 'Failed to delete member';
+        setError(errorMessage);
+        setShowDeleteConfirm(false);
+      }
+    });
   };
 
   const handleCancelEdit = () => {
@@ -2533,173 +2552,175 @@ const Players: React.FC = () => {
       return;
     }
 
-    setError('');
-    setSuccess('');
-    setScorePinError('');
-    setScorePinSuccess('');
+    await runPlayerSaveBusy(async () => {
+      setError('');
+      setSuccess('');
+      setScorePinError('');
+      setScorePinSuccess('');
 
-    const currentMember = getMember();
-    const isAdminUser = isAdmin();
-    const isEditingSelf = Boolean(currentMember && currentMember.id === editingPlayerId);
-    const canEditRestrictedProfileFields = isAdminUser && !isEditingSelf;
+      const currentMember = getMember();
+      const isAdminUser = isAdmin();
+      const isEditingSelf = Boolean(currentMember && currentMember.id === editingPlayerId);
+      const canEditRestrictedProfileFields = isAdminUser && !isEditingSelf;
 
-    // Validate permissions
-    if (!isAdminUser && !isEditingSelf) {
-      setError('You can only edit your own profile');
-      return;
-    }
+      // Validate permissions
+      if (!isAdminUser && !isEditingSelf) {
+        setError('You can only edit your own profile');
+        return;
+      }
 
-    const pinOnlyChange =
-      hasPendingScorePinChange() &&
-      (() => {
-        // Profile unchanged except for PIN drafts
-        const b = playerEditBaselineRef.current;
-        if (!b) return false;
-        const birthMs = editBirthDate ? editBirthDate.getTime() : null;
-        const rolesKey = [...editRoles].sort().join(',');
-        const profileChanged =
-          editFirstName !== b.firstName ||
-          editLastName !== b.lastName ||
-          editEmail !== b.email ||
-          (editGender || '') !== (b.gender || '') ||
-          birthMs !== b.birthDateMs ||
-          editPhone !== b.phone ||
-          editAddress !== b.address ||
-          editSegment !== b.segment ||
-          editPicture !== b.picture ||
-          editIsActive !== b.isActive ||
-          (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
-          rolesKey !== b.rolesKey ||
-          editRating.trim() !== b.rating.trim() ||
-          editAutoRelinquishKey !== b.autoRelinquishKey;
-        return !profileChanged;
-      })();
+      const pinOnlyChange =
+        hasPendingScorePinChange() &&
+        (() => {
+          // Profile unchanged except for PIN drafts
+          const b = playerEditBaselineRef.current;
+          if (!b) return false;
+          const birthMs = editBirthDate ? editBirthDate.getTime() : null;
+          const rolesKey = [...editRoles].sort().join(',');
+          const profileChanged =
+            editFirstName !== b.firstName ||
+            editLastName !== b.lastName ||
+            editEmail !== b.email ||
+            (editGender || '') !== (b.gender || '') ||
+            birthMs !== b.birthDateMs ||
+            editPhone !== b.phone ||
+            editAddress !== b.address ||
+            editSegment !== b.segment ||
+            editPicture !== b.picture ||
+            editIsActive !== b.isActive ||
+            (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
+            rolesKey !== b.rolesKey ||
+            editRating.trim() !== b.rating.trim() ||
+            editAutoRelinquishKey !== b.autoRelinquishKey;
+          return !profileChanged;
+        })();
 
-    if (pinOnlyChange) {
+      if (pinOnlyChange) {
+        try {
+          const ok = await saveScorePinIfPending(editingPlayerId);
+          if (!ok) return;
+          setSuccess('Score PIN updated');
+          // Keep modal open so the user sees the updated PIN; refresh baseline for pin-only
+          playerEditBaselineRef.current = {
+            ...playerEditBaselineRef.current!,
+          };
+          setShowScorePinChange(false);
+        } catch (err: any) {
+          setScorePinError(err.response?.data?.error || 'Failed to update PIN');
+        }
+        return;
+      }
+
+      // Validate all editable fields
+      if (!validateAllEditFields(canEditRestrictedProfileFields)) {
+        return;
+      }
+
       try {
-        const ok = await saveScorePinIfPending(editingPlayerId);
-        if (!ok) return;
-        setSuccess('Score PIN updated');
-        // Keep modal open so the user sees the updated PIN; refresh baseline for pin-only
-        playerEditBaselineRef.current = {
-          ...playerEditBaselineRef.current!,
-        };
-        setShowScorePinChange(false);
-      } catch (err: any) {
-        setScorePinError(err.response?.data?.error || 'Failed to update PIN');
-      }
-      return;
-    }
-
-    // Validate all editable fields
-    if (!validateAllEditFields(canEditRestrictedProfileFields)) {
-      return;
-    }
-
-    try {
-      const duplicateCheck = await fetchEditDuplicateCheck('all');
-      if (duplicateCheck && applyEditDuplicateFieldErrors(duplicateCheck)) {
-        return;
-      }
-    } catch {
-      // Let the save request provide authoritative validation if the pre-check fails.
-    }
-
-    if (
-      canEditRestrictedProfileFields &&
-      editRating.trim() !== '' &&
-      isSuspiciousRating(editRating) &&
-      editRating.trim() !== lastConfirmedEditRating.trim()
-    ) {
-      const shouldContinue = await requestSuspiciousRatingConfirmation();
-      if (!shouldContinue) {
-        setEditRating(lastConfirmedEditRating);
-        const ratingError = validateEditField('rating', lastConfirmedEditRating);
-        setEditFieldTouched(prev => ({ ...prev, rating: true }));
-        setEditFieldErrors(prev => ({ ...prev, rating: ratingError }));
-        return;
-      }
-      setLastConfirmedEditRating(editRating);
-    }
-
-    try {
-      const updateData: any = {};
-      
-      if (canEditRestrictedProfileFields) {
-        // Admin editing another member can edit restricted profile fields
-        updateData.firstName = editFirstName.trim();
-        updateData.lastName = editLastName.trim();
-        updateData.gender = editGender;
-        if (editBirthDate) {
-          updateData.birthDate = toDateOnlyString(editBirthDate);
-        } else if (playerEditBaselineRef.current?.birthDateMs != null) {
-          updateData.birthDate = null;
+        const duplicateCheck = await fetchEditDuplicateCheck('all');
+        if (duplicateCheck && applyEditDuplicateFieldErrors(duplicateCheck)) {
+          return;
         }
+      } catch {
+        // Let the save request provide authoritative validation if the pre-check fails.
+      }
 
-        if (editRating.trim() === '') {
-          updateData.rating = null;
+      if (
+        canEditRestrictedProfileFields &&
+        editRating.trim() !== '' &&
+        isSuspiciousRating(editRating) &&
+        editRating.trim() !== lastConfirmedEditRating.trim()
+      ) {
+        const shouldContinue = await requestSuspiciousRatingConfirmation();
+        if (!shouldContinue) {
+          setEditRating(lastConfirmedEditRating);
+          const ratingError = validateEditField('rating', lastConfirmedEditRating);
+          setEditFieldTouched(prev => ({ ...prev, rating: true }));
+          setEditFieldErrors(prev => ({ ...prev, rating: ratingError }));
+          return;
+        }
+        setLastConfirmedEditRating(editRating);
+      }
+
+      try {
+        const updateData: any = {};
+        
+        if (canEditRestrictedProfileFields) {
+          // Admin editing another member can edit restricted profile fields
+          updateData.firstName = editFirstName.trim();
+          updateData.lastName = editLastName.trim();
+          updateData.gender = editGender;
+          if (editBirthDate) {
+            updateData.birthDate = toDateOnlyString(editBirthDate);
+          } else if (playerEditBaselineRef.current?.birthDateMs != null) {
+            updateData.birthDate = null;
+          }
+
+          if (editRating.trim() === '') {
+            updateData.rating = null;
+          } else {
+            updateData.rating = parseInt(editRating);
+          }
+          updateData.isActive = editIsActive;
+          updateData.roles = editRoles;
         } else {
-          updateData.rating = parseInt(editRating);
+          if (editBirthDate) {
+            updateData.birthDate = toDateOnlyString(editBirthDate);
+          } else if (playerEditBaselineRef.current?.birthDateMs != null) {
+            updateData.birthDate = null;
+          }
         }
-        updateData.isActive = editIsActive;
-        updateData.roles = editRoles;
-      } else {
-        if (editBirthDate) {
-          updateData.birthDate = toDateOnlyString(editBirthDate);
-        } else if (playerEditBaselineRef.current?.birthDateMs != null) {
-          updateData.birthDate = null;
+
+        if (isAdminUser) {
+          updateData.autoRelinquishPrivileges =
+            editAutoRelinquishKey === 'always' ? true : editAutoRelinquishKey === 'never' ? false : null;
+          updateData.trialEndsOn = editTrialEndsOn.trim() || null;
+          updateData.segment = editSegment || 'Regular';
         }
-      }
+        if (editEmail.trim()) {
+          updateData.onlinePayConsent = editOnlinePayConsent;
+        } else {
+          updateData.onlinePayConsent = false;
+        }
+        
+        // Both admin and regular members can edit these fields
+        updateData.email = editEmail.trim() === '' ? null : editEmail.trim();
+        updateData.tournamentNotificationsEnabled = Boolean(editEmail.trim() && editTournamentNotificationsEnabled);
+        updateData.phone = editPhone.trim() || null;
+        updateData.address = editAddress.trim() || null;
+        updateData.picture = editPicture.trim() || null;
 
-      if (isAdminUser) {
-        updateData.autoRelinquishPrivileges =
-          editAutoRelinquishKey === 'always' ? true : editAutoRelinquishKey === 'never' ? false : null;
-        updateData.trialEndsOn = editTrialEndsOn.trim() || null;
-        updateData.segment = editSegment || 'Regular';
-      }
-      if (editEmail.trim()) {
-        updateData.onlinePayConsent = editOnlinePayConsent;
-      } else {
-        updateData.onlinePayConsent = false;
-      }
-      
-      // Both admin and regular members can edit these fields
-      updateData.email = editEmail.trim() === '' ? null : editEmail.trim();
-      updateData.tournamentNotificationsEnabled = Boolean(editEmail.trim() && editTournamentNotificationsEnabled);
-      updateData.phone = editPhone.trim() || null;
-      updateData.address = editAddress.trim() || null;
-      updateData.picture = editPicture.trim() || null;
+        const hadPendingPin = hasPendingScorePinChange();
+        const pinOk = await saveScorePinIfPending(editingPlayerId);
+        if (!pinOk) {
+          return;
+        }
 
-      const hadPendingPin = hasPendingScorePinChange();
-      const pinOk = await saveScorePinIfPending(editingPlayerId);
-      if (!pinOk) {
-        return;
+        await api.patch(`/players/${editingPlayerId}`, updateData);
+        setSuccess(hadPendingPin ? 'Member and score PIN updated successfully' : 'Member updated successfully');
+        // Clear editOwnProfile state if it exists before calling handleCancelEdit
+        if (location.state?.editOwnProfile) {
+          navigate('/players', { 
+            state: { ...location.state, editOwnProfile: false },
+            replace: true 
+          });
+        }
+        handleCancelEdit(); // This will set editingPlayerId to null and clear all form fields
+        fetchMembers();
+      } catch (err: any) {
+        const fieldErrors = err.response?.data?.fieldErrors;
+        if (fieldErrors && typeof fieldErrors === 'object') {
+          const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
+            acc[field] = true;
+            return acc;
+          }, {});
+          setEditFieldErrors(prev => ({ ...prev, ...fieldErrors }));
+          setEditFieldTouched(prev => ({ ...prev, ...touchedFields }));
+          return;
+        }
+        setError(err.response?.data?.error || 'Failed to update member');
       }
-
-      await api.patch(`/players/${editingPlayerId}`, updateData);
-      setSuccess(hadPendingPin ? 'Member and score PIN updated successfully' : 'Member updated successfully');
-      // Clear editOwnProfile state if it exists before calling handleCancelEdit
-      if (location.state?.editOwnProfile) {
-        navigate('/players', { 
-          state: { ...location.state, editOwnProfile: false },
-          replace: true 
-        });
-      }
-      handleCancelEdit(); // This will set editingPlayerId to null and clear all form fields
-      fetchMembers();
-    } catch (err: any) {
-      const fieldErrors = err.response?.data?.fieldErrors;
-      if (fieldErrors && typeof fieldErrors === 'object') {
-        const touchedFields = Object.keys(fieldErrors).reduce<Record<string, boolean>>((acc, field) => {
-          acc[field] = true;
-          return acc;
-        }, {});
-        setEditFieldErrors(prev => ({ ...prev, ...fieldErrors }));
-        setEditFieldTouched(prev => ({ ...prev, ...touchedFields }));
-        return;
-      }
-      setError(err.response?.data?.error || 'Failed to update member');
-    }
+    });
   };
 
   const handleChangePassword = async () => {
@@ -2733,22 +2754,24 @@ const Players: React.FC = () => {
       return;
     }
 
-    try {
-      await api.post('/auth/member/change-password', {
-        currentPassword: normalizedCurrentPassword,
-        newPassword: normalizedNewPassword,
-      });
-      setSuccess('Password changed successfully');
-      setShowPasswordChange(false);
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setShowEnteredPasswords(false);
-      setIsCurrentPasswordVerified(false);
-      setCurrentPasswordValidationMessage('');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to change password');
-    }
+    await runPasswordBusy(async () => {
+      try {
+        await api.post('/auth/member/change-password', {
+          currentPassword: normalizedCurrentPassword,
+          newPassword: normalizedNewPassword,
+        });
+        setSuccess('Password changed successfully');
+        setShowPasswordChange(false);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setShowEnteredPasswords(false);
+        setIsCurrentPasswordVerified(false);
+        setCurrentPasswordValidationMessage('');
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to change password');
+      }
+    });
   };
 
   const validateCurrentPasswordForChange = async () => {
@@ -2812,15 +2835,17 @@ const Players: React.FC = () => {
     setError('');
     setSuccess('');
 
-    try {
-      await api.post(`/auth/member/${editingPlayerId}/reset-password`, {
-        email: targetEmail,
-      });
-      setSuccess(`Password reset email sent to ${targetEmail}`);
-      setIsPasswordResetLocked(true);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to reset password');
-    }
+    await runPasswordBusy(async () => {
+      try {
+        await api.post(`/auth/member/${editingPlayerId}/reset-password`, {
+          email: targetEmail,
+        });
+        setSuccess(`Password reset email sent to ${targetEmail}`);
+        setIsPasswordResetLocked(true);
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to reset password');
+      }
+    });
   };
 
   const handleClearFilters = () => {
@@ -3090,28 +3115,30 @@ const Players: React.FC = () => {
       setError('Please select a tournament type');
       return;
     }
-    try {
-      const response = await api.post('/tournaments/preregistration', {
-        name: tournamentName.trim() || undefined,
-        type: creationTournamentType,
-        tournamentDate: preregistrationTournamentDate || undefined,
-        registrationDeadline: preregistrationDeadline || preregistrationTournamentDate || undefined,
-        minRating: preregistrationMinRating === '' ? undefined : Number(preregistrationMinRating),
-        maxRating: preregistrationMaxRating === '' ? undefined : Number(preregistrationMaxRating),
-        maxParticipants: preregistrationMaxParticipants === '' ? undefined : Number(preregistrationMaxParticipants),
-      });
-      setSuccess('Tournament preregistration created successfully');
-      const defaultDates = getDefaultPreregistrationDateValues();
-      setPreregistrationTournamentDate(defaultDates.tournamentDate);
-      setPreregistrationDeadline(defaultDates.deadline);
-      setPreregistrationMinRating('');
-      setPreregistrationMaxRating('');
-      setPreregistrationMaxParticipants('');
-      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
-      handleTournamentCreated(extractCreatedTournamentId(response.data));
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create tournament preregistration');
-    }
+    await runPreregBusy(async () => {
+      try {
+        const response = await api.post('/tournaments/preregistration', {
+          name: tournamentName.trim() || undefined,
+          type: creationTournamentType,
+          tournamentDate: preregistrationTournamentDate || undefined,
+          registrationDeadline: preregistrationDeadline || preregistrationTournamentDate || undefined,
+          minRating: preregistrationMinRating === '' ? undefined : Number(preregistrationMinRating),
+          maxRating: preregistrationMaxRating === '' ? undefined : Number(preregistrationMaxRating),
+          maxParticipants: preregistrationMaxParticipants === '' ? undefined : Number(preregistrationMaxParticipants),
+        });
+        setSuccess('Tournament preregistration created successfully');
+        const defaultDates = getDefaultPreregistrationDateValues();
+        setPreregistrationTournamentDate(defaultDates.tournamentDate);
+        setPreregistrationDeadline(defaultDates.deadline);
+        setPreregistrationMinRating('');
+        setPreregistrationMaxRating('');
+        setPreregistrationMaxParticipants('');
+        window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+        handleTournamentCreated(extractCreatedTournamentId(response.data));
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to create tournament preregistration');
+      }
+    });
   };
 
   const handlePreregistrationTournamentDateChange = (value: string) => {
@@ -3144,17 +3171,19 @@ const Players: React.FC = () => {
     if (!currentMember?.id) return;
     const previous = tournamentNotificationsEnabled;
     setTournamentNotificationsEnabled(enabled);
-    try {
-      const response = await api.patch(`/players/${currentMember.id}`, {
-        tournamentNotificationsEnabled: enabled,
-      });
-      const updated = { ...currentMember, ...response.data };
-      setMember(updated);
-      setSuccess(enabled ? 'Tournament invitation emails enabled' : 'Tournament invitation emails disabled');
-    } catch (err: any) {
-      setTournamentNotificationsEnabled(previous);
-      setError(err.response?.data?.error || 'Failed to update tournament notification setting');
-    }
+    await runPlayerSaveBusy(async () => {
+      try {
+        const response = await api.patch(`/players/${currentMember.id}`, {
+          tournamentNotificationsEnabled: enabled,
+        });
+        const updated = { ...currentMember, ...response.data };
+        setMember(updated);
+        setSuccess(enabled ? 'Tournament invitation emails enabled' : 'Tournament invitation emails disabled');
+      } catch (err: any) {
+        setTournamentNotificationsEnabled(previous);
+        setError(err.response?.data?.error || 'Failed to update tournament notification setting');
+      }
+    });
   };
 
   const handleStartStatsSelection = () => {
@@ -3571,6 +3600,7 @@ const Players: React.FC = () => {
                 onImportPlayers={handleImportPlayers}
                 onExportClubArchive={handleExportClubArchive}
                 onImportClubArchive={handleImportClubArchive}
+                importBusy={importBusy}
                 importSendEmail={importSendEmail}
                 setImportSendEmail={setImportSendEmail}
                 tournamentNotificationsEnabled={tournamentNotificationsEnabled}
@@ -4061,18 +4091,22 @@ const Players: React.FC = () => {
                             setTournamentCreationStep('player_selection');
                           }
                         }}
+                        disabled={preregBusy}
                         style={{
                           padding: '10px 20px',
                           backgroundColor: '#3498db',
                           color: 'white',
                           border: 'none',
                           borderRadius: '4px',
-                          cursor: 'pointer',
+                          cursor: preregBusy ? 'not-allowed' : 'pointer',
                           fontSize: '14px',
-                          fontWeight: 'bold'
+                          fontWeight: 'bold',
+                          opacity: preregBusy ? PLAYERS_DISABLED_OPACITY : 1,
                         }}
                       >
-                        {isPreregistrationMode ? 'Create Pre-registration' : 'Next'}
+                        {isPreregistrationMode
+                          ? (preregBusy ? 'Working…' : 'Create Pre-registration')
+                          : 'Next'}
                       </button>
                     </div>
                   </div>
@@ -4521,11 +4555,13 @@ const Players: React.FC = () => {
             handleAddFieldChange={handleAddFieldChange}
             handleAddFieldBlur={handleAddFieldBlur}
             handleAddRatingBlur={handleAddRatingBlur}
-            submitDisabled={!isAddPlayerFormValid() || isAddPlayerSubmitBlockedByDuplicates()}
+            submitDisabled={!isAddPlayerFormValid() || isAddPlayerSubmitBlockedByDuplicates() || playerSaveBusy}
             submitButtonLabel={
-              newPlayerEmail.trim()
-                ? 'Save Member & Send Invitation'
-                : 'Save Member (active roster, no email)'
+              playerSaveBusy
+                ? 'Saving…'
+                : newPlayerEmail.trim()
+                  ? 'Save Member & Send Invitation'
+                  : 'Save Member (active roster, no email)'
             }
           />
         )}
@@ -4537,6 +4573,7 @@ const Players: React.FC = () => {
             onCancel={handleCancelAdd}
             onModifyName={handleModifyName}
             onConfirmAdd={handleConfirmAdd}
+            confirmBusy={playerSaveBusy}
           />
         )}
 
@@ -7061,6 +7098,7 @@ const Players: React.FC = () => {
                         type="button"
                         disabled={scorePinLoading}
                         onClick={async () => {
+                          if (scorePinLoading) return;
                           setScorePinLoading(true);
                           setScorePinError('');
                           setScorePinSuccess('');
@@ -7079,7 +7117,7 @@ const Players: React.FC = () => {
                         }}
                         style={{ fontSize: '13px', padding: '6px 12px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                       >
-                        Regenerate PIN
+                        {scorePinLoading ? 'Working…' : 'Regenerate PIN'}
                       </button>
                       {scorePinDisplay && (
                         <span style={{ fontFamily: 'monospace', fontSize: '18px', fontWeight: 700, letterSpacing: '0.15em' }}>
@@ -7251,16 +7289,16 @@ const Players: React.FC = () => {
                                       <div style={{ display: 'flex', gap: '8px' }}>
                                         <button
                                           type="submit"
-                                          disabled={!isCurrentPasswordVerified || isValidatingCurrentPassword}
+                                          disabled={!isCurrentPasswordVerified || isValidatingCurrentPassword || passwordBusy}
                                           className="button-3d success"
                                           style={{
                                             fontSize: '12px',
                                             padding: '6px 12px',
-                                            opacity: !isCurrentPasswordVerified || isValidatingCurrentPassword ? PLAYERS_DISABLED_OPACITY : 1,
-                                            cursor: !isCurrentPasswordVerified || isValidatingCurrentPassword ? 'not-allowed' : 'pointer',
+                                            opacity: !isCurrentPasswordVerified || isValidatingCurrentPassword || passwordBusy ? PLAYERS_DISABLED_OPACITY : 1,
+                                            cursor: !isCurrentPasswordVerified || isValidatingCurrentPassword || passwordBusy ? 'not-allowed' : 'pointer',
                                           }}
                                         >
-                                          Change Password
+                                          {passwordBusy ? 'Saving…' : 'Change Password'}
                                         </button>
                                         <button
                                           type="button"
@@ -7294,20 +7332,20 @@ const Players: React.FC = () => {
                                   </p>
                                   <button
                                     onClick={handleResetPasswordClick}
-                                    disabled={isPasswordResetLocked}
+                                    disabled={isPasswordResetLocked || passwordBusy}
                                     className="button-3d"
                                     style={{
                                       fontSize: '13px',
                                       padding: '6px 12px',
-                                      background: isPasswordResetLocked ? '#9e9e9e' : '#ffc107',
-                                      color: isPasswordResetLocked ? '#fff' : '#000',
+                                      background: isPasswordResetLocked || passwordBusy ? '#9e9e9e' : '#ffc107',
+                                      color: isPasswordResetLocked || passwordBusy ? '#fff' : '#000',
                                       border: 'none',
                                       borderRadius: '4px',
-                                      cursor: isPasswordResetLocked ? 'not-allowed' : 'pointer',
-                                      opacity: isPasswordResetLocked ? 0.9 : 1,
+                                      cursor: isPasswordResetLocked || passwordBusy ? 'not-allowed' : 'pointer',
+                                      opacity: isPasswordResetLocked || passwordBusy ? 0.9 : 1,
                                     }}
                                   >
-                                    Reset Password
+                                    {passwordBusy ? 'Working…' : 'Reset Password'}
                                   </button>
                                 </div>
                               )}
@@ -7370,16 +7408,16 @@ const Players: React.FC = () => {
                     e.stopPropagation();
                     handleSaveEdit();
                   }}
-                  disabled={!editCanSave}
+                  disabled={!editCanSave || playerSaveBusy}
                   className="button-3d success"
                   style={{
                     fontSize: '13px',
                     padding: '8px 16px',
-                    opacity: editCanSave ? 1 : PLAYERS_DISABLED_OPACITY,
-                    cursor: editCanSave ? 'pointer' : 'not-allowed',
+                    opacity: editCanSave && !playerSaveBusy ? 1 : PLAYERS_DISABLED_OPACITY,
+                    cursor: editCanSave && !playerSaveBusy ? 'pointer' : 'not-allowed',
                   }}
                 >
-                  Save
+                  {playerSaveBusy ? 'Saving…' : 'Save'}
                 </button>
               </div>
             </div>
@@ -7422,22 +7460,25 @@ const Players: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(false)}
+                  disabled={playerDeleteBusy}
                   className="button-filter"
-                  style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                  style={{ padding: '8px 16px', borderRadius: '4px', cursor: playerDeleteBusy ? 'not-allowed' : 'pointer' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleDeleteMember}
+                  disabled={playerDeleteBusy}
                   className="button-3d danger"
                   style={{ 
                     padding: '8px 16px', 
                     borderRadius: '4px', 
-                    cursor: 'pointer' 
+                    cursor: playerDeleteBusy ? 'not-allowed' : 'pointer',
+                    opacity: playerDeleteBusy ? PLAYERS_DISABLED_OPACITY : 1,
                   }}
                 >
-                  Delete
+                  {playerDeleteBusy ? 'Deleting…' : 'Delete'}
                 </button>
               </div>
             </div>
@@ -7478,17 +7519,19 @@ const Players: React.FC = () => {
               <button
                 type="button"
                 onClick={() => void executePasswordReset()}
+                disabled={passwordBusy}
                 className="button-3d"
                 style={{
                   padding: '8px 16px',
                   borderRadius: '4px',
-                  cursor: 'pointer',
+                  cursor: passwordBusy ? 'not-allowed' : 'pointer',
                   backgroundColor: '#ffc107',
                   color: '#000',
                   border: 'none',
+                  opacity: passwordBusy ? PLAYERS_DISABLED_OPACITY : 1,
                 }}
               >
-                Send reset link
+                {passwordBusy ? 'Working…' : 'Send reset link'}
               </button>
             </div>
           </div>
@@ -7520,23 +7563,30 @@ const Players: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCancelToggleActive}
-                style={{ backgroundColor: '#95a5a6', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                disabled={activeToggleBusy}
+                style={{ backgroundColor: '#95a5a6', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: activeToggleBusy ? 'not-allowed' : 'pointer', opacity: activeToggleBusy ? PLAYERS_DISABLED_OPACITY : 1 }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmToggleActive}
+                disabled={activeToggleBusy}
                 style={{ 
                   backgroundColor: pendingActiveToggle.isActive ? '#e74c3c' : '#27ae60', 
                   color: 'white', 
                   padding: '8px 16px', 
                   border: 'none', 
                   borderRadius: '4px', 
-                  cursor: 'pointer' 
+                  cursor: activeToggleBusy ? 'not-allowed' : 'pointer',
+                  opacity: activeToggleBusy ? PLAYERS_DISABLED_OPACITY : 1,
                 }}
               >
-                {pendingActiveToggle.isActive ? 'Deactivate' : (pendingActiveToggle.emailConfirmedAt ? 'Activate' : 'Activate Override')}
+                {activeToggleBusy
+                  ? 'Working…'
+                  : pendingActiveToggle.isActive
+                    ? 'Deactivate'
+                    : (pendingActiveToggle.emailConfirmedAt ? 'Activate' : 'Activate Override')}
               </button>
             </div>
           </div>

@@ -72,6 +72,7 @@ import {
   sectionCorrectionToggleStyle,
 } from './scoreCorrectionStyles';
 import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
+import { useBusyAction } from '../hooks/useBusyAction';
 import {
   saveLastTournamentId,
   saveLastStage,
@@ -341,6 +342,7 @@ const TournamentDetailPage: React.FC = () => {
   const [cancelPasswordErrorModal, setCancelPasswordErrorModal] = useState<string | null>(null);
   const [matchResultAlreadyEnteredModal, setMatchResultAlreadyEnteredModal] = useState<string | null>(null);
   const [systemConfig, setSystemConfig] = useState(() => getSystemConfig());
+  const { busy: mutationBusy, runBusy } = useBusyAction();
   const cancelPasswordInputRef = useRef<HTMLInputElement | null>(null);
   const [hoveredIcon, setHoveredIcon] = useState<{ type: string; tournamentId: number; x: number; y: number } | null>(null);
   const [hoverTimeout, setHoverTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -1018,46 +1020,52 @@ const TournamentDetailPage: React.FC = () => {
   };
 
   const handleRegisterForTournament = async (tournamentId: number) => {
-    try {
-      const response = await api.post(`/tournaments/${tournamentId}/register`);
-      if (response.data?.tournament) {
-        setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+    await runBusy(async () => {
+      try {
+        const response = await api.post(`/tournaments/${tournamentId}/register`);
+        if (response.data?.tournament) {
+          setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+        }
+        setSuccess(response.data?.message || 'Registered successfully');
+        window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+      } catch (err: any) {
+        setError(err.response?.data?.error || err.response?.data?.message || 'Failed to register for tournament');
       }
-      setSuccess(response.data?.message || 'Registered successfully');
-      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to register for tournament');
-    }
+    });
   };
 
   const handleDeclineTournamentInvitation = async (tournamentId: number) => {
-    try {
-      const response = await api.post(`/tournaments/${tournamentId}/decline`);
-      if (response.data?.tournament) {
-        setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+    await runBusy(async () => {
+      try {
+        const response = await api.post(`/tournaments/${tournamentId}/decline`);
+        if (response.data?.tournament) {
+          setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+        }
+        setSuccess(response.data?.message || 'Invitation declined');
+        window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+      } catch (err: any) {
+        setError(err.response?.data?.error || err.response?.data?.message || 'Failed to decline invitation');
       }
-      setSuccess(response.data?.message || 'Invitation declined');
-      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to decline invitation');
-    }
+    });
   };
 
   const handleCancelPreregistration = async () => {
     if (!cancelPreregistration) return;
-    try {
-      await api.post(`/tournaments/${cancelPreregistration.id}/cancel-preregistration`, {
-        reason: cancelPreregistrationReason,
-        customReason: cancelPreregistrationCustomReason.trim() || undefined,
-      });
-      setCancelPreregistration(null);
-      setCancelPreregistrationCustomReason('');
-      window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
-      saveShouldRestoreDetail(false);
-      navigate('/tournaments');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to cancel tournament preregistration');
-    }
+    await runBusy(async () => {
+      try {
+        await api.post(`/tournaments/${cancelPreregistration.id}/cancel-preregistration`, {
+          reason: cancelPreregistrationReason,
+          customReason: cancelPreregistrationCustomReason.trim() || undefined,
+        });
+        setCancelPreregistration(null);
+        setCancelPreregistrationCustomReason('');
+        window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
+        saveShouldRestoreDetail(false);
+        navigate('/tournaments');
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to cancel tournament preregistration');
+      }
+    });
   };
 
   const handleFinalizePreregistration = (tournament: Tournament) => {
@@ -1081,19 +1089,22 @@ const TournamentDetailPage: React.FC = () => {
   const executeCompleteTournament = async () => {
     const tournamentId = confirmCompleteTournamentId;
     if (tournamentId == null) return;
-    setConfirmCompleteTournamentId(null);
-    setError('');
-    setSuccess('');
 
-    try {
-      await api.patch(`/tournaments/${tournamentId}/complete`);
-      setSelectedTournament(null);
-      saveShouldRestoreDetail(false);
-      navigate('/tournaments');
-    } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(apiError || 'Failed to complete tournament');
-    }
+    await runBusy(async () => {
+      setError('');
+      setSuccess('');
+
+      try {
+        await api.patch(`/tournaments/${tournamentId}/complete`);
+        setConfirmCompleteTournamentId(null);
+        setSelectedTournament(null);
+        saveShouldRestoreDetail(false);
+        navigate('/tournaments');
+      } catch (err: unknown) {
+        const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+        setError(apiError || 'Failed to complete tournament');
+      }
+    });
   };
 
   // Calculate player statistics for round-robin standings
@@ -1302,48 +1313,51 @@ const TournamentDetailPage: React.FC = () => {
 
   const executeClearMatch = async () => {
     if (!editingMatch || !selectedTournament || editingMatch.matchId === 0) return;
-    setConfirmDeleteMatchOpen(false);
 
-    // Store match info before deletion for cache update
-    const matchToDelete = {
-      id: editingMatch.matchId,
-      member1Id: editingMatch.member1Id,
-      member2Id: editingMatch.member2Id,
-    };
+    await runBusy(async () => {
+      // Store match info before deletion for cache update
+      const matchToDelete = {
+        id: editingMatch.matchId,
+        member1Id: editingMatch.member1Id,
+        member2Id: editingMatch.member2Id,
+      };
 
-    setError('');
-    setSuccess('');
+      setError('');
+      setSuccess('');
 
-    try {
-      await clearTournamentMatchScore({
-        tournamentId: selectedTournament.id,
-        matchId: editingMatch.matchId,
-        refreshTournament: false,
-        callbacks: {
-          onSuccess: (message) => setSuccess(message),
-          onError: (message) => setError(message),
-        },
-        successMessage: 'Match result deleted successfully',
-      });
-      
-      // Update match counts cache - remove match and recalculate counts for participants
-      removeMatchFromCache(matchToDelete.id, matchToDelete.member1Id, matchToDelete.member2Id ?? null);
-      
-      await withWindowScrollPreserved(async () => {
-        setEditingMatch(null);
-        await fetchData({ silent: true });
-        if (selectedTournament) {
-          try {
-            const updated = await api.get(`/tournaments/${selectedTournament.id}`);
-            setSelectedTournament(updated.data);
-          } catch {
-            /* keep prior selection if refetch fails */
+      try {
+        await clearTournamentMatchScore({
+          tournamentId: selectedTournament.id,
+          matchId: editingMatch.matchId,
+          refreshTournament: false,
+          callbacks: {
+            onSuccess: (message) => setSuccess(message),
+            onError: (message) => setError(message),
+          },
+          successMessage: 'Match result deleted successfully',
+        });
+
+        setConfirmDeleteMatchOpen(false);
+
+        // Update match counts cache - remove match and recalculate counts for participants
+        removeMatchFromCache(matchToDelete.id, matchToDelete.member1Id, matchToDelete.member2Id ?? null);
+
+        await withWindowScrollPreserved(async () => {
+          setEditingMatch(null);
+          await fetchData({ silent: true });
+          if (selectedTournament) {
+            try {
+              const updated = await api.get(`/tournaments/${selectedTournament.id}`);
+              setSelectedTournament(updated.data);
+            } catch {
+              /* keep prior selection if refetch fails */
+            }
           }
-        }
-      });
-    } catch {
-      // Error already reported via callbacks
-    }
+        });
+      } catch {
+        // Error already reported via callbacks
+      }
+    });
   };
 
   // Handle starting tournament name edit
@@ -1360,25 +1374,27 @@ const TournamentDetailPage: React.FC = () => {
 
   // Handle saving tournament name
   const handleSaveTournamentName = async (tournamentId: number) => {
-    setError('');
-    setSuccess('');
+    await runBusy(async () => {
+      setError('');
+      setSuccess('');
 
-    try {
-      const updated = await api.patch(`/tournaments/${tournamentId}/name`, {
-        name: tournamentNameEdit.trim() || null,
-      });
-      setSuccess('Tournament name updated successfully');
-      setEditingTournamentName(null);
-      setTournamentNameEdit('');
-      fetchData();
-      // Update selected tournament if it's the one being edited
-      if (selectedTournament && selectedTournament.id === tournamentId) {
-        setSelectedTournament(updated.data);
+      try {
+        const updated = await api.patch(`/tournaments/${tournamentId}/name`, {
+          name: tournamentNameEdit.trim() || null,
+        });
+        setSuccess('Tournament name updated successfully');
+        setEditingTournamentName(null);
+        setTournamentNameEdit('');
+        fetchData();
+        // Update selected tournament if it's the one being edited
+        if (selectedTournament && selectedTournament.id === tournamentId) {
+          setSelectedTournament(updated.data);
+        }
+      } catch (err: unknown) {
+        const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+        setError(apiError || 'Failed to update tournament name');
       }
-    } catch (err: unknown) {
-      const apiError = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(apiError || 'Failed to update tournament name');
-    }
+    });
   };
 
   const handleCancelTournament = async (
@@ -1386,64 +1402,66 @@ const TournamentDetailPage: React.FC = () => {
     mode: 'abandon' | 'earlyComplete',
     password?: string,
   ) => {
-    setError('');
-    setSuccess('');
+    await runBusy(async () => {
+      setError('');
+      setSuccess('');
 
-    const target = findActiveTournamentById(cancelledTournamentId);
-    const parentId = (target as { parentTournamentId?: number | null } | undefined)?.parentTournamentId ?? null;
-    const stayingOnParentDetail = parentId != null && parentId === tournamentId;
+      const target = findActiveTournamentById(cancelledTournamentId);
+      const parentId = (target as { parentTournamentId?: number | null } | undefined)?.parentTournamentId ?? null;
+      const stayingOnParentDetail = parentId != null && parentId === tournamentId;
 
-    try {
-      await api.patch(`/tournaments/${cancelledTournamentId}/cancel`, {
-        password,
-        mode,
-        ...(mode === 'earlyComplete' && cancelEarlyCompleteMinPercent != null
-          ? { earlyCompleteMinPercent: cancelEarlyCompleteMinPercent }
-          : {}),
-      });
+      try {
+        await api.patch(`/tournaments/${cancelledTournamentId}/cancel`, {
+          password,
+          mode,
+          ...(mode === 'earlyComplete' && cancelEarlyCompleteMinPercent != null
+            ? { earlyCompleteMinPercent: cancelEarlyCompleteMinPercent }
+            : {}),
+        });
 
-      setShowCancelConfirmation(null);
-      setCancelPassword('');
-      setCancelEarlyCompleteMinPercent(null);
-      setSelectedTournament(null);
+        setShowCancelConfirmation(null);
+        setCancelPassword('');
+        setCancelEarlyCompleteMinPercent(null);
+        setSelectedTournament(null);
 
-      if (stayingOnParentDetail) {
-        try {
-          const refreshed = await api.get(`/tournaments/${parentId}`);
-          if (refreshed.data?.status === 'COMPLETED') {
+        if (stayingOnParentDetail) {
+          try {
+            const refreshed = await api.get(`/tournaments/${parentId}`);
+            if (refreshed.data?.status === 'COMPLETED') {
+              saveShouldRestoreDetail(false);
+              navigate('/tournaments');
+              return;
+            }
+            await fetchData();
+            setSuccess(
+              mode === 'earlyComplete'
+                ? 'Sub-tournament early-completed'
+                : 'Sub-tournament abandoned',
+            );
+          } catch {
             saveShouldRestoreDetail(false);
             navigate('/tournaments');
-            return;
           }
-          await fetchData();
-          setSuccess(
-            mode === 'earlyComplete'
-              ? 'Sub-tournament early-completed'
-              : 'Sub-tournament abandoned',
-          );
-        } catch {
-          saveShouldRestoreDetail(false);
-          navigate('/tournaments');
+          return;
         }
-        return;
+
+        saveShouldRestoreDetail(false);
+        navigate('/tournaments');
+      } catch (err: unknown) {
+        const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
+        const apiError = response?.data?.error;
+        const isInvalidPassword =
+          response?.status === 401 && (apiError ?? '').toLowerCase().includes('invalid password');
+
+        if (isInvalidPassword && showCancelConfirmation && showCancelConfirmation.matchCount > 0) {
+          setCancelPasswordErrorModal('Invalid password. Please try again.');
+          setCancelPassword('');
+          return;
+        }
+
+        setError(apiError || (mode === 'earlyComplete' ? 'Failed to early-complete tournament' : 'Failed to abandon tournament'));
       }
-
-      saveShouldRestoreDetail(false);
-      navigate('/tournaments');
-    } catch (err: unknown) {
-      const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
-      const apiError = response?.data?.error;
-      const isInvalidPassword =
-        response?.status === 401 && (apiError ?? '').toLowerCase().includes('invalid password');
-
-      if (isInvalidPassword && showCancelConfirmation && showCancelConfirmation.matchCount > 0) {
-        setCancelPasswordErrorModal('Invalid password. Please try again.');
-        setCancelPassword('');
-        return;
-      }
-
-      setError(apiError || (mode === 'earlyComplete' ? 'Failed to early-complete tournament' : 'Failed to abandon tournament'));
-    }
+    });
   };
 
   const findActiveTournamentById = (tournamentId: number): Tournament | undefined => {
@@ -1739,17 +1757,19 @@ const TournamentDetailPage: React.FC = () => {
                             {showRegisterAction && (
                               <button
                                 onClick={() => handleRegisterForTournament(tournament.id)}
-                                style={{ padding: '6px 10px', border: 'none', borderRadius: '4px', backgroundColor: '#27ae60', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                                disabled={mutationBusy}
+                                style={{ padding: '6px 10px', border: 'none', borderRadius: '4px', backgroundColor: mutationBusy ? '#7dcea0' : '#27ae60', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
                               >
-                                Register
+                                {mutationBusy ? 'Working…' : 'Register'}
                               </button>
                             )}
                             {showDeclineAction && (
                               <button
                                 onClick={() => handleDeclineTournamentInvitation(tournament.id)}
-                                style={{ padding: '6px 10px', border: 'none', borderRadius: '4px', backgroundColor: '#e67e22', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                                disabled={mutationBusy}
+                                style={{ padding: '6px 10px', border: 'none', borderRadius: '4px', backgroundColor: mutationBusy ? '#f0b27a' : '#e67e22', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
                               >
-                                Decline
+                                {mutationBusy ? 'Working…' : 'Decline'}
                               </button>
                             )}
                           </div>
@@ -1829,7 +1849,7 @@ const TournamentDetailPage: React.FC = () => {
               padding: '20px',
             }}
             onClick={(e) => {
-              if (e.target === e.currentTarget) setCancelPreregistration(null);
+              if (!mutationBusy && e.target === e.currentTarget) setCancelPreregistration(null);
             }}
           >
             <div className="card" style={{ maxWidth: '560px', width: '100%' }} onClick={(e) => e.stopPropagation()}>
@@ -1843,6 +1863,7 @@ const TournamentDetailPage: React.FC = () => {
                 <select
                   value={cancelPreregistrationReason}
                   onChange={(e) => setCancelPreregistrationReason(e.target.value)}
+                  disabled={mutationBusy}
                   style={{ width: '100%', padding: '8px' }}
                 >
                   {preregistrationCancelReasons.map((reason) => (
@@ -1855,21 +1876,23 @@ const TournamentDetailPage: React.FC = () => {
                 <textarea
                   value={cancelPreregistrationCustomReason}
                   onChange={(e) => setCancelPreregistrationCustomReason(e.target.value)}
+                  disabled={mutationBusy}
                   rows={3}
                   placeholder="Add custom details for the email"
                   style={{ width: '100%', padding: '8px', resize: 'vertical' }}
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                <button className="button-filter" type="button" onClick={() => setCancelPreregistration(null)}>
+                <button className="button-filter" type="button" onClick={() => setCancelPreregistration(null)} disabled={mutationBusy}>
                   Keep Registration
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleCancelPreregistration()}
-                  style={{ padding: '8px 14px', border: 'none', borderRadius: '4px', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                  disabled={mutationBusy}
+                  style={{ padding: '8px 14px', border: 'none', borderRadius: '4px', backgroundColor: mutationBusy ? '#e6b0aa' : '#c0392b', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
                 >
-                  Confirm Cancel
+                  {mutationBusy ? 'Working…' : 'Confirm Cancel'}
                 </button>
               </div>
             </div>
@@ -1920,6 +1943,7 @@ const TournamentDetailPage: React.FC = () => {
                                 onChange={setTournamentNameEdit}
                                 onSave={() => handleSaveTournamentName(tournament.id)}
                                 onCancel={handleCancelEditTournamentName}
+                                busy={mutationBusy}
                               />
                             </>
                           ) : (
@@ -2249,6 +2273,7 @@ const TournamentDetailPage: React.FC = () => {
                       onChange={setTournamentNameEdit}
                       onSave={() => handleSaveTournamentName(tournament.id)}
                       onCancel={handleCancelEditTournamentName}
+                      busy={mutationBusy}
                     />
                   </div>
                       ) : (
@@ -2948,6 +2973,7 @@ const TournamentDetailPage: React.FC = () => {
                                     onChange={setTournamentNameEdit}
                                     onSave={() => handleSaveTournamentName(tournament.id)}
                                     onCancel={handleCancelEditTournamentName}
+                                    busy={mutationBusy}
                                   />
                                 </>
                               ) : (
@@ -3165,6 +3191,7 @@ const TournamentDetailPage: React.FC = () => {
                                 onChange={setTournamentNameEdit}
                                 onSave={() => handleSaveTournamentName(tournament.id)}
                                 onCancel={handleCancelEditTournamentName}
+                                busy={mutationBusy}
                               />
                             </div>
                           ) : (
@@ -3425,6 +3452,7 @@ const TournamentDetailPage: React.FC = () => {
                   type="password"
                   value={cancelPassword}
                   onChange={(e) => setCancelPassword(e.target.value)}
+                  disabled={mutationBusy}
                   autoComplete="current-password"
                   style={{
                     width: '100%',
@@ -3485,15 +3513,17 @@ const TournamentDetailPage: React.FC = () => {
                   <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                     <button
                       onClick={closeCancelConfirmation}
+                      disabled={mutationBusy}
                       style={{
                         padding: '10px 20px',
                         border: '2px solid #27ae60',
                         borderRadius: '4px',
                         backgroundColor: 'white',
                         color: '#27ae60',
-                        cursor: 'pointer',
+                        cursor: mutationBusy ? 'not-allowed' : 'pointer',
                         fontSize: '14px',
                         fontWeight: 'bold',
+                        opacity: mutationBusy ? 0.6 : 1,
                       }}
                     >
                       Keep Tournament Active
@@ -3508,19 +3538,19 @@ const TournamentDetailPage: React.FC = () => {
                           );
                         }
                       }}
-                      disabled={!passwordOk}
+                      disabled={!passwordOk || mutationBusy}
                       style={{
                         padding: '10px 20px',
                         border: 'none',
                         borderRadius: '4px',
-                        backgroundColor: !passwordOk ? '#f1a9a0' : '#e74c3c',
+                        backgroundColor: (!passwordOk || mutationBusy) ? '#f1a9a0' : '#e74c3c',
                         color: 'white',
-                        cursor: !passwordOk ? 'not-allowed' : 'pointer',
+                        cursor: (!passwordOk || mutationBusy) ? 'not-allowed' : 'pointer',
                         fontSize: '14px',
                         fontWeight: 'bold',
                       }}
                     >
-                      Abandon
+                      {mutationBusy ? 'Working…' : 'Abandon'}
                     </button>
                   </div>
                   {showCancelConfirmation.earlyCompleteSupported ? (
@@ -3554,6 +3584,7 @@ const TournamentDetailPage: React.FC = () => {
                                   setCancelEarlyCompleteMinPercent(Math.min(100, Math.max(1, n)));
                                 }
                               }}
+                              disabled={mutationBusy}
                               title="Overrides the system Round Robin early-complete threshold"
                               style={{
                                 width: '72px',
@@ -3570,7 +3601,7 @@ const TournamentDetailPage: React.FC = () => {
                         ) : null}
                         <button
                           onClick={async () => {
-                            if (!showCancelConfirmation || !earlyGateOk) return;
+                            if (!showCancelConfirmation || !earlyGateOk || mutationBusy) return;
                             if (!passwordOk) {
                               setCancelPasswordErrorModal('Enter your password to confirm early completion.');
                               requestAnimationFrame(() => cancelPasswordInputRef.current?.focus());
@@ -3582,7 +3613,7 @@ const TournamentDetailPage: React.FC = () => {
                               showCancelConfirmation.matchCount > 0 ? cancelPassword : undefined,
                             );
                           }}
-                          disabled={!earlyGateOk}
+                          disabled={!earlyGateOk || mutationBusy}
                           title={
                             earlyGateOk
                               ? (passwordOk
@@ -3594,15 +3625,15 @@ const TournamentDetailPage: React.FC = () => {
                             padding: '10px 20px',
                             border: 'none',
                             borderRadius: '4px',
-                            backgroundColor: !earlyGateOk ? '#c5c5c5' : '#2980b9',
+                            backgroundColor: (!earlyGateOk || mutationBusy) ? '#c5c5c5' : '#2980b9',
                             color: 'white',
-                            cursor: !earlyGateOk ? 'not-allowed' : 'pointer',
+                            cursor: (!earlyGateOk || mutationBusy) ? 'not-allowed' : 'pointer',
                             fontSize: '14px',
                             fontWeight: 'bold',
-                            opacity: !earlyGateOk ? 0.75 : 1,
+                            opacity: (!earlyGateOk || mutationBusy) ? 0.75 : 1,
                           }}
                         >
-                          Early Completion
+                          {mutationBusy ? 'Working…' : 'Early Completion'}
                         </button>
                       </div>
                       {!earlyGateOk && earlyBlockedReason ? (
@@ -3650,18 +3681,20 @@ const TournamentDetailPage: React.FC = () => {
                 <button
                   type="button"
                   className="button-filter"
-                  style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                  style={{ padding: '8px 16px', borderRadius: '4px', cursor: mutationBusy ? 'not-allowed' : 'pointer' }}
                   onClick={() => setConfirmCompleteTournamentId(null)}
+                  disabled={mutationBusy}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   className="button-3d success"
-                  style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                  style={{ padding: '8px 16px', borderRadius: '4px', cursor: mutationBusy ? 'not-allowed' : 'pointer' }}
                   onClick={() => void executeCompleteTournament()}
+                  disabled={mutationBusy}
                 >
-                  Complete tournament
+                  {mutationBusy ? 'Working…' : 'Complete tournament'}
                 </button>
               </div>
             </div>
@@ -3694,18 +3727,20 @@ const TournamentDetailPage: React.FC = () => {
               <button
                 type="button"
                 className="button-filter"
-                style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: '4px', cursor: mutationBusy ? 'not-allowed' : 'pointer' }}
                 onClick={() => setConfirmDeleteMatchOpen(false)}
+                disabled={mutationBusy}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 className="button-3d danger"
-                style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: '4px', cursor: mutationBusy ? 'not-allowed' : 'pointer' }}
                 onClick={() => void executeClearMatch()}
+                disabled={mutationBusy}
               >
-                Delete result
+                {mutationBusy ? 'Deleting…' : 'Delete result'}
               </button>
             </div>
           </div>

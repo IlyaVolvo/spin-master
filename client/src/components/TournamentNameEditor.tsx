@@ -5,6 +5,7 @@ interface TournamentNameEditorProps {
   onChange: (value: string) => void;
   onSave: () => void;
   onCancel: () => void;
+  busy?: boolean;
 }
 
 export const TournamentNameEditor: React.FC<TournamentNameEditorProps> = ({
@@ -12,8 +13,10 @@ export const TournamentNameEditor: React.FC<TournamentNameEditorProps> = ({
   onChange,
   onSave,
   onCancel,
+  busy = false,
 }) => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (busy) return;
     if (e.key === 'Enter') {
       onSave();
     } else if (e.key === 'Escape') {
@@ -28,6 +31,7 @@ export const TournamentNameEditor: React.FC<TournamentNameEditorProps> = ({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
+        disabled={busy}
         style={{
           padding: '6px 12px',
           fontSize: '18px',
@@ -43,13 +47,15 @@ export const TournamentNameEditor: React.FC<TournamentNameEditorProps> = ({
       <button
         onClick={onSave}
         className="success"
-        style={{ fontSize: '12px', padding: '6px 12px' }}
+        disabled={busy}
+        style={{ fontSize: '12px', padding: '6px 12px', cursor: busy ? 'not-allowed' : undefined }}
       >
-        Save
+        {busy ? 'Saving…' : 'Save'}
       </button>
       <button
         onClick={onCancel}
-        style={{ fontSize: '12px', padding: '6px 12px' }}
+        disabled={busy}
+        style={{ fontSize: '12px', padding: '6px 12px', cursor: busy ? 'not-allowed' : undefined }}
       >
         Cancel
       </button>

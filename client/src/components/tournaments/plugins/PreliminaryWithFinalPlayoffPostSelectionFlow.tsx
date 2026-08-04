@@ -5,6 +5,7 @@ import { getSystemConfig } from '../../../utils/systemConfig';
 import { snakeDraftGroups, computeGroupCapacities } from './roundRobinUtils';
 import { BoundedNumericInput } from '../../BoundedNumericInput';
 import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
+import { useBusyAction } from '../../../hooks/useBusyAction';
 
 type Step = 'configure' | 'confirm_groups' | 'confirmation';
 
@@ -57,6 +58,7 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
   const [playerGroups, setPlayerGroups] = useState<number[][]>([]);
   const [draggedPlayer, setDraggedPlayer] = useState<{ playerId: number; fromGroupIndex: number } | null>(null);
   const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null);
+  const { busy: creating, runBusy } = useBusyAction();
 
   // Sort all selected players by rating (descending)
   const sortedSelectedPlayers = useMemo(() => {
@@ -127,55 +129,57 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
   };
 
   const handleCreate = async () => {
-    try {
-      if (playerGroups.length === 0) {
-        onError('No preliminary groups defined.');
-        return;
-      }
+    await runBusy(async () => {
+      try {
+        if (playerGroups.length === 0) {
+          onError('No preliminary groups defined.');
+          return;
+        }
 
-      const invalidGroups = playerGroups.filter(group => group.length < 2);
-      if (invalidGroups.length > 0) {
-        onError('Each preliminary group must have at least 2 players. Please adjust the groupings.');
-        return;
-      }
+        const invalidGroups = playerGroups.filter(group => group.length < 2);
+        if (invalidGroups.length > 0) {
+          onError('Each preliminary group must have at least 2 players. Please adjust the groupings.');
+          return;
+        }
 
-      const tournamentData: any = {
-        participantIds: selectedPlayerIds,
-        type: 'PRELIMINARY_WITH_FINAL_PLAYOFF',
-        additionalData: {
-          groups: playerGroups,
-          playoffBracketSize,
-          autoQualifiedCount,
-          autoQualifiedMemberIds,
-          qualifiersPerGroup,
-        },
-      };
+        const tournamentData: any = {
+          participantIds: selectedPlayerIds,
+          type: 'PRELIMINARY_WITH_FINAL_PLAYOFF',
+          additionalData: {
+            groups: playerGroups,
+            playoffBracketSize,
+            autoQualifiedCount,
+            autoQualifiedMemberIds,
+            qualifiersPerGroup,
+          },
+        };
 
-      if (!tournamentName.trim()) {
-        const dateStr = new Date().toLocaleDateString();
-        tournamentData.name = `Preliminary + Playoff ${dateStr}`;
-      } else {
-        tournamentData.name = tournamentName.trim();
-      }
+        if (!tournamentName.trim()) {
+          const dateStr = new Date().toLocaleDateString();
+          tournamentData.name = `Preliminary + Playoff ${dateStr}`;
+        } else {
+          tournamentData.name = tournamentName.trim();
+        }
 
-      let createdId: number | undefined;
-      if (finalizingPreregistrationId) {
-        const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
-        createdId = extractCreatedTournamentId(response.data);
-        onSuccess('Preliminary + Final Playoff tournament created from preregistration successfully');
-      } else if (editingTournamentId) {
-        const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
-        createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
-        onSuccess('Preliminary + Final Playoff tournament modified successfully');
-      } else {
-        const response = await api.post('/tournaments', tournamentData);
-        createdId = extractCreatedTournamentId(response.data);
-        onSuccess('Preliminary + Final Playoff tournament created successfully');
+        let createdId: number | undefined;
+        if (finalizingPreregistrationId) {
+          const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+          createdId = extractCreatedTournamentId(response.data);
+          onSuccess('Preliminary + Final Playoff tournament created from preregistration successfully');
+        } else if (editingTournamentId) {
+          const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+          createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
+          onSuccess('Preliminary + Final Playoff tournament modified successfully');
+        } else {
+          const response = await api.post('/tournaments', tournamentData);
+          createdId = extractCreatedTournamentId(response.data);
+          onSuccess('Preliminary + Final Playoff tournament created successfully');
+        }
+        onCreated(createdId);
+      } catch (err: any) {
+        onError(err.response?.data?.error || 'Failed to create tournament');
       }
-      onCreated(createdId);
-    } catch (err: any) {
-      onError(err.response?.data?.error || 'Failed to create tournament');
-    }
+    });
   };
 
   const getPlayerDisplay = (id: number) => {
@@ -644,13 +648,14 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
           <button
             onClick={() => setStep('confirm_groups')}
+            disabled={creating}
             style={{
               padding: '10px 20px',
               backgroundColor: '#95a5a6',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: creating ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: 'bold'
             }}
@@ -659,18 +664,21 @@ export const PreliminaryWithFinalPlayoffPostSelectionFlow: React.FC<PostSelectio
           </button>
           <button
             onClick={handleCreate}
+            disabled={creating}
             style={{
               padding: '10px 20px',
               backgroundColor: '#27ae60',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: creating ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: 'bold',
             }}
           >
-            {finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
+            {creating
+              ? (editingTournamentId && !finalizingPreregistrationId ? 'Saving…' : 'Creating…')
+              : (finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament')}
           </button>
         </div>
       </div>

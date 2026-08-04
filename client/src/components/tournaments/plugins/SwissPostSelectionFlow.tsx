@@ -4,6 +4,7 @@ import api from '../../../utils/api';
 import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
 import { BoundedNumericInput } from '../../BoundedNumericInput';
 import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
+import { useBusyAction } from '../../../hooks/useBusyAction';
 
 type Step = 'configure' | 'confirmation';
 
@@ -31,6 +32,7 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
   const [numberOfRounds, setNumberOfRounds] = useState<number>(
     calculateSwissDefaultRounds(numPlayers, swissRules.maxRoundsDivisor)
   );
+  const { busy: creating, runBusy } = useBusyAction();
 
   // Sort players by rating for preview
   const sortedPlayers = useMemo(() => {
@@ -47,45 +49,47 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
   }, [selectedPlayerIds, members, formatPlayerName, nameDisplayOrder]);
 
   const handleCreate = async () => {
-    try {
-      if (numPlayers % 2 !== 0) {
-        onError('Swiss tournament requires an even number of players');
-        return;
-      }
+    await runBusy(async () => {
+      try {
+        if (numPlayers % 2 !== 0) {
+          onError('Swiss tournament requires an even number of players');
+          return;
+        }
 
-      const tournamentData: any = {
-        participantIds: selectedPlayerIds,
-        type: 'SWISS',
-        additionalData: {
-          numberOfRounds,
-        },
-      };
+        const tournamentData: any = {
+          participantIds: selectedPlayerIds,
+          type: 'SWISS',
+          additionalData: {
+            numberOfRounds,
+          },
+        };
 
-      if (!tournamentName.trim()) {
-        const dateStr = new Date().toLocaleDateString();
-        tournamentData.name = `Swiss Tournament ${dateStr}`;
-      } else {
-        tournamentData.name = tournamentName.trim();
-      }
+        if (!tournamentName.trim()) {
+          const dateStr = new Date().toLocaleDateString();
+          tournamentData.name = `Swiss Tournament ${dateStr}`;
+        } else {
+          tournamentData.name = tournamentName.trim();
+        }
 
-      let createdId: number | undefined;
-      if (finalizingPreregistrationId) {
-        const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
-        createdId = extractCreatedTournamentId(response.data);
-        onSuccess('Swiss tournament created from preregistration successfully');
-      } else if (editingTournamentId) {
-        const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
-        createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
-        onSuccess('Swiss tournament modified successfully');
-      } else {
-        const response = await api.post('/tournaments', tournamentData);
-        createdId = extractCreatedTournamentId(response.data);
-        onSuccess('Swiss tournament created successfully');
+        let createdId: number | undefined;
+        if (finalizingPreregistrationId) {
+          const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+          createdId = extractCreatedTournamentId(response.data);
+          onSuccess('Swiss tournament created from preregistration successfully');
+        } else if (editingTournamentId) {
+          const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
+          createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
+          onSuccess('Swiss tournament modified successfully');
+        } else {
+          const response = await api.post('/tournaments', tournamentData);
+          createdId = extractCreatedTournamentId(response.data);
+          onSuccess('Swiss tournament created successfully');
+        }
+        onCreated(createdId);
+      } catch (err: any) {
+        onError(err.response?.data?.error || 'Failed to create tournament');
       }
-      onCreated(createdId);
-    } catch (err: any) {
-      onError(err.response?.data?.error || 'Failed to create tournament');
-    }
+    });
   };
 
   // ========== CONFIGURE STEP ==========
@@ -286,13 +290,14 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
           <button
             onClick={() => setStep('configure')}
+            disabled={creating}
             style={{
               padding: '10px 20px',
               backgroundColor: '#95a5a6',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: creating ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: 'bold'
             }}
@@ -301,18 +306,21 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
           </button>
           <button
             onClick={handleCreate}
+            disabled={creating}
             style={{
               padding: '10px 20px',
               backgroundColor: '#27ae60',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: creating ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: 'bold',
             }}
           >
-          {finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
+          {creating
+            ? (editingTournamentId && !finalizingPreregistrationId ? 'Saving…' : 'Creating…')
+            : (finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament')}
           </button>
         </div>
       </div>

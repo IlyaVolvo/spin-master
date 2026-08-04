@@ -4,6 +4,7 @@ import { BracketPreview } from '../../BracketPreview';
 import api from '../../../utils/api';
 import { getSystemConfig } from '../../../utils/systemConfig';
 import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
+import { useBusyAction } from '../../../hooks/useBusyAction';
 
 type Step = 'organize_bracket' | 'completion';
 
@@ -27,6 +28,7 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
   const [isDraggingInBracket, setIsDraggingInBracket] = useState(false);
   const [hasPlayerInTempZone, setHasPlayerInTempZone] = useState(false);
   const [numSeedsForBracket, setNumSeedsForBracket] = useState<number | undefined>(undefined);
+  const { busy: creating, runBusy } = useBusyAction();
 
   const calculateMaxSeeds = (numPlayers: number): number => {
     const bracketSize = Math.pow(2, Math.ceil(Math.log2(numPlayers)));
@@ -79,51 +81,53 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
     .filter((p): p is Member => p !== undefined);
 
   const handleCreate = async () => {
-    try {
-      const tournamentData: any = {
-        participantIds: selectedPlayerIds,
-        type: 'PLAYOFF',
-      };
-
-      if (bracketPositions.length > 0) {
-        const playersInBracket = bracketPositions.filter((id): id is number => id !== null);
-        const missingPlayers = selectedPlayerIds.filter(id => !playersInBracket.includes(id));
-        if (missingPlayers.length > 0) {
-          onError('Some players are missing from the bracket. Please reorganize the bracket.');
-          return;
-        }
-        tournamentData.bracketPositions = bracketPositions;
-      }
-
-      if (!tournamentName.trim()) {
-        const dateStr = new Date().toLocaleDateString();
-        tournamentData.name = `Playoff ${dateStr}`;
-      } else {
-        tournamentData.name = tournamentName.trim();
-      }
-
-      let createdId: number | undefined;
-      if (finalizingPreregistrationId) {
-        const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
-        createdId = extractCreatedTournamentId(response.data);
-        onSuccess('Tournament created from preregistration successfully');
-      } else if (editingTournamentId) {
-        const response = await api.patch(`/tournaments/${editingTournamentId}`, {
-          name: tournamentData.name,
+    await runBusy(async () => {
+      try {
+        const tournamentData: any = {
           participantIds: selectedPlayerIds,
-        });
-        createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
-        onSuccess('Tournament modified successfully');
-      } else {
-        const response = await api.post('/tournaments', tournamentData);
-        createdId = extractCreatedTournamentId(response.data);
-        onSuccess('Tournament created successfully');
-      }
+          type: 'PLAYOFF',
+        };
 
-      onCreated(createdId);
-    } catch (err: any) {
-      onError(err.response?.data?.error || 'Failed to create tournament');
-    }
+        if (bracketPositions.length > 0) {
+          const playersInBracket = bracketPositions.filter((id): id is number => id !== null);
+          const missingPlayers = selectedPlayerIds.filter(id => !playersInBracket.includes(id));
+          if (missingPlayers.length > 0) {
+            onError('Some players are missing from the bracket. Please reorganize the bracket.');
+            return;
+          }
+          tournamentData.bracketPositions = bracketPositions;
+        }
+
+        if (!tournamentName.trim()) {
+          const dateStr = new Date().toLocaleDateString();
+          tournamentData.name = `Playoff ${dateStr}`;
+        } else {
+          tournamentData.name = tournamentName.trim();
+        }
+
+        let createdId: number | undefined;
+        if (finalizingPreregistrationId) {
+          const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+          createdId = extractCreatedTournamentId(response.data);
+          onSuccess('Tournament created from preregistration successfully');
+        } else if (editingTournamentId) {
+          const response = await api.patch(`/tournaments/${editingTournamentId}`, {
+            name: tournamentData.name,
+            participantIds: selectedPlayerIds,
+          });
+          createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
+          onSuccess('Tournament modified successfully');
+        } else {
+          const response = await api.post('/tournaments', tournamentData);
+          createdId = extractCreatedTournamentId(response.data);
+          onSuccess('Tournament created successfully');
+        }
+
+        onCreated(createdId);
+      } catch (err: any) {
+        onError(err.response?.data?.error || 'Failed to create tournament');
+      }
+    });
   };
 
   // Organize bracket step
@@ -274,28 +278,32 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
       <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '20px', justifyContent: 'center' }}>
         <button
           onClick={handleCreate}
+          disabled={creating}
           style={{
             padding: '10px 20px',
             backgroundColor: '#27ae60',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
-            cursor: 'pointer',
+            cursor: creating ? 'not-allowed' : 'pointer',
             fontSize: '14px',
             fontWeight: 'bold',
           }}
         >
-          {finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament'}
+          {creating
+            ? (editingTournamentId && !finalizingPreregistrationId ? 'Saving…' : 'Creating…')
+            : (finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament')}
         </button>
         <button
           onClick={() => setStep('organize_bracket')}
+          disabled={creating}
           style={{
             padding: '10px 20px',
             backgroundColor: '#95a5a6',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
-            cursor: 'pointer',
+            cursor: creating ? 'not-allowed' : 'pointer',
             fontSize: '14px',
             fontWeight: 'bold',
           }}

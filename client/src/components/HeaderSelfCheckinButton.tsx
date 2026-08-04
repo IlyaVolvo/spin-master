@@ -72,7 +72,7 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
   };
 
   const confirmToggle = async () => {
-    if (!confirmKind) return;
+    if (!confirmKind || busy) return;
     setBusy(true);
     setError('');
     setPaymentRequired(false);

@@ -3,6 +3,7 @@ import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
 import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
 import { parseInvalidScorePinsFromError, type InvalidScorePins } from '../utils/matchScorePayload';
 import { isOrganizer } from '../utils/auth';
+import { useBusyAction } from '../hooks/useBusyAction';
 
 interface Player {
   id: number;
@@ -99,6 +100,7 @@ interface ScoreFieldWithStepperProps {
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onIncrement: () => void;
   onDecrement: () => void;
+  locked?: boolean;
 }
 
 const ScoreFieldWithStepper: React.FC<ScoreFieldWithStepperProps> = ({
@@ -112,15 +114,17 @@ const ScoreFieldWithStepper: React.FC<ScoreFieldWithStepperProps> = ({
   onKeyDown,
   onIncrement,
   onDecrement,
+  locked = false,
 }) => {
   const numericValue = parseInt(value) || 0;
   const atMin = numericValue <= 0;
   const atMax = numericValue >= scoreMax;
+  const fieldDisabled = isForfeit || locked;
 
   return (
     <div style={{
       textAlign: 'center',
-      opacity: isForfeit ? 0.4 : 1,
+      opacity: fieldDisabled ? 0.4 : 1,
       backgroundColor: isForfeit ? '#f5f5f5' : 'transparent',
       padding: isForfeit ? '8px' : '0',
       borderRadius: isForfeit ? '4px' : '0',
@@ -133,7 +137,7 @@ const ScoreFieldWithStepper: React.FC<ScoreFieldWithStepperProps> = ({
           marginBottom: '5px',
           fontSize: '14px',
           fontWeight: 'bold',
-          color: isForfeit ? '#999' : 'inherit',
+          color: fieldDisabled ? '#999' : 'inherit',
         }}
       >
         {label}
@@ -149,8 +153,8 @@ const ScoreFieldWithStepper: React.FC<ScoreFieldWithStepperProps> = ({
           value={value}
           readOnly
           onKeyDown={onKeyDown}
-          disabled={isForfeit}
-          style={scoreInputStyle(isForfeit)}
+          disabled={fieldDisabled}
+          style={scoreInputStyle(fieldDisabled)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <button
@@ -158,10 +162,10 @@ const ScoreFieldWithStepper: React.FC<ScoreFieldWithStepperProps> = ({
             tabIndex={-1}
             aria-label={`Increase player ${fieldIndex} score`}
             title="Increase score"
-            disabled={isForfeit || atMax}
+            disabled={fieldDisabled || atMax}
             onMouseDown={(event) => event.preventDefault()}
             onClick={onIncrement}
-            style={stepperButtonStyle(isForfeit, atMax)}
+            style={stepperButtonStyle(fieldDisabled, atMax)}
           >
             ▲
           </button>
@@ -170,10 +174,10 @@ const ScoreFieldWithStepper: React.FC<ScoreFieldWithStepperProps> = ({
             tabIndex={-1}
             aria-label={`Decrease player ${fieldIndex} score`}
             title="Decrease score"
-            disabled={isForfeit || atMin}
+            disabled={fieldDisabled || atMin}
             onMouseDown={(event) => event.preventDefault()}
             onClick={onDecrement}
-            style={stepperButtonStyle(isForfeit, atMin)}
+            style={stepperButtonStyle(fieldDisabled, atMin)}
           >
             ▼
           </button>
@@ -202,6 +206,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
     member1: false,
     member2: false,
   });
+  const { busy: saving, runBusy } = useBusyAction();
   const originalWinnerIdRef = useRef(getEditingWinnerId(editingMatch));
   const player1InputRef = useRef<HTMLInputElement>(null);
   const player2InputRef = useRef<HTMLInputElement>(null);
@@ -269,12 +274,14 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
       setConfirmAction('modify');
       return;
     }
-    try {
-      await Promise.resolve(onSave());
-    } catch (err) {
-      applyInvalidScorePins(err);
-    }
-  }, [isDisabled, winnerChanged, onSave, applyInvalidScorePins]);
+    await runBusy(async () => {
+      try {
+        await Promise.resolve(onSave());
+      } catch (err) {
+        applyInvalidScorePins(err);
+      }
+    });
+  }, [isDisabled, winnerChanged, onSave, applyInvalidScorePins, runBusy]);
 
   const clampScore = useCallback(
     (value: number) => Math.min(scoreRule.max, Math.max(0, value)),
@@ -338,6 +345,10 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
 
   const handleScoreKeyDown = useCallback(
     (fieldIndex: ScoreFieldIndex) => (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (saving && event.key !== 'Escape') {
+        event.preventDefault();
+        return;
+      }
       if (event.key === 'Tab') {
         event.preventDefault();
         if (event.shiftKey) {
@@ -359,12 +370,12 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
       }
       if (event.key === 'Escape') {
         event.preventDefault();
-        onCancel();
+        if (!saving) onCancel();
         return;
       }
       if (event.key === 'Enter') {
         event.preventDefault();
-        trySave();
+        if (!saving) void trySave();
         return;
       }
       if (event.key === 'ArrowUp') {
@@ -387,7 +398,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
         applyBackspace(fieldIndex);
       }
     },
-    [adjustScore, applyBackspace, applyDigit, onCancel, trySave],
+    [adjustScore, applyBackspace, applyDigit, onCancel, saving, trySave],
   );
 
   const confirmConfig =
@@ -395,22 +406,30 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
       ? {
           title: 'Remove Match Result',
           message: 'Remove this match result? This will undo any rating or bracket effects when required.',
-          confirmText: 'Remove Result',
+          confirmText: saving ? 'Removing…' : 'Remove Result',
           confirmColor: '#e74c3c',
-          onConfirm: onClear,
+          onConfirm: async () => {
+            await runBusy(async () => {
+              await Promise.resolve(onClear?.());
+              setConfirmAction(null);
+            });
+          },
         }
       : confirmAction === 'modify'
         ? {
             title: 'Modify Match Result',
             message: modifyConfirmationMessage,
-            confirmText: 'Modify Result',
+            confirmText: saving ? 'Saving…' : 'Modify Result',
             confirmColor: '#27ae60',
             onConfirm: async () => {
-              try {
-                await Promise.resolve(onSave());
-              } catch (err) {
-                applyInvalidScorePins(err);
-              }
+              await runBusy(async () => {
+                try {
+                  await Promise.resolve(onSave());
+                  setConfirmAction(null);
+                } catch (err) {
+                  applyInvalidScorePins(err);
+                }
+              });
             },
           }
         : null;
@@ -446,6 +465,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             onKeyDown={handleScoreKeyDown(1)}
             onIncrement={() => adjustScore(1, 1)}
             onDecrement={() => adjustScore(1, -1)}
+            locked={saving}
           />
 
           {/* Separator */}
@@ -468,6 +488,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             onKeyDown={handleScoreKeyDown(2)}
             onIncrement={() => adjustScore(2, 1)}
             onDecrement={() => adjustScore(2, -1)}
+            locked={saving}
           />
         </div>
 
@@ -489,10 +510,10 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                     player2Sets: e.target.checked ? '1' : editingMatch.player2Sets,
                   });
                 }}
-                disabled={editingMatch.player2Forfeit}
-                style={{ cursor: editingMatch.player2Forfeit ? 'not-allowed' : 'pointer' }}
+                disabled={saving || editingMatch.player2Forfeit}
+                style={{ cursor: saving || editingMatch.player2Forfeit ? 'not-allowed' : 'pointer' }}
               />
-              <label htmlFor="editPlayer1Forfeit" style={{ margin: 0, cursor: editingMatch.player2Forfeit ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
+              <label htmlFor="editPlayer1Forfeit" style={{ margin: 0, cursor: saving || editingMatch.player2Forfeit ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
                 {player1DisplayName} Forfeit
               </label>
             </div>
@@ -511,23 +532,25 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                     player2Sets: '0',
                   });
                 }}
-                disabled={editingMatch.player1Forfeit}
-                style={{ cursor: editingMatch.player1Forfeit ? 'not-allowed' : 'pointer' }}
+                disabled={saving || editingMatch.player1Forfeit}
+                style={{ cursor: saving || editingMatch.player1Forfeit ? 'not-allowed' : 'pointer' }}
               />
-              <label htmlFor="editPlayer2Forfeit" style={{ margin: 0, cursor: editingMatch.player1Forfeit ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
+              <label htmlFor="editPlayer2Forfeit" style={{ margin: 0, cursor: saving || editingMatch.player1Forfeit ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
                 {player2DisplayName} Forfeit
               </label>
             </div>
             {showClearButton && onClear && (
               <button
                 onClick={() => setConfirmAction('clear')}
+                disabled={saving}
                 style={{
                   backgroundColor: '#dc3545',
                   color: 'white',
                   border: 'none',
                   padding: '6px 12px',
                   borderRadius: '4px',
-                  cursor: 'pointer',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  opacity: saving ? 0.6 : 1,
                   fontSize: '12px',
                   marginTop: '10px',
                 }}
@@ -541,14 +564,18 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginLeft: '20px' }}>
           <button
-            onClick={onCancel}
+            onClick={() => {
+              if (!saving) onCancel();
+            }}
             tabIndex={-1}
-            title="Cancel"
+            title={saving ? 'Saving…' : 'Cancel'}
+            disabled={saving}
             style={{
               padding: '8px 12px',
               border: 'none',
               background: 'transparent',
-              cursor: 'pointer',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.5 : 1,
               fontSize: '24px',
               display: 'inline-flex',
               alignItems: 'center',
@@ -559,10 +586,14 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
             ❌
           </button>
           <button
-            onClick={trySave}
+            onClick={() => {
+              void trySave();
+            }}
             tabIndex={-1}
             title={
-              missingScorePins
+              saving
+                ? 'Saving…'
+                : missingScorePins
                 ? 'Enter both participant PINs'
                 : isDisabled
                   ? 'Scores cannot be equal'
@@ -570,17 +601,17 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                     ? 'Enter Score & Complete Match'
                     : 'Save Changes'
             }
-            disabled={isDisabled}
+            disabled={isDisabled || saving}
             style={{
               padding: '8px 12px',
               border: 'none',
               background: 'transparent',
-              cursor: isDisabled ? 'not-allowed' : 'pointer',
+              cursor: isDisabled || saving ? 'not-allowed' : 'pointer',
               fontSize: '24px',
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: isDisabled ? '#95a5a6' : '#27ae60',
+              color: isDisabled || saving ? '#95a5a6' : '#27ae60',
             }}
           >
             <svg
@@ -591,7 +622,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
               xmlns="http://www.w3.org/2000/svg"
               style={{
                 display: 'block',
-                opacity: isDisabled ? 0.5 : 0.8,
+                opacity: isDisabled || saving ? 0.5 : 0.8,
               }}
             >
               <rect
@@ -658,6 +689,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
               autoComplete="off"
               className={invalidScorePins.member1 ? 'kiosk-score-pin-invalid' : undefined}
               value={editingMatch.member1Pin ?? ''}
+              disabled={saving}
               onChange={(e) => {
                 if (invalidScorePins.member1) {
                   setInvalidScorePins((prev) => ({ ...prev, member1: false }));
@@ -670,11 +702,11 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {
                   event.preventDefault();
-                  onCancel();
+                  if (!saving) onCancel();
                 }
                 if (event.key === 'Enter') {
                   event.preventDefault();
-                  void trySave();
+                  if (!saving) void trySave();
                 }
               }}
               placeholder={`${player1.firstName}'s PIN`}
@@ -693,6 +725,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                     ? '#e74c3c'
                     : undefined,
                 boxSizing: 'border-box',
+                opacity: saving ? 0.6 : 1,
               }}
             />
             <input
@@ -702,6 +735,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
               autoComplete="off"
               className={invalidScorePins.member2 ? 'kiosk-score-pin-invalid' : undefined}
               value={editingMatch.member2Pin ?? ''}
+              disabled={saving}
               onChange={(e) => {
                 if (invalidScorePins.member2) {
                   setInvalidScorePins((prev) => ({ ...prev, member2: false }));
@@ -714,11 +748,11 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {
                   event.preventDefault();
-                  onCancel();
+                  if (!saving) onCancel();
                 }
                 if (event.key === 'Enter') {
                   event.preventDefault();
-                  void trySave();
+                  if (!saving) void trySave();
                 }
               }}
               placeholder={`${player2.firstName}'s PIN`}
@@ -736,6 +770,7 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
                     ? '#e74c3c'
                     : undefined,
                 boxSizing: 'border-box',
+                opacity: saving ? 0.6 : 1,
               }}
             />
           </div>
@@ -778,18 +813,26 @@ export const MatchEntryPopup: React.FC<MatchEntryPopupProps> = ({
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
             <button
               type="button"
-              onClick={() => setConfirmAction(null)}
-              style={{ backgroundColor: '#95a5a6', color: 'white' }}
+              onClick={() => {
+                if (!saving) setConfirmAction(null);
+              }}
+              disabled={saving}
+              style={{ backgroundColor: '#95a5a6', color: 'white', opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}
             >
               Keep Editing
             </button>
             <button
               type="button"
               onClick={() => {
-                setConfirmAction(null);
                 void confirmConfig.onConfirm?.();
               }}
-              style={{ backgroundColor: confirmConfig.confirmColor, color: 'white' }}
+              disabled={saving}
+              style={{
+                backgroundColor: confirmConfig.confirmColor,
+                color: 'white',
+                opacity: saving ? 0.7 : 1,
+                cursor: saving ? 'wait' : 'pointer',
+              }}
             >
               {confirmConfig.confirmText}
             </button>

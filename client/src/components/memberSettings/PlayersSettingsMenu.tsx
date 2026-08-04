@@ -30,6 +30,7 @@ export interface PlayersSettingsMenuProps {
   onImportPlayers: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onExportClubArchive: () => void;
   onImportClubArchive: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  importBusy?: boolean;
   importSendEmail: boolean;
   setImportSendEmail: React.Dispatch<React.SetStateAction<boolean>>;
   tournamentNotificationsEnabled?: boolean;
@@ -67,6 +68,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   onImportPlayers,
   onExportClubArchive,
   onImportClubArchive,
+  importBusy = false,
   importSendEmail,
   setImportSendEmail,
   tournamentNotificationsEnabled,
@@ -263,7 +265,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
         {isAdminUser && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
             {(() => {
-              const isDisabled = isSelectingForStats || isSelectingForHistory;
+              const isDisabled = isSelectingForStats || isSelectingForHistory || importBusy;
               const isExportDisabled = isDisabled || !supportsFullSaveDialog;
               const buttonBaseStyle: React.CSSProperties = {
                 padding: '6px 12px',
@@ -309,7 +311,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
                     </div>
                   )}
                   <label className="button-3d" style={importButtonStyle} title="Import players from CSV">
-                    📤 Import
+                    {importBusy ? 'Importing…' : '📤 Import'}
                     <input type="file" accept=".csv" onChange={onImportPlayers} disabled={isDisabled} style={{ display: 'none' }} />
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#555', cursor: 'pointer', marginTop: '2px' }}>
@@ -344,7 +346,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
                       style={{ ...importButtonStyle, marginTop: '6px', display: 'block' }}
                       title="Import club archive into an empty tournament database"
                     >
-                      Import archive
+                      {importBusy ? 'Importing…' : 'Import archive'}
                       <input
                         type="file"
                         accept=".json,application/json"

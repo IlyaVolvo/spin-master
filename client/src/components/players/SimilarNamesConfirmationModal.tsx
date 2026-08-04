@@ -7,6 +7,7 @@ export interface SimilarNamesConfirmationModalProps {
   onCancel: () => void;
   onModifyName: () => void;
   onConfirmAdd: () => void;
+  confirmBusy?: boolean;
 }
 
 export const SimilarNamesConfirmationModal: React.FC<SimilarNamesConfirmationModalProps> = ({
@@ -15,6 +16,7 @@ export const SimilarNamesConfirmationModal: React.FC<SimilarNamesConfirmationMod
   onCancel,
   onModifyName,
   onConfirmAdd,
+  confirmBusy = false,
 }) => (
   <div
     style={{
@@ -48,14 +50,14 @@ export const SimilarNamesConfirmationModal: React.FC<SimilarNamesConfirmationMod
         ))}
       </ul>
       <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-        <button type="button" onClick={onCancel} style={{ backgroundColor: '#95a5a6', color: 'white' }}>
+        <button type="button" onClick={onCancel} disabled={confirmBusy} style={{ backgroundColor: '#95a5a6', color: 'white', opacity: confirmBusy ? 0.7 : 1, cursor: confirmBusy ? 'not-allowed' : 'pointer' }}>
           Cancel
         </button>
-        <button type="button" onClick={onModifyName} style={{ backgroundColor: '#3498db', color: 'white' }}>
+        <button type="button" onClick={onModifyName} disabled={confirmBusy} style={{ backgroundColor: '#3498db', color: 'white', opacity: confirmBusy ? 0.7 : 1, cursor: confirmBusy ? 'not-allowed' : 'pointer' }}>
           Modify Name
         </button>
-        <button type="button" onClick={onConfirmAdd} style={{ backgroundColor: '#27ae60', color: 'white' }}>
-          Confirm & Add
+        <button type="button" onClick={onConfirmAdd} disabled={confirmBusy} style={{ backgroundColor: '#27ae60', color: 'white', opacity: confirmBusy ? 0.7 : 1, cursor: confirmBusy ? 'not-allowed' : 'pointer' }}>
+          {confirmBusy ? 'Saving…' : 'Confirm & Add'}
         </button>
       </div>
     </div>

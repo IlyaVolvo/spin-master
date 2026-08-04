@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { getErrorMessage } from '../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
+import { useBusyAction } from '../hooks/useBusyAction';
 
 interface ClubPlan {
   id: number;
@@ -200,6 +201,7 @@ export default function ClubPlanManager() {
   const [formMode, setFormMode] = useState<'create' | 'edit' | 'add-segment'>('create');
   const [form, setForm] = useState<PlanFormData>(getEmptyForm());
   const [saving, setSaving] = useState(false);
+  const { busy: toggleBusy, runBusy: runToggleBusy } = useBusyAction();
   const [showInactive, setShowInactive] = useState(false);
   const [priceFieldKey, setPriceFieldKey] = useState(0);
 
@@ -287,18 +289,20 @@ export default function ClubPlanManager() {
   };
 
   const handleToggleActive = async (plan: ClubPlan) => {
-    try {
-      if (plan.isActive) {
-        await api.delete(`/club/admin/plans/${plan.id}`);
-        flash(`"${plan.name}" (${plan.segment}) deactivated`);
-      } else {
-        await api.put(`/club/admin/plans/${plan.id}`, { isActive: true });
-        flash(`"${plan.name}" (${plan.segment}) reactivated`);
+    await runToggleBusy(async () => {
+      try {
+        if (plan.isActive) {
+          await api.delete(`/club/admin/plans/${plan.id}`);
+          flash(`"${plan.name}" (${plan.segment}) deactivated`);
+        } else {
+          await api.put(`/club/admin/plans/${plan.id}`, { isActive: true });
+          flash(`"${plan.name}" (${plan.segment}) reactivated`);
+        }
+        await fetchPlans();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to update plan'));
       }
-      await fetchPlans();
-    } catch (err) {
-      setError(getErrorMessage(err, 'Failed to update plan'));
-    }
+    });
   };
 
   const visiblePlans = showInactive ? plans : plans.filter((p) => p.isActive);
@@ -577,10 +581,13 @@ export default function ClubPlanManager() {
                         </button>
                         <button
                           onClick={() => handleToggleActive(plan)}
+                          disabled={toggleBusy}
                           style={{
                             ...smallBtnStyle,
                             backgroundColor: plan.isActive ? '#e74c3c' : '#27ae60',
                             color: 'white',
+                            opacity: toggleBusy ? 0.7 : 1,
+                            cursor: toggleBusy ? 'not-allowed' : 'pointer',
                           }}
                         >
                           {plan.isActive ? 'Deactivate' : 'Reactivate'}

@@ -4,6 +4,7 @@ import api from '../../../utils/api';
 import { snakeDraftGroups } from './roundRobinUtils';
 import { BoundedNumericInput } from '../../BoundedNumericInput';
 import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
+import { useBusyAction } from '../../../hooks/useBusyAction';
 
 type Step = 'multi_toggle' | 'rearrange' | 'confirmation';
 
@@ -31,6 +32,7 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
   const [draggedPlayer, setDraggedPlayer] = useState<{ playerId: number; fromGroupIndex: number } | null>(null);
   const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null);
   const lastRecalcKeyRef = useRef<string>('');
+  const { busy: creating, runBusy } = useBusyAction();
 
   // Snake draft grouping (delegates to shared utility)
   const generateSnakeDraftGroups = (playerIds: number[], groupSize: number): number[][] => {
@@ -77,67 +79,69 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
   };
 
   const handleCreate = async () => {
-    try {
-      if (isMultiTournamentMode) {
-        if (playerGroups.length === 0) {
-          onError('No tournament groups defined. Please adjust the player groupings.');
-          return;
-        }
+    await runBusy(async () => {
+      try {
+        if (isMultiTournamentMode) {
+          if (playerGroups.length === 0) {
+            onError('No tournament groups defined. Please adjust the player groupings.');
+            return;
+          }
 
-        const invalidGroups = playerGroups.filter(group => group.length < 2);
-        if (invalidGroups.length > 0) {
-          onError('Each tournament must have at least 2 players. Please adjust the groupings.');
-          return;
-        }
+          const invalidGroups = playerGroups.filter(group => group.length < 2);
+          if (invalidGroups.length > 0) {
+            onError('Each tournament must have at least 2 players. Please adjust the groupings.');
+            return;
+          }
 
-        const dateStr = new Date().toLocaleDateString();
-        const baseName = tournamentName.trim() || `Tournament ${dateStr}`;
-        const tournamentsData = playerGroups.map((group, index) => ({
-          name: `${baseName}-${index + 1}`,
-          participantIds: group,
-          type: 'ROUND_ROBIN',
-        }));
-
-        await api.post('/tournaments/bulk', { tournaments: tournamentsData });
-        onSuccess(`Successfully created ${playerGroups.length} tournament${playerGroups.length !== 1 ? 's' : ''}`);
-        onCreated();
-        return;
-      } else {
-        const tournamentData: any = {
-          participantIds: selectedPlayerIds,
-          type: 'ROUND_ROBIN',
-        };
-
-        if (!tournamentName.trim()) {
           const dateStr = new Date().toLocaleDateString();
-          tournamentData.name = `Tournament ${dateStr}`;
-        } else {
-          tournamentData.name = tournamentName.trim();
-        }
+          const baseName = tournamentName.trim() || `Tournament ${dateStr}`;
+          const tournamentsData = playerGroups.map((group, index) => ({
+            name: `${baseName}-${index + 1}`,
+            participantIds: group,
+            type: 'ROUND_ROBIN',
+          }));
 
-        let createdId: number | undefined;
-        if (finalizingPreregistrationId) {
-          const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
-          createdId = extractCreatedTournamentId(response.data);
-          onSuccess('Tournament created from preregistration successfully');
-        } else if (editingTournamentId) {
-          const response = await api.patch(`/tournaments/${editingTournamentId}`, {
-            name: tournamentData.name,
-            participantIds: selectedPlayerIds,
-          });
-          createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
-          onSuccess('Tournament modified successfully');
+          await api.post('/tournaments/bulk', { tournaments: tournamentsData });
+          onSuccess(`Successfully created ${playerGroups.length} tournament${playerGroups.length !== 1 ? 's' : ''}`);
+          onCreated();
+          return;
         } else {
-          const response = await api.post('/tournaments', tournamentData);
-          createdId = extractCreatedTournamentId(response.data);
-          onSuccess('Tournament created successfully');
+          const tournamentData: any = {
+            participantIds: selectedPlayerIds,
+            type: 'ROUND_ROBIN',
+          };
+
+          if (!tournamentName.trim()) {
+            const dateStr = new Date().toLocaleDateString();
+            tournamentData.name = `Tournament ${dateStr}`;
+          } else {
+            tournamentData.name = tournamentName.trim();
+          }
+
+          let createdId: number | undefined;
+          if (finalizingPreregistrationId) {
+            const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
+            createdId = extractCreatedTournamentId(response.data);
+            onSuccess('Tournament created from preregistration successfully');
+          } else if (editingTournamentId) {
+            const response = await api.patch(`/tournaments/${editingTournamentId}`, {
+              name: tournamentData.name,
+              participantIds: selectedPlayerIds,
+            });
+            createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;
+            onSuccess('Tournament modified successfully');
+          } else {
+            const response = await api.post('/tournaments', tournamentData);
+            createdId = extractCreatedTournamentId(response.data);
+            onSuccess('Tournament created successfully');
+          }
+          onCreated(createdId);
+          return;
         }
-        onCreated(createdId);
-        return;
+      } catch (err: any) {
+        onError(err.response?.data?.error || 'Failed to create tournament(s)');
       }
-    } catch (err: any) {
-      onError(err.response?.data?.error || 'Failed to create tournament(s)');
-    }
+    });
   };
 
   const handleBack = () => {
@@ -422,13 +426,14 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
           <button
             onClick={onBackToPlayerSelection}
+            disabled={creating}
             style={{
               padding: '10px 20px',
               backgroundColor: '#95a5a6',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: creating ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: 'bold'
             }}
@@ -437,18 +442,21 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
           </button>
           <button
             onClick={handleCreate}
+            disabled={creating}
             style={{
               padding: '10px 20px',
               backgroundColor: '#27ae60',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: creating ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: 'bold',
             }}
           >
-            {isMultiTournamentMode ? `Create ${playerGroups.length} Tournaments` : (finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament')}
+            {creating
+              ? (editingTournamentId && !finalizingPreregistrationId ? 'Saving…' : 'Creating…')
+              : (isMultiTournamentMode ? `Create ${playerGroups.length} Tournaments` : (finalizingPreregistrationId ? 'Create Tournament' : editingTournamentId ? 'Modify Tournament' : 'Create Tournament'))}
           </button>
         </div>
       </div>
