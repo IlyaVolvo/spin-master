@@ -75,8 +75,9 @@ function formatSignedDelta(n: number): string {
 }
 
 /**
- * Completed RR rating annotation:
- * (current) (signup/(completion Δ[, during Δ][, after Δ]))
+ * Completed RR rating annotation for this event only:
+ * (rating after event) (signup/(this event's Δ))
+ * Omits other rated play during or after this tournament.
  */
 export function formatRrCompletedRatingLine(participant: {
   playerRatingAtTime?: number | null;
@@ -86,37 +87,22 @@ export function formatRrCompletedRatingLine(participant: {
   rrCompletionRating?: number | null;
 } | null | undefined): string | null {
   const before = participant?.playerRatingAtTime;
-  const current = participant?.postRatingAtTime ?? participant?.member?.rating ?? null;
-  if (before == null || current == null || isLikelyRanking(before)) {
-    return null;
-  }
-  const cur = Math.round(current);
-  const bef = Math.round(before);
-
   const tcChange = participant?.rrCompletionRatingChange;
   const rAfterTournament = participant?.rrCompletionRating;
+  // Prefer this tournament's completion rating over live member rating
+  const afterEvent =
+    rAfterTournament ?? participant?.postRatingAtTime ?? participant?.member?.rating ?? null;
+  if (before == null || afterEvent == null || isLikelyRanking(before)) {
+    return null;
+  }
+  const cur = Math.round(afterEvent);
+  const bef = Math.round(before);
 
   if (rAfterTournament != null) {
     const rEvent = Math.round(rAfterTournament);
     const completionDelta =
       tcChange != null ? Math.round(tcChange) : rEvent - bef;
-
-    const parts: string[] = [formatSignedDelta(completionDelta)];
-
-    if (tcChange != null) {
-      const anchorBeforeCompletion = rEvent - Math.round(tcChange);
-      const duringDelta = anchorBeforeCompletion - bef;
-      if (duringDelta !== 0) {
-        parts.push(formatSignedDelta(duringDelta));
-      }
-    }
-
-    const afterDelta = cur - rEvent;
-    if (afterDelta !== 0) {
-      parts.push(formatSignedDelta(afterDelta));
-    }
-
-    return `(${cur}) (${bef}/(${parts.join(', ')}))`;
+    return `(${rEvent}) (${bef}/(${formatSignedDelta(completionDelta)}))`;
   }
 
   const net = cur - bef;
