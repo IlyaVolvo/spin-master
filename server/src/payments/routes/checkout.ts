@@ -210,9 +210,73 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
     const method =
       methodRaw === 'cash' || methodRaw === 'online' ? methodRaw : undefined;
 
+    const kindRaw = req.body?.kind;
+    const kind =
+      kindRaw === 'pay_per_visit'
+        ? 'pay_per_visit'
+        : kindRaw === 'event'
+          ? 'event'
+          : 'plan';
+
+    if (kind === 'event') {
+      const { runEventCheckout } = await import('../eventPayment');
+      const tournamentId = Number(req.body?.tournamentId);
+      const registrationId = Number(req.body?.registrationId);
+      if (!Number.isInteger(tournamentId) || tournamentId < 1) {
+        return res.status(400).json({ error: 'tournamentId is required' });
+      }
+      if (!Number.isInteger(registrationId) || registrationId < 1) {
+        return res.status(400).json({ error: 'registrationId is required' });
+      }
+
+      const registration = await prisma.tournamentRegistration.findUnique({
+        where: { id: registrationId },
+        include: { tournament: true },
+      });
+      if (!registration || registration.tournamentId !== tournamentId) {
+        return res.status(404).json({ error: 'Registration not found' });
+      }
+      if (registration.memberId !== targetMemberId) {
+        return res.status(403).json({ error: 'Registration does not belong to this member' });
+      }
+      if (!registration.tournament.isEvent || registration.tournament.eventPriceCents == null) {
+        return res.status(400).json({ error: 'Tournament is not a paid event' });
+      }
+      if (registration.status === 'REGISTERED') {
+        return res.status(400).json({ error: 'Already registered for this event' });
+      }
+      if (registration.status === 'DECLINED') {
+        return res.status(400).json({ error: 'Invitation was declined' });
+      }
+
+      const result = await runEventCheckout({
+        memberId: targetMemberId,
+        tournamentId,
+        registrationId,
+        eventPriceCents: registration.tournament.eventPriceCents,
+        tournamentName: registration.tournament.name,
+        initiatedBy,
+        method,
+      });
+
+      if (registration.status !== 'PENDING') {
+        await prisma.tournamentRegistration.update({
+          where: { id: registrationId },
+          data: {
+            status: 'PENDING',
+            rejectedAt: null,
+            rejectionReason: null,
+            registeredAt: null,
+          },
+        });
+      }
+
+      return res.json(result);
+    }
+
     const result = await runMemberCheckout({
       memberId: targetMemberId,
-      kind: req.body?.kind === 'pay_per_visit' ? 'pay_per_visit' : 'plan',
+      kind: kind === 'pay_per_visit' ? 'pay_per_visit' : 'plan',
       familyKey: typeof req.body?.familyKey === 'string' ? req.body.familyKey : undefined,
       amountCents: req.body?.amountCents != null ? Number(req.body.amountCents) : undefined,
       clubDate: typeof req.body?.clubDate === 'string' ? req.body.clubDate : undefined,

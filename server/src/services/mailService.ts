@@ -95,27 +95,43 @@ export async function sendTournamentInvitationEmail(params: {
   registrationDeadline?: Date | string | null;
   registrationLink: string;
   declineLink?: string;
+  isEvent?: boolean;
+  eventPriceCents?: number | null;
   transporter?: nodemailer.Transporter;
 }): Promise<void> {
-  const subject = `Tournament invitation: ${params.tournamentName}`;
+  const isEvent = params.isEvent === true && params.eventPriceCents != null;
+  const priceLabel =
+    isEvent && params.eventPriceCents != null
+      ? `$${(params.eventPriceCents / 100).toFixed(2)}`
+      : null;
+  const subject = isEvent
+    ? `Event invitation: ${params.tournamentName}`
+    : `Tournament invitation: ${params.tournamentName}`;
+  const inviteLine = isEvent
+    ? `You are invited to register and pay for the event ${params.tournamentName}${priceLabel ? ` (${priceLabel})` : ''}.`
+    : `You are invited to register interest in ${params.tournamentName}.`;
+  const ctaLabel = isEvent ? 'Register and pay for this event' : 'Register for this tournament';
   const text = [
     `Hi ${params.firstName},`,
     '',
-    `You are invited to register interest in ${params.tournamentName}.`,
+    inviteLine,
     `Tournament date: ${formatDate(params.tournamentDate)}`,
     `Registration deadline: ${formatDate(params.registrationDeadline)}`,
+    ...(priceLabel ? [`Event fee: ${priceLabel}`] : []),
     '',
-    'Use this link to register:',
+    isEvent ? 'Use this link to register and pay:' : 'Use this link to register:',
     params.registrationLink,
     '',
     ...(params.declineLink ? ['If you cannot play, use this link to decline:', params.declineLink] : []),
   ].join('\n');
   const html = `
     <p>Hi ${params.firstName},</p>
-    <p>You are invited to register interest in <strong>${params.tournamentName}</strong>.</p>
+    <p>${inviteLine.replace(params.tournamentName, `<strong>${params.tournamentName}</strong>`)}</p>
     <p><strong>Tournament date:</strong> ${formatDate(params.tournamentDate)}<br>
-    <strong>Registration deadline:</strong> ${formatDate(params.registrationDeadline)}</p>
-    <p><a href="${params.registrationLink}">Register for this tournament</a></p>
+    <strong>Registration deadline:</strong> ${formatDate(params.registrationDeadline)}${
+      priceLabel ? `<br><strong>Event fee:</strong> ${priceLabel}` : ''
+    }</p>
+    <p><a href="${params.registrationLink}">${ctaLabel}</a></p>
     ${params.declineLink ? `<p><a href="${params.declineLink}">Decline this invitation</a></p>` : ''}
   `;
 

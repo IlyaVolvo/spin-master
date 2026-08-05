@@ -180,6 +180,10 @@ export async function runClubMidnightJobs(options?: {
   // 4) Trial period completed → email (if address exists) once
   const trialNotify = await notifyCompletedTrials(clubDate);
 
+  // 5) Expire unpaid event PENDING registrations past deadline
+  const { expirePendingEventRegistrations } = await import('./eventPayment');
+  const expiredEventPending = await expirePendingEventRegistrations(now);
+
   logger.info('Club midnight jobs completed', {
     clubDate,
     previousClubDate,
@@ -189,6 +193,7 @@ export async function runClubMidnightJobs(options?: {
     autoRenewErrors,
     trialEndedEmailed: trialNotify.emailed,
     trialEndedMarked: trialNotify.marked,
+    expiredEventPending,
   });
 
   return {

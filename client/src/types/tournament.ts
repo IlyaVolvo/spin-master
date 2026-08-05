@@ -26,7 +26,16 @@ export interface Member {
   tournamentNotificationsEnabled?: boolean;
 }
 
-export type TournamentRegistrationStatus = 'INVITED' | 'REGISTERED' | 'DECLINED';
+export type TournamentRegistrationStatus = 'INVITED' | 'REGISTERED' | 'DECLINED' | 'PENDING';
+
+export interface EventPaymentSummary {
+  id: number;
+  status: string;
+  amountCents?: number;
+  listAmountCents?: number;
+  purpose?: string;
+  provider?: string;
+}
 
 export interface TournamentRegistration {
   id: number;
@@ -38,6 +47,7 @@ export interface TournamentRegistration {
   registeredAt?: string | null;
   rejectedAt?: string | null;
   rejectionReason?: string | null;
+  eventPayment?: EventPaymentSummary | null;
   createdAt: string;
   updatedAt?: string;
 }
@@ -173,6 +183,11 @@ export interface Tournament {
   minRating?: number | null;
   maxRating?: number | null;
   maxParticipants?: number | null;
+  minParticipants?: number | null;
+  isEvent?: boolean;
+  eventPriceCents?: number | null;
+  eventCheckInLeadMinutes?: number | null;
+  eventCheckInCloseMinutesBeforeStart?: number | null;
   participants: TournamentParticipant[]; // Only for basic tournaments
   registrations?: TournamentRegistration[];
   matches: Match[]; // Only for basic tournaments

@@ -78,6 +78,12 @@ export async function resolvePlanLabelForProduct(
       planSegment: null,
     };
   }
+  if (product.kind === 'event') {
+    return {
+      planLabel: `Event registration (tournament ${product.tournamentId})`,
+      planSegment: null,
+    };
+  }
   try {
     const { prisma } = await import('../index');
     const plan = await prisma.clubPlan.findUnique({

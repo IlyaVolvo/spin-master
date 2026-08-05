@@ -4,6 +4,7 @@ import api from '../../../utils/api';
 import { snakeDraftGroups } from './roundRobinUtils';
 import { BoundedNumericInput } from '../../BoundedNumericInput';
 import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
+import { buildFinalizeSuccessMessage } from '../../../utils/finalizeRegistrationMessages';
 import { useBusyAction } from '../../../hooks/useBusyAction';
 
 type Step = 'multi_toggle' | 'rearrange' | 'confirmation';
@@ -122,7 +123,7 @@ export const RoundRobinPostSelectionFlow: React.FC<Props> = ({
           if (finalizingPreregistrationId) {
             const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
             createdId = extractCreatedTournamentId(response.data);
-            onSuccess('Tournament created from preregistration successfully');
+            onSuccess(buildFinalizeSuccessMessage('Tournament created from preregistration successfully', response.data));
           } else if (editingTournamentId) {
             const response = await api.patch(`/tournaments/${editingTournamentId}`, {
               name: tournamentData.name,

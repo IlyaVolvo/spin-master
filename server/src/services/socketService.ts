@@ -201,6 +201,9 @@ export function emitClubVisitUpdated(payload: {
   present?: boolean;
   visitedToday?: boolean;
   lastCheckInAt?: string | null;
+  /** Open visit covered by event admission (null/omit clears on clients that track it). */
+  eventTournamentId?: number | null;
+  eventName?: string | null;
 }) {
   const version = bumpPresenceBoardVersion();
   emitToAll('club:visitUpdated', {
@@ -212,6 +215,9 @@ export function emitClubVisitUpdated(payload: {
     present: payload.present,
     visitedToday: payload.visitedToday,
     lastCheckInAt: payload.lastCheckInAt ?? null,
+    eventTournamentId:
+      payload.eventTournamentId === undefined ? undefined : payload.eventTournamentId,
+    eventName: payload.eventName === undefined ? undefined : payload.eventName,
     timestamp: Date.now(),
   });
 }

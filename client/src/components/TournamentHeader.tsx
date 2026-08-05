@@ -14,7 +14,8 @@ interface Tournament {
 
 interface TournamentHeaderProps {
   tournament: Tournament;
-  onEditClick: () => void;
+  /** When omitted, name is display-only (no edit control). */
+  onEditClick?: () => void;
 }
 
 export const TournamentHeader: React.FC<TournamentHeaderProps> = ({
@@ -40,21 +41,23 @@ export const TournamentHeader: React.FC<TournamentHeaderProps> = ({
         </span>
       )}
       <h4 style={{ margin: 0 }}>{tournament.name || `Tournament ${new Date(tournament.createdAt).toLocaleDateString()}`}</h4>
-      <button
-        onClick={onEditClick}
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '4px',
-          fontSize: '14px',
-          color: '#666',
-          opacity: 0.7,
-        }}
-        title="Edit tournament name"
-      >
-        ✏️
-      </button>
+      {onEditClick ? (
+        <button
+          onClick={onEditClick}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px',
+            fontSize: '14px',
+            color: '#666',
+            opacity: 0.7,
+          }}
+          title="Edit tournament name"
+        >
+          ✏️
+        </button>
+      ) : null}
     </>
   );
 };

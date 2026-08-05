@@ -47,9 +47,13 @@ export const PlayoffPlugin: TournamentPlugin = {
   supportsAbbreviatedResultsPrint: false,
   
   renderHeader: ({ tournament, onEditClick }) => {
-    return React.createElement('div', {}, 
-      React.createElement('h3', {}, tournament.name || 'Playoff Tournament'),
-      React.createElement('button', { onClick: onEditClick }, 'Edit')
+    return React.createElement(
+      'div',
+      { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+      React.createElement('h3', { style: { margin: 0 } }, tournament.name || 'Playoff Tournament'),
+      onEditClick
+        ? React.createElement('button', { onClick: onEditClick, title: 'Edit tournament name' }, '✏️')
+        : null,
     );
   },
   

@@ -5,6 +5,7 @@ import { getSystemConfig } from '../../../utils/systemConfig';
 import { rankBasedGroups, computeGroupCapacities } from './roundRobinUtils';
 import { BoundedNumericInput } from '../../BoundedNumericInput';
 import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
+import { buildFinalizeSuccessMessage } from '../../../utils/finalizeRegistrationMessages';
 import { useBusyAction } from '../../../hooks/useBusyAction';
 
 type Step = 'select_group_size' | 'confirm_groups' | 'confirmation';
@@ -96,7 +97,7 @@ export const MultiRoundRobinsPostSelectionFlow: React.FC<PostSelectionFlowProps>
         if (finalizingPreregistrationId) {
           const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
           createdId = extractCreatedTournamentId(response.data);
-          onSuccess('Multi Round Robin tournament created from preregistration successfully');
+          onSuccess(buildFinalizeSuccessMessage('Multi Round Robin tournament created from preregistration successfully', response.data));
         } else if (editingTournamentId) {
           const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
           createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;

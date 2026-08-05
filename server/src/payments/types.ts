@@ -4,7 +4,8 @@ export type PaymentInitiatedBy = 'MEMBER' | 'ADMIN';
 
 export type CheckoutProduct =
   | { kind: 'plan'; familyKey: string; planId: number; planSegment: string }
-  | { kind: 'pay_per_visit'; amountCents: number; clubDate: string };
+  | { kind: 'pay_per_visit'; amountCents: number; clubDate: string }
+  | { kind: 'event'; tournamentId: number; registrationId: number; amountCents: number };
 
 export type StartCheckoutInput = {
   memberId: number;
@@ -75,7 +76,7 @@ export interface PaymentProvider {
 }
 
 export type PaymentMetadata = {
-  kind?: 'courtesy_obligation' | 'checkout' | 'auto_renew';
+  kind?: 'courtesy_obligation' | 'checkout' | 'auto_renew' | 'event' | 'event_obligation';
   product?: CheckoutProduct;
   familyKey?: string;
   planId?: number;
@@ -91,4 +92,8 @@ export type PaymentMetadata = {
   forceFuture?: boolean;
   /** Checkout method used to start this payment. */
   paymentMethod?: 'cash' | 'online';
+  tournamentId?: number;
+  registrationId?: number;
+  reimbursedAsCreditCents?: number;
+  reimbursedAt?: string;
 };

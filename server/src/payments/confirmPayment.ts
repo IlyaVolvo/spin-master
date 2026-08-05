@@ -10,6 +10,7 @@ import {
 import { invalidateCurrentEntitlement } from './checkInStateCache';
 import { resolvePlanLabelForProduct, sendPaymentProcessedEmail } from './paymentReceiptEmail';
 import type { ConfirmEvent, CheckoutProduct, PaymentMetadata } from './types';
+import { applyEventPaymentSuccess } from './eventPayment';
 
 function asMetadata(value: unknown): PaymentMetadata {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -25,6 +26,7 @@ async function createEntitlementFromProduct(
   forceFuture?: boolean,
 ): Promise<void> {
   if (!product) return;
+  if (product.kind === 'event') return;
 
   if (product.kind === 'pay_per_visit') {
     // PPV remains out of queue redesign scope; grant CURRENT coverage marker
@@ -200,6 +202,9 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
   }
 
   const meta = asMetadata(payment.metadata);
+  const isEventPayment =
+    meta.product?.kind === 'event' || meta.kind === 'event' || meta.kind === 'event_obligation';
+
   const member = await prisma.member.findUnique({
     where: { id: payment.memberId },
     select: {
@@ -251,58 +256,71 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
       });
     }
 
-    if (meta.autoRenew === true && meta.familyKey) {
-      const futureAfter = await getFutureEntitlement(payment.memberId);
-      if (!futureAfter) {
-        await tx.member.update({
-          where: { id: payment.memberId },
-          data: {
-            autoRenewEnabled: true,
-            autoRenewFamilyKey: meta.familyKey,
-          },
-        });
+    if (!isEventPayment) {
+      if (meta.autoRenew === true && meta.familyKey) {
+        const futureAfter = await getFutureEntitlement(payment.memberId);
+        if (!futureAfter) {
+          await tx.member.update({
+            where: { id: payment.memberId },
+            data: {
+              autoRenewEnabled: true,
+              autoRenewFamilyKey: meta.familyKey,
+            },
+          });
+        }
       }
-    } else if (meta.autoRenew === false) {
-      // leave existing preference unless explicitly clearing via plan API
-    }
 
-    const now = new Date();
-    await tx.clubVisit.updateMany({
-      where: {
-        memberId: payment.memberId,
-        isCourtesy: true,
-        courtesyClearedAt: null,
-        OR: [{ obligationPaymentId: payment.id }, { obligationPaymentId: null }],
-      },
-      data: {
-        courtesyClearedAt: now,
-        obligationPaymentId: payment.id,
-        isCourtesy: true,
-      },
-    });
+      const now = new Date();
+      await tx.clubVisit.updateMany({
+        where: {
+          memberId: payment.memberId,
+          isCourtesy: true,
+          courtesyClearedAt: null,
+          OR: [{ obligationPaymentId: payment.id }, { obligationPaymentId: null }],
+        },
+        data: {
+          courtesyClearedAt: now,
+          obligationPaymentId: payment.id,
+          isCourtesy: true,
+        },
+      });
+    }
   });
 
-  try {
-    await createEntitlementFromProduct(
-      payment.memberId,
-      meta.product,
-      meta.planSegment || member?.segment || 'Regular',
-      amountPaid,
-      meta.startDate,
-      meta.forceFuture === true,
-    );
-  } catch (err) {
-    logger.error('Failed to create entitlement after payment confirm', {
-      paymentId: payment.id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    throw err;
+  if (isEventPayment) {
+    try {
+      await applyEventPaymentSuccess(payment.id, meta);
+    } catch (err) {
+      logger.error('Failed to apply event registration after payment confirm', {
+        paymentId: payment.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  } else {
+    try {
+      await createEntitlementFromProduct(
+        payment.memberId,
+        meta.product,
+        meta.planSegment || member?.segment || 'Regular',
+        amountPaid,
+        meta.startDate,
+        meta.forceFuture === true,
+      );
+    } catch (err) {
+      logger.error('Failed to create entitlement after payment confirm', {
+        paymentId: payment.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
   }
 
   logger.info('Payment confirmed', {
     paymentId: payment.id,
     provider: event.providerId,
     externalRef: event.externalRef,
+    isEventPayment,
   });
 
   emitPaymentUpdated({
@@ -315,7 +333,7 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
   });
 
   const email = member?.email?.trim();
-  if (email) {
+  if (email && !isEventPayment) {
     try {
       const { planLabel, planSegment } = await resolvePlanLabelForProduct(meta.product);
       await sendPaymentProcessedEmail({

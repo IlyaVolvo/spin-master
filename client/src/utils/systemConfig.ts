@@ -48,6 +48,9 @@ export type SystemConfig = {
     defaultTournamentOffsetDays: number;
     defaultTournamentTime: string;
     registrationDeadlineOffsetMinutes: number;
+    eventCheckInLeadMinutes: number;
+    eventCheckInCloseMinutesBeforeStart: number;
+    defaultEventPriceCents: number;
     cancelReasonPresets: string[];
   };
   ratingValidation: {
@@ -164,7 +167,10 @@ const defaultSystemConfig: SystemConfig = {
   preregistration: {
     defaultTournamentOffsetDays: 1,
     defaultTournamentTime: '18:00',
-    registrationDeadlineOffsetMinutes: 30,
+    registrationDeadlineOffsetMinutes: 60,
+    eventCheckInLeadMinutes: 60,
+    eventCheckInCloseMinutesBeforeStart: 0,
+    defaultEventPriceCents: 1000,
     cancelReasonPresets: [
       'Tournament cancelled by organizer',
       'Not enough registered players',

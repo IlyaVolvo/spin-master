@@ -18,6 +18,8 @@ type VisitRow = {
   courtesyClearedAt: string | null;
   rejectedAt: string | null;
   rejectionReason: string | null;
+  eventTournamentId?: number | null;
+  eventName?: string | null;
 };
 
 type AttendanceStatusValue = 'present' | 'out' | 'rejected';
@@ -72,12 +74,19 @@ function formatWhen(iso: string | null): string {
   return formatted === '—' ? iso : formatted;
 }
 
+function visitEventLabel(v: VisitRow): string | null {
+  if (v.eventTournamentId == null) return null;
+  const name = v.eventName?.trim();
+  return name ? `Event: ${name}` : 'Event';
+}
+
 function visitStatusSummary(v: VisitRow): {
   label: string;
   tooltip: string;
   color: string;
   background: string;
 } {
+  const eventLabel = visitEventLabel(v);
   if (v.rejectedAt) {
     const reason = v.rejectionReason?.trim();
     return {
@@ -89,25 +98,27 @@ function visitStatusSummary(v: VisitRow): {
   }
   if (!v.checkOutAt) {
     const bits: string[] = ['Currently present'];
+    if (eventLabel) bits.push(eventLabel);
     if (v.isCourtesy) bits.push(v.courtesyClearedAt ? 'Courtesy (cleared)' : 'Courtesy');
     if (v.dailyPaymentApplied) bits.push('Charged');
     return {
-      label: 'Present',
+      label: eventLabel ? 'Present · Event' : 'Present',
       tooltip: bits.join(' · '),
-      color: '#1e8449',
-      background: '#d5f5e3',
+      color: eventLabel ? '#6c3483' : '#1e8449',
+      background: eventLabel ? '#f5eef8' : '#d5f5e3',
     };
   }
   const bits: string[] = ['Checked out'];
   if (v.closedBy === 'AUTO') bits.push('Club close (AUTO)');
   else if (v.closedBy) bits.push(`Closed by ${v.closedBy}`);
+  if (eventLabel) bits.push(eventLabel);
   if (v.isCourtesy) bits.push(v.courtesyClearedAt ? 'Courtesy (cleared)' : 'Courtesy');
   if (v.dailyPaymentApplied) bits.push('Charged');
   return {
-    label: 'Out',
+    label: eventLabel ? 'Out · Event' : 'Out',
     tooltip: bits.join(' · '),
-    color: '#566573',
-    background: '#eaecee',
+    color: eventLabel ? '#6c3483' : '#566573',
+    background: eventLabel ? '#f5eef8' : '#eaecee',
   };
 }
 

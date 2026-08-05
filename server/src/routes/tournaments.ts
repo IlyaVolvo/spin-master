@@ -38,6 +38,18 @@ import {
   getTournamentRulesConfig,
 } from '../services/systemConfigService';
 import {
+  cancelPendingEventPayment,
+  countHeldRegistrations,
+  creditSucceededEventPayment,
+  clearEventUnpaid,
+  runEventCheckout,
+  expirePendingEventRegistrations,
+} from '../payments/eventPayment';
+import {
+  eventOutsideCheckInWindowClubChargeWarning,
+  isEventCheckInWindowOpen,
+} from '../payments/eventCheckInWindow';
+import {
   attachCorrectionEligibility,
   correctCompletedMatchScore,
   enrichTournamentForApi,
@@ -109,7 +121,19 @@ function validateConfiguredMatchScore(player1Sets: number, player2Sets: number, 
 function registrationInclude() {
   return {
     registrations: {
-      include: { member: true },
+      include: {
+        member: true,
+        eventPayment: {
+          select: {
+            id: true,
+            status: true,
+            amountCents: true,
+            listAmountCents: true,
+            purpose: true,
+            provider: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' as const },
     },
   };
@@ -125,7 +149,19 @@ function tournamentListInclude() {
     matches: true,
     swissData: true,
     registrations: {
-      include: { member: true },
+      include: {
+        member: true,
+        eventPayment: {
+          select: {
+            id: true,
+            status: true,
+            amountCents: true,
+            listAmountCents: true,
+            purpose: true,
+            provider: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' as const },
     },
     _count: {
@@ -137,7 +173,7 @@ function tournamentListInclude() {
   };
 }
 
-/** Lean detail include: no registrations/_count; nests children for compounds. */
+/** Detail include: participants/matches + registrations (needed for PRE_REGISTRATION event UI). */
 function tournamentDetailInclude() {
   return {
     participants: {
@@ -148,6 +184,22 @@ function tournamentDetailInclude() {
     matches: true,
     swissData: true,
     bracketMatches: { include: { match: true } },
+    registrations: {
+      include: {
+        member: true,
+        eventPayment: {
+          select: {
+            id: true,
+            status: true,
+            amountCents: true,
+            listAmountCents: true,
+            purpose: true,
+            provider: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' as const },
+    },
     childTournaments: {
       orderBy: [{ groupNumber: 'asc' as const }, { id: 'asc' as const }],
       include: {
@@ -171,15 +223,27 @@ function tournamentSatisfiesRating(member: any, tournament: any): boolean {
   return true;
 }
 
+function memberRolesUpper(roles: unknown): string[] {
+  if (!Array.isArray(roles)) return [];
+  return roles.map((r) => String(r).toUpperCase());
+}
+
+/** Active club members who may self-register / decline (includes organizer/admin players). */
+function memberCanSelfRegister(member: { isActive?: boolean | null; roles?: unknown } | null | undefined): boolean {
+  if (!member?.isActive) return false;
+  const roles = memberRolesUpper(member.roles);
+  return roles.includes('PLAYER') || roles.includes('ORGANIZER') || roles.includes('ADMIN');
+}
+
 function registrationEligibilityFailure(params: {
   member: any;
   tournament: any;
-  registeredCount: number;
-  alreadyRegistered: boolean;
+  heldCount: number;
+  alreadyHolding: boolean;
 }): string | null {
-  const { member, tournament, registeredCount, alreadyRegistered } = params;
-  if (!member?.isActive || !member.roles?.includes('PLAYER')) {
-    return 'Only active players can register for tournaments.';
+  const { member, tournament, heldCount, alreadyHolding } = params;
+  if (!memberCanSelfRegister(member)) {
+    return 'Only active members can register for tournaments.';
   }
   if (tournament.status !== 'PRE_REGISTRATION') {
     return 'Registration is closed for this tournament.';
@@ -190,7 +254,7 @@ function registrationEligibilityFailure(params: {
   if (!tournamentSatisfiesRating(member, tournament)) {
     return 'Your rating is outside the allowed range for this tournament.';
   }
-  if (!alreadyRegistered && tournament.maxParticipants != null && registeredCount >= tournament.maxParticipants) {
+  if (!alreadyHolding && tournament.maxParticipants != null && heldCount >= tournament.maxParticipants) {
     return 'This tournament has reached the maximum number of participants.';
   }
   return null;
@@ -263,7 +327,7 @@ async function notifyInvitedRegistrationClosed(tournamentId: number, reason: str
 async function declineRegistrationByCode(code: string): Promise<{ tournamentId: number; message: string }> {
   const registration = await (prisma as any).tournamentRegistration.findUnique({
     where: { registrationCodeHash: hashRegistrationCode(code) },
-    include: { tournament: true, member: true },
+    include: { tournament: true, member: true, eventPayment: true },
   });
 
   if (!registration) {
@@ -274,6 +338,17 @@ async function declineRegistrationByCode(code: string): Promise<{ tournamentId: 
   }
   if (registration.tournament.registrationDeadline && new Date() > new Date(registration.tournament.registrationDeadline)) {
     throw new ClientHttpError('Registration is closed for this tournament.', 400);
+  }
+
+  if (registration.status === 'REGISTERED' && registration.eventPaymentId) {
+    const payment = registration.eventPayment;
+    if (payment?.status === 'SUCCEEDED') {
+      await creditSucceededEventPayment(payment.id);
+    } else if (payment?.status === 'PENDING') {
+      await cancelPendingEventPayment(payment.id);
+    }
+  } else if (registration.status === 'PENDING' && registration.eventPaymentId) {
+    await cancelPendingEventPayment(registration.eventPaymentId);
   }
 
   await (prisma as any).tournamentRegistration.update({
@@ -296,7 +371,18 @@ async function registerMemberForTournament(params: {
   tournamentId: number;
   memberId: number;
   codeHash?: string;
-}): Promise<{ status: 'REGISTERED'; message: string; registration: any; tournament: any }> {
+  initiatedBy?: 'MEMBER' | 'ADMIN';
+  method?: 'cash' | 'online';
+}): Promise<{
+  status: 'REGISTERED' | 'PENDING';
+  message: string;
+  registration: any;
+  tournament: any;
+  checkout?: any;
+  clubChargeWarning?: string | null;
+}> {
+  await expirePendingEventRegistrations();
+
   const tournament = await (prisma as any).tournament.findUnique({
     where: { id: params.tournamentId },
     include: {
@@ -308,22 +394,118 @@ async function registerMemberForTournament(params: {
     throw new ClientHttpError('Tournament not found', 404);
   }
 
+  const clubChargeWarning = eventOutsideCheckInWindowClubChargeWarning(tournament);
+
   const member = await prisma.member.findUnique({ where: { id: params.memberId } });
   if (!member) {
     throw new ClientHttpError('Member not found', 404);
   }
 
   const existing = tournament.registrations.find((r: any) => r.memberId === params.memberId);
-  const alreadyRegistered = existing?.status === 'REGISTERED';
-  const registeredCount = tournament.registrations.filter((r: any) => r.status === 'REGISTERED').length;
-  const failure = registrationEligibilityFailure({ member, tournament, registeredCount, alreadyRegistered });
+  const alreadyHolding = existing?.status === 'REGISTERED' || existing?.status === 'PENDING';
+  const heldCount = countHeldRegistrations(tournament.registrations);
+  const failure = registrationEligibilityFailure({ member, tournament, heldCount, alreadyHolding });
 
   if (failure) {
     throw new ClientHttpError(failure, 400);
   }
 
-  if (alreadyRegistered) {
-    return { status: 'REGISTERED', message: 'You are already registered for this tournament.', registration: existing, tournament };
+  if (existing?.status === 'REGISTERED') {
+    return {
+      status: 'REGISTERED',
+      message: 'You are already registered for this tournament.',
+      registration: existing,
+      tournament,
+      clubChargeWarning,
+    };
+  }
+
+  if (tournament.isEvent) {
+    if (tournament.eventPriceCents == null || tournament.eventPriceCents < 0) {
+      throw new ClientHttpError('Event price is not configured for this tournament.', 400);
+    }
+
+    if (existing?.status === 'PENDING') {
+      const checkout = await runEventCheckout({
+        memberId: params.memberId,
+        tournamentId: params.tournamentId,
+        registrationId: existing.id,
+        eventPriceCents: tournament.eventPriceCents,
+        tournamentName: tournament.name,
+        initiatedBy: params.initiatedBy || 'MEMBER',
+        method: params.method,
+      });
+      const refreshed = await (prisma as any).tournamentRegistration.findUnique({
+        where: { id: existing.id },
+        include: { eventPayment: true },
+      });
+      return {
+        status: refreshed?.status === 'REGISTERED' ? 'REGISTERED' : 'PENDING',
+        message:
+          refreshed?.status === 'REGISTERED'
+            ? 'Registered successfully.'
+            : 'Registration pending payment.',
+        registration: refreshed,
+        tournament,
+        checkout,
+        clubChargeWarning,
+      };
+    }
+
+    const registration = await (prisma as any).tournamentRegistration.upsert({
+      where: { tournamentId_memberId: { tournamentId: params.tournamentId, memberId: params.memberId } },
+      create: {
+        tournamentId: params.tournamentId,
+        memberId: params.memberId,
+        registrationCodeHash: params.codeHash || hashRegistrationCode(generateRegistrationCode()),
+        status: 'PENDING',
+        registeredAt: null,
+      },
+      update: {
+        status: 'PENDING',
+        registeredAt: null,
+        rejectedAt: null,
+        rejectionReason: null,
+      },
+    });
+
+    const checkout = await runEventCheckout({
+      memberId: params.memberId,
+      tournamentId: params.tournamentId,
+      registrationId: registration.id,
+      eventPriceCents: tournament.eventPriceCents,
+      tournamentName: tournament.name,
+      initiatedBy: params.initiatedBy || 'MEMBER',
+      method: params.method,
+    });
+
+    const refreshed = await (prisma as any).tournamentRegistration.findUnique({
+      where: { id: registration.id },
+      include: { eventPayment: true },
+    });
+
+    if (
+      tournament.maxParticipants != null &&
+      heldCount < tournament.maxParticipants &&
+      heldCount + 1 >= tournament.maxParticipants
+    ) {
+      await notifyInvitedRegistrationClosed(
+        params.tournamentId,
+        'The tournament has reached the maximum number of participants.',
+      );
+    }
+
+    return {
+      status: refreshed?.status === 'REGISTERED' ? 'REGISTERED' : 'PENDING',
+      message:
+        refreshed?.status === 'REGISTERED'
+          ? 'Registered successfully.'
+          : 'Registration pending payment.',
+      registration: refreshed,
+      tournament,
+      checkout,
+      clubChargeWarning,
+    };
   }
 
   const registration = await (prisma as any).tournamentRegistration.upsert({
@@ -345,13 +527,19 @@ async function registerMemberForTournament(params: {
 
   if (
     tournament.maxParticipants != null &&
-    registeredCount < tournament.maxParticipants &&
-    registeredCount + 1 >= tournament.maxParticipants
+    heldCount < tournament.maxParticipants &&
+    heldCount + 1 >= tournament.maxParticipants
   ) {
     await notifyInvitedRegistrationClosed(params.tournamentId, 'The tournament has reached the maximum number of participants.');
   }
 
-  return { status: 'REGISTERED', message: 'Registered successfully.', registration, tournament };
+  return {
+    status: 'REGISTERED',
+    message: 'Registered successfully.',
+    registration,
+    tournament,
+    clubChargeWarning: null,
+  };
 }
 
 async function loadTournamentForResponse(tournamentId: number) {
@@ -379,7 +567,7 @@ router.get('/preregistration/pending-count', authenticate, async (req: AuthReque
       },
     });
 
-    if (!member?.isActive || !member.roles?.includes('PLAYER')) {
+    if (!memberCanSelfRegister(member)) {
       return res.json({ count: 0 });
     }
 
@@ -400,8 +588,8 @@ router.get('/preregistration/pending-count', authenticate, async (req: AuthReque
     const pendingTournaments = preregistrationTournaments.filter((tournament: any) => {
       if (tournament.registrationDeadline && now >= new Date(tournament.registrationDeadline)) return false;
       if (!tournamentSatisfiesRating(member, tournament)) return false;
-      const registeredCount = (tournament.registrations || []).filter((registration: any) => registration.status === 'REGISTERED').length;
-      if (tournament.maxParticipants != null && registeredCount >= tournament.maxParticipants) return false;
+      const heldCount = countHeldRegistrations(tournament.registrations || []);
+      if (tournament.maxParticipants != null && heldCount >= tournament.maxParticipants) return false;
       const registration = (tournament.registrations || []).find((registration: any) => registration.memberId === memberId);
       return !registration || registration.status === 'INVITED';
     });
@@ -441,6 +629,53 @@ router.post('/register/:code/decline', async (req, res) => {
   }
 });
 
+/** Public preview for invitation link — show event fee before accept. */
+router.get('/register/:code', async (req, res) => {
+  try {
+    const code = String(req.params.code || '');
+    const registration = await (prisma as any).tournamentRegistration.findUnique({
+      where: { registrationCodeHash: hashRegistrationCode(code) },
+      include: {
+        tournament: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            tournamentDate: true,
+            registrationDeadline: true,
+            isEvent: true,
+            eventPriceCents: true,
+            minRating: true,
+            maxRating: true,
+            maxParticipants: true,
+            eventCheckInLeadMinutes: true,
+            eventCheckInCloseMinutesBeforeStart: true,
+          },
+        },
+        eventPayment: {
+          select: { id: true, status: true, amountCents: true, provider: true },
+        },
+      },
+    });
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration link is invalid or expired.' });
+    }
+    const clubChargeWarning = eventOutsideCheckInWindowClubChargeWarning(registration.tournament);
+    res.json({
+      status: registration.status,
+      tournament: registration.tournament,
+      eventPayment: registration.eventPayment,
+      eventCheckInWindowOpen: isEventCheckInWindowOpen(registration.tournament),
+      clubChargeWarning,
+    });
+  } catch (error) {
+    logger.error('Error previewing tournament registration link', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/register/:code', async (req, res) => {
   try {
     const code = String(req.params.code || '');
@@ -466,6 +701,9 @@ router.post('/register/:code', async (req, res) => {
       status: result.status,
       message: result.message,
       tournament: updatedTournament,
+      checkout: result.checkout || null,
+      registration: result.registration,
+      clubChargeWarning: result.clubChargeWarning || null,
     });
   } catch (error) {
     if (isClientHttpError(error)) {
@@ -817,6 +1055,9 @@ router.get('/index', async (req, res) => {
         minRating: true,
         maxRating: true,
         maxParticipants: true,
+        minParticipants: true,
+        isEvent: true,
+        eventPriceCents: true,
         _count: {
           select: {
             participants: true,
@@ -923,6 +1164,11 @@ router.post('/preregistration', [
   body('minRating').optional({ nullable: true }),
   body('maxRating').optional({ nullable: true }),
   body('maxParticipants').optional({ nullable: true }),
+  body('minParticipants').optional({ nullable: true }),
+  body('isEvent').optional().isBoolean(),
+  body('eventPriceCents').optional({ nullable: true }),
+  body('eventCheckInLeadMinutes').optional({ nullable: true }),
+  body('eventCheckInCloseMinutesBeforeStart').optional({ nullable: true }),
 ], async (req: AuthRequest, res: Response) => {
   try {
     const hasOrganizerAccess = await isOrganizer(req);
@@ -945,6 +1191,17 @@ router.post('/preregistration', [
     const minRating = parseOptionalInteger(req.body.minRating);
     const maxRating = parseOptionalInteger(req.body.maxRating);
     const maxParticipants = parseOptionalInteger(req.body.maxParticipants);
+    const minParticipants = parseOptionalInteger(req.body.minParticipants);
+    const isEvent = req.body.isEvent === true || req.body.isEvent === 'true';
+    const preRegConfig = getPreregistrationConfig();
+    const eventPriceCentsRaw = parseOptionalInteger(req.body.eventPriceCents);
+    const eventPriceCents = isEvent
+      ? (eventPriceCentsRaw ?? preRegConfig.defaultEventPriceCents)
+      : null;
+    const eventCheckInLeadMinutes = parseOptionalInteger(req.body.eventCheckInLeadMinutes);
+    const eventCheckInCloseMinutesBeforeStart = parseOptionalInteger(
+      req.body.eventCheckInCloseMinutesBeforeStart,
+    );
 
     if (registrationDeadline > tournamentDate) {
       return res.status(400).json({ error: 'Registration deadline cannot be after the tournament date' });
@@ -954,6 +1211,31 @@ router.post('/preregistration', [
     }
     if (maxParticipants != null && maxParticipants <= 0) {
       return res.status(400).json({ error: 'Max participants must be greater than zero' });
+    }
+    if (minParticipants != null && minParticipants <= 0) {
+      return res.status(400).json({ error: 'Min participants must be greater than zero' });
+    }
+    if (
+      minParticipants != null &&
+      maxParticipants != null &&
+      minParticipants > maxParticipants
+    ) {
+      return res.status(400).json({ error: 'Min participants cannot exceed max participants' });
+    }
+    if (isEvent && (eventPriceCents == null || eventPriceCents < 0)) {
+      return res.status(400).json({ error: 'Event price (cents) is required for paid events' });
+    }
+    if (isEvent && !(typeof req.body.name === 'string' && req.body.name.trim())) {
+      return res.status(400).json({ error: 'Event name is required for paid events' });
+    }
+    if (eventCheckInLeadMinutes != null && eventCheckInLeadMinutes < 0) {
+      return res.status(400).json({ error: 'Event check-in lead minutes must be >= 0' });
+    }
+    if (
+      eventCheckInCloseMinutesBeforeStart != null &&
+      eventCheckInCloseMinutesBeforeStart < 0
+    ) {
+      return res.status(400).json({ error: 'Event check-in close minutes must be >= 0' });
     }
 
     const tournament = await (prisma as any).tournament.create({
@@ -969,6 +1251,11 @@ router.post('/preregistration', [
         minRating,
         maxRating,
         maxParticipants,
+        minParticipants,
+        isEvent,
+        eventPriceCents: isEvent ? eventPriceCents : null,
+        eventCheckInLeadMinutes,
+        eventCheckInCloseMinutesBeforeStart,
       },
     });
 
@@ -1004,6 +1291,8 @@ router.post('/preregistration', [
           registrationDeadline,
           registrationLink: buildTournamentRegistrationLink(code),
           declineLink: buildTournamentRegistrationDeclineLink(code),
+          isEvent: tournament.isEvent === true,
+          eventPriceCents: tournament.eventPriceCents,
         });
         await (prisma as any).tournamentRegistration.update({
           where: { id: registration.id },
@@ -1074,14 +1363,25 @@ router.post('/:id/finalize-registration', [
       return res.status(400).json({ error: 'Preregistration tournament has already been finalized' });
     }
 
-    const registeredIds = preregistrationTournament.registrations
-      .filter((registration: any) => registration.status === 'REGISTERED')
-      .map((registration: any) => registration.memberId);
+    const registeredRegs = preregistrationTournament.registrations.filter(
+      (registration: any) => registration.status === 'REGISTERED',
+    );
+    const registeredIds = registeredRegs.map((registration: any) => registration.memberId);
     const participantIds = Array.isArray(req.body.participantIds) && req.body.participantIds.length > 0
       ? req.body.participantIds.map((id: any) => Number(id))
       : registeredIds;
     if (participantIds.length < 2) {
       return res.status(400).json({ error: 'At least 2 registered players are required to create the tournament' });
+    }
+
+    const warnings: string[] = [];
+    if (
+      preregistrationTournament.minParticipants != null &&
+      participantIds.length < preregistrationTournament.minParticipants
+    ) {
+      warnings.push(
+        `Below minimum (${preregistrationTournament.minParticipants}) registered players for this event.`,
+      );
     }
 
     const players = await prisma.member.findMany({
@@ -1097,6 +1397,25 @@ router.post('/:id/finalize-registration', [
     const ruleError = validateTournamentRuleRequest(type, participantIds.length, req.body);
     if (ruleError) {
       return res.status(400).json({ error: ruleError });
+    }
+
+    const regsWithPay = await (prisma as any).tournamentRegistration.findMany({
+      where: {
+        tournamentId,
+        memberId: { in: participantIds },
+        status: 'REGISTERED',
+      },
+      include: { eventPayment: { select: { id: true, status: true } } },
+    });
+    const unpaidRegistrations = regsWithPay.filter(
+      (r: any) =>
+        preregistrationTournament.isEvent &&
+        (!r.eventPayment || r.eventPayment.status !== 'SUCCEEDED'),
+    );
+    if (unpaidRegistrations.length > 0) {
+      warnings.push(
+        `${unpaidRegistrations.length} participant(s) have unpaid or pending event payment.`,
+      );
     }
 
     const pluginPrisma = createPreregistrationFinalizePrisma(prisma, tournamentId);
@@ -1138,7 +1457,11 @@ router.post('/:id/finalize-registration', [
       finalizedByMemberId: req.memberId,
     });
 
-    res.json(createdTournament);
+    res.json({
+      ...createdTournament,
+      warnings,
+      unpaidParticipantIds: unpaidRegistrations.map((r: any) => r.memberId),
+    });
   } catch (error) {
     logger.error('Error finalizing tournament registration', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
@@ -1183,7 +1506,7 @@ router.post('/:id/cancel-preregistration', [
       where: { id: tournamentId },
       include: {
         registrations: {
-          include: { member: true },
+          include: { member: true, eventPayment: true },
         },
       },
     });
@@ -1198,11 +1521,23 @@ router.post('/:id/cancel-preregistration', [
       return res.status(400).json({ error: 'Only preregistration tournaments can be cancelled here' });
     }
 
+    let creditTotalCents = 0;
+    for (const registration of tournament.registrations || []) {
+      if (!registration.eventPaymentId || !registration.eventPayment) continue;
+      if (registration.eventPayment.status === 'SUCCEEDED') {
+        creditTotalCents += await creditSucceededEventPayment(registration.eventPaymentId);
+      } else if (registration.eventPayment.status === 'PENDING') {
+        await cancelPendingEventPayment(registration.eventPaymentId);
+      }
+    }
+
     const recipients = new Map<number, any>();
     for (const registration of tournament.registrations || []) {
       if (
         registration.member?.email &&
-        (registration.invitationSentAt || registration.status === 'REGISTERED')
+        (registration.invitationSentAt ||
+          registration.status === 'REGISTERED' ||
+          registration.status === 'PENDING')
       ) {
         recipients.set(registration.memberId, registration.member);
       }
@@ -1248,6 +1583,7 @@ router.post('/:id/cancel-preregistration', [
       message: 'Tournament preregistration cancelled',
       emailSent,
       emailFailed,
+      creditTotalCents,
     });
   } catch (error) {
     logger.error('Error cancelling tournament preregistration', {
@@ -1280,6 +1616,9 @@ router.post('/:id/register', async (req: AuthRequest, res: Response) => {
       status: result.status,
       message: result.message,
       tournament: updatedTournament,
+      checkout: result.checkout || null,
+      registration: result.registration,
+      clubChargeWarning: result.clubChargeWarning || null,
     });
   } catch (error) {
     if (isClientHttpError(error)) {
@@ -1314,6 +1653,18 @@ router.post('/:id/decline', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Registration is closed for this tournament.' });
     }
 
+    const existing = await (prisma as any).tournamentRegistration.findUnique({
+      where: { tournamentId_memberId: { tournamentId, memberId } },
+      include: { eventPayment: true },
+    });
+    if (existing?.eventPaymentId && existing.eventPayment) {
+      if (existing.eventPayment.status === 'SUCCEEDED') {
+        await creditSucceededEventPayment(existing.eventPaymentId);
+      } else if (existing.eventPayment.status === 'PENDING') {
+        await cancelPendingEventPayment(existing.eventPaymentId);
+      }
+    }
+
     await (prisma as any).tournamentRegistration.upsert({
       where: { tournamentId_memberId: { tournamentId, memberId } },
       create: {
@@ -1344,6 +1695,122 @@ router.post('/:id/decline', async (req: AuthRequest, res: Response) => {
   } catch (error) {
     logger.error('Error declining tournament registration', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** Organizer: clear unpaid member for event (REGISTERED + PENDING obligation). */
+router.post('/:id/registrations/:memberId/clear-unpaid', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!(await isOrganizer(req))) {
+      return res.status(403).json({ error: 'Only Organizers can clear unpaid event registrations' });
+    }
+    const tournamentId = parseInt(req.params.id);
+    const memberId = parseInt(req.params.memberId);
+    if (isNaN(tournamentId) || isNaN(memberId)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+
+    const tournament = await (prisma as any).tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament?.isEvent || tournament.eventPriceCents == null) {
+      return res.status(400).json({ error: 'Tournament is not a paid event' });
+    }
+
+    let registration = await (prisma as any).tournamentRegistration.findUnique({
+      where: { tournamentId_memberId: { tournamentId, memberId } },
+    });
+    if (!registration) {
+      registration = await (prisma as any).tournamentRegistration.create({
+        data: {
+          tournamentId,
+          memberId,
+          registrationCodeHash: hashRegistrationCode(generateRegistrationCode()),
+          status: 'PENDING',
+        },
+      });
+    }
+    if (registration.status === 'REGISTERED') {
+      const pay = registration.eventPaymentId
+        ? await prisma.clubPayment.findUnique({ where: { id: registration.eventPaymentId } })
+        : null;
+      if (pay?.status === 'SUCCEEDED') {
+        return res.status(400).json({ error: 'Already paid and registered' });
+      }
+    }
+
+    await clearEventUnpaid({
+      registrationId: registration.id,
+      tournamentId,
+      memberId,
+      eventPriceCents: tournament.eventPriceCents,
+      tournamentName: tournament.name,
+    });
+
+    const updatedTournament = await loadTournamentForResponse(tournamentId);
+    emitTournamentUpdate(updatedTournament);
+    emitPreregistrationChanged(tournamentId);
+    res.json({ message: 'Member cleared for event with unpaid obligation', tournament: updatedTournament });
+  } catch (error) {
+    logger.error('Error clearing unpaid event registration', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+  }
+});
+
+/** Organizer: record cash payment for PENDING event registration. */
+router.post('/:id/registrations/:memberId/clear-cash', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!(await isOrganizer(req))) {
+      return res.status(403).json({ error: 'Only Organizers can clear event cash payments' });
+    }
+    const tournamentId = parseInt(req.params.id);
+    const memberId = parseInt(req.params.memberId);
+    if (isNaN(tournamentId) || isNaN(memberId)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+
+    const tournament = await (prisma as any).tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament?.isEvent || tournament.eventPriceCents == null) {
+      return res.status(400).json({ error: 'Tournament is not a paid event' });
+    }
+
+    let registration = await (prisma as any).tournamentRegistration.findUnique({
+      where: { tournamentId_memberId: { tournamentId, memberId } },
+    });
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    if (registration.status !== 'PENDING' && registration.status !== 'REGISTERED') {
+      // Accept invite into PENDING then cash-clear
+      registration = await (prisma as any).tournamentRegistration.update({
+        where: { id: registration.id },
+        data: { status: 'PENDING', registeredAt: null, rejectedAt: null, rejectionReason: null },
+      });
+    }
+
+    const checkout = await runEventCheckout({
+      memberId,
+      tournamentId,
+      registrationId: registration.id,
+      eventPriceCents: tournament.eventPriceCents,
+      tournamentName: tournament.name,
+      initiatedBy: 'ADMIN',
+      method: 'cash',
+    });
+
+    const { clearEventCashPayment } = await import('../payments/eventPayment');
+    await clearEventCashPayment(checkout.paymentId);
+
+    const updatedTournament = await loadTournamentForResponse(tournamentId);
+    emitTournamentUpdate(updatedTournament);
+    emitPreregistrationChanged(tournamentId);
+    res.json({ message: 'Cash payment recorded', tournament: updatedTournament });
+  } catch (error) {
+    logger.error('Error clearing event cash payment', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
   }
 });
 
@@ -2465,6 +2932,12 @@ router.patch('/:id/name', [
 
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    if (tournament.status === 'PRE_REGISTRATION') {
+      return res.status(400).json({
+        error: 'Tournament name cannot be changed during pre-registration',
+      });
     }
 
     // Only allow updating createdAt if tournament has no matches

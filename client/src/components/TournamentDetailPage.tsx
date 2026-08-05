@@ -12,6 +12,15 @@ import {
   withWindowScrollPreserved,
 } from '../utils/scrollPosition';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
+import { formatMoney } from '../utils/formatMoney';
+import {
+  countHeldRegistrations,
+  isRegistrationUnpaid,
+  registrationStatusLabel,
+  isEventCheckInWindowOpen,
+  getEventCheckInOpensAt,
+  EVENT_OUTSIDE_WINDOW_CLUB_CHARGE_WARNING,
+} from '../utils/tournamentEventUtils';
 import { isDateInRange } from '../utils/dateFormatter';
 import { addDaysToYmd, clubTodayYmd } from '../utils/clubDateTime';
 import { formatActiveTournamentRating } from '../utils/ratingFormatter';
@@ -24,9 +33,8 @@ import { ExpandCollapseButton } from './ExpandCollapseButton';
 import { TournamentHeader } from './TournamentHeader';
 import { TournamentInfo } from './TournamentInfo';
 import { TournamentNameEditor } from './TournamentNameEditor';
-import { getMember, setMember } from '../utils/auth';
+import { getMember, setMember, isOrganizer, hasMemberRole } from '../utils/auth';
 import { updateMatchCountsCache, removeMatchFromCache } from './utils/matchCacheUtils';
-import { isOrganizer } from '../utils/auth';
 import { TournamentScoreKioskButton } from './TournamentScoreKioskButton';
 import {
   loadCancelledFilterMode,
@@ -1169,13 +1177,57 @@ const TournamentDetailPage: React.FC = () => {
     await runBusy(async () => {
       try {
         const response = await api.post(`/tournaments/${tournamentId}/register`);
+        const checkoutUrl = response.data?.checkout?.checkoutUrl;
+        const clubChargeWarning =
+          typeof response.data?.clubChargeWarning === 'string'
+            ? response.data.clubChargeWarning.trim()
+            : '';
+        if (typeof checkoutUrl === 'string' && checkoutUrl.trim()) {
+          if (clubChargeWarning) {
+            window.sessionStorage.setItem(
+              `eventClubChargeWarning:${tournamentId}`,
+              clubChargeWarning,
+            );
+          }
+          window.location.assign(checkoutUrl);
+          return;
+        }
         if (response.data?.tournament) {
           setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
         }
-        setSuccess(response.data?.message || 'Registered successfully');
+        const base = response.data?.message || 'Registered successfully';
+        setSuccess(clubChargeWarning ? `${base} ${clubChargeWarning}` : base);
         window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
       } catch (err: any) {
         setError(err.response?.data?.error || err.response?.data?.message || 'Failed to register for tournament');
+      }
+    });
+  };
+
+  const handleClearEventCash = async (tournamentId: number, memberId: number) => {
+    await runBusy(async () => {
+      try {
+        const response = await api.post(`/tournaments/${tournamentId}/registrations/${memberId}/clear-cash`);
+        if (response.data?.tournament) {
+          setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+        }
+        setSuccess(response.data?.message || 'Cash payment recorded');
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to record cash payment');
+      }
+    });
+  };
+
+  const handleClearEventUnpaid = async (tournamentId: number, memberId: number) => {
+    await runBusy(async () => {
+      try {
+        const response = await api.post(`/tournaments/${tournamentId}/registrations/${memberId}/clear-unpaid`);
+        if (response.data?.tournament) {
+          setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+        }
+        setSuccess(response.data?.message || 'Member cleared with unpaid obligation');
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to clear unpaid registration');
       }
     });
   };
@@ -1858,9 +1910,15 @@ const TournamentDetailPage: React.FC = () => {
             />
           ) : (
             filteredPreregistrationTournaments.map((tournament) => {
-              const registered = (tournament.registrations || []).filter(r => r.status === 'REGISTERED');
+              const isEvent = tournament.isEvent === true;
+              const heldRegistrations = (tournament.registrations || []).filter(
+                r => r.status === 'REGISTERED' || r.status === 'PENDING',
+              );
+              const registered = heldRegistrations.filter(r => r.status === 'REGISTERED');
+              const pendingPayment = heldRegistrations.filter(r => r.status === 'PENDING');
               const invited = (tournament.registrations || []).filter(r => r.status === 'INVITED');
               const declined = (tournament.registrations || []).filter(r => r.status === 'DECLINED');
+              const heldCount = countHeldRegistrations(tournament.registrations || []);
               const currentRegistration = currentMember
                 ? (tournament.registrations || []).find(r => r.memberId === currentMember.id)
                 : null;
@@ -1872,114 +1930,323 @@ const TournamentDetailPage: React.FC = () => {
                 || tournament.maxRating !== null && tournament.maxRating !== undefined;
               const playerMeetsRating =
                 !hasRatingRestriction ||
+                currentPlayerRating == null ||
                 (
-                  currentPlayerRating !== null &&
-                  currentPlayerRating !== undefined &&
                   (tournament.minRating === null || tournament.minRating === undefined || currentPlayerRating >= tournament.minRating) &&
                   (tournament.maxRating === null || tournament.maxRating === undefined || currentPlayerRating <= tournament.maxRating)
                 );
-              const registrationAtCapacity = tournament.maxParticipants != null && registered.length >= tournament.maxParticipants;
-              const playerCanRespond = Boolean(currentMember?.roles?.includes('PLAYER') && playerMeetsRating);
+              const registrationAtCapacity = tournament.maxParticipants != null && heldCount >= tournament.maxParticipants;
+              const alreadyHolding =
+                currentRegistration?.status === 'REGISTERED' ||
+                currentRegistration?.status === 'PENDING';
+              const playerCanRespond = Boolean(
+                currentMember &&
+                playerMeetsRating &&
+                (hasMemberRole('PLAYER') || hasMemberRole('ORGANIZER') || hasMemberRole('ADMIN')),
+              );
               const registrationOpen = !deadlinePassed;
+              const isFullyRegistered = currentRegistration?.status === 'REGISTERED'
+                && (!isEvent || currentRegistration.eventPayment?.status === 'SUCCEEDED');
               const showRegisterAction =
                 playerCanRespond &&
                 registrationOpen &&
-                !registrationAtCapacity &&
-                currentRegistration?.status !== 'REGISTERED';
+                !isFullyRegistered &&
+                (alreadyHolding || !registrationAtCapacity);
               const showDeclineAction =
                 playerCanRespond &&
                 registrationOpen &&
                 currentRegistration?.status !== 'DECLINED' &&
                 (
-                  currentRegistration?.status === 'REGISTERED' ||
+                  alreadyHolding ||
+                  currentRegistration?.status === 'INVITED' ||
                   (!registrationAtCapacity && (
                     currentRegistration === null ||
-                    currentRegistration === undefined ||
-                    currentRegistration.status === 'INVITED'
+                    currentRegistration === undefined
                   ))
                 );
+              const yourStatusLabel = !currentRegistration
+                ? (registrationOpen ? 'Not registered' : 'Registration closed')
+                : currentRegistration.status === 'DECLINED'
+                  ? 'Declined'
+                  : currentRegistration.status === 'INVITED'
+                    ? 'Invited'
+                    : currentRegistration.status === 'PENDING'
+                      ? 'Pending payment'
+                      : isRegistrationUnpaid(currentRegistration, isEvent)
+                        ? 'Registered (unpaid)'
+                        : 'Registered';
+              const renderRegistrationBadge = (registration: typeof heldRegistrations[number]) => {
+                const unpaid = isRegistrationUnpaid(registration, isEvent);
+                const label = registrationStatusLabel(registration, isEvent);
+                const bg = registration.status === 'PENDING'
+                  ? '#fff3cd'
+                  : unpaid
+                    ? '#fdecea'
+                    : '#e8f5e9';
+                const color = registration.status === 'PENDING'
+                  ? '#856404'
+                  : unpaid
+                    ? '#c0392b'
+                    : '#2e7d32';
+                return (
+                  <span
+                    key={registration.id}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      marginRight: '8px',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    <span>{formatPlayerName(registration.member.firstName, registration.member.lastName, getNameDisplayOrder())}</span>
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: bg,
+                      color,
+                      textTransform: 'uppercase',
+                    }}>
+                      {label}
+                    </span>
+                  </span>
+                );
+              };
               return (
                 <div key={tournament.id} ref={(el) => { tournamentRefs.current[tournament.id] = el; }} style={{ marginBottom: '20px', padding: '15px', border: '1px solid #f39c12', borderRadius: '4px', backgroundColor: '#fffdf5' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '15px', marginBottom: '10px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                        <TournamentHeader tournament={tournament as any} onEditClick={() => handleStartEditTournamentName(tournament)} />
-                        {(showRegisterAction || showDeclineAction) && (
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            {showRegisterAction && (
-                              <button
-                                onClick={() => handleRegisterForTournament(tournament.id)}
-                                disabled={mutationBusy}
-                                style={{ padding: '6px 10px', border: 'none', borderRadius: '4px', backgroundColor: mutationBusy ? '#7dcea0' : '#27ae60', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
-                              >
-                                {mutationBusy ? 'Working…' : 'Register'}
-                              </button>
-                            )}
-                            {showDeclineAction && (
-                              <button
-                                onClick={() => handleDeclineTournamentInvitation(tournament.id)}
-                                disabled={mutationBusy}
-                                style={{ padding: '6px 10px', border: 'none', borderRadius: '4px', backgroundColor: mutationBusy ? '#f0b27a' : '#e67e22', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
-                              >
-                                {mutationBusy ? 'Working…' : 'Decline'}
-                              </button>
-                            )}
-                          </div>
-                        )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '15px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
+                      <TournamentHeader tournament={tournament as any} />
+                      {isEvent && (
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: '#6c3483',
+                          color: 'white',
+                          textTransform: 'uppercase',
+                        }}>
+                          Event
+                        </span>
+                      )}
+                      {isEvent && tournament.eventPriceCents != null && (
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#6c3483' }}>
+                          {formatMoney(tournament.eventPriceCents)}
+                        </span>
+                      )}
+                    </div>
+                    {isUserOrganizer && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#922b21', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Organizer
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleFinalizePreregistration(tournament)}
+                          title="Create tournament from registered players"
+                          style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#3498db', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          Finalize
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCancelPreregistration(tournament);
+                            setCancelPreregistrationReason(preregistrationCancelReasons[0]);
+                            setCancelPreregistrationCustomReason('');
+                          }}
+                          style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          Cancel
+                        </button>
                       </div>
-                      <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: '13px', color: '#666' }}>
+                    {isEvent ? (
+                      <>
+                        <strong>Time:</strong>{' '}
+                        {tournament.tournamentDate
+                          ? new Date(tournament.tournamentDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+                          : 'Not set'}
+                        {' | '}<strong>Check-in time:</strong>{' '}
+                        {(() => {
+                          const opensAt = getEventCheckInOpensAt(tournament);
+                          return opensAt
+                            ? opensAt.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+                            : 'Not set';
+                        })()}
+                        {' | '}<strong>Ratings:</strong> {tournament.minRating ?? 'All'} - {tournament.maxRating ?? 'All'}
+                        {tournament.maxParticipants != null
+                          ? ` | Seats: ${heldCount}/${tournament.maxParticipants}`
+                          : ` | Seats taken: ${heldCount}`}
+                        {tournament.minParticipants != null ? ` | Min: ${tournament.minParticipants}` : ''}
+                        {tournament.registrationDeadline
+                          ? ` | Register by: ${new Date(tournament.registrationDeadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}`
+                          : ''}
+                      </>
+                    ) : (
+                      <>
                         <strong>Date:</strong> {tournament.tournamentDate ? new Date(tournament.tournamentDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Not set'}
                         {' | '}<strong>Deadline:</strong> {tournament.registrationDeadline ? new Date(tournament.registrationDeadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Tournament date'}
                         {' | '}<strong>Ratings:</strong> {tournament.minRating ?? 'All'} - {tournament.maxRating ?? 'All'}
-                        {' | '}<strong>Max:</strong> {tournament.maxParticipants ?? 'Unlimited'}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
-                        <strong>Registered ({registered.length}{tournament.maxParticipants ? `/${tournament.maxParticipants}` : ''}):</strong>{' '}
-                        {registered.length > 0
-                          ? registered.map(r => formatPlayerName(r.member.firstName, r.member.lastName, getNameDisplayOrder())).join(', ')
-                          : 'No players registered yet'}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
-                        <strong>Declined ({declined.length}):</strong>{' '}
-                        {declined.length > 0
-                          ? declined.map(r => formatPlayerName(r.member.firstName, r.member.lastName, getNameDisplayOrder())).join(', ')
-                          : 'No players declined'}
-                      </div>
-                      {(invited.length > 0 || declined.length > 0) && (
-                        <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                          Invited: {invited.length} | Declined: {declined.length}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', gap: '16px', flexShrink: 0, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {isUserOrganizer && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
-                          <div style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            Organizer Actions
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            onClick={() => handleFinalizePreregistration(tournament)}
-                            title="Create tournament from registered players"
-                            style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#3498db', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
-                          >
-                            Finalize
-                          </button>
-                          <button
-                            onClick={() => {
-                              setCancelPreregistration(tournament);
-                              setCancelPreregistrationReason(preregistrationCancelReasons[0]);
-                              setCancelPreregistrationCustomReason('');
-                            }}
-                            style={{ padding: '8px 12px', border: 'none', borderRadius: '4px', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
-                          >
-                            Cancel
-                          </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                        {' | '}<strong>Seats taken:</strong> {heldCount}{tournament.maxParticipants ? `/${tournament.maxParticipants}` : ''}
+                      </>
+                    )}
                   </div>
+                  {isEvent && !isEventCheckInWindowOpen(tournament) && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '8px 10px',
+                        backgroundColor: '#fff3cd',
+                        border: '1px solid #ffc107',
+                        borderRadius: '4px',
+                        color: '#856404',
+                        fontSize: '13px',
+                      }}
+                    >
+                      {EVENT_OUTSIDE_WINDOW_CLUB_CHARGE_WARNING}
+                    </div>
+                  )}
+
+                  {playerCanRespond && (
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        padding: '10px 12px',
+                        border: '1px solid #a9dfbf',
+                        borderRadius: '4px',
+                        backgroundColor: '#eafaf1',
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e8449', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
+                        Your participation
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#333', marginBottom: (showRegisterAction || showDeclineAction) ? '8px' : 0 }}>
+                        Status: <strong>{yourStatusLabel}</strong>
+                        {!registrationOpen && ' — registration is closed'}
+                        {registrationOpen && !alreadyHolding && registrationAtCapacity && !isFullyRegistered
+                          ? ' — tournament is full'
+                          : null}
+                      </div>
+                      {(showRegisterAction || showDeclineAction) && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {showRegisterAction && (
+                            <button
+                              type="button"
+                              onClick={() => handleRegisterForTournament(tournament.id)}
+                              disabled={mutationBusy}
+                              style={{ padding: '8px 14px', border: 'none', borderRadius: '4px', backgroundColor: mutationBusy ? '#7dcea0' : '#27ae60', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
+                            >
+                              {mutationBusy
+                                ? 'Working…'
+                                : isEvent
+                                  ? (currentRegistration?.status === 'PENDING'
+                                    || (currentRegistration && isRegistrationUnpaid(currentRegistration, isEvent)))
+                                    ? 'Pay / Complete event'
+                                    : (tournament.eventPriceCents != null
+                                      ? `Register & pay ${formatMoney(tournament.eventPriceCents)}`
+                                      : 'Register for event')
+                                  : 'Register'}
+                            </button>
+                          )}
+                          {showDeclineAction && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeclineTournamentInvitation(tournament.id)}
+                              disabled={mutationBusy}
+                              style={{ padding: '8px 14px', border: 'none', borderRadius: '4px', backgroundColor: mutationBusy ? '#f0b27a' : '#e67e22', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
+                            >
+                              {mutationBusy ? 'Working…' : 'Decline'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: '13px', color: '#666', marginTop: '10px' }}>
+                    <strong>Registered ({registered.length}):</strong>{' '}
+                    {registered.length > 0
+                      ? registered.map(renderRegistrationBadge)
+                      : 'No players registered yet'}
+                  </div>
+                  {pendingPayment.length > 0 && (
+                    <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
+                      <strong>Pending payment ({pendingPayment.length}):</strong>{' '}
+                      {pendingPayment.map(renderRegistrationBadge)}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
+                    <strong>Declined ({declined.length}):</strong>{' '}
+                    {declined.length > 0
+                      ? declined.map(r => formatPlayerName(r.member.firstName, r.member.lastName, getNameDisplayOrder())).join(', ')
+                      : 'No players declined'}
+                  </div>
+                  {(invited.length > 0 || declined.length > 0) && (
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      Invited: {invited.length} | Declined: {declined.length}
+                    </div>
+                  )}
+
+                  {isUserOrganizer && isEvent && heldRegistrations.length > 0 && (
+                    <div style={{ marginTop: '10px', padding: '10px', border: '1px solid #e0d4ec', borderRadius: '4px', backgroundColor: '#faf7fc' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px' }}>
+                        Event payment actions
+                      </div>
+                      {heldRegistrations.map((registration) => {
+                        const name = formatPlayerName(
+                          registration.member.firstName,
+                          registration.member.lastName,
+                          getNameDisplayOrder(),
+                        );
+                        const unpaid = isRegistrationUnpaid(registration, isEvent);
+                        const canCash = registration.status === 'PENDING'
+                          || (registration.status === 'REGISTERED' && unpaid);
+                        const canUnpaid = registration.status !== 'DECLINED';
+                        if (!canCash && !canUnpaid) return null;
+                        return (
+                          <div
+                            key={registration.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              flexWrap: 'wrap',
+                              marginBottom: '6px',
+                            }}
+                          >
+                            <span style={{ fontSize: '13px', minWidth: '120px' }}>{name}</span>
+                            {canCash && (
+                              <button
+                                type="button"
+                                onClick={() => void handleClearEventCash(tournament.id, registration.memberId)}
+                                disabled={mutationBusy}
+                                style={{ padding: '4px 8px', fontSize: '12px', border: 'none', borderRadius: '4px', backgroundColor: '#27ae60', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer' }}
+                              >
+                                Record cash
+                              </button>
+                            )}
+                            {canUnpaid && unpaid && (
+                              <button
+                                type="button"
+                                onClick={() => void handleClearEventUnpaid(tournament.id, registration.memberId)}
+                                disabled={mutationBusy}
+                                style={{ padding: '4px 8px', fontSize: '12px', border: 'none', borderRadius: '4px', backgroundColor: '#e67e22', color: 'white', cursor: mutationBusy ? 'not-allowed' : 'pointer' }}
+                              >
+                                Clear unpaid
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })

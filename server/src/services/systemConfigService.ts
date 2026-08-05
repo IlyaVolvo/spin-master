@@ -53,6 +53,12 @@ export type PreregistrationConfig = {
   defaultTournamentOffsetDays: number;
   defaultTournamentTime: string;
   registrationDeadlineOffsetMinutes: number;
+  /** Minutes before tournamentDate when event admissions/check-in opens. */
+  eventCheckInLeadMinutes: number;
+  /** Minutes before tournamentDate when event check-in closes (0 = until start). */
+  eventCheckInCloseMinutesBeforeStart: number;
+  /** Default one-time event fee in cents (overridable per event). */
+  defaultEventPriceCents: number;
   cancelReasonPresets: string[];
 };
 
@@ -244,7 +250,10 @@ export function getDefaultSystemConfig(): SystemConfig {
     preregistration: {
       defaultTournamentOffsetDays: 1,
       defaultTournamentTime: '18:00',
-      registrationDeadlineOffsetMinutes: 30,
+      registrationDeadlineOffsetMinutes: 60,
+      eventCheckInLeadMinutes: 60,
+      eventCheckInCloseMinutesBeforeStart: 0,
+      defaultEventPriceCents: 1000,
       cancelReasonPresets: DEFAULT_CANCEL_REASONS,
     },
     ratingValidation: {
@@ -501,6 +510,14 @@ function validatePreregistration(value: unknown): PreregistrationConfig {
     defaultTournamentOffsetDays: requireInteger(config.defaultTournamentOffsetDays, 'preregistration.defaultTournamentOffsetDays', 0, 365),
     defaultTournamentTime: requireTime(config.defaultTournamentTime, 'preregistration.defaultTournamentTime'),
     registrationDeadlineOffsetMinutes: requireInteger(config.registrationDeadlineOffsetMinutes, 'preregistration.registrationDeadlineOffsetMinutes', 0, 525600),
+    eventCheckInLeadMinutes: requireInteger(config.eventCheckInLeadMinutes, 'preregistration.eventCheckInLeadMinutes', 0, 525600),
+    eventCheckInCloseMinutesBeforeStart: requireInteger(
+      config.eventCheckInCloseMinutesBeforeStart,
+      'preregistration.eventCheckInCloseMinutesBeforeStart',
+      0,
+      525600,
+    ),
+    defaultEventPriceCents: requireInteger(config.defaultEventPriceCents, 'preregistration.defaultEventPriceCents', 0, 10_000_000),
     cancelReasonPresets,
   };
 }

@@ -18,6 +18,8 @@ describe('applyClubVisitUpdatedPatch', () => {
         present: true,
         visitedToday: true,
         lastCheckInAt: '2026-08-02T15:00:00.000Z',
+        eventTournamentId: 34,
+        eventName: 'Championship',
       },
       clubDate,
     );
@@ -26,6 +28,8 @@ describe('applyClubVisitUpdatedPatch', () => {
         present: true,
         visitedToday: true,
         lastCheckInAt: '2026-08-02T15:00:00.000Z',
+        eventTournamentId: 34,
+        eventName: 'Championship',
       },
     });
   });
@@ -36,11 +40,13 @@ describe('applyClubVisitUpdatedPatch', () => {
         present: true,
         visitedToday: true,
         lastCheckInAt: '2026-08-02T15:00:00.000Z',
+        eventTournamentId: 34,
+        eventName: 'Championship',
       },
     };
     const next = applyClubVisitUpdatedPatch(
       map,
-      { memberId: 10, action: 'CHECK_OUT', clubDate, present: false },
+      { memberId: 10, action: 'CHECK_OUT', clubDate, present: false, eventTournamentId: null, eventName: null },
       clubDate,
     );
     expect(next).toEqual({
@@ -48,6 +54,8 @@ describe('applyClubVisitUpdatedPatch', () => {
         present: false,
         visitedToday: true,
         lastCheckInAt: '2026-08-02T15:00:00.000Z',
+        eventTournamentId: null,
+        eventName: null,
       },
     });
   });

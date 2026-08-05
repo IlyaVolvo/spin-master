@@ -1581,7 +1581,11 @@ function Header({
                             clearAllUIStates();
                             window.scrollTo(0, 0);
                             navigate('/players', {
-                              state: { editOwnProfile: true, memberId: member.id },
+                              state: {
+                                editOwnProfile: true,
+                                memberId: member.id,
+                                editProfileKey: Date.now(),
+                              },
                               replace: false,
                             });
                           }

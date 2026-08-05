@@ -4,6 +4,7 @@ import api from '../../../utils/api';
 import { calculateSwissDefaultRounds, getSystemConfig } from '../../../utils/systemConfig';
 import { BoundedNumericInput } from '../../BoundedNumericInput';
 import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
+import { buildFinalizeSuccessMessage } from '../../../utils/finalizeRegistrationMessages';
 import { useBusyAction } from '../../../hooks/useBusyAction';
 
 type Step = 'configure' | 'confirmation';
@@ -75,7 +76,7 @@ export const SwissPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         if (finalizingPreregistrationId) {
           const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
           createdId = extractCreatedTournamentId(response.data);
-          onSuccess('Swiss tournament created from preregistration successfully');
+          onSuccess(buildFinalizeSuccessMessage('Swiss tournament created from preregistration successfully', response.data));
         } else if (editingTournamentId) {
           const response = await api.patch(`/tournaments/${editingTournamentId}`, tournamentData);
           createdId = extractCreatedTournamentId(response.data) ?? editingTournamentId;

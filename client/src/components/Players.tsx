@@ -177,6 +177,44 @@ const clampDeadlineToTournamentDate = (deadlineValue: string, tournamentDateValu
   return deadline > tournamentDate ? tournamentDateValue : deadlineValue;
 };
 
+function PreregistrationEventPriceInput({
+  cents,
+  onCentsChange,
+}: {
+  cents: number;
+  onCentsChange: (cents: number) => void;
+}) {
+  const [text, setText] = useState(() => (cents / 100).toFixed(2));
+
+  const commit = (raw: string) => {
+    const cleaned = raw.trim();
+    const n = cleaned === '' || cleaned === '.' ? 0 : Number(cleaned);
+    const nextCents = Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0;
+    onCentsChange(nextCents);
+    setText((nextCents / 100).toFixed(2));
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const v = e.target.value.replace(/[^0-9.]/g, '');
+        const parts = v.split('.');
+        const normalized = parts.length <= 1 ? v : `${parts[0]}.${parts.slice(1).join('').slice(0, 2)}`;
+        setText(normalized);
+        if (normalized !== '' && normalized !== '.' && Number.isFinite(Number(normalized))) {
+          onCentsChange(Math.round(Number(normalized) * 100));
+        }
+      }}
+      onBlur={() => commit(text)}
+      placeholder="0.00"
+    />
+  );
+}
+
 function autoRelinquishKeyFromMember(value: boolean | null | undefined): 'default' | 'always' | 'never' {
   if (value === true) return 'always';
   if (value === false) return 'never';
@@ -369,6 +407,11 @@ const Players: React.FC = () => {
   const [preregistrationMinRating, setPreregistrationMinRating] = useState('');
   const [preregistrationMaxRating, setPreregistrationMaxRating] = useState('');
   const [preregistrationMaxParticipants, setPreregistrationMaxParticipants] = useState('');
+  const [preregistrationIsEvent, setPreregistrationIsEvent] = useState(false);
+  const [preregistrationEventPriceCents, setPreregistrationEventPriceCents] = useState(0);
+  const [preregistrationEventPriceKey, setPreregistrationEventPriceKey] = useState(0);
+  const [preregistrationMinParticipants, setPreregistrationMinParticipants] = useState('');
+  const [preregistrationEventCheckInLeadMinutes, setPreregistrationEventCheckInLeadMinutes] = useState('');
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
   const { anchorRef: lastClickedStatsPlayerIdRef, resetAnchor: resetStatsShiftAnchor } =
     useShiftRangeAnchor();
@@ -471,6 +514,8 @@ const Players: React.FC = () => {
 
   /** Snapshot when edit dialog opens — Save enabled only when form differs from this (reset-password does not change it). */
   const playerEditBaselineRef = useRef<PlayerEditBaseline | null>(null);
+  /** Last header-Settings open key already handled (prevents Save/Cancel from re-opening the modal). */
+  const openedEditOwnProfileKeyRef = useRef<number | string | null>(null);
 
   // Field-level validation for add-player form
   const [addFieldErrors, setAddFieldErrors] = useState<Record<string, string>>({});
@@ -656,21 +701,28 @@ const Players: React.FC = () => {
 
   // Handle edit own profile from header Settings button
   useEffect(() => {
-    // Only trigger if editOwnProfile is true and we're not already editing
-    if (location.state?.editOwnProfile === true && location.state?.memberId && !editingPlayerId) {
-      const memberId = location.state.memberId;
-      // Wait for members to load, then edit the member
-      if (members.length > 0) {
-        handleStartEdit(memberId);
-        // Clear the state to prevent re-triggering using React Router's navigate
-        navigate('/players', { 
-          state: { ...location.state, editOwnProfile: false },
-          replace: true 
-        });
-      }
+    if (location.state?.editOwnProfile !== true || !location.state?.memberId || editingPlayerId) {
+      return;
     }
+    if (members.length === 0) return;
+
+    const openKey = location.state.editProfileKey ?? `member:${location.state.memberId}`;
+    if (openedEditOwnProfileKeyRef.current === openKey) {
+      navigate('/players', {
+        state: { ...location.state, editOwnProfile: false },
+        replace: true,
+      });
+      return;
+    }
+
+    openedEditOwnProfileKeyRef.current = openKey;
+    handleStartEdit(location.state.memberId);
+    navigate('/players', {
+      state: { ...location.state, editOwnProfile: false },
+      replace: true,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state?.editOwnProfile, location.state?.memberId, members.length, editingPlayerId]);
+  }, [location.state?.editOwnProfile, location.state?.editProfileKey, location.state?.memberId, members.length, editingPlayerId]);
 
   // Handle open own plan from header $ button (near member name / personal Settings)
   useEffect(() => {
@@ -2600,11 +2652,7 @@ const Players: React.FC = () => {
           const ok = await saveScorePinIfPending(editingPlayerId);
           if (!ok) return;
           setSuccess('Score PIN updated');
-          // Keep modal open so the user sees the updated PIN; refresh baseline for pin-only
-          playerEditBaselineRef.current = {
-            ...playerEditBaselineRef.current!,
-          };
-          setShowScorePinChange(false);
+          handleCancelEdit();
         } catch (err: any) {
           setScorePinError(err.response?.data?.error || 'Failed to update PIN');
         }
@@ -3125,6 +3173,12 @@ const Players: React.FC = () => {
           minRating: preregistrationMinRating === '' ? undefined : Number(preregistrationMinRating),
           maxRating: preregistrationMaxRating === '' ? undefined : Number(preregistrationMaxRating),
           maxParticipants: preregistrationMaxParticipants === '' ? undefined : Number(preregistrationMaxParticipants),
+          isEvent: preregistrationIsEvent || undefined,
+          eventPriceCents: preregistrationIsEvent ? preregistrationEventPriceCents : undefined,
+          minParticipants: preregistrationMinParticipants === '' ? undefined : Number(preregistrationMinParticipants),
+          eventCheckInLeadMinutes: preregistrationEventCheckInLeadMinutes === ''
+            ? undefined
+            : Number(preregistrationEventCheckInLeadMinutes),
         });
         setSuccess('Tournament preregistration created successfully');
         const defaultDates = getDefaultPreregistrationDateValues();
@@ -3133,6 +3187,11 @@ const Players: React.FC = () => {
         setPreregistrationMinRating('');
         setPreregistrationMaxRating('');
         setPreregistrationMaxParticipants('');
+        setPreregistrationIsEvent(false);
+        setPreregistrationEventPriceCents(0);
+        setPreregistrationEventPriceKey((k) => k + 1);
+        setPreregistrationMinParticipants('');
+        setPreregistrationEventCheckInLeadMinutes('');
         window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
         handleTournamentCreated(extractCreatedTournamentId(response.data));
       } catch (err: any) {
@@ -3164,6 +3223,12 @@ const Players: React.FC = () => {
       const defaultDates = getDefaultPreregistrationDateValues();
       setPreregistrationTournamentDate((currentTournamentDate) => currentTournamentDate || defaultDates.tournamentDate);
       setPreregistrationDeadline((currentDeadline) => currentDeadline || defaultDates.deadline);
+    } else {
+      setPreregistrationIsEvent(false);
+      setPreregistrationEventPriceCents(0);
+      setPreregistrationEventPriceKey((k) => k + 1);
+      setPreregistrationMinParticipants('');
+      setPreregistrationEventCheckInLeadMinutes('');
     }
   };
 
@@ -3842,7 +3907,7 @@ const Players: React.FC = () => {
                       flex: '1 1 auto',
                       maxHeight: 'calc(90vh - 140px)'
                     }}>
-                      {/* Tournament Name (optional) - First entry */}
+                      {/* Tournament / Event name */}
                       <div style={{ marginBottom: '20px' }}>
                         <label style={{ 
                           display: 'block', 
@@ -3851,13 +3916,20 @@ const Players: React.FC = () => {
                           fontWeight: '500',
                           color: '#333'
                         }}>
-                          Tournament Name (optional):
+                          {preregistrationIsEvent
+                            ? 'Event Name (required):'
+                            : 'Tournament Name (optional):'}
                         </label>
                         <input
                           type="text"
                           value={tournamentName}
                           onChange={(e) => setTournamentName(e.target.value)}
-                          placeholder="Auto-generated if empty"
+                          placeholder={
+                            preregistrationIsEvent
+                              ? 'Enter event name'
+                              : 'Auto-generated if empty'
+                          }
+                          required={preregistrationIsEvent}
                           style={{
                             width: '100%',
                             padding: '10px',
@@ -4047,6 +4119,107 @@ const Players: React.FC = () => {
                               onChange={(value) => setPreregistrationMaxParticipants(value === null ? '' : String(value))}
                             />
                           </div>
+                          <label style={{
+                            gridColumn: '1 / -1',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '10px 12px',
+                            border: '1px solid #d4ac0d',
+                            borderRadius: '4px',
+                            backgroundColor: preregistrationIsEvent ? '#fff3cd' : 'white',
+                            cursor: 'pointer',
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={preregistrationIsEvent}
+                              onChange={(e) => {
+                                setPreregistrationIsEvent(e.target.checked);
+                                if (e.target.checked) {
+                                  const cfg = getSystemConfig().preregistration;
+                                  setPreregistrationEventPriceCents(cfg.defaultEventPriceCents);
+                                  setPreregistrationEventPriceKey((k) => k + 1);
+                                  setPreregistrationEventCheckInLeadMinutes(String(cfg.eventCheckInLeadMinutes));
+                                } else {
+                                  setPreregistrationEventPriceCents(0);
+                                  setPreregistrationEventPriceKey((k) => k + 1);
+                                  setPreregistrationMinParticipants('');
+                                  setPreregistrationEventCheckInLeadMinutes('');
+                                }
+                              }}
+                            />
+                            <span>
+                              <strong>Paid event</strong>
+                              <span style={{ display: 'block', fontSize: '12px', color: '#666' }}>
+                                Collect payment at registration and allow event check-in.
+                              </span>
+                            </span>
+                          </label>
+                          {preregistrationIsEvent && (
+                            <>
+                              <div className="form-group">
+                                <label>Event Price (USD)</label>
+                                <PreregistrationEventPriceInput
+                                  key={preregistrationEventPriceKey}
+                                  cents={preregistrationEventPriceCents}
+                                  onCentsChange={setPreregistrationEventPriceCents}
+                                />
+                              </div>
+                              <div className="form-group">
+                                <BoundedNumericInput
+                                  label="Min Participants"
+                                  min={1}
+                                  value={preregistrationMinParticipants === '' ? null : Number(preregistrationMinParticipants)}
+                                  allowEmpty
+                                  placeholder="No minimum"
+                                  onChange={(value) => setPreregistrationMinParticipants(value === null ? '' : String(value))}
+                                />
+                              </div>
+                              <div className="form-group">
+                                <label>Admissions starts</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <BoundedNumericInput
+                                    min={0}
+                                    max={168}
+                                    showRangeHint={false}
+                                    value={preregistrationEventCheckInLeadMinutes === ''
+                                      ? null
+                                      : Math.floor(Number(preregistrationEventCheckInLeadMinutes) / 60)}
+                                    allowEmpty={false}
+                                    aria-label="Admissions starts hours before event"
+                                    onChange={(hours) => {
+                                      const h = hours ?? 0;
+                                      const current = Number(preregistrationEventCheckInLeadMinutes) || 0;
+                                      const minutes = current % 60;
+                                      setPreregistrationEventCheckInLeadMinutes(String(h * 60 + minutes));
+                                    }}
+                                    inputStyle={{ width: '72px' }}
+                                    style={{ width: 'auto' }}
+                                  />
+                                  <span style={{ fontSize: '13px', color: '#666' }}>hours</span>
+                                  <BoundedNumericInput
+                                    min={0}
+                                    max={59}
+                                    showRangeHint={false}
+                                    value={preregistrationEventCheckInLeadMinutes === ''
+                                      ? null
+                                      : Number(preregistrationEventCheckInLeadMinutes) % 60}
+                                    allowEmpty={false}
+                                    aria-label="Admissions starts minutes before event"
+                                    onChange={(mins) => {
+                                      const m = mins ?? 0;
+                                      const current = Number(preregistrationEventCheckInLeadMinutes) || 0;
+                                      const hours = Math.floor(current / 60);
+                                      setPreregistrationEventCheckInLeadMinutes(String(hours * 60 + m));
+                                    }}
+                                    inputStyle={{ width: '72px' }}
+                                    style={{ width: 'auto' }}
+                                  />
+                                  <span style={{ fontSize: '13px', color: '#666' }}>minutes before event start</span>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       )}
                       
@@ -4086,6 +4259,14 @@ const Players: React.FC = () => {
 
                           setTournamentType(selectedType);
                           if (isPreregistrationMode) {
+                            if (preregistrationIsEvent && !tournamentName.trim()) {
+                              setError('Event name is required');
+                              return;
+                            }
+                            if (preregistrationIsEvent && preregistrationEventPriceCents <= 0) {
+                              setError('Event price must be greater than $0.00');
+                              return;
+                            }
                             void handleCreatePreregistrationTournament();
                           } else {
                             setTournamentCreationStep('player_selection');
@@ -6513,6 +6694,8 @@ const Players: React.FC = () => {
                     <CheckinRowButton
                       present={checkinStatusByMember[player.id]?.present === true}
                       visitedToday={checkinStatusByMember[player.id]?.visitedToday === true}
+                      eventAdmission={checkinStatusByMember[player.id]?.eventTournamentId != null}
+                      eventName={checkinStatusByMember[player.id]?.eventName ?? null}
                       onClick={() => {
                         const status = checkinStatusByMember[player.id];
                         const present = status?.present === true;

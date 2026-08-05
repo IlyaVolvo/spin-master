@@ -4,6 +4,7 @@ import { BracketPreview } from '../../BracketPreview';
 import api from '../../../utils/api';
 import { getSystemConfig } from '../../../utils/systemConfig';
 import { extractCreatedTournamentId } from '../../../utils/extractCreatedTournamentId';
+import { buildFinalizeSuccessMessage } from '../../../utils/finalizeRegistrationMessages';
 import { useBusyAction } from '../../../hooks/useBusyAction';
 
 type Step = 'organize_bracket' | 'completion';
@@ -109,7 +110,7 @@ export const PlayoffPostSelectionFlow: React.FC<PostSelectionFlowProps> = ({
         if (finalizingPreregistrationId) {
           const response = await api.post(`/tournaments/${finalizingPreregistrationId}/finalize-registration`, tournamentData);
           createdId = extractCreatedTournamentId(response.data);
-          onSuccess('Tournament created from preregistration successfully');
+          onSuccess(buildFinalizeSuccessMessage('Tournament created from preregistration successfully', response.data));
         } else if (editingTournamentId) {
           const response = await api.patch(`/tournaments/${editingTournamentId}`, {
             name: tournamentData.name,

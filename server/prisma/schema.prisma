@@ -162,6 +162,14 @@ model Tournament {
   minRating Int?
   maxRating Int?
   maxParticipants Int?
+  minParticipants Int?
+  /** When true, registration requires an EVENT payment (eventPriceCents). */
+  isEvent Boolean @default(false)
+  eventPriceCents Int?
+  /** Minutes before tournamentDate when event check-in opens; null = system default. */
+  eventCheckInLeadMinutes Int?
+  /** Minutes before tournamentDate when event check-in closes; null = system default (0 = until start). */
+  eventCheckInCloseMinutesBeforeStart Int?
 
   // Hierarchical structure: compound tournaments reference parent
   // If null, this is a root tournament (either basic or top-level compound)
@@ -171,6 +179,7 @@ model Tournament {
   // Participants: only for basic tournaments (enforced at application level)
   participants   TournamentParticipant[]
   registrations  TournamentRegistration[]
+  eventVisits    ClubVisit[]
   
   // Matches: only for basic tournaments (each match references one basic tournament)
   matches        Match[]
@@ -200,6 +209,7 @@ enum TournamentStatus {
 
 enum TournamentRegistrationStatus {
   INVITED
+  PENDING
   REGISTERED
   DECLINED
 }
@@ -214,16 +224,19 @@ model TournamentRegistration {
   registeredAt          DateTime?
   rejectedAt            DateTime?
   rejectionReason       String?
+  eventPaymentId        Int?
   createdAt             DateTime                     @default(now())
   updatedAt             DateTime                     @updatedAt
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  member     Member     @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  tournament   Tournament   @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  eventPayment ClubPayment? @relation(fields: [eventPaymentId], references: [id], onDelete: SetNull)
 
   @@unique([tournamentId, memberId])
   @@index([tournamentId])
   @@index([memberId])
   @@index([status])
+  @@index([eventPaymentId])
   @@map("tournament_registrations")
 }
 
@@ -449,11 +462,14 @@ model ClubVisit {
   /** Set when check-in was refused (e.g. payment required); not a successful visit */
   rejectedAt          DateTime?
   rejectionReason     String?
+  /** When set, this visit was covered by a paid/cleared tournament event (no club plan charge). */
+  eventTournamentId   Int?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
   member             Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  obligationPayment  ClubPayment? @relation(fields: [obligationPaymentId], references: [id], onDelete: SetNull)
+  obligationPayment  ClubPayment? @relation("VisitObligationPayment", fields: [obligationPaymentId], references: [id], onDelete: SetNull)
+  eventTournament    Tournament?  @relation(fields: [eventTournamentId], references: [id], onDelete: SetNull)
 
   @@index([memberId])
   @@index([clubDate])
@@ -461,6 +477,7 @@ model ClubVisit {
   @@index([isCourtesy, courtesyClearedAt])
   @@index([obligationPaymentId])
   @@index([rejectedAt])
+  @@index([eventTournamentId])
   @@map("club_visits")
 }
 
@@ -509,8 +526,9 @@ model ClubPayment {
   metadata           Json?
   recordedAt         DateTime          @default(now())
 
-  member          Member      @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  courtesyVisits  ClubVisit[]
+  member                 Member                   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  courtesyVisits         ClubVisit[]              @relation("VisitObligationPayment")
+  eventRegistrations     TournamentRegistration[]
 
   @@index([memberId])
   @@index([externalRef])

@@ -171,21 +171,28 @@ async function loadReadBundle(
   return { bundle, usedEntitlementCache };
 }
 
+export type ToggleVisitOptions = {
+  eventTournamentId?: number;
+};
+
 /**
  * Core check-in/check-out for a member.
  * Target: cache-warm PIN path ≤ 2 DB round-trips (read bundle + write tx).
+ * Optional eventTournamentId: event check-in (waives club charge when REGISTERED + window open).
  */
 export async function toggleVisit(
   memberId: number,
   closedByMethod: ToggleClosedBy,
   memberContext?: ToggleVisitMemberContext | null,
+  options?: ToggleVisitOptions,
 ): Promise<ToggleVisitResult> {
   const clubDate = getClubDate();
   let estimatedRoundTrips = 0;
 
-  const finish = (result: ToggleVisitResult): ToggleVisitResult => {
+  const finish = (result: ToggleVisitResult, eventMeta?: { eventName?: string | null }): ToggleVisitResult => {
     const visit = result.visit;
     const lastCheckInAt = visit?.checkInAt ? visit.checkInAt.toISOString() : null;
+    const eventTournamentId = visit?.eventTournamentId ?? null;
     if (result.action === 'CHECK_IN') {
       emitClubVisitUpdated({
         memberId,
@@ -195,6 +202,8 @@ export async function toggleVisit(
         present: true,
         visitedToday: true,
         lastCheckInAt,
+        eventTournamentId,
+        eventName: eventMeta?.eventName ?? null,
       });
     } else if (result.action === 'CHECK_OUT') {
       emitClubVisitUpdated({
@@ -205,6 +214,8 @@ export async function toggleVisit(
         present: false,
         // Leave visitedToday to the client (or a full refresh); open visit may be from an earlier clubDate.
         lastCheckInAt,
+        eventTournamentId: null,
+        eventName: null,
       });
     } else {
       // PAYMENT_REQUIRED (rejected): not present; do not clear visitedToday on clients.
@@ -224,6 +235,109 @@ export async function toggleVisit(
     });
     return result;
   };
+
+  const eventTournamentId =
+    options?.eventTournamentId != null && Number.isInteger(options.eventTournamentId)
+      ? Number(options.eventTournamentId)
+      : null;
+
+  if (eventTournamentId != null) {
+    const { isEventCheckInWindowOpen } = await import('./eventCheckInWindow');
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: eventTournamentId },
+      select: {
+        id: true,
+        name: true,
+        tournamentDate: true,
+        isEvent: true,
+        eventCheckInLeadMinutes: true,
+        eventCheckInCloseMinutesBeforeStart: true,
+      },
+    });
+    if (!tournament || !tournament.isEvent) {
+      throw new Error('Event tournament not found');
+    }
+    if (!isEventCheckInWindowOpen(tournament)) {
+      throw new Error('Event check-in is not open for this tournament');
+    }
+    const registration = await prisma.tournamentRegistration.findUnique({
+      where: {
+        tournamentId_memberId: { tournamentId: eventTournamentId, memberId },
+      },
+      select: { status: true },
+    });
+    if (registration?.status !== 'REGISTERED') {
+      throw new Error('Member is not registered for this event');
+    }
+
+    const { bundle } = await loadReadBundle(memberId, memberContext);
+    estimatedRoundTrips += 1;
+    const { openVisit, entitlement } = bundle;
+
+    if (openVisit) {
+      if (openVisit.eventTournamentId === eventTournamentId) {
+        const updatedVisit = await prisma.clubVisit.update({
+          where: { id: openVisit.id },
+          data: { checkOutAt: new Date(), closedBy: closedByMethod },
+        });
+        estimatedRoundTrips += 1;
+        setCachedCurrentEntitlement(memberId, entitlement);
+        return finish({
+          action: 'CHECK_OUT',
+          visit: updatedVisit,
+          warning: null,
+          charged: false,
+          entitlement: serializeEntitlementBrief(entitlement),
+          courtesy: openVisit.isCourtesy,
+          canPay: false,
+          paymentInProgress: false,
+        });
+      }
+      const updatedVisit = await prisma.clubVisit.update({
+        where: { id: openVisit.id },
+        data: { eventTournamentId },
+      });
+      estimatedRoundTrips += 1;
+      setCachedCurrentEntitlement(memberId, entitlement);
+      return finish(
+        {
+          action: 'CHECK_IN',
+          visit: updatedVisit,
+          warning: 'Event check-in recorded (already present)',
+          charged: false,
+          entitlement: serializeEntitlementBrief(entitlement),
+          courtesy: openVisit.isCourtesy,
+          canPay: false,
+          paymentInProgress: false,
+        },
+        { eventName: tournament.name },
+      );
+    }
+
+    const visit = await prisma.clubVisit.create({
+      data: {
+        memberId,
+        clubDate,
+        dailyPaymentApplied: false,
+        eventTournamentId,
+      },
+    });
+    estimatedRoundTrips += 1;
+    setCachedCurrentEntitlement(memberId, entitlement);
+    return finish(
+      {
+        action: 'CHECK_IN',
+        visit,
+        warning: null,
+        charged: false,
+        entitlement: serializeEntitlementBrief(entitlement),
+        courtesy: false,
+        canPay: false,
+        paymentInProgress: false,
+      },
+      { eventName: tournament.name },
+    );
+  }
 
   const { bundle, usedEntitlementCache } = await loadReadBundle(memberId, memberContext);
   estimatedRoundTrips += 1;

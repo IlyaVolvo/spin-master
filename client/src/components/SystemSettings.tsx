@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { isAdmin } from '../utils/auth';
 import {
   ACHIEVEMENT_CATEGORY_IDS,
@@ -56,6 +56,49 @@ function readSessionBool(key: string, fallback: boolean): boolean {
 
 function writeSessionBool(key: string, value: boolean): void {
   writeSessionString(key, value ? '1' : '0');
+}
+
+function DollarsFromCentsInput({
+  cents,
+  onCentsChange,
+  ariaLabel,
+  inputStyle,
+}: {
+  cents: number;
+  onCentsChange: (cents: number) => void;
+  ariaLabel: string;
+  inputStyle?: CSSProperties;
+}) {
+  const [text, setText] = useState(() => (cents / 100).toFixed(2));
+
+  const commit = (raw: string) => {
+    const cleaned = raw.trim();
+    const n = cleaned === '' || cleaned === '.' ? 0 : Number(cleaned);
+    const nextCents = Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0;
+    onCentsChange(nextCents);
+    setText((nextCents / 100).toFixed(2));
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      aria-label={ariaLabel}
+      value={text}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const v = e.target.value.replace(/[^0-9.]/g, '');
+        const parts = v.split('.');
+        const normalized = parts.length <= 1 ? v : `${parts[0]}.${parts.slice(1).join('').slice(0, 2)}`;
+        setText(normalized);
+        if (normalized !== '' && normalized !== '.' && Number.isFinite(Number(normalized))) {
+          onCentsChange(Math.round(Number(normalized) * 100));
+        }
+      }}
+      onBlur={() => commit(text)}
+      style={inputStyle}
+    />
+  );
 }
 
 type NumericInputProps = {
@@ -233,9 +276,10 @@ export default function SystemSettings() {
   const [message, setMessage] = useState('');
   const [achievementsSetAll, setAchievementsSetAll] = useState(10);
   const [dirty, setDirty] = useState(false);
-  const [openSectionId, setOpenSectionId] = useState<string>(() =>
-    readSessionString(SESSION_OPEN_SECTION, ''),
-  );
+  const [openSectionId, setOpenSectionId] = useState<string>(() => {
+    const saved = readSessionString(SESSION_OPEN_SECTION, '');
+    return saved === 'event' ? 'preregistration-event' : saved;
+  });
   const [openTournamentRuleId, setOpenTournamentRuleId] = useState<string | null>(() => {
     const saved = readSessionString(SESSION_OPEN_TOURNAMENT_RULE, '');
     return saved || null;
@@ -824,7 +868,7 @@ export default function SystemSettings() {
 
       <Section
         title="Core Settings"
-        tooltip="Authentication, score PIN, privilege auto-relinquish, preregistration defaults, and rating validation."
+        tooltip="Authentication, score PIN, privilege auto-relinquish, and rating validation."
         sectionId="core"
         open={openSectionId === 'core'}
         onToggle={toggleSection}
@@ -867,6 +911,30 @@ export default function SystemSettings() {
           onChange={(value) => updateConfig(draft => { draft.authPolicy.autoRelinquishIdleMinutes = value; })}
         />
         <NumericInput
+          label="Rating Input Max"
+          value={config.ratingValidation.ratingInputMax}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.ratingInputMax = value; })}
+        />
+        <NumericInput
+          label="Suspicious Rating Min"
+          value={config.ratingValidation.suspiciousRatingMin}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMin = value; })}
+        />
+        <NumericInput
+          label="Suspicious Rating Max"
+          value={config.ratingValidation.suspiciousRatingMax}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMax = value; })}
+        />
+      </Section>
+
+      <Section
+        title="Pre-registration/Event Settings"
+        tooltip="Defaults for tournament pre-registration and paid events. Per-event overrides live on the event itself."
+        sectionId="preregistration-event"
+        open={openSectionId === 'preregistration-event'}
+        onToggle={toggleSection}
+      >
+        <NumericInput
           label="Preregistration Date Offset (days)"
           value={config.preregistration.defaultTournamentOffsetDays}
           onChange={(value) => updateConfig(draft => { draft.preregistration.defaultTournamentOffsetDays = value; })}
@@ -884,21 +952,63 @@ export default function SystemSettings() {
           value={config.preregistration.registrationDeadlineOffsetMinutes}
           onChange={(value) => updateConfig(draft => { draft.preregistration.registrationDeadlineOffsetMinutes = value; })}
         />
-        <NumericInput
-          label="Rating Input Max"
-          value={config.ratingValidation.ratingInputMax}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.ratingInputMax = value; })}
-        />
-        <NumericInput
-          label="Suspicious Rating Min"
-          value={config.ratingValidation.suspiciousRatingMin}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMin = value; })}
-        />
-        <NumericInput
-          label="Suspicious Rating Max"
-          value={config.ratingValidation.suspiciousRatingMax}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMax = value; })}
-        />
+        <FieldRow
+          label="Admissions starts"
+          tooltip="How long before event start members can check in as event attendees (club default). Overridable on each event."
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <BoundedNumericInput
+              value={Math.floor(config.preregistration.eventCheckInLeadMinutes / 60)}
+              min={0}
+              max={168}
+              allowEmpty={false}
+              showRangeHint={false}
+              aria-label="Admissions starts hours before event"
+              onChange={(hours) => {
+                const h = hours ?? 0;
+                const minutes = config.preregistration.eventCheckInLeadMinutes % 60;
+                updateConfig((draft) => {
+                  draft.preregistration.eventCheckInLeadMinutes = h * 60 + minutes;
+                });
+              }}
+              inputStyle={{ ...valueInputStyle, width: '72px' }}
+            />
+            <span style={{ fontSize: '13px', color: '#546e7a' }}>hours</span>
+            <BoundedNumericInput
+              value={config.preregistration.eventCheckInLeadMinutes % 60}
+              min={0}
+              max={59}
+              allowEmpty={false}
+              showRangeHint={false}
+              aria-label="Admissions starts minutes before event"
+              onChange={(mins) => {
+                const m = mins ?? 0;
+                const hours = Math.floor(config.preregistration.eventCheckInLeadMinutes / 60);
+                updateConfig((draft) => {
+                  draft.preregistration.eventCheckInLeadMinutes = hours * 60 + m;
+                });
+              }}
+              inputStyle={{ ...valueInputStyle, width: '72px' }}
+            />
+            <span style={{ fontSize: '13px', color: '#546e7a' }}>minutes before event start</span>
+          </div>
+        </FieldRow>
+        <FieldRow
+          label="Default event price"
+          tooltip="Default list price for new events. Overridable on each event."
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '14px', color: '#546e7a' }}>$</span>
+            <DollarsFromCentsInput
+              cents={config.preregistration.defaultEventPriceCents}
+              ariaLabel="Default event price dollars"
+              onCentsChange={(next) => updateConfig((draft) => {
+                draft.preregistration.defaultEventPriceCents = next;
+              })}
+              inputStyle={{ ...valueInputStyle, width: '100px' }}
+            />
+          </div>
+        </FieldRow>
         <FieldRow label="Preregistration Cancellation Reasons">
           <textarea
             rows={5}

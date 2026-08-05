@@ -10,6 +10,8 @@ export type CheckinMemberStatus = {
   present: boolean;
   visitedToday: boolean;
   lastCheckInAt: string | null;
+  eventTournamentId?: number | null;
+  eventName?: string | null;
 };
 
 export type CheckinStatusMap = Record<number, CheckinMemberStatus>;
@@ -28,6 +30,8 @@ export type ClubVisitUpdatedEvent = {
   present?: boolean;
   visitedToday?: boolean;
   lastCheckInAt?: string | null;
+  eventTournamentId?: number | null;
+  eventName?: string | null;
 };
 
 type EntitlementSummary = {
@@ -36,8 +40,18 @@ type EntitlementSummary = {
   validTo: string | null;
 } | null;
 
+export type EventCheckInOption = {
+  tournamentId: number;
+  name: string | null;
+  tournamentDate?: string | null;
+  eventPriceCents?: number | null;
+  mode?: 'event_check_in' | 'register_and_pay';
+  clubChargeWaived?: boolean;
+  clubChargeWarning?: string | null;
+};
+
 type PinToggleResponse = {
-  action: 'CHECK_IN' | 'CHECK_OUT' | 'PAYMENT_REQUIRED';
+  action: 'CHECK_IN' | 'CHECK_OUT' | 'PAYMENT_REQUIRED' | 'EVENT_REGISTERED';
   warning?: string | null;
   message?: string;
   charged?: boolean;
@@ -45,8 +59,12 @@ type PinToggleResponse = {
   canPay?: boolean;
   paymentLoginAvailable?: boolean;
   paymentInProgress?: boolean;
+  checkInBlocked?: boolean;
+  checkInWarning?: string | null;
   entitlement?: EntitlementSummary;
   member?: { firstName: string; lastName: string };
+  visit?: { eventTournamentId?: number | null } | null;
+  usedEventCheckIn?: boolean;
 };
 
 function formatEntitlementLine(entitlement: EntitlementSummary): string | null {
@@ -73,6 +91,13 @@ export function formatPinToggleMessage(data: PinToggleResponse): string {
     return data.message || data.warning || 'Payment required before check-in.';
   }
 
+  if (data.action === 'EVENT_REGISTERED') {
+    return (
+      data.message ||
+      'Event registration completed. Club check-in may still require a plan or visit payment.'
+    );
+  }
+
   if (data.action === 'CHECK_OUT') {
     const parts = [`${name} checked out.`];
     const entitlementLine = formatEntitlementLine(data.entitlement ?? null);
@@ -83,8 +108,13 @@ export function formatPinToggleMessage(data: PinToggleResponse): string {
 
   // CHECK_IN
   const parts: string[] = [];
+  const eventAdmission =
+    data.usedEventCheckIn === true ||
+    (data.visit?.eventTournamentId != null && Number(data.visit.eventTournamentId) > 0);
   if (data.courtesy) {
     parts.push(`${name} checked in (courtesy).`);
+  } else if (eventAdmission) {
+    parts.push(`${name} checked in (event admission).`);
   } else if (data.charged === false) {
     parts.push(`${name} checked in — free re-entry (already checked in today).`);
   } else {
@@ -110,6 +140,11 @@ export async function fetchCheckinTodayStatus(): Promise<CheckinTodayStatusSnaps
       present: row.present === true,
       visitedToday: row.visitedToday === true,
       lastCheckInAt: typeof row.lastCheckInAt === 'string' ? row.lastCheckInAt : null,
+      eventTournamentId:
+        row.eventTournamentId != null && Number.isInteger(Number(row.eventTournamentId))
+          ? Number(row.eventTournamentId)
+          : null,
+      eventName: typeof row.eventName === 'string' ? row.eventName : null,
     };
   }
   return {
@@ -147,6 +182,8 @@ export function applyClubVisitUpdatedPatch(
     present: false,
     visitedToday: false,
     lastCheckInAt: null,
+    eventTournamentId: null,
+    eventName: null,
   };
   const next: CheckinMemberStatus = { ...prev };
 
@@ -159,6 +196,16 @@ export function applyClubVisitUpdatedPatch(
   if (event.lastCheckInAt !== undefined) {
     next.lastCheckInAt =
       typeof event.lastCheckInAt === 'string' ? event.lastCheckInAt : null;
+  }
+  if (event.eventTournamentId !== undefined) {
+    next.eventTournamentId = event.eventTournamentId;
+  }
+  if (event.eventName !== undefined) {
+    next.eventName = event.eventName;
+  }
+  if (!next.present) {
+    next.eventTournamentId = null;
+    next.eventName = null;
   }
 
   // Drop members with no presence signal so presentCount stays accurate.
@@ -323,6 +370,9 @@ export function CheckinPinModal({
   const [resultMessage, setResultMessage] = useState('');
   const [paymentLoginAvailable, setPaymentLoginAvailable] = useState(false);
   const [memberPassword, setMemberPassword] = useState('');
+  const [eventOptions, setEventOptions] = useState<EventCheckInOption[]>([]);
+  const [selectedEventTournamentId, setSelectedEventTournamentId] = useState<number | null>(null);
+  const selectedEvent = eventOptions.find((e) => e.tournamentId === selectedEventTournamentId) || null;
   const inputRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
@@ -333,12 +383,37 @@ export function CheckinPinModal({
   }, []);
 
   useEffect(() => {
-    if (phase === 'member_password') {
+    if (action !== 'CHECK_IN') {
+      setEventOptions([]);
+      setSelectedEventTournamentId(null);
+      return;
+    }
+    let cancelled = false;
+    api.get<{ events?: EventCheckInOption[] }>('/club/event-checkin-options', { params: { memberId } })
+      .then((res) => {
+        if (cancelled) return;
+        const events = Array.isArray(res.data?.events) ? res.data.events : [];
+        setEventOptions(events);
+        setSelectedEventTournamentId(null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEventOptions([]);
+          setSelectedEventTournamentId(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId, action]);
+
+  useEffect(() => {
+    if (phase === 'member_password' || (phase === 'rejected' && paymentLoginAvailable)) {
       passwordRef.current?.focus();
     } else {
       inputRef.current?.focus();
     }
-  }, [phase]);
+  }, [phase, paymentLoginAvailable]);
 
   const finish = (message: string) => {
     onSuccess(message);
@@ -384,6 +459,14 @@ export function CheckinPinModal({
     }
   };
 
+  const enterPaymentRequired = (message: string, loginAvailable: boolean) => {
+    setResultMessage(message);
+    setPaymentLoginAvailable(loginAvailable);
+    setMemberPassword('');
+    setError('');
+    setPhase('rejected');
+  };
+
   const submit = async () => {
     if (!scorePin.trim()) {
       setError('Enter your PIN');
@@ -392,13 +475,24 @@ export function CheckinPinModal({
     setLoading(true);
     setError('');
     try {
-      const res = await api.post('/club/pin-toggle', { memberId, scorePin: scorePin.trim() });
+      const body: { memberId: number; scorePin: string; eventTournamentId?: number } = {
+        memberId,
+        scorePin: scorePin.trim(),
+      };
+      if (selectedEventTournamentId != null) {
+        body.eventTournamentId = selectedEventTournamentId;
+        const selected = eventOptions.find((e) => e.tournamentId === selectedEventTournamentId);
+        if (selected?.mode) {
+          (body as { eventMode?: string }).eventMode = selected.mode;
+        }
+      }
+      const res = await api.post('/club/pin-toggle', body);
       const data = res.data as PinToggleResponse;
       const message = formatPinToggleMessage(data);
-      if (data.action === 'PAYMENT_REQUIRED') {
-        setResultMessage(message);
-        setPaymentLoginAvailable(data.paymentLoginAvailable === true);
-        setPhase('rejected');
+      if (data.action === 'EVENT_REGISTERED') {
+        finish(message);
+      } else if (data.action === 'PAYMENT_REQUIRED') {
+        enterPaymentRequired(message, data.paymentLoginAvailable === true);
       } else if (data.canPay || data.courtesy) {
         setResultMessage(message);
         setPaymentLoginAvailable(data.paymentLoginAvailable === true);
@@ -411,9 +505,7 @@ export function CheckinPinModal({
       if (axiosErr.response?.status === 402 && axiosErr.response.data) {
         const data = axiosErr.response.data;
         const message = formatPinToggleMessage(data);
-        setResultMessage(message);
-        setPaymentLoginAvailable(data.paymentLoginAvailable === true);
-        setPhase('rejected');
+        enterPaymentRequired(message, data.paymentLoginAvailable === true);
       } else {
         setError(getErrorMessage(err, 'Check-in failed'));
       }
@@ -421,6 +513,40 @@ export function CheckinPinModal({
       setLoading(false);
     }
   };
+
+  const submitEventRegister = async (tournamentId: number) => {
+    if (!scorePin.trim()) {
+      setError('Enter your PIN first, then choose an event');
+      setPhase('pin');
+      return;
+    }
+    setSelectedEventTournamentId(tournamentId);
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.post('/club/pin-toggle', {
+        memberId,
+        scorePin: scorePin.trim(),
+        eventTournamentId: tournamentId,
+        eventMode: 'register_and_pay',
+      });
+      const data = res.data as PinToggleResponse;
+      const message = formatPinToggleMessage(data);
+      if (data.action === 'EVENT_REGISTERED' || data.action === 'CHECK_IN') {
+        finish(message);
+      } else if (data.action === 'PAYMENT_REQUIRED') {
+        enterPaymentRequired(message, data.paymentLoginAvailable === true);
+      } else {
+        finish(message);
+      }
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Event registration failed'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerEventOptions = eventOptions.filter((e) => e.mode === 'register_and_pay');
 
   const label = action === 'CHECK_OUT' ? 'Check-out' : freeReentry ? 'Check-in (free re-entry)' : 'Check-in';
 
@@ -450,6 +576,48 @@ export function CheckinPinModal({
               {memberName} — enter your PIN
               {pinLength ? ` (${pinLength} digits)` : ''}
             </p>
+            {eventOptions.length > 0 && (
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>
+                  Check-in type
+                </label>
+                <select
+                  value={selectedEventTournamentId ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedEventTournamentId(value === '' ? null : Number(value));
+                  }}
+                  style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                >
+                  <option value="">Regular admission</option>
+                  {eventOptions.map((event) => {
+                    const price =
+                      event.eventPriceCents != null
+                        ? ` ($${(event.eventPriceCents / 100).toFixed(2)})`
+                        : '';
+                    const label =
+                      event.mode === 'register_and_pay'
+                        ? `Register & pay event: ${event.name || `#${event.tournamentId}`}${price}`
+                        : `Event check-in: ${event.name || `#${event.tournamentId}`}`;
+                    return (
+                      <option key={`${event.mode || 'check'}-${event.tournamentId}`} value={event.tournamentId}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+                {selectedEvent?.clubChargeWarning && (
+                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#856404' }}>
+                    {selectedEvent.clubChargeWarning}
+                  </p>
+                )}
+                {selectedEvent?.mode === 'register_and_pay' && (
+                  <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#555' }}>
+                    Desk will record the event fee as cash when you confirm PIN check-in.
+                  </p>
+                )}
+              </div>
+            )}
             {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
             <input
               ref={inputRef}
@@ -483,24 +651,97 @@ export function CheckinPinModal({
             <h3 style={{ marginTop: 0, color: '#c0392b' }}>Check-in blocked</h3>
             <p style={{ fontSize: '14px', color: '#333', lineHeight: 1.45 }}>{resultMessage}</p>
             {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
-            <p style={{ fontSize: '13px', color: '#666' }}>
-              {paymentLoginAvailable
-                ? 'Purchase a plan to check in, or close and try again later.'
-                : 'Online payment is unavailable because this member does not have a login email and password.'}
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => finish(resultMessage)}>
-                Close
-              </button>
-              {paymentLoginAvailable && (
+            {paymentLoginAvailable ? (
+              <div
+                style={{
+                  marginBottom: '14px',
+                  padding: '10px',
+                  backgroundColor: '#eaf2f8',
+                  border: '1px solid #aed6f1',
+                  borderRadius: '4px',
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#1a5276', marginBottom: '8px' }}>
+                  Pay for regular admission
+                </div>
+                <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#555' }}>
+                  Enter your login password to open plan / visit payment.
+                </p>
+                <input
+                  ref={passwordRef}
+                  type="password"
+                  value={memberPassword}
+                  onChange={(e) => setMemberPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void authorizeAndOpenPayment();
+                    }
+                  }}
+                  placeholder="Password"
+                  autoComplete="current-password"
+                  style={{ width: '100%', padding: '10px', marginBottom: '10px', boxSizing: 'border-box', fontSize: '16px' }}
+                />
                 <button
                   type="button"
                   className="success"
-                  onClick={() => requestMemberPassword('rejected')}
+                  disabled={loading}
+                  onClick={() => void authorizeAndOpenPayment()}
+                  style={{ width: '100%' }}
                 >
-                  Pay now
+                  {loading ? '…' : 'Continue to payment'}
                 </button>
-              )}
+              </div>
+            ) : (
+              <p style={{ fontSize: '13px', color: '#666' }}>
+                Online club admission payment is unavailable because this member does not have a login email and password.
+              </p>
+            )}
+            {registerEventOptions.length > 0 && (
+              <div
+                style={{
+                  marginBottom: '14px',
+                  padding: '10px',
+                  backgroundColor: '#f5eef8',
+                  border: '1px solid #d7bde2',
+                  borderRadius: '4px',
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#6c3483', marginBottom: '8px' }}>
+                  Or register for a planned event
+                </div>
+                {registerEventOptions.map((event) => {
+                  const price =
+                    event.eventPriceCents != null
+                      ? `$${(event.eventPriceCents / 100).toFixed(2)}`
+                      : '';
+                  return (
+                    <div key={event.tournamentId} style={{ marginBottom: '8px' }}>
+                      <button
+                        type="button"
+                        className="success"
+                        disabled={loading}
+                        onClick={() => void submitEventRegister(event.tournamentId)}
+                        style={{ width: '100%' }}
+                      >
+                        {loading
+                          ? '…'
+                          : `Register & pay ${event.name || `Event #${event.tournamentId}`}${price ? ` (${price})` : ''}`}
+                      </button>
+                      {event.clubChargeWarning && (
+                        <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#856404' }}>
+                          {event.clubChargeWarning}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => finish(resultMessage)} disabled={loading}>
+                Close
+              </button>
             </div>
           </>
         )}
@@ -585,29 +826,58 @@ export function CheckinPinModal({
 type RowButtonProps = {
   present: boolean;
   visitedToday: boolean;
+  eventAdmission?: boolean;
+  eventName?: string | null;
   onClick: () => void;
 };
 
-export function CheckinRowButton({ present, visitedToday, onClick }: RowButtonProps) {
+export function CheckinRowButton({
+  present,
+  visitedToday,
+  eventAdmission = false,
+  eventName = null,
+  onClick,
+}: RowButtonProps) {
   if (present) {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        style={{
-          padding: '6px 10px',
-          fontSize: '13px',
-          fontWeight: 600,
-          backgroundColor: '#7f8c8d',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Check-out
-      </button>
+      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+        {eventAdmission && (
+          <span
+            title={eventName?.trim() ? `Event admission: ${eventName.trim()}` : 'Event admission'}
+            style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.03em',
+              color: '#6c3483',
+              backgroundColor: '#f5eef8',
+              border: '1px solid #d7bde2',
+              borderRadius: '4px',
+              padding: '1px 6px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Event
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onClick}
+          style={{
+            padding: '6px 10px',
+            fontSize: '13px',
+            fontWeight: 600,
+            backgroundColor: '#7f8c8d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Check-out
+        </button>
+      </div>
     );
   }
 

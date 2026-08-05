@@ -203,8 +203,63 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Member account is inactive' });
     }
 
-    const result = await toggleVisit(member.id, 'MANUAL', memberContextFromStub(member));
+    const eventTournamentId =
+      req.body?.eventTournamentId != null ? Number(req.body.eventTournamentId) : undefined;
+    const eventMode =
+      req.body?.eventMode === 'register_and_pay' || req.body?.eventMode === 'event_check_in'
+        ? req.body.eventMode
+        : undefined;
+
     const paymentLoginAvailable = memberHasPaymentLogin(member);
+
+    let result;
+    let eventMeta: {
+      eventPaymentId?: number;
+      registrationStatus?: string;
+      usedEventCheckIn?: boolean;
+    } = {};
+
+    if (Number.isInteger(eventTournamentId) && eventMode === 'register_and_pay') {
+      const { registerPayEventAndCheckIn } = await import('../payments/registerPayEventAndCheckIn');
+      const paid = await registerPayEventAndCheckIn({
+        memberId: member.id,
+        tournamentId: eventTournamentId!,
+        closedBy: 'MANUAL',
+      });
+      result = paid.checkIn;
+      eventMeta = {
+        eventPaymentId: paid.eventPaymentId,
+        registrationStatus: paid.registrationStatus,
+        usedEventCheckIn: paid.usedEventCheckIn,
+      };
+
+      // Event registration does not require a club plan. If check-in is still blocked,
+      // return success for the event fee and surface the club-check-in requirement separately.
+      if (result.action === 'PAYMENT_REQUIRED') {
+        return res.status(200).json({
+          action: 'EVENT_REGISTERED',
+          message:
+            'Event fee recorded and registration completed. Club check-in still requires a plan, trial, or visit payment (event check-in window is not open, or event coverage does not apply).',
+          charged: false,
+          entitlement: result.entitlement,
+          courtesy: false,
+          canPay: result.canPay,
+          paymentLoginAvailable,
+          paymentInProgress: result.paymentInProgress,
+          checkInBlocked: true,
+          checkInWarning: result.warning,
+          member: { firstName: member.firstName, lastName: member.lastName },
+          ...eventMeta,
+        });
+      }
+    } else {
+      result = await toggleVisit(
+        member.id,
+        'MANUAL',
+        memberContextFromStub(member),
+        Number.isInteger(eventTournamentId) ? { eventTournamentId } : undefined,
+      );
+    }
 
     if (result.action === 'PAYMENT_REQUIRED') {
       return res.status(402).json({
@@ -217,6 +272,7 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
         paymentLoginAvailable,
         paymentInProgress: result.paymentInProgress,
         member: { firstName: member.firstName, lastName: member.lastName },
+        ...eventMeta,
       });
     }
 
@@ -231,12 +287,19 @@ router.post('/pin-toggle', async (req: Request, res: Response) => {
       paymentLoginAvailable,
       paymentInProgress: result.paymentInProgress,
       member: { firstName: member.firstName, lastName: member.lastName },
+      ...eventMeta,
     });
   } catch (error) {
-    logger.error('Error processing pin-toggle', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    res.status(500).json({ error: 'Internal server error' });
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Error processing pin-toggle', { error: message });
+    const status =
+      message.includes('Event') ||
+      message.includes('registration') ||
+      message.includes('maximum') ||
+      message.includes('deadline')
+        ? 400
+        : 500;
+    res.status(status).json({ error: message });
   }
 });
 
@@ -349,7 +412,30 @@ router.post('/self/toggle', async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const result = await toggleVisit(memberId, 'MANUAL');
+    const eventTournamentId =
+      req.body?.eventTournamentId != null ? Number(req.body.eventTournamentId) : undefined;
+    const eventMode =
+      req.body?.eventMode === 'register_and_pay' || req.body?.eventMode === 'event_check_in'
+        ? req.body.eventMode
+        : undefined;
+
+    let result;
+    if (Number.isInteger(eventTournamentId) && eventMode === 'register_and_pay') {
+      const { registerPayEventAndCheckIn } = await import('../payments/registerPayEventAndCheckIn');
+      const paid = await registerPayEventAndCheckIn({
+        memberId,
+        tournamentId: eventTournamentId!,
+        closedBy: 'MANUAL',
+      });
+      result = paid.checkIn;
+    } else {
+      result = await toggleVisit(
+        memberId,
+        'MANUAL',
+        null,
+        Number.isInteger(eventTournamentId) ? { eventTournamentId } : undefined,
+      );
+    }
 
     if (result.action === 'PAYMENT_REQUIRED') {
       return res.status(402).json({
@@ -366,7 +452,41 @@ router.post('/self/toggle', async (req: AuthRequest, res: Response) => {
       entitlement: result.entitlement,
     });
   } catch (error) {
-    logger.error('Error toggling visit', { error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    logger.error('Error toggling visit', { error: message });
+    const status =
+      message.includes('Event') ||
+      message.includes('registered') ||
+      message.includes('not open') ||
+      message.includes('registration') ||
+      message.includes('deadline') ||
+      message.includes('maximum')
+        ? 400
+        : 500;
+    res.status(status).json({ error: message });
+  }
+});
+
+/** GET /api/club/event-checkin-options — event check-in / register-and-pay options for a member */
+router.get('/event-checkin-options', async (req: AuthRequest, res: Response) => {
+  try {
+    const rawMemberId = req.query.memberId != null ? Number(req.query.memberId) : req.memberId;
+    const memberId = Number(rawMemberId);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'memberId required' });
+    }
+    const isAdmin = (req.member?.roles || []).includes('ADMIN') || (req.member?.roles || []).includes('ORGANIZER');
+    if (!isAdmin && req.memberId !== memberId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { listEventCheckInOptions } = await import('../payments/listEventCheckInOptions');
+    const events = await listEventCheckInOptions(memberId);
+    res.json({ events });
+  } catch (error) {
+    logger.error('Error listing event check-in options', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -388,26 +508,48 @@ router.get('/kiosk/today-status', async (req: AuthRequest, res: Response) => {
         rejectedAt: null,
         OR: [{ clubDate }, { checkOutAt: null }],
       },
-      select: { memberId: true, clubDate: true, checkInAt: true, checkOutAt: true },
+      select: {
+        memberId: true,
+        clubDate: true,
+        checkInAt: true,
+        checkOutAt: true,
+        eventTournamentId: true,
+        eventTournament: { select: { id: true, name: true } },
+      },
       orderBy: { checkInAt: 'desc' },
     });
 
     const byMember = new Map<
       number,
-      { present: boolean; visitedToday: boolean; lastCheckInAt: string | null }
+      {
+        present: boolean;
+        visitedToday: boolean;
+        lastCheckInAt: string | null;
+        eventTournamentId: number | null;
+        eventName: string | null;
+      }
     >();
 
     for (const visit of visits) {
       const existing = byMember.get(visit.memberId);
       if (!existing) {
+        const isOpen = visit.checkOutAt == null;
         byMember.set(visit.memberId, {
-          present: visit.checkOutAt == null,
+          present: isOpen,
           visitedToday: visit.clubDate === clubDate,
           lastCheckInAt: visit.checkInAt.toISOString(),
+          eventTournamentId: isOpen ? visit.eventTournamentId : null,
+          eventName: isOpen ? (visit.eventTournament?.name ?? null) : null,
         });
         continue;
       }
-      if (visit.checkOutAt == null) existing.present = true;
+      if (visit.checkOutAt == null) {
+        existing.present = true;
+        if (existing.eventTournamentId == null && visit.eventTournamentId != null) {
+          existing.eventTournamentId = visit.eventTournamentId;
+          existing.eventName = visit.eventTournament?.name ?? null;
+        }
+      }
       if (visit.clubDate === clubDate) existing.visitedToday = true;
     }
 
@@ -416,6 +558,8 @@ router.get('/kiosk/today-status', async (req: AuthRequest, res: Response) => {
       present: status.present,
       visitedToday: status.visitedToday,
       lastCheckInAt: status.lastCheckInAt,
+      eventTournamentId: status.eventTournamentId,
+      eventName: status.eventName,
     }));
 
     res.json({ clubDate, version: getPresenceBoardVersion(), members });
@@ -1700,6 +1844,9 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
         member: {
           select: { id: true, firstName: true, lastName: true },
         },
+        eventTournament: {
+          select: { id: true, name: true },
+        },
       },
     });
 
@@ -1717,6 +1864,8 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
         courtesyClearedAt: v.courtesyClearedAt ? v.courtesyClearedAt.toISOString() : null,
         rejectedAt: v.rejectedAt ? v.rejectedAt.toISOString() : null,
         rejectionReason: v.rejectionReason,
+        eventTournamentId: v.eventTournamentId,
+        eventName: v.eventTournament?.name ?? null,
       })),
     });
   } catch (error) {

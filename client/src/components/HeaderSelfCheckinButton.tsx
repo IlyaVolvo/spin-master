@@ -5,6 +5,7 @@ import { getMember } from '../utils/auth';
 import { getErrorMessage } from '../utils/errorHandler';
 import { clearAllScrollPositions, clearAllUIStates } from '../utils/scrollPosition';
 import { connectSocket, getSocket } from '../utils/socket';
+import type { EventCheckInOption } from './players/CheckinKioskUI';
 
 type ConfirmKind = 'check-in' | 'check-out';
 
@@ -20,6 +21,12 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [paymentRequired, setPaymentRequired] = useState(false);
+  const [eventOptions, setEventOptions] = useState<EventCheckInOption[]>([]);
+  const [selectedEventTournamentId, setSelectedEventTournamentId] = useState<number | null>(null);
+
+  const selectedEvent =
+    eventOptions.find((e) => e.tournamentId === selectedEventTournamentId) || null;
+  const registerEventOptions = eventOptions.filter((e) => e.mode === 'register_and_pay');
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -61,8 +68,33 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
     if (busy || loadingStatus) return;
     setError('');
     setPaymentRequired(false);
+    setSelectedEventTournamentId(null);
     setConfirmKind(present ? 'check-out' : 'check-in');
   };
+
+  useEffect(() => {
+    if (confirmKind !== 'check-in') {
+      setEventOptions([]);
+      setSelectedEventTournamentId(null);
+      return;
+    }
+    const memberId = getMember()?.id;
+    if (memberId == null) return;
+    let cancelled = false;
+    api.get<{ events?: EventCheckInOption[] }>('/club/event-checkin-options', { params: { memberId } })
+      .then((res) => {
+        if (cancelled) return;
+        const events = Array.isArray(res.data?.events) ? res.data.events : [];
+        setEventOptions(events);
+        setSelectedEventTournamentId(null);
+      })
+      .catch(() => {
+        if (!cancelled) setEventOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [confirmKind]);
 
   const closeConfirm = () => {
     if (busy) return;
@@ -71,13 +103,48 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
     setPaymentRequired(false);
   };
 
+  const startEventOnlineRegister = async (tournamentId: number) => {
+    const response = await api.post(`/tournaments/${tournamentId}/register`);
+    const checkoutUrl = response.data?.checkout?.checkoutUrl;
+    const clubChargeWarning =
+      typeof response.data?.clubChargeWarning === 'string'
+        ? response.data.clubChargeWarning.trim()
+        : '';
+    if (typeof checkoutUrl === 'string' && checkoutUrl.trim()) {
+      if (clubChargeWarning) {
+        window.sessionStorage.setItem(
+          `eventClubChargeWarning:${tournamentId}`,
+          clubChargeWarning,
+        );
+      }
+      window.location.assign(checkoutUrl);
+      return;
+    }
+    setConfirmKind(null);
+    setError('');
+    setPaymentRequired(false);
+    await refreshStatus();
+  };
+
   const confirmToggle = async () => {
     if (!confirmKind || busy) return;
     setBusy(true);
     setError('');
     setPaymentRequired(false);
     try {
-      const res = await api.post('/club/self/toggle');
+      if (confirmKind === 'check-in' && selectedEvent?.mode === 'register_and_pay') {
+        await startEventOnlineRegister(selectedEvent.tournamentId);
+        return;
+      }
+
+      const body: { eventTournamentId?: number; eventMode?: string } = {};
+      if (selectedEventTournamentId != null) {
+        body.eventTournamentId = selectedEventTournamentId;
+        if (selectedEvent?.mode) {
+          body.eventMode = selectedEvent.mode;
+        }
+      }
+      const res = await api.post('/club/self/toggle', body);
       const action = res.data?.action as string | undefined;
       if (action === 'CHECK_IN') setPresent(true);
       else if (action === 'CHECK_OUT') setPresent(false);
@@ -176,23 +243,111 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
             aria-labelledby="self-checkin-dialog-title"
           >
             <h3 id="self-checkin-dialog-title" style={{ marginTop: 0 }}>
-              {askingOut ? 'Check out now?' : 'Check in now?'}
+              {askingOut ? 'Check out now?' : paymentRequired ? 'Check-in blocked' : 'Check in now?'}
             </h3>
-            <p style={{ fontSize: '14px', color: '#555', marginTop: 0 }}>
-              {askingOut
-                ? 'You will leave Present for today. You can check in again later if you return.'
-                : 'Mark yourself Present at the club for today.'}
-            </p>
+            {!paymentRequired && (
+              <p style={{ fontSize: '14px', color: '#555', marginTop: 0 }}>
+                {askingOut
+                  ? 'You will leave Present for today. You can check in again later if you return.'
+                  : 'Mark yourself Present at the club for today.'}
+              </p>
+            )}
+            {!askingOut && !paymentRequired && eventOptions.length > 0 && (
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>
+                  Check-in type
+                </label>
+                <select
+                  value={selectedEventTournamentId ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedEventTournamentId(value === '' ? null : Number(value));
+                  }}
+                  disabled={busy}
+                  style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                >
+                  <option value="">Regular admission</option>
+                  {eventOptions.map((event) => {
+                    const price =
+                      event.eventPriceCents != null
+                        ? ` ($${(event.eventPriceCents / 100).toFixed(2)})`
+                        : '';
+                    const optionLabel =
+                      event.mode === 'register_and_pay'
+                        ? `Register & pay event: ${event.name || `#${event.tournamentId}`}${price}`
+                        : `Event check-in: ${event.name || `#${event.tournamentId}`}`;
+                    return (
+                      <option key={`${event.mode || 'check'}-${event.tournamentId}`} value={event.tournamentId}>
+                        {optionLabel}
+                      </option>
+                    );
+                  })}
+                </select>
+                {selectedEvent?.clubChargeWarning && (
+                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#856404' }}>
+                    {selectedEvent.clubChargeWarning}
+                  </p>
+                )}
+              </div>
+            )}
             {error ? (
               <div style={{ color: '#c0392b', marginBottom: '12px', fontSize: '14px' }}>{error}</div>
             ) : null}
+            {paymentRequired && (
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ fontSize: '13px', color: '#555', marginTop: 0 }}>
+                  Choose regular admission (club plan / visit) or a planned event.
+                </p>
+                {registerEventOptions.length > 0 && (
+                  <div
+                    style={{
+                      marginBottom: '10px',
+                      padding: '10px',
+                      backgroundColor: '#f5eef8',
+                      border: '1px solid #d7bde2',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#6c3483', marginBottom: '8px' }}>
+                      Planned events
+                    </div>
+                    {registerEventOptions.map((event) => {
+                      const price =
+                        event.eventPriceCents != null
+                          ? ` ($${(event.eventPriceCents / 100).toFixed(2)})`
+                          : '';
+                      return (
+                        <button
+                          key={event.tournamentId}
+                          type="button"
+                          className="success"
+                          disabled={busy}
+                          onClick={() => {
+                            setBusy(true);
+                            setError('');
+                            void startEventOnlineRegister(event.tournamentId)
+                              .catch((err: unknown) => {
+                                setError(getErrorMessage(err, 'Event registration failed'));
+                              })
+                              .finally(() => setBusy(false));
+                          }}
+                          style={{ width: '100%', marginBottom: '8px' }}
+                        >
+                          Register & pay {event.name || `Event #${event.tournamentId}`}{price}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
               <button type="button" onClick={closeConfirm} disabled={busy}>
                 Cancel
               </button>
               {paymentRequired ? (
                 <button type="button" className="success" onClick={openOwnPlan} disabled={busy}>
-                  Open plan
+                  Pay for admission
                 </button>
               ) : (
                 <button
@@ -201,7 +356,11 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
                   onClick={() => void confirmToggle()}
                   disabled={busy}
                 >
-                  {busy ? 'Working…' : 'Confirm'}
+                  {busy
+                    ? 'Working…'
+                    : selectedEvent?.mode === 'register_and_pay'
+                      ? 'Register & pay'
+                      : 'Confirm'}
                 </button>
               )}
             </div>
