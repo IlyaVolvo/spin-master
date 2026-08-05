@@ -50,6 +50,10 @@ import {
   isEventCheckInWindowOpen,
 } from '../payments/eventCheckInWindow';
 import {
+  resolveEventPriceCents,
+  validatePaidEventFields,
+} from '../payments/eventCreationRules';
+import {
   attachCorrectionEligibility,
   correctCompletedMatchScore,
   enrichTournamentForApi,
@@ -1195,9 +1199,11 @@ router.post('/preregistration', [
     const isEvent = req.body.isEvent === true || req.body.isEvent === 'true';
     const preRegConfig = getPreregistrationConfig();
     const eventPriceCentsRaw = parseOptionalInteger(req.body.eventPriceCents);
-    const eventPriceCents = isEvent
-      ? (eventPriceCentsRaw ?? preRegConfig.defaultEventPriceCents)
-      : null;
+    const eventPriceCents = resolveEventPriceCents({
+      isEvent,
+      eventPriceCentsRaw,
+      defaultEventPriceCents: preRegConfig.defaultEventPriceCents,
+    });
     const eventCheckInLeadMinutes = parseOptionalInteger(req.body.eventCheckInLeadMinutes);
     const eventCheckInCloseMinutesBeforeStart = parseOptionalInteger(
       req.body.eventCheckInCloseMinutesBeforeStart,
@@ -1222,20 +1228,15 @@ router.post('/preregistration', [
     ) {
       return res.status(400).json({ error: 'Min participants cannot exceed max participants' });
     }
-    if (isEvent && (eventPriceCents == null || eventPriceCents < 0)) {
-      return res.status(400).json({ error: 'Event price (cents) is required for paid events' });
-    }
-    if (isEvent && !(typeof req.body.name === 'string' && req.body.name.trim())) {
-      return res.status(400).json({ error: 'Event name is required for paid events' });
-    }
-    if (eventCheckInLeadMinutes != null && eventCheckInLeadMinutes < 0) {
-      return res.status(400).json({ error: 'Event check-in lead minutes must be >= 0' });
-    }
-    if (
-      eventCheckInCloseMinutesBeforeStart != null &&
-      eventCheckInCloseMinutesBeforeStart < 0
-    ) {
-      return res.status(400).json({ error: 'Event check-in close minutes must be >= 0' });
+    const eventFieldError = validatePaidEventFields({
+      isEvent,
+      name: req.body.name,
+      eventPriceCents,
+      eventCheckInLeadMinutes,
+      eventCheckInCloseMinutesBeforeStart,
+    });
+    if (eventFieldError) {
+      return res.status(400).json({ error: eventFieldError });
     }
 
     const tournament = await (prisma as any).tournament.create({
