@@ -155,6 +155,7 @@ describe('toggleVisit event check-in', () => {
         clubDate: '2026-08-04',
         dailyPaymentApplied: false,
         eventTournamentId: 35,
+        admissionBasis: 'Club Championship',
       },
     });
     expect(emitClubVisitUpdated).toHaveBeenCalledWith(
@@ -189,7 +190,10 @@ describe('toggleVisit event check-in', () => {
     expect(out.warning).toMatch(/already present/i);
     expect(prisma.clubVisit.update).toHaveBeenCalledWith({
       where: { id: 50 },
-      data: { eventTournamentId: 35 },
+      data: {
+        eventTournamentId: 35,
+        admissionBasis: 'Club Championship',
+      },
     });
   });
 

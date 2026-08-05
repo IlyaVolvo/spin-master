@@ -159,6 +159,64 @@ router.get('/members', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/club/pin-verify — validate score PIN without creating a visit
+ * Body: { memberId, scorePin }
+ * Used when the only actionable choice is Buy a plan.
+ */
+router.post('/pin-verify', async (req: Request, res: Response) => {
+  try {
+    const memberId = Number(req.body?.memberId);
+    const scorePin = req.body?.scorePin;
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+    if (typeof scorePin !== 'string' || !scorePin.trim()) {
+      return res.status(400).json({ error: 'scorePin is required' });
+    }
+
+    let member: MemberCheckInStub | undefined = getCachedMemberCheckInStub(memberId);
+    if (!member) {
+      const loaded = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          isActive: true,
+          scorePin: true,
+          email: true,
+          password: true,
+          trialEndsOn: true,
+        },
+      });
+      if (!loaded) {
+        return res.status(401).json({ error: 'Invalid PIN' });
+      }
+      member = loaded;
+      setCachedMemberCheckInStub(member);
+    }
+
+    if (!scorePinsEqual(scorePin, member.scorePin)) {
+      return res.status(401).json({ error: 'Invalid PIN' });
+    }
+    if (!member.isActive) {
+      return res.status(403).json({ error: 'Member account is inactive' });
+    }
+
+    res.json({
+      ok: true,
+      paymentLoginAvailable: memberHasPaymentLogin(member),
+      member: { firstName: member.firstName, lastName: member.lastName },
+    });
+  } catch (error) {
+    logger.error('Error verifying PIN', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * POST /api/club/pin-toggle — score-PIN check-in/out (no session required)
  * Body: { memberId, scorePin }
  */
@@ -467,7 +525,7 @@ router.post('/self/toggle', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** GET /api/club/event-checkin-options — event check-in / register-and-pay options for a member */
+/** GET /api/club/event-checkin-options — unified check-in choices (regular + events + buy plan) */
 router.get('/event-checkin-options', async (req: AuthRequest, res: Response) => {
   try {
     const rawMemberId = req.query.memberId != null ? Number(req.query.memberId) : req.memberId;
@@ -480,11 +538,11 @@ router.get('/event-checkin-options', async (req: AuthRequest, res: Response) => 
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const { listEventCheckInOptions } = await import('../payments/listEventCheckInOptions');
-    const events = await listEventCheckInOptions(memberId);
-    res.json({ events });
+    const { listCheckInOptions } = await import('../payments/listCheckInOptions');
+    const options = await listCheckInOptions(memberId);
+    res.json({ options });
   } catch (error) {
-    logger.error('Error listing event check-in options', {
+    logger.error('Error listing check-in options', {
       error: error instanceof Error ? error.message : String(error),
     });
     res.status(500).json({ error: 'Internal server error' });
@@ -1850,6 +1908,8 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
       },
     });
 
+    const { resolveVisitAdmissionBasis } = await import('../payments/visitAdmissionBasis');
+
     res.json({
       visits: visits.map((v) => ({
         id: v.id,
@@ -1866,6 +1926,14 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
         rejectionReason: v.rejectionReason,
         eventTournamentId: v.eventTournamentId,
         eventName: v.eventTournament?.name ?? null,
+        admissionBasis: resolveVisitAdmissionBasis({
+          rejectedAt: v.rejectedAt,
+          isCourtesy: v.isCourtesy,
+          dailyPaymentApplied: v.dailyPaymentApplied,
+          eventTournamentId: v.eventTournamentId,
+          eventName: v.eventTournament?.name ?? null,
+          admissionBasis: v.admissionBasis,
+        }),
       })),
     });
   } catch (error) {

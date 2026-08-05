@@ -21,6 +21,10 @@ import {
   setCachedCurrentEntitlement,
   type MemberCheckInStub,
 } from './checkInStateCache';
+import {
+  formatEventAdmissionBasis,
+  formatPlanAdmissionBasis,
+} from './visitAdmissionBasis';
 
 export type ToggleClosedBy = 'SCAN' | 'MANUAL';
 
@@ -295,7 +299,10 @@ export async function toggleVisit(
       }
       const updatedVisit = await prisma.clubVisit.update({
         where: { id: openVisit.id },
-        data: { eventTournamentId },
+        data: {
+          eventTournamentId,
+          admissionBasis: formatEventAdmissionBasis(tournament.name),
+        },
       });
       estimatedRoundTrips += 1;
       setCachedCurrentEntitlement(memberId, entitlement);
@@ -320,6 +327,7 @@ export async function toggleVisit(
         clubDate,
         dailyPaymentApplied: false,
         eventTournamentId,
+        admissionBasis: formatEventAdmissionBasis(tournament.name),
       },
     });
     estimatedRoundTrips += 1;
@@ -446,6 +454,15 @@ export async function toggleVisit(
     // covered — payment/entitlement debit + visit in one write transaction
     dailyPaymentApplied = true;
     const plan = outcome as CoveredWritePlan;
+    let planBasis = 'Plan';
+    if (entitlement) {
+      const afterDebit = applyPackDebitInMemory(entitlement, plan);
+      const forLabel = afterDebit ?? {
+        ...entitlement,
+        visitsRemaining: plan.packUpdate?.visitsRemaining ?? 0,
+      };
+      planBasis = formatPlanAdmissionBasis(forLabel);
+    }
     visit = await prisma.$transaction(async (tx) => {
       await applyCoveredFirstVisitWrites(tx, memberId, plan);
       return tx.clubVisit.create({
@@ -453,6 +470,7 @@ export async function toggleVisit(
           memberId,
           clubDate,
           dailyPaymentApplied: true,
+          admissionBasis: planBasis,
         },
       });
     });
@@ -464,12 +482,29 @@ export async function toggleVisit(
     }
     setCachedCurrentEntitlement(memberId, entitlement);
   } else {
-    // Free re-entry
+    // Free re-entry — inherit first successful visit's admission basis when present
+    const firstVisit = await prisma.clubVisit.findFirst({
+      where: {
+        memberId,
+        clubDate,
+        rejectedAt: null,
+      },
+      orderBy: { checkInAt: 'asc' },
+      select: { admissionBasis: true, isCourtesy: true },
+    });
+    let reentryBasis = firstVisit?.admissionBasis?.trim() || null;
+    if (!reentryBasis && entitlement) {
+      reentryBasis = formatPlanAdmissionBasis(entitlement);
+    }
+    if (!reentryBasis && firstVisit?.isCourtesy) {
+      reentryBasis = 'Courtesy';
+    }
     visit = await prisma.clubVisit.create({
       data: {
         memberId,
         clubDate,
         dailyPaymentApplied: false,
+        admissionBasis: reentryBasis,
       },
     });
     estimatedRoundTrips += 1;

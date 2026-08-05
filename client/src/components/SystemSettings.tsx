@@ -935,25 +935,12 @@ export default function SystemSettings() {
         onToggle={toggleSection}
       >
         <NumericInput
-          label="Preregistration Date Offset (days)"
-          value={config.preregistration.defaultTournamentOffsetDays}
-          onChange={(value) => updateConfig(draft => { draft.preregistration.defaultTournamentOffsetDays = value; })}
-        />
-        <FieldRow label="Default Tournament Time">
-          <input
-            type="time"
-            value={config.preregistration.defaultTournamentTime}
-            onChange={(event) => updateConfig(draft => { draft.preregistration.defaultTournamentTime = event.target.value; })}
-            style={valueInputStyle}
-          />
-        </FieldRow>
-        <NumericInput
           label="Registration Deadline Offset (minutes)"
           value={config.preregistration.registrationDeadlineOffsetMinutes}
           onChange={(value) => updateConfig(draft => { draft.preregistration.registrationDeadlineOffsetMinutes = value; })}
         />
         <FieldRow
-          label="Admissions starts"
+          label="Event Admissions starts"
           tooltip="How long before event start members can check in as event attendees (club default). Overridable on each event."
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -963,7 +950,7 @@ export default function SystemSettings() {
               max={168}
               allowEmpty={false}
               showRangeHint={false}
-              aria-label="Admissions starts hours before event"
+              aria-label="Event Admissions starts hours before event"
               onChange={(hours) => {
                 const h = hours ?? 0;
                 const minutes = config.preregistration.eventCheckInLeadMinutes % 60;
@@ -980,7 +967,7 @@ export default function SystemSettings() {
               max={59}
               allowEmpty={false}
               showRangeHint={false}
-              aria-label="Admissions starts minutes before event"
+              aria-label="Event Admissions starts minutes before event"
               onChange={(mins) => {
                 const m = mins ?? 0;
                 const hours = Math.floor(config.preregistration.eventCheckInLeadMinutes / 60);

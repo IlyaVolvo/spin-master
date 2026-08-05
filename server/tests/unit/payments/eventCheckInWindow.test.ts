@@ -16,6 +16,7 @@ jest.mock('../../../src/services/systemConfigService', () => ({
 import { getPreregistrationConfig } from '../../../src/services/systemConfigService';
 import {
   eventOutsideCheckInWindowClubChargeWarning,
+  getEventCheckInWindowBounds,
   isEventCheckInWindowOpen,
 } from '../../../src/payments/eventCheckInWindow';
 
@@ -80,6 +81,12 @@ describe('isEventCheckInWindowOpen', () => {
     expect(isEventCheckInWindowOpen(t, new Date(closesAt.getTime() - 1000))).toBe(true);
     expect(isEventCheckInWindowOpen(t, closesAt)).toBe(true);
     expect(isEventCheckInWindowOpen(t, new Date(closesAt.getTime() + 1))).toBe(false);
+  });
+
+  it('exposes window bounds via getEventCheckInWindowBounds', () => {
+    const bounds = getEventCheckInWindowBounds(eventTournament({ eventCheckInLeadMinutes: 90 }));
+    expect(bounds?.opensAt.getTime()).toBe(start.getTime() - 90 * 60 * 1000);
+    expect(bounds?.closesAt.getTime()).toBe(start.getTime());
   });
 });
 

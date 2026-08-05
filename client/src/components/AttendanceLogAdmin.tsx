@@ -20,11 +20,41 @@ type VisitRow = {
   rejectionReason: string | null;
   eventTournamentId?: number | null;
   eventName?: string | null;
+  /** Why admission was granted: Trial / Plan (…) / Courtesy / event name */
+  admissionBasis?: string | null;
 };
 
 type AttendanceStatusValue = 'present' | 'out' | 'rejected';
 
 const ALL_ATTENDANCE_STATUSES: AttendanceStatusValue[] = ['present', 'out', 'rejected'];
+const ATTENDANCE_STATUS_FILTER_KEY = 'attendanceLog_statuses';
+
+function loadStickyAttendanceStatuses(): Set<AttendanceStatusValue> {
+  try {
+    const raw = localStorage.getItem(ATTENDANCE_STATUS_FILTER_KEY);
+    if (!raw) return new Set(ALL_ATTENDANCE_STATUSES);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set(ALL_ATTENDANCE_STATUSES);
+    const valid = parsed.filter((s): s is AttendanceStatusValue =>
+      ALL_ATTENDANCE_STATUSES.includes(s as AttendanceStatusValue),
+    );
+    if (valid.length === 0) return new Set(ALL_ATTENDANCE_STATUSES);
+    return new Set(valid);
+  } catch {
+    return new Set(ALL_ATTENDANCE_STATUSES);
+  }
+}
+
+function saveStickyAttendanceStatuses(selected: Set<AttendanceStatusValue>) {
+  try {
+    localStorage.setItem(
+      ATTENDANCE_STATUS_FILTER_KEY,
+      JSON.stringify(ALL_ATTENDANCE_STATUSES.filter((s) => selected.has(s))),
+    );
+  } catch {
+    // localStorage may be unavailable
+  }
+}
 
 type MemberAttendanceTarget = {
   memberId: number;
@@ -75,9 +105,10 @@ function formatWhen(iso: string | null): string {
 }
 
 function visitEventLabel(v: VisitRow): string | null {
-  if (v.eventTournamentId == null) return null;
+  if (v.eventTournamentId == null && !v.admissionBasis) return null;
+  if (v.admissionBasis?.trim()) return v.admissionBasis.trim();
   const name = v.eventName?.trim();
-  return name ? `Event: ${name}` : 'Event';
+  return name ? name : v.eventTournamentId != null ? 'Event' : null;
 }
 
 function visitStatusSummary(v: VisitRow): {
@@ -86,7 +117,7 @@ function visitStatusSummary(v: VisitRow): {
   color: string;
   background: string;
 } {
-  const eventLabel = visitEventLabel(v);
+  const admission = visitEventLabel(v);
   if (v.rejectedAt) {
     const reason = v.rejectionReason?.trim();
     return {
@@ -98,27 +129,23 @@ function visitStatusSummary(v: VisitRow): {
   }
   if (!v.checkOutAt) {
     const bits: string[] = ['Currently present'];
-    if (eventLabel) bits.push(eventLabel);
-    if (v.isCourtesy) bits.push(v.courtesyClearedAt ? 'Courtesy (cleared)' : 'Courtesy');
-    if (v.dailyPaymentApplied) bits.push('Charged');
+    if (admission) bits.push(admission);
     return {
-      label: eventLabel ? 'Present · Event' : 'Present',
+      label: 'Present',
       tooltip: bits.join(' · '),
-      color: eventLabel ? '#6c3483' : '#1e8449',
-      background: eventLabel ? '#f5eef8' : '#d5f5e3',
+      color: '#1e8449',
+      background: '#d5f5e3',
     };
   }
   const bits: string[] = ['Checked out'];
   if (v.closedBy === 'AUTO') bits.push('Club close (AUTO)');
   else if (v.closedBy) bits.push(`Closed by ${v.closedBy}`);
-  if (eventLabel) bits.push(eventLabel);
-  if (v.isCourtesy) bits.push(v.courtesyClearedAt ? 'Courtesy (cleared)' : 'Courtesy');
-  if (v.dailyPaymentApplied) bits.push('Charged');
+  if (admission) bits.push(admission);
   return {
-    label: eventLabel ? 'Out · Event' : 'Out',
+    label: 'Out',
     tooltip: bits.join(' · '),
-    color: eventLabel ? '#6c3483' : '#566573',
-    background: eventLabel ? '#f5eef8' : '#eaecee',
+    color: '#566573',
+    background: '#eaecee',
   };
 }
 
@@ -140,6 +167,33 @@ function VisitStatus({ v }: { v: VisitRow }) {
       }}
     >
       {status.label}
+    </span>
+  );
+}
+
+function VisitAdmission({ v }: { v: VisitRow }) {
+  if (v.rejectedAt) return <span style={{ color: '#888' }}>—</span>;
+  const label = (v.admissionBasis || visitEventLabel(v) || '').trim();
+  if (!label) return <span style={{ color: '#888' }}>—</span>;
+  const eventStyle = v.eventTournamentId != null;
+  return (
+    <span
+      title="Admission grounds for this check-in"
+      style={{
+        display: 'inline-block',
+        fontSize: '11px',
+        fontWeight: 600,
+        color: eventStyle ? '#6c3483' : v.isCourtesy ? '#9a7d0a' : '#1a5276',
+        background: eventStyle ? '#f5eef8' : v.isCourtesy ? '#fef9e7' : '#eaf2f8',
+        padding: '2px 6px',
+        borderRadius: '4px',
+        whiteSpace: 'nowrap',
+        maxWidth: '280px',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {label}
     </span>
   );
 }
@@ -344,6 +398,7 @@ function MemberAttendancePopup({
                   <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Check-in</th>
                   <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Check-out</th>
                   <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Status</th>
+                  <th style={{ ...thStyle, position: 'sticky', top: 0, background: '#fff' }}>Admission</th>
                 </tr>
               </thead>
               <tbody>
@@ -356,6 +411,9 @@ function MemberAttendancePopup({
                       </td>
                       <td style={tdStyle}>
                         <VisitStatus v={v} />
+                      </td>
+                      <td style={tdStyle}>
+                        <VisitAdmission v={v} />
                       </td>
                     </tr>
                   );
@@ -374,7 +432,7 @@ export default function AttendanceLogAdmin() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [statusSelected, setStatusSelected] = useState<Set<AttendanceStatusValue>>(
-    () => new Set(ALL_ATTENDANCE_STATUSES),
+    loadStickyAttendanceStatuses,
   );
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [presentCount, setPresentCount] = useState<number | null>(null);
@@ -488,6 +546,7 @@ export default function AttendanceLogAdmin() {
       } else {
         next.add(value);
       }
+      saveStickyAttendanceStatuses(next);
       return next;
     });
   };
@@ -819,6 +878,7 @@ export default function AttendanceLogAdmin() {
                 <th style={thStyle}>Check-in</th>
                 <th style={thStyle}>Check-out</th>
                 <th style={thStyle}>Status</th>
+                <th style={thStyle}>Admission</th>
               </tr>
             </thead>
             <tbody>
@@ -852,6 +912,9 @@ export default function AttendanceLogAdmin() {
                     </td>
                     <td style={tdStyle}>
                       <VisitStatus v={v} />
+                    </td>
+                    <td style={tdStyle}>
+                      <VisitAdmission v={v} />
                     </td>
                   </tr>
                 );

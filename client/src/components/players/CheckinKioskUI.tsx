@@ -5,6 +5,13 @@ import { getErrorMessage } from '../../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
 import { storeCheckinPaymentUnlock } from '../../utils/checkinPaymentUnlock';
 import { formatClubDate } from '../../utils/clubDateTime';
+import {
+  type CheckInOption,
+  checkInExecuteIntent,
+  defaultCheckInOption,
+  shouldShowCheckInSelector,
+} from '../../utils/checkInOptions';
+import { CheckInOptionSelect } from '../CheckInOptionSelect';
 
 export type CheckinMemberStatus = {
   present: boolean;
@@ -40,6 +47,7 @@ type EntitlementSummary = {
   validTo: string | null;
 } | null;
 
+/** @deprecated Prefer CheckInOption from utils/checkInOptions */
 export type EventCheckInOption = {
   tournamentId: number;
   name: string | null;
@@ -49,6 +57,8 @@ export type EventCheckInOption = {
   clubChargeWaived?: boolean;
   clubChargeWarning?: string | null;
 };
+
+export type { CheckInOption } from '../../utils/checkInOptions';
 
 type PinToggleResponse = {
   action: 'CHECK_IN' | 'CHECK_OUT' | 'PAYMENT_REQUIRED' | 'EVENT_REGISTERED';
@@ -370,9 +380,10 @@ export function CheckinPinModal({
   const [resultMessage, setResultMessage] = useState('');
   const [paymentLoginAvailable, setPaymentLoginAvailable] = useState(false);
   const [memberPassword, setMemberPassword] = useState('');
-  const [eventOptions, setEventOptions] = useState<EventCheckInOption[]>([]);
-  const [selectedEventTournamentId, setSelectedEventTournamentId] = useState<number | null>(null);
-  const selectedEvent = eventOptions.find((e) => e.tournamentId === selectedEventTournamentId) || null;
+  const [eventOptions, setEventOptions] = useState<CheckInOption[]>([]);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const selectedOption = eventOptions.find((e) => e.id === selectedOptionId) || null;
+  const showSelector = shouldShowCheckInSelector(eventOptions);
   const inputRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
@@ -385,21 +396,21 @@ export function CheckinPinModal({
   useEffect(() => {
     if (action !== 'CHECK_IN') {
       setEventOptions([]);
-      setSelectedEventTournamentId(null);
+      setSelectedOptionId(null);
       return;
     }
     let cancelled = false;
-    api.get<{ events?: EventCheckInOption[] }>('/club/event-checkin-options', { params: { memberId } })
+    api.get<{ options?: CheckInOption[] }>('/club/event-checkin-options', { params: { memberId } })
       .then((res) => {
         if (cancelled) return;
-        const events = Array.isArray(res.data?.events) ? res.data.events : [];
-        setEventOptions(events);
-        setSelectedEventTournamentId(null);
+        const options = Array.isArray(res.data?.options) ? res.data.options : [];
+        setEventOptions(options);
+        setSelectedOptionId(defaultCheckInOption(options)?.id ?? null);
       })
       .catch(() => {
         if (!cancelled) {
           setEventOptions([]);
-          setSelectedEventTournamentId(null);
+          setSelectedOptionId(null);
         }
       });
     return () => {
@@ -475,16 +486,32 @@ export function CheckinPinModal({
     setLoading(true);
     setError('');
     try {
-      const body: { memberId: number; scorePin: string; eventTournamentId?: number } = {
+      const intent = checkInExecuteIntent(selectedOption);
+
+      if (intent?.type === 'buy_plan' || (!intent && selectedOption?.kind === 'buy_plan')) {
+        const verify = await api.post('/club/pin-verify', {
+          memberId,
+          scorePin: scorePin.trim(),
+        });
+        enterPaymentRequired(
+          'No active plan. Purchase a plan to check in, or choose an event when available.',
+          verify.data?.paymentLoginAvailable === true,
+        );
+        return;
+      }
+
+      const body: {
+        memberId: number;
+        scorePin: string;
+        eventTournamentId?: number;
+        eventMode?: string;
+      } = {
         memberId,
         scorePin: scorePin.trim(),
       };
-      if (selectedEventTournamentId != null) {
-        body.eventTournamentId = selectedEventTournamentId;
-        const selected = eventOptions.find((e) => e.tournamentId === selectedEventTournamentId);
-        if (selected?.mode) {
-          (body as { eventMode?: string }).eventMode = selected.mode;
-        }
+      if (intent?.type === 'event_check_in' || intent?.type === 'register_and_pay') {
+        body.eventTournamentId = intent.tournamentId;
+        body.eventMode = intent.type;
       }
       const res = await api.post('/club/pin-toggle', body);
       const data = res.data as PinToggleResponse;
@@ -520,7 +547,7 @@ export function CheckinPinModal({
       setPhase('pin');
       return;
     }
-    setSelectedEventTournamentId(tournamentId);
+    setSelectedOptionId(`event:${tournamentId}`);
     setLoading(true);
     setError('');
     try {
@@ -546,7 +573,9 @@ export function CheckinPinModal({
     }
   };
 
-  const registerEventOptions = eventOptions.filter((e) => e.mode === 'register_and_pay');
+  const registerEventOptions = eventOptions.filter(
+    (e) => e.kind === 'register_and_pay' && e.actionable,
+  );
 
   const label = action === 'CHECK_OUT' ? 'Check-out' : freeReentry ? 'Check-in (free re-entry)' : 'Check-in';
 
@@ -576,47 +605,23 @@ export function CheckinPinModal({
               {memberName} — enter your PIN
               {pinLength ? ` (${pinLength} digits)` : ''}
             </p>
-            {eventOptions.length > 0 && (
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>
-                  Check-in type
-                </label>
-                <select
-                  value={selectedEventTournamentId ?? ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setSelectedEventTournamentId(value === '' ? null : Number(value));
-                  }}
-                  style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
-                >
-                  <option value="">Regular admission</option>
-                  {eventOptions.map((event) => {
-                    const price =
-                      event.eventPriceCents != null
-                        ? ` ($${(event.eventPriceCents / 100).toFixed(2)})`
-                        : '';
-                    const label =
-                      event.mode === 'register_and_pay'
-                        ? `Register & pay event: ${event.name || `#${event.tournamentId}`}${price}`
-                        : `Event check-in: ${event.name || `#${event.tournamentId}`}`;
-                    return (
-                      <option key={`${event.mode || 'check'}-${event.tournamentId}`} value={event.tournamentId}>
-                        {label}
-                      </option>
-                    );
-                  })}
-                </select>
-                {selectedEvent?.clubChargeWarning && (
-                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#856404' }}>
-                    {selectedEvent.clubChargeWarning}
-                  </p>
-                )}
-                {selectedEvent?.mode === 'register_and_pay' && (
-                  <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#555' }}>
-                    Desk will record the event fee as cash when you confirm PIN check-in.
-                  </p>
-                )}
-              </div>
+            {action === 'CHECK_IN' && showSelector && (
+              <CheckInOptionSelect
+                options={eventOptions}
+                valueId={selectedOptionId}
+                onChange={setSelectedOptionId}
+                disabled={loading}
+              />
+            )}
+            {action === 'CHECK_IN' && !showSelector && selectedOption?.kind === 'buy_plan' && (
+              <p style={{ fontSize: '13px', color: '#856404', marginTop: 0 }}>
+                No covered admission available. Enter PIN to buy a plan.
+              </p>
+            )}
+            {selectedOption?.kind === 'register_and_pay' && selectedOption.actionable && (
+              <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#555' }}>
+                Desk will record the event fee as cash when you confirm PIN check-in.
+              </p>
             )}
             {error && <div style={{ color: '#c0392b', marginBottom: '10px', fontSize: '14px' }}>{error}</div>}
             <input
@@ -640,7 +645,13 @@ export function CheckinPinModal({
                 Cancel
               </button>
               <button type="button" className="success" onClick={() => void submit()} disabled={loading}>
-                {loading ? '…' : label}
+                {loading
+                  ? '…'
+                  : selectedOption?.kind === 'buy_plan'
+                    ? 'Continue to Buy a plan'
+                    : selectedOption?.kind === 'register_and_pay'
+                      ? 'Register & check in'
+                      : label}
               </button>
             </div>
           </>
@@ -716,12 +727,12 @@ export function CheckinPinModal({
                       ? `$${(event.eventPriceCents / 100).toFixed(2)}`
                       : '';
                   return (
-                    <div key={event.tournamentId} style={{ marginBottom: '8px' }}>
+                    <div key={event.id} style={{ marginBottom: '8px' }}>
                       <button
                         type="button"
                         className="success"
                         disabled={loading}
-                        onClick={() => void submitEventRegister(event.tournamentId)}
+                        onClick={() => void submitEventRegister(event.tournamentId!)}
                         style={{ width: '100%' }}
                       >
                         {loading

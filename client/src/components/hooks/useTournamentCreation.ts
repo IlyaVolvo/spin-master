@@ -26,6 +26,8 @@ interface UseTournamentCreationParams {
   setError: (msg: string) => void;
   filtersCollapsed: boolean;
   setFiltersCollapsed: (collapsed: boolean) => void;
+  /** Clears creation state owned by the caller (e.g. preregistration fields). */
+  resetCallerStateRef?: React.RefObject<(() => void) | null>;
 }
 
 export function useTournamentCreation({
@@ -34,6 +36,7 @@ export function useTournamentCreation({
   setError,
   filtersCollapsed,
   setFiltersCollapsed,
+  resetCallerStateRef,
 }: UseTournamentCreationParams) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -172,6 +175,7 @@ export function useTournamentCreation({
     setFinalizingPreregistrationId(null);
     setExpandedMenuGroups(new Set());
     resetShiftRangeAnchor();
+    resetCallerStateRef?.current?.();
   };
 
   const resetState = () => {
@@ -179,13 +183,17 @@ export function useTournamentCreation({
     setEditingTournamentId(null);
     setRepeatingTournament(false);
     setExistingParticipantIds(new Set());
+    setTournamentCreationStep('type_selection');
     setSelectedPlayersForTournament([]);
     setTournamentName('');
     setTournamentType('');
+    setCreationTournamentType(null);
     setIsPreregistrationMode(false);
     setFinalizingPreregistrationId(null);
     setShowCancelConfirmation(false);
+    setExpandedMenuGroups(new Set());
     resetShiftRangeAnchor();
+    resetCallerStateRef?.current?.();
   };
 
   const handleCancelTournamentCreation = () => {
@@ -282,8 +290,6 @@ export function useTournamentCreation({
   const handleTournamentCreated = (createdTournamentId?: number) => {
     const modifiedId = editingTournamentId;
     resetState();
-    setTournamentCreationStep('type_selection');
-    setCreationTournamentType(null);
     fetchMembersRef.current?.();
 
     setTimeout(() => {

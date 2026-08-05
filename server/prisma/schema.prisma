@@ -464,6 +464,8 @@ model ClubVisit {
   rejectionReason     String?
   /** When set, this visit was covered by a paid/cleared tournament event (no club plan charge). */
   eventTournamentId   Int?
+  /** Snapshot of why admission was granted (Trial / Plan (…) / Courtesy / event name). */
+  admissionBasis      String?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 

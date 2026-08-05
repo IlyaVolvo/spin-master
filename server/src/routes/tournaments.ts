@@ -84,15 +84,6 @@ function parseOptionalDate(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function getDefaultPreregistrationTournamentDate(): Date {
-  const config = getPreregistrationConfig();
-  const [hours, minutes] = config.defaultTournamentTime.split(':').map(Number);
-  const date = new Date();
-  date.setDate(date.getDate() + config.defaultTournamentOffsetDays);
-  date.setHours(hours, minutes, 0, 0);
-  return date;
-}
-
 function getDefaultPreregistrationDeadline(tournamentDate: Date): Date {
   const { registrationDeadlineOffsetMinutes } = getPreregistrationConfig();
   return new Date(tournamentDate.getTime() - registrationDeadlineOffsetMinutes * 60 * 1000);
@@ -1190,7 +1181,10 @@ router.post('/preregistration', [
       return res.status(400).json({ error: `Invalid tournament type: ${type}` });
     }
 
-    const tournamentDate = parseOptionalDate(req.body.tournamentDate) || getDefaultPreregistrationTournamentDate();
+    const tournamentDate = parseOptionalDate(req.body.tournamentDate);
+    if (!tournamentDate) {
+      return res.status(400).json({ error: 'Tournament date is required' });
+    }
     const registrationDeadline = parseOptionalDate(req.body.registrationDeadline) || getDefaultPreregistrationDeadline(tournamentDate);
     const minRating = parseOptionalInteger(req.body.minRating);
     const maxRating = parseOptionalInteger(req.body.maxRating);

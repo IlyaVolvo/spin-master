@@ -212,6 +212,7 @@ describe('resolveFirstVisitOfDay', () => {
         clubDate,
         dailyPaymentApplied: false,
         isCourtesy: false,
+        admissionBasis: 'Trial',
       },
     });
   });

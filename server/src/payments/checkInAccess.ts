@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { evaluateCourtesy, ensureCourtesyObligation, notifyAdminsOfCourtesy } from './courtesy';
 import { isMemberInTrialPeriod, trialEndsOnToYmd } from './memberTrial';
 import { clubLocalDayRangeUtc } from '../utils/clubDate';
+import { formatCourtesyAdmissionBasis, formatTrialAdmissionBasis } from './visitAdmissionBasis';
 
 export type CheckInEntitlement = {
   id: number;
@@ -223,6 +224,7 @@ async function courtesyOrPayment(
       clubDate,
       dailyPaymentApplied: false,
       isCourtesy: true,
+      admissionBasis: formatCourtesyAdmissionBasis(),
     },
   });
   await ensureCourtesyObligation(memberId, visit.id);
@@ -259,6 +261,7 @@ export async function createTrialVisit(memberId: number, clubDate: string) {
       clubDate,
       dailyPaymentApplied: false,
       isCourtesy: false,
+      admissionBasis: formatTrialAdmissionBasis(),
     },
   });
 }

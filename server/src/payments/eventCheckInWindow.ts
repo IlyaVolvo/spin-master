@@ -9,12 +9,11 @@ export type EventCheckInTournament = {
   eventCheckInCloseMinutesBeforeStart: number | null;
 };
 
-/** Whether now is inside the event check-in window for a tournament. */
-export function isEventCheckInWindowOpen(
+/** Open/close instants for event check-in, or null when not applicable. */
+export function getEventCheckInWindowBounds(
   tournament: EventCheckInTournament,
-  now = new Date(),
-): boolean {
-  if (!tournament.isEvent || !tournament.tournamentDate) return false;
+): { opensAt: Date; closesAt: Date; start: Date } | null {
+  if (!tournament.isEvent || !tournament.tournamentDate) return null;
   const cfg = getPreregistrationConfig();
   const lead =
     tournament.eventCheckInLeadMinutes != null
@@ -25,11 +24,22 @@ export function isEventCheckInWindowOpen(
       ? tournament.eventCheckInCloseMinutesBeforeStart
       : cfg.eventCheckInCloseMinutesBeforeStart;
 
-  const start = new Date(tournament.tournamentDate).getTime();
-  const opensAt = start - lead * 60 * 1000;
-  const closesAt = start - closeBefore * 60 * 1000;
+  const start = new Date(tournament.tournamentDate);
+  if (!Number.isFinite(start.getTime())) return null;
+  const opensAt = new Date(start.getTime() - lead * 60 * 1000);
+  const closesAt = new Date(start.getTime() - closeBefore * 60 * 1000);
+  return { opensAt, closesAt, start };
+}
+
+/** Whether now is inside the event check-in window for a tournament. */
+export function isEventCheckInWindowOpen(
+  tournament: EventCheckInTournament,
+  now = new Date(),
+): boolean {
+  const bounds = getEventCheckInWindowBounds(tournament);
+  if (!bounds) return false;
   const t = now.getTime();
-  return t >= opensAt && t <= closesAt;
+  return t >= bounds.opensAt.getTime() && t <= bounds.closesAt.getTime();
 }
 
 /**

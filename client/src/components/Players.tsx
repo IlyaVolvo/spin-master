@@ -147,26 +147,12 @@ const formatDateTimeLocal = (date: Date) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
-const getDefaultPreregistrationTournamentDate = () => {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
-  date.setHours(18, 0, 0, 0);
-  return formatDateTimeLocal(date);
-};
-
 const getDefaultPreregistrationDeadline = (tournamentDateValue: string) => {
   const tournamentDate = new Date(tournamentDateValue);
   if (Number.isNaN(tournamentDate.getTime())) return '';
-  tournamentDate.setMinutes(tournamentDate.getMinutes() - 30);
+  const offsetMinutes = getSystemConfig().preregistration.registrationDeadlineOffsetMinutes ?? 30;
+  tournamentDate.setMinutes(tournamentDate.getMinutes() - offsetMinutes);
   return formatDateTimeLocal(tournamentDate);
-};
-
-const getDefaultPreregistrationDateValues = () => {
-  const tournamentDate = getDefaultPreregistrationTournamentDate();
-  return {
-    tournamentDate,
-    deadline: getDefaultPreregistrationDeadline(tournamentDate),
-  };
 };
 
 const clampDeadlineToTournamentDate = (deadlineValue: string, tournamentDateValue: string) => {
@@ -180,9 +166,11 @@ const clampDeadlineToTournamentDate = (deadlineValue: string, tournamentDateValu
 function PreregistrationEventPriceInput({
   cents,
   onCentsChange,
+  inputRef,
 }: {
   cents: number;
   onCentsChange: (cents: number) => void;
+  inputRef?: React.Ref<HTMLInputElement>;
 }) {
   const [text, setText] = useState(() => (cents / 100).toFixed(2));
 
@@ -196,6 +184,7 @@ function PreregistrationEventPriceInput({
 
   return (
     <input
+      ref={inputRef}
       type="text"
       inputMode="decimal"
       value={text}
@@ -211,7 +200,24 @@ function PreregistrationEventPriceInput({
       }}
       onBlur={() => commit(text)}
       placeholder="0.00"
+      style={{
+        border: '1px solid #ddd',
+        borderRadius: '4px',
+        padding: '8px 10px',
+      }}
     />
+  );
+}
+
+/** Required-field marker: red while the value is missing, grey once it is provided. */
+function RequiredMark({ satisfied }: { satisfied: boolean }) {
+  return (
+    <span
+      title={satisfied ? 'Required' : 'Required — not entered yet'}
+      style={{ marginLeft: '4px', fontWeight: 700, color: satisfied ? PLAYERS_MUTED : '#c0392b' }}
+    >
+      *
+    </span>
   );
 }
 
@@ -358,6 +364,7 @@ const Players: React.FC = () => {
     return saved === 'true';
   });
   const fetchMembersRef = useRef<(() => void) | null>(null);
+  const resetPreregistrationFieldsRef = useRef<(() => void) | null>(null);
   // Tournament creation/modification/repeat — delegated to custom hook
   const {
     isCreatingTournament,
@@ -396,14 +403,11 @@ const Players: React.FC = () => {
     setError,
     filtersCollapsed,
     setFiltersCollapsed,
+    resetCallerStateRef: resetPreregistrationFieldsRef,
   });
   const [isSelectingForStats, setIsSelectingForStats] = useState(false);
-  const [preregistrationTournamentDate, setPreregistrationTournamentDate] = useState(
-    () => getDefaultPreregistrationDateValues().tournamentDate
-  );
-  const [preregistrationDeadline, setPreregistrationDeadline] = useState(
-    () => getDefaultPreregistrationDateValues().deadline
-  );
+  const [preregistrationTournamentDate, setPreregistrationTournamentDate] = useState('');
+  const [preregistrationDeadline, setPreregistrationDeadline] = useState('');
   const [preregistrationMinRating, setPreregistrationMinRating] = useState('');
   const [preregistrationMaxRating, setPreregistrationMaxRating] = useState('');
   const [preregistrationMaxParticipants, setPreregistrationMaxParticipants] = useState('');
@@ -412,6 +416,10 @@ const Players: React.FC = () => {
   const [preregistrationEventPriceKey, setPreregistrationEventPriceKey] = useState(0);
   const [preregistrationMinParticipants, setPreregistrationMinParticipants] = useState('');
   const [preregistrationEventCheckInLeadMinutes, setPreregistrationEventCheckInLeadMinutes] = useState('');
+  const preregNameInputRef = useRef<HTMLInputElement>(null);
+  const preregTypeSectionRef = useRef<HTMLDivElement>(null);
+  const preregDateInputRef = useRef<HTMLInputElement>(null);
+  const preregEventPriceInputRef = useRef<HTMLInputElement>(null);
   const [selectedPlayersForStats, setSelectedPlayersForStats] = useState<number[]>([]);
   const { anchorRef: lastClickedStatsPlayerIdRef, resetAnchor: resetStatsShiftAnchor } =
     useShiftRangeAnchor();
@@ -3158,9 +3166,60 @@ const Players: React.FC = () => {
   // handleCancelTournamentCreation, handleConfirmCancelTournament, handleCancelCancelTournament,
   // handleTogglePlayerForTournament, handleFinishPlayerSelection, handleTournamentCreated)
   // are all provided by useTournamentCreation hook
+  type PreregRequiredField = 'name' | 'type' | 'tournamentDate' | 'eventPrice';
+
+  const resetPreregistrationFields = () => {
+    setPreregistrationTournamentDate('');
+    setPreregistrationDeadline('');
+    setPreregistrationMinRating('');
+    setPreregistrationMaxRating('');
+    setPreregistrationMaxParticipants('');
+    setPreregistrationIsEvent(false);
+    setPreregistrationEventPriceCents(0);
+    setPreregistrationEventPriceKey((k) => k + 1);
+    setPreregistrationMinParticipants('');
+    setPreregistrationEventCheckInLeadMinutes('');
+  };
+  resetPreregistrationFieldsRef.current = resetPreregistrationFields;
+
+  const focusPreregField = (field: PreregRequiredField) => {
+    const el =
+      field === 'name'
+        ? preregNameInputRef.current
+        : field === 'type'
+          ? preregTypeSectionRef.current
+          : field === 'tournamentDate'
+            ? preregDateInputRef.current
+            : preregEventPriceInputRef.current;
+    window.requestAnimationFrame(() => {
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (el instanceof HTMLInputElement) {
+        el.focus();
+      }
+    });
+  };
+
+  const firstMissingPreregField = (): PreregRequiredField | null => {
+    if (preregistrationIsEvent && !tournamentName.trim()) return 'name';
+    if (!creationTournamentType) return 'type';
+    if (!preregistrationTournamentDate) return 'tournamentDate';
+    if (preregistrationIsEvent && preregistrationEventPriceCents <= 0) return 'eventPrice';
+    return null;
+  };
+
   const handleCreatePreregistrationTournament = async () => {
-    if (!creationTournamentType) {
-      setError('Please select a tournament type');
+    const missing = firstMissingPreregField();
+    if (missing) {
+      setError(
+        missing === 'name'
+          ? 'Event name is required'
+          : missing === 'type'
+            ? 'Please select a tournament type'
+            : missing === 'tournamentDate'
+              ? 'Please enter a tournament date'
+              : 'Event price must be greater than $0.00',
+      );
+      focusPreregField(missing);
       return;
     }
     await runPreregBusy(async () => {
@@ -3181,17 +3240,7 @@ const Players: React.FC = () => {
             : Number(preregistrationEventCheckInLeadMinutes),
         });
         setSuccess('Tournament preregistration created successfully');
-        const defaultDates = getDefaultPreregistrationDateValues();
-        setPreregistrationTournamentDate(defaultDates.tournamentDate);
-        setPreregistrationDeadline(defaultDates.deadline);
-        setPreregistrationMinRating('');
-        setPreregistrationMaxRating('');
-        setPreregistrationMaxParticipants('');
-        setPreregistrationIsEvent(false);
-        setPreregistrationEventPriceCents(0);
-        setPreregistrationEventPriceKey((k) => k + 1);
-        setPreregistrationMinParticipants('');
-        setPreregistrationEventCheckInLeadMinutes('');
+        resetPreregistrationFields();
         window.dispatchEvent(new CustomEvent('tournament-preregistration-count-changed'));
         handleTournamentCreated(extractCreatedTournamentId(response.data));
       } catch (err: any) {
@@ -3219,11 +3268,7 @@ const Players: React.FC = () => {
 
   const handlePreregistrationModeChange = (enabled: boolean) => {
     setIsPreregistrationMode(enabled);
-    if (enabled) {
-      const defaultDates = getDefaultPreregistrationDateValues();
-      setPreregistrationTournamentDate((currentTournamentDate) => currentTournamentDate || defaultDates.tournamentDate);
-      setPreregistrationDeadline((currentDeadline) => currentDeadline || defaultDates.deadline);
-    } else {
+    if (!enabled) {
       setPreregistrationIsEvent(false);
       setPreregistrationEventPriceCents(0);
       setPreregistrationEventPriceKey((k) => k + 1);
@@ -3916,11 +3961,15 @@ const Players: React.FC = () => {
                           fontWeight: '500',
                           color: '#333'
                         }}>
-                          {preregistrationIsEvent
-                            ? 'Event Name (required):'
-                            : 'Tournament Name (optional):'}
+                          {preregistrationIsEvent ? 'Event Name' : 'Tournament Name'}
+                          {preregistrationIsEvent ? (
+                            <RequiredMark satisfied={Boolean(tournamentName.trim())} />
+                          ) : (
+                            <span style={{ color: PLAYERS_MUTED, fontWeight: 400 }}> (optional)</span>
+                          )}
                         </label>
                         <input
+                          ref={preregNameInputRef}
                           type="text"
                           value={tournamentName}
                           onChange={(e) => setTournamentName(e.target.value)}
@@ -3941,7 +3990,12 @@ const Players: React.FC = () => {
                         />
                       </div>
                       
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                      <div ref={preregTypeSectionRef} style={{ marginBottom: '20px' }}>
+                        <div style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#333' }}>
+                          Tournament Type
+                          <RequiredMark satisfied={Boolean(creationTournamentType)} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {(() => {
                           // Build the full menu: configured items + any unmentioned registered plugins
                           const mentionedTypes = getMenuTypes(tournamentTypeMenu);
@@ -3974,8 +4028,7 @@ const Players: React.FC = () => {
                                       display: 'flex',
                                       alignItems: 'center',
                                       gap: '8px',
-                                      padding: '12px',
-                                      border: hasSelectedChild ? '2px solid #3498db' : '1px solid #ddd',
+                                      padding: '10px 12px',
                                       borderRadius: '4px',
                                       cursor: 'pointer',
                                       backgroundColor: hasSelectedChild ? '#e8f4f8' : '#f8f9fa',
@@ -4004,11 +4057,10 @@ const Players: React.FC = () => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '10px',
-                                padding: '12px',
-                                border: selected ? '2px solid #3498db' : '1px solid #ddd',
+                                padding: '10px 12px',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
-                                backgroundColor: selected ? '#e8f4f8' : 'white',
+                                backgroundColor: selected ? '#e8f4f8' : 'transparent',
                                 marginLeft: depth > 0 ? '20px' : 0,
                               }}>
                                 <input
@@ -4022,23 +4074,23 @@ const Players: React.FC = () => {
                                   }}
                                   style={{ cursor: 'pointer' }}
                                 />
-                                <span style={{ fontSize: '16px', fontWeight: '500' }}>{item.label}</span>
+                                <span style={{ fontSize: '16px', fontWeight: selected ? 600 : 500 }}>{item.label}</span>
                               </label>
                             );
                           };
 
                           return fullMenu.map(item => renderMenuItem(item));
                         })()}
+                        </div>
                       </div>
 
                       <label style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '10px',
-                        padding: '12px',
-                        border: '1px solid #f39c12',
+                        padding: '10px 12px',
                         borderRadius: '4px',
-                        backgroundColor: isPreregistrationMode ? '#fff8e1' : 'white',
+                        backgroundColor: isPreregistrationMode ? '#fff8e1' : 'transparent',
                         cursor: 'pointer',
                       }}>
                         <input
@@ -4062,29 +4114,43 @@ const Players: React.FC = () => {
                             gap: '15px',
                             marginTop: '14px',
                             padding: '14px',
-                            border: '1px solid #f1c40f',
                             borderRadius: '6px',
                             backgroundColor: '#fffdf4',
                           }}
                         >
-                          <div className="form-group">
-                            <label>Tournament Date</label>
+                          <div
+                            style={{
+                              gridColumn: '1 / -1',
+                              display: 'grid',
+                              gridTemplateColumns: 'minmax(10rem, max-content) minmax(12rem, max-content)',
+                              columnGap: '12px',
+                              rowGap: '10px',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <label style={{ margin: 0, fontWeight: 600 }}>
+                              Tournament Date
+                              <RequiredMark satisfied={Boolean(preregistrationTournamentDate)} />
+                            </label>
                             <input
+                              ref={preregDateInputRef}
                               type="datetime-local"
                               value={preregistrationTournamentDate}
                               onChange={(e) => handlePreregistrationTournamentDateChange(e.target.value)}
                               step="60"
+                              style={{
+                                borderRadius: '4px',
+                                padding: '6px 8px',
+                              }}
                             />
-                          </div>
-                          <div className="form-group">
-                            <label>Registration Deadline</label>
+                            <label style={{ margin: 0, fontWeight: 600 }}>Registration Deadline</label>
                             <input
                               type="datetime-local"
                               value={preregistrationDeadline}
                               onChange={(e) => handlePreregistrationDeadlineChange(e.target.value)}
                               step="60"
                               max={preregistrationTournamentDate || undefined}
-                              placeholder="Defaults to 30 minutes before tournament"
+                              placeholder="Defaults from Registration Deadline Offset"
                             />
                           </div>
                           <div className="form-group">
@@ -4125,9 +4191,8 @@ const Players: React.FC = () => {
                             alignItems: 'center',
                             gap: '10px',
                             padding: '10px 12px',
-                            border: '1px solid #d4ac0d',
                             borderRadius: '4px',
-                            backgroundColor: preregistrationIsEvent ? '#fff3cd' : 'white',
+                            backgroundColor: preregistrationIsEvent ? '#fff3cd' : 'transparent',
                             cursor: 'pointer',
                           }}>
                             <input
@@ -4158,10 +4223,14 @@ const Players: React.FC = () => {
                           {preregistrationIsEvent && (
                             <>
                               <div className="form-group">
-                                <label>Event Price (USD)</label>
+                                <label>
+                                  Event Price (USD)
+                                  <RequiredMark satisfied={preregistrationEventPriceCents > 0} />
+                                </label>
                                 <PreregistrationEventPriceInput
                                   key={preregistrationEventPriceKey}
                                   cents={preregistrationEventPriceCents}
+                                  inputRef={preregEventPriceInputRef}
                                   onCentsChange={setPreregistrationEventPriceCents}
                                 />
                               </div>
@@ -4252,25 +4321,17 @@ const Players: React.FC = () => {
                       <button
                         onClick={() => {
                           const selectedType = creationTournamentType;
-                          if (!selectedType) {
-                            setError('Please select a tournament type');
+                          if (isPreregistrationMode) {
+                            void handleCreatePreregistrationTournament();
                             return;
                           }
-
-                          setTournamentType(selectedType);
-                          if (isPreregistrationMode) {
-                            if (preregistrationIsEvent && !tournamentName.trim()) {
-                              setError('Event name is required');
-                              return;
-                            }
-                            if (preregistrationIsEvent && preregistrationEventPriceCents <= 0) {
-                              setError('Event price must be greater than $0.00');
-                              return;
-                            }
-                            void handleCreatePreregistrationTournament();
-                          } else {
-                            setTournamentCreationStep('player_selection');
+                          if (!selectedType) {
+                            setError('Please select a tournament type');
+                            focusPreregField('type');
+                            return;
                           }
+                          setTournamentType(selectedType);
+                          setTournamentCreationStep('player_selection');
                         }}
                         disabled={preregBusy}
                         style={{
