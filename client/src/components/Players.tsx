@@ -6687,7 +6687,7 @@ const Players: React.FC = () => {
                     </td>
                   )}
                 {isAdmin() && (
-                  <td style={{ textAlign: 'center', padding: '8px' }}>
+                  <td style={{ textAlign: 'center', padding: '5px 8px' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                       <button
                         onClick={(e) => {
@@ -6751,7 +6751,7 @@ const Players: React.FC = () => {
                   </td>
                 )}
                 {isCheckinKiosk && (
-                  <td style={{ textAlign: 'center', padding: '8px' }}>
+                  <td style={{ textAlign: 'center', padding: '5px 8px' }}>
                     <CheckinRowButton
                       present={checkinStatusByMember[player.id]?.present === true}
                       visitedToday={checkinStatusByMember[player.id]?.visitedToday === true}

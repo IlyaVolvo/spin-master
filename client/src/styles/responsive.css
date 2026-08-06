@@ -184,6 +184,25 @@ html {
   max-width: 100%;
 }
 
+/* Dense vertical cell padding for Players roster; keep horizontal from global. */
+.players-table-scroll th,
+.players-table-scroll td {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.players-table-scroll tbody tr:nth-child(even) {
+  background-color: #f3f5f7;
+}
+
+.players-table-scroll tbody tr:nth-child(odd) {
+  background-color: #ffffff;
+}
+
+.players-table-scroll tbody tr:hover {
+  background-color: #d6eaf8;
+}
+
 @media (max-width: 1024px) {
   .players-table-scroll {
     max-height: calc(100dvh - 220px) !important;
@@ -201,7 +220,7 @@ html {
 
   .players-table-scroll th,
   .players-table-scroll td {
-    padding: 8px 6px;
+    padding: 5px 6px;
   }
 }
 
