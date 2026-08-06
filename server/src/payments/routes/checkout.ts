@@ -274,6 +274,27 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       return res.json(result);
     }
 
+    // Plan/PPV cash from Member Plan is admin (or check-in kiosk staff) only.
+    if (method === 'cash' && !isAdmin(req) && !checkinKioskStaff) {
+      return res.status(403).json({
+        error: 'Cash payment can only be recorded by an administrator',
+      });
+    }
+
+    // Admin (or check-in staff) paying for another member: cash only.
+    if (
+      method === 'online' &&
+      (isAdmin(req) || checkinKioskStaff) &&
+      targetMemberId !== req.memberId
+    ) {
+      return res.status(403).json({
+        error: 'Administrators acting on behalf can only record cash payments',
+      });
+    }
+
+    const confirmCashImmediately =
+      method === 'cash' && (isAdmin(req) || checkinKioskStaff);
+
     const result = await runMemberCheckout({
       memberId: targetMemberId,
       kind: kind === 'pay_per_visit' ? 'pay_per_visit' : 'plan',
@@ -284,6 +305,7 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       autoRenew: req.body?.autoRenew === true,
       initiatedBy,
       method,
+      confirmCashImmediately,
     });
 
     res.json(result);
@@ -297,6 +319,8 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       message.includes('consent') ||
       message.includes('trial') ||
       message.includes('Online payment') ||
+      message.includes('Cash payment') ||
+      message.includes('Immediate cash') ||
       message.includes('Pay per visit')
         ? 400
         : 500;

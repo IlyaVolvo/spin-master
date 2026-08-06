@@ -307,7 +307,7 @@ function MemberAttendancePopup({
           }}
         >
           <h3 style={{ margin: 0 }}>
-            Attendance — {memberName} ({memberId})
+            Attendance — {memberName} (#{memberId})
           </h3>
           <button type="button" onClick={onClose} style={{ padding: '6px 12px', cursor: 'pointer' }}>
             Close
@@ -903,7 +903,7 @@ export default function AttendanceLogAdmin() {
                           fontSize: 'inherit',
                         }}
                       >
-                        {v.memberName} ({v.memberId})
+                        {v.memberName} (#{v.memberId})
                       </button>
                     </td>
                     <td style={tdStyle}>{formatWhen(v.checkInAt)}</td>

@@ -317,7 +317,7 @@ export function PaymentsMemberLookup({
                       >
                         {p.memberName}
                       </button>
-                      <div style={{ color: '#666', fontSize: '12px' }}>#{p.memberId}</div>
+                      <span style={{ color: '#666', fontWeight: 500 }}> (#{p.memberId})</span>
                     </td>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 600 }}>{p.planLabel || p.purpose || 'Payment'}</div>

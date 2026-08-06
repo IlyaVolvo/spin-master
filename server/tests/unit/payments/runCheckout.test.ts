@@ -28,6 +28,10 @@ jest.mock('../../../src/payments/entitlementQueue', () => ({
   refreshCurrentEntitlement: jest.fn(),
 }));
 
+jest.mock('../../../src/payments/confirmPayment', () => ({
+  confirmPayment: jest.fn(),
+}));
+
 import { prisma } from '../../../src/index';
 import {
   getActivePaymentProvider,
@@ -38,6 +42,7 @@ import {
   getFutureEntitlement,
   refreshCurrentEntitlement,
 } from '../../../src/payments/entitlementQueue';
+import { confirmPayment } from '../../../src/payments/confirmPayment';
 import { runMemberCheckout } from '../../../src/payments/runCheckout';
 
 const cashProvider = {
@@ -110,6 +115,7 @@ describe('runMemberCheckout', () => {
     }));
     (resolvePlanForMember as jest.Mock).mockResolvedValue(monthlyPlan());
     (planChargeAmountCents as jest.Mock).mockReturnValue(5500);
+    (confirmPayment as jest.Mock).mockResolvedValue({ paymentId: 100, alreadyProcessed: false });
   });
 
   it('rejects inactive / missing members', async () => {
@@ -341,5 +347,38 @@ describe('runMemberCheckout', () => {
         metadata: expect.objectContaining({ visitIds: [3, 4] }),
       }),
     });
+  });
+
+  it('confirms cash immediately when confirmCashImmediately for a current plan', async () => {
+    (prisma.member.findUnique as jest.Mock).mockResolvedValue(baseMember());
+    const result = await runMemberCheckout({
+      memberId: 10,
+      familyKey: 'monthly',
+      method: 'cash',
+      initiatedBy: 'ADMIN',
+      confirmCashImmediately: true,
+    });
+    expect(result.confirmedImmediately).toBe(true);
+    expect(confirmPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'cash',
+        externalRef: 'cash_100_x',
+        status: 'SUCCEEDED',
+      }),
+    );
+  });
+
+  it('confirms cash immediately for future plan when admin records desk cash', async () => {
+    (prisma.member.findUnique as jest.Mock).mockResolvedValue(baseMember());
+    (refreshCurrentEntitlement as jest.Mock).mockResolvedValue({ id: 5 });
+    const result = await runMemberCheckout({
+      memberId: 10,
+      familyKey: 'monthly',
+      method: 'cash',
+      initiatedBy: 'ADMIN',
+      confirmCashImmediately: true,
+    });
+    expect(result.confirmedImmediately).toBe(true);
+    expect(confirmPayment).toHaveBeenCalled();
   });
 });

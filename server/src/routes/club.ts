@@ -1969,16 +1969,32 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
 
     const recordedAtFilter = clubLocalDayRangeUtc(dateFrom, dateTo);
 
+    // Payment Log: money / credit only — exclude check-in ledger stubs (covered visits,
+    // visit-pack debits, $0 courtesy obligations) that belong in Attendance Log.
+    const monetaryFilter = {
+      OR: [
+        { amountCents: { gt: 0 } },
+        { listAmountCents: { gt: 0 } },
+        { creditAppliedCents: { gt: 0 } },
+        { status: 'PENDING' as const, provider: 'cash' },
+      ],
+    };
+
     const payments = await prisma.clubPayment.findMany({
       where: {
-        ...(Object.keys(recordedAtFilter).length > 0 ? { recordedAt: recordedAtFilter } : {}),
-        ...(nameFilters.length > 0
-          ? {
-              member: {
-                AND: nameFilters,
-              },
-            }
-          : {}),
+        AND: [
+          monetaryFilter,
+          ...(Object.keys(recordedAtFilter).length > 0 ? [{ recordedAt: recordedAtFilter }] : []),
+          ...(nameFilters.length > 0
+            ? [
+                {
+                  member: {
+                    AND: nameFilters,
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       orderBy: { recordedAt: 'desc' },
       take: 500,

@@ -9,6 +9,7 @@ import {
   trialEndsOnToYmd,
   trialPlanStartYmd,
 } from './memberTrial';
+import { confirmPayment } from './confirmPayment';
 import type {
   CheckoutProduct,
   PaymentInitiatedBy,
@@ -33,6 +34,11 @@ export type RunCheckoutParams = {
   skipFutureGuard?: boolean;
   /** cash = desk PENDING; online = active PSP. */
   method?: CheckoutMethod;
+  /**
+   * When true with method cash: confirm SUCCEEDED immediately after startCheckout
+   * (admin desk on Member Plan — no PENDING queue).
+   */
+  confirmCashImmediately?: boolean;
 };
 
 export type RunCheckoutResult = StartCheckoutResult & {
@@ -178,6 +184,12 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
   const creditAppliedCents = Math.min(creditAvailable, listAmountCents);
   const amountCents = Math.max(0, listAmountCents - creditAppliedCents);
 
+  if (params.confirmCashImmediately) {
+    if (method !== 'cash') {
+      throw new Error('Immediate cash confirm requires method cash');
+    }
+  }
+
   const openCourtesy = await prisma.clubVisit.findMany({
     where: {
       memberId: member.id,
@@ -257,6 +269,18 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     paymentId: payment.id,
   });
 
+  let confirmedImmediately = Boolean(result.confirmedImmediately);
+  if (method === 'cash' && params.confirmCashImmediately && result.externalRef) {
+    await confirmPayment({
+      providerId: provider.id,
+      externalRef: result.externalRef,
+      status: 'SUCCEEDED',
+      amountCents,
+      raw: { confirmedImmediatelyByAdmin: true },
+    });
+    confirmedImmediately = true;
+  }
+
   logger.info('Checkout started', {
     paymentId: payment.id,
     memberId: member.id,
@@ -265,10 +289,12 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     amountCents,
     creditAppliedCents,
     forceFuture,
+    confirmedImmediately,
   });
 
   return {
     ...result,
+    confirmedImmediately,
     paymentId: payment.id,
     providerId: provider.id,
     listAmountCents,

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../utils/api';
 import { clubTodayYmd, formatClubDate, formatClubDateTime } from '../../utils/clubDateTime';
 import { getErrorMessage } from '../../utils/errorHandler';
-import { isAdmin } from '../../utils/auth';
+import { isAdmin, getMember } from '../../utils/auth';
 import {
   clearCheckinPaymentUnlock,
   getCheckinPaymentUnlockToken,
@@ -186,6 +186,7 @@ export type MemberPlanScreenProps = {
 
 export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   const admin = isAdmin();
+  const adminActingOnBehalf = admin && getMember()?.id !== memberId;
   const [summary, setSummary] = useState<PlanSummary | null>(null);
   const [plans, setPlans] = useState<PricedPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -250,7 +251,21 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       setSummary(nextSummary);
       setPlans(nextPlans);
       setCreditDraft(String((nextSummary.purchaseCreditCents || 0) / 100));
-      setPayMethod(nextSummary.effectiveCanPayOnline ? 'online' : 'cash');
+      const actingOnBehalf = isAdmin() && getMember()?.id !== memberId;
+      const buyingCurrent = !nextSummary.current && !nextSummary.inTrial;
+      const canCash =
+        isAdmin() &&
+        nextSummary.canPurchase === true &&
+        (actingOnBehalf || buyingCurrent);
+      setPayMethod(
+        actingOnBehalf
+          ? 'cash'
+          : nextSummary.effectiveCanPayOnline
+            ? 'online'
+            : canCash
+              ? 'cash'
+              : 'online',
+      );
       setSelectedFamilyKey((prev) => {
         if (prev && nextPlans.some((p) => p.familyKey === prev)) return prev;
         return nextPlans[0]?.familyKey || '';
@@ -294,8 +309,13 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   const trialEndsOnLabel = summary?.trialEndsOn || null;
   const showStartDate =
     !hasCurrent && !inTrial && selectedPlan?.kind === 'TIME' && canPurchase;
-  const canPayOnline = summary?.effectiveCanPayOnline === true;
+  const canPayOnline =
+    summary?.effectiveCanPayOnline === true && !adminActingOnBehalf;
   const hasEmail = Boolean(summary?.member.email?.trim());
+  /** Desk cash: current-plan purchases, or any purchase when admin acts on behalf (cash only). */
+  const buyingCurrentPlan = !hasCurrent && !inTrial;
+  const canPayCash =
+    admin && canPurchase && (adminActingOnBehalf || buyingCurrentPlan);
 
   useEffect(() => {
     if (showStartDate && !startDate) {
@@ -304,13 +324,19 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   }, [showStartDate, startDate]);
 
   useEffect(() => {
-    if (!canPayOnline && payMethod === 'online') {
+    if (adminActingOnBehalf && payMethod !== 'cash' && canPayCash) {
+      setPayMethod('cash');
+      return;
+    }
+    if (payMethod === 'cash' && !canPayCash) {
+      setPayMethod('online');
+    } else if (!canPayOnline && payMethod === 'online' && canPayCash) {
       setPayMethod('cash');
     }
-  }, [canPayOnline, payMethod]);
+  }, [adminActingOnBehalf, canPayOnline, canPayCash, payMethod]);
 
   const saveOnlineConsent = async (enabled: boolean) => {
-    if (!hasEmail) return;
+    if (!hasEmail || adminActingOnBehalf) return;
     setBusy(true);
     setError('');
     try {
@@ -347,6 +373,14 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       setError('Online payment requires email and consent');
       return;
     }
+    if (payMethod === 'cash' && !canPayCash) {
+      setError(
+        admin
+          ? 'Cash is only available when purchasing a current plan'
+          : 'Cash payment can only be recorded by an administrator',
+      );
+      return;
+    }
     if (showStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
       setError('Choose a valid plan start date');
       return;
@@ -381,6 +415,15 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
 
       if (payMethod === 'cash' || res.data?.providerId === 'cash') {
         if (closedRef.current || abort.signal.aborted) return;
+        if (res.data?.confirmedImmediately) {
+          setPurchaseLineState('confirmed');
+          setPurchaseLineLabel(
+            `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (PAID)`,
+          );
+          setMessage('Cash payment recorded as paid. Plan updated.');
+          await load({ silent: true });
+          return;
+        }
         setPurchaseLineState('pending');
         setPurchaseLineLabel(
           `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (awaiting admin)`,
@@ -612,13 +655,20 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                   gap: '8px',
                   marginTop: '12px',
                   fontSize: '13px',
-                  cursor: busy ? 'not-allowed' : 'pointer',
+                  cursor: busy || adminActingOnBehalf ? 'not-allowed' : 'pointer',
+                  opacity: adminActingOnBehalf ? 0.45 : 1,
+                  color: adminActingOnBehalf ? '#888' : undefined,
                 }}
+                title={
+                  adminActingOnBehalf
+                    ? 'Online consent can only be set by the member. Admin can record cash only.'
+                    : undefined
+                }
               >
                 <input
                   type="checkbox"
                   checked={summary.onlinePayConsent === true}
-                  disabled={busy}
+                  disabled={busy || adminActingOnBehalf}
                   onChange={(e) => void saveOnlineConsent(e.target.checked)}
                 />
                 I consent to pay online
@@ -729,46 +779,54 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
               )}
             </section>
 
-            {admin && (
-              <section style={{ marginTop: '14px' }}>
-                <h4 style={{ margin: '0 0 6px' }}>Admin credit</h4>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={creditDraft}
-                    onChange={(e) => setCreditDraft(e.target.value)}
-                    style={{ width: '100px', padding: '6px' }}
-                    disabled={busy}
-                  />
-                  <button type="button" disabled={busy} onClick={() => void saveCredit()}>
-                    Set credit ($)
-                  </button>
-                </div>
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    marginTop: '12px',
-                    fontSize: '13px',
-                    cursor: busy ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={summary.member.courtesySuspended !== true}
-                    disabled={busy}
-                    onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
-                  />
-                  Courtesy check-in enabled
-                </label>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
-                  Default is on. Uncheck to suspend courtesy for this member until re-enabled.
-                </p>
-              </section>
-            )}
+            <section
+              style={{
+                marginTop: '14px',
+                opacity: admin ? 1 : 0.45,
+                pointerEvents: admin ? 'auto' : 'none',
+              }}
+              title={admin ? undefined : 'Admin only'}
+            >
+              <h4 style={{ margin: '0 0 6px' }}>Admin credit</h4>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={creditDraft}
+                  onChange={(e) => setCreditDraft(e.target.value)}
+                  style={{ width: '100px', padding: '6px' }}
+                  disabled={busy || !admin}
+                />
+                <button type="button" disabled={busy || !admin} onClick={() => void saveCredit()}>
+                  Set credit ($)
+                </button>
+              </div>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '12px',
+                  fontSize: '13px',
+                  cursor: busy || !admin ? 'not-allowed' : 'pointer',
+                  color: admin ? undefined : '#888',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={summary.member.courtesySuspended !== true}
+                  disabled={busy || !admin}
+                  onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
+                />
+                Courtesy check-in enabled
+              </label>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
+                {admin
+                  ? 'Default is on. Uncheck to suspend courtesy for this member until re-enabled.'
+                  : 'Only an administrator can change credit or courtesy.'}
+              </p>
+            </section>
 
             <section style={{ marginTop: '18px' }}>
               <h4 style={{ margin: '0 0 6px' }}>{actionLabel}</h4>
@@ -873,15 +931,31 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
 
                 <div style={{ marginBottom: '10px', fontSize: '13px' }}>
                   <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Payment method</span>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginRight: '14px' }}>
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      marginRight: '14px',
+                      opacity: canPayCash ? 1 : 0.45,
+                      color: canPayCash ? undefined : '#888',
+                    }}
+                    title={
+                      canPayCash
+                        ? 'Record cash as paid immediately'
+                        : admin
+                          ? 'Cash is only for purchasing a current plan (not trial / next plan), unless acting on behalf'
+                          : 'Cash can only be recorded by an administrator'
+                    }
+                  >
                     <input
                       type="radio"
                       name="payMethod"
                       checked={payMethod === 'cash'}
-                      disabled={busy || !canPurchase}
+                      disabled={busy || !canPurchase || !canPayCash}
                       onChange={() => setPayMethod('cash')}
                     />
-                    Cash (admin clears)
+                    Cash (paid now)
                   </label>
                   <label
                     style={{
@@ -891,9 +965,11 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                       opacity: canPayOnline ? 1 : 0.5,
                     }}
                     title={
-                      canPayOnline
-                        ? 'Pay with the active online provider'
-                        : 'Requires email and online pay consent'
+                      adminActingOnBehalf
+                        ? 'Admin acting on behalf can only record cash'
+                        : canPayOnline
+                          ? 'Pay with the active online provider'
+                          : 'Requires email and online pay consent'
                     }
                   >
                     <input
@@ -957,7 +1033,12 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                 <button
                   type="button"
                   className={purchasePanelTone === 'idle' ? 'success' : undefined}
-                  disabled={busy || (!canPurchase && purchasePanelTone === 'idle') || !selectedPlan}
+                  disabled={
+                    busy ||
+                    (!canPurchase && purchasePanelTone === 'idle') ||
+                    !selectedPlan ||
+                    (payMethod === 'cash' ? !canPayCash : !canPayOnline)
+                  }
                   onClick={() => void purchase()}
                   style={purchaseButtonStyle(purchasePanelTone, busy)}
                 >
@@ -973,31 +1054,49 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
             </section>
 
             <section style={{ marginTop: '18px' }}>
-              <h4 style={{ margin: '0 0 6px' }}>Payment history</h4>
+              <h4 style={{ margin: '0 0 6px' }}>Ledger</h4>
               {!summary.payments || summary.payments.length === 0 ? (
-                <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>No payments yet.</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>No entries yet.</p>
               ) : (
                 <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                   {summary.payments.map((p) => (
                     <li
                       key={p.id}
                       style={{
-                        padding: '8px 0',
-                        borderBottom: '1px solid #eee',
-                        fontSize: '13px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'baseline',
+                        gap: '10px',
+                        padding: '4px 0',
+                        borderBottom: '1px solid #f0f0f0',
+                        fontSize: '12px',
+                        lineHeight: 1.35,
                       }}
                     >
-                      <div style={{ fontWeight: 600 }}>
-                        {formatMoney(p.amountCents)} cash · {p.status === 'SUCCEEDED' ? 'PAID' : p.status}
-                        <span style={{ fontWeight: 400, color: '#666' }}> · {p.provider}</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ fontWeight: 600 }}>
+                          {formatMoney(p.amountCents)}
+                          {' · '}
+                          {p.status === 'SUCCEEDED' ? 'PAID' : p.status}
+                        </span>
+                        <span style={{ color: '#666' }}> · {p.provider}</span>
+                        {p.purpose ? (
+                          <span style={{ color: '#555' }}> · {p.purpose}</span>
+                        ) : null}
+                        {(p.creditAppliedCents ?? 0) > 0 ? (
+                          <span style={{ color: '#666' }}>
+                            {' · '}credit {formatMoney(p.creditAppliedCents ?? 0)}
+                          </span>
+                        ) : null}
                       </div>
-                      <div style={{ color: '#555' }}>{p.purpose || '—'}</div>
-                      <div style={{ color: '#666', fontSize: '12px' }}>
-                        Amount {formatMoney(p.listAmountCents ?? p.amountCents + (p.creditAppliedCents ?? 0))}
-                        {' · '}
-                        Credit {formatMoney(p.creditAppliedCents ?? 0)}
-                      </div>
-                      <div style={{ color: '#888', fontSize: '12px' }}>
+                      <div
+                        style={{
+                          color: '#888',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                          fontSize: '11px',
+                        }}
+                      >
                         {formatClubDateTime(p.recordedAt)}
                       </div>
                     </li>
