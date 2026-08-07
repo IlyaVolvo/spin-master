@@ -5,7 +5,7 @@ Scripts for collecting Render service logs and turning them into a readable time
 | Script | Role |
 |--------|------|
 | `monitor-env.sh` | Tail Render logs into local JSONL files |
-| `analyze-render-log.py` | Extract tournament / player / error timelines |
+| `analyze-render-log.py` | Extract tournament / player / login / error timelines |
 | `tail-render-jsonl.sh` | Follow a JSONL file from the last complete JSON line via compact `jq` |
 
 Collected dumps live under **`~/logs/<env>/`** by default (not in this repo). Override with `LOGS_DATA_ROOT`.
@@ -57,17 +57,19 @@ Builds a chronological timeline from one or more log files.
 - App file NDJSON (`{"timestamp","level","message","data"}`)
 - Legacy Render **text** logs
 
-**Default event set** (if you pass no category flags): tournaments + players + errors + restarts.
+**Default event set** (if you pass no category flags): tournaments + players + logins/auth + errors + restarts.
 
 Sensitive fields (`password`, `scorePin`, tokens, etc.) are redacted in output.
 
 Match score lines include who entered the score when present in logs:
 `scoreEntryMode` (`organizer` | `participant` | `kiosk`), `recordedByMemberId`, `recordedByName`.
 
+Auth/login lines (`--logins`) cover login, registration, forgot/reset/change password, and admin password reset attempts (success and failure).
+
 ### Usage
 
 ```bash
-# Full timeline (tournaments, players, errors)
+# Full timeline (tournaments, players, logins, errors)
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.jsonl
 
 # Multiple files (merged, sorted by time, deduped)
@@ -87,6 +89,7 @@ Match score lines include who entered the score when present in logs:
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --errors
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --restarts
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --tournaments --players
+./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --logins
 
 # Write markdown or machine-readable JSON
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log \
@@ -104,6 +107,7 @@ Match score lines include who entered the score when present in logs:
 | `--until TIME` | Events at/before this time (default: end of logs) |
 | `--tournaments` | Tournament create / modify / score / complete / abandon |
 | `--players` | Member created / updated / deleted |
+| `--logins` | Login / registration / password change & reset attempts |
 | `--errors` | ERROR-level and `Error …` / `Failed …` messages |
 | `--restarts` | `Server started`, Render deploy lines, log-stream reconnects |
 | `--tournament-id N` | Only that tournament and its children (related errors when included) |
@@ -130,6 +134,11 @@ Match score lines include who entered the score when present in logs:
 ## Players
 
 2026-08-05 01:12:55 UTC  Player created **220** …
+
+## Logins / auth
+
+2026-08-05 01:15:02 UTC  Login attempt · success · email=… · member=82
+2026-08-05 01:16:10 UTC  Login attempt · failure · reason=invalid_credentials · email=…
 
 ## Errors
 

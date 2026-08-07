@@ -178,6 +178,11 @@ router.post('/member/login', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.auditInfo('Login attempt', {
+        outcome: 'failure',
+        reason: 'validation_failed',
+        email: typeof req.body?.email === 'string' ? normalizeMemberEmail(req.body.email) : undefined,
+      });
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -189,14 +194,30 @@ router.post('/member/login', [
     });
 
     if (!member) {
+      logger.auditInfo('Login attempt', {
+        outcome: 'failure',
+        reason: 'invalid_credentials',
+        email: loginEmail,
+      });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     if (!member.isActive) {
+      logger.auditInfo('Login attempt', {
+        outcome: 'failure',
+        reason: 'inactive',
+        email: loginEmail,
+        memberId: member.id,
+      });
       return res.status(403).json({ error: 'Member account is inactive' });
     }
 
     if (!member.email) {
+      logger.auditInfo('Login attempt', {
+        outcome: 'failure',
+        reason: 'no_email',
+        memberId: member.id,
+      });
       return res
         .status(403)
         .json({ error: 'This account has no email on file and cannot log in. Contact an administrator.' });
@@ -215,6 +236,12 @@ router.post('/member/login', [
       // Verify password normally
       const isValid = await bcrypt.compare(password, member.password);
       if (!isValid) {
+        logger.auditInfo('Login attempt', {
+          outcome: 'failure',
+          reason: 'invalid_credentials',
+          email: loginEmail,
+          memberId: member.id,
+        });
         return res.status(401).json({ error: 'Invalid credentials' });
       }
     }
@@ -232,6 +259,12 @@ router.post('/member/login', [
     // Ensure session exists
     if (!req.session) {
       logger.error('Session not available', { email, sessionType: typeof req.session });
+      logger.auditInfo('Login attempt', {
+        outcome: 'failure',
+        reason: 'session_unavailable',
+        email: loginEmail,
+        memberId: member.id,
+      });
       return res.status(500).json({ error: 'Session not initialized' });
     }
     
@@ -316,6 +349,12 @@ router.post('/member/login', [
         memberId: member.id
       });
       // If session fails, we cannot continue with login
+      logger.auditInfo('Login attempt', {
+        outcome: 'failure',
+        reason: 'session_storage_failed',
+        email: loginEmail,
+        memberId: member.id,
+      });
       return res.status(500).json({ error: 'Session storage failed' });
     }
 
@@ -416,6 +455,12 @@ router.post('/member/login', [
       autoRelinquishIdleMinutes: getAutoRelinquishIdleMinutes(),
     };
     
+    logger.auditInfo('Login attempt', {
+      outcome: 'success',
+      email: member.email,
+      memberId: member.id,
+      mustResetPassword: Boolean(memberRecord.mustResetPassword || member.password === ''),
+    });
     logger.info('Member logged in', { 
       memberId: member.id, 
       email: member.email,
@@ -449,6 +494,12 @@ router.post('/member/login', [
       email: req.body?.email,
       errorType: error?.constructor?.name || typeof error
     });
+    logger.auditInfo('Login attempt', {
+      outcome: 'failure',
+      reason: 'server_error',
+      email: typeof req.body?.email === 'string' ? normalizeMemberEmail(req.body.email) : undefined,
+      error: errorMessage,
+    });
     
     // Log to console in development for easier debugging
     if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
@@ -470,6 +521,11 @@ router.post('/member/forgot-password', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.auditInfo('Forgot password attempt', {
+        outcome: 'failure',
+        reason: 'validation_failed',
+        email: typeof req.body?.email === 'string' ? normalizeMemberEmail(req.body.email) : undefined,
+      });
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -483,6 +539,11 @@ router.post('/member/forgot-password', [
 
     if (!member) {
       // Prevent email enumeration
+      logger.auditInfo('Forgot password attempt', {
+        outcome: 'accepted',
+        reason: 'unknown_email',
+        email: normalizedEmail,
+      });
       return res.json({ message: 'If this email exists, a reset link has been sent.' });
     }
 
@@ -508,6 +569,12 @@ router.post('/member/forgot-password', [
       expiresAt,
     });
 
+    logger.auditInfo('Forgot password attempt', {
+      outcome: 'success',
+      email: addressForEmail,
+      memberId: member.id,
+      expiresAt: expiresAt.toISOString(),
+    });
     logger.info('Forgot password email sent', {
       memberId: member.id,
       email: addressForEmail,
@@ -525,6 +592,12 @@ router.post('/member/forgot-password', [
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
+    logger.auditInfo('Forgot password attempt', {
+      outcome: 'failure',
+      reason: 'server_error',
+      email: typeof req.body?.email === 'string' ? normalizeMemberEmail(req.body.email) : undefined,
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     // Keep same shape to avoid account enumeration leaks
     return res.json({ message: 'If this email exists, a reset link has been sent.' });
@@ -540,6 +613,11 @@ router.post('/member/reset-password-with-token', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.auditInfo('Password reset attempt', {
+        outcome: 'failure',
+        reason: 'validation_failed',
+        email: typeof req.body?.email === 'string' ? normalizeMemberEmail(req.body.email) : undefined,
+      });
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -562,6 +640,11 @@ router.post('/member/reset-password-with-token', [
     });
 
     if (!member || !member.passwordResetToken || !member.passwordResetTokenExpiry || member.passwordResetTokenExpiry.getTime() < Date.now()) {
+      logger.auditInfo('Password reset attempt', {
+        outcome: 'failure',
+        reason: 'invalid_or_expired_token',
+        email: normalizedEmail,
+      });
       return res.status(400).json({ error: 'Invalid or expired reset token' });
     }
 
@@ -587,12 +670,23 @@ router.post('/member/reset-password-with-token', [
     });
     invalidateMemberCheckInStub(member.id);
 
+    logger.auditInfo('Password reset attempt', {
+      outcome: 'success',
+      memberId: member.id,
+      email: member.email ?? normalizedEmail,
+    });
     logger.info('Password reset via token successful', { memberId: member.id });
     return res.json({ message: 'Password has been reset successfully' });
   } catch (error) {
     logger.error('Reset password with token error', {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
+    });
+    logger.auditInfo('Password reset attempt', {
+      outcome: 'failure',
+      reason: 'server_error',
+      email: typeof req.body?.email === 'string' ? normalizeMemberEmail(req.body.email) : undefined,
+      error: error instanceof Error ? error.message : String(error),
     });
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -676,11 +770,21 @@ router.post('/member/change-password', [
 ], async (req: Request, res: Response) => {
   try {
     if (isKioskMode(req)) {
+      logger.auditInfo('Password change attempt', {
+        outcome: 'failure',
+        reason: 'kiosk_mode',
+        memberId: req.session?.member?.id,
+      });
       return res.status(403).json({ error: 'Password changes are not available in kiosk mode. Ask a system administrator to reset the password.' });
     }
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.auditInfo('Password change attempt', {
+        outcome: 'failure',
+        reason: 'validation_failed',
+        memberId: req.session?.member?.id,
+      });
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -691,6 +795,10 @@ router.post('/member/change-password', [
       // Fallback to JWT token for backward compatibility
       const authHeader = req.headers.authorization;
       if (!authHeader) {
+        logger.auditInfo('Password change attempt', {
+          outcome: 'failure',
+          reason: 'unauthenticated',
+        });
         return res.status(401).json({ error: 'Authentication required' });
       }
 
@@ -711,13 +819,25 @@ router.post('/member/change-password', [
         tokenLength: token?.length
       });
       
-      const decoded = jwt.verify(token, jwtSecret) as { memberId?: number; type?: string };
-      
-      if (decoded.type !== 'member' || !decoded.memberId) {
-        return res.status(401).json({ error: 'Invalid token type' });
-      }
+      try {
+        const decoded = jwt.verify(token, jwtSecret) as { memberId?: number; type?: string };
+        
+        if (decoded.type !== 'member' || !decoded.memberId) {
+          logger.auditInfo('Password change attempt', {
+            outcome: 'failure',
+            reason: 'invalid_token_type',
+          });
+          return res.status(401).json({ error: 'Invalid token type' });
+        }
 
-      memberId = decoded.memberId;
+        memberId = decoded.memberId;
+      } catch {
+        logger.auditInfo('Password change attempt', {
+          outcome: 'failure',
+          reason: 'invalid_token',
+        });
+        return res.status(401).json({ error: 'Authentication required' });
+      }
     }
 
     const { currentPassword, newPassword } = req.body;
@@ -727,6 +847,11 @@ router.post('/member/change-password', [
     });
 
     if (!member) {
+      logger.auditInfo('Password change attempt', {
+        outcome: 'failure',
+        reason: 'member_not_found',
+        memberId,
+      });
       return res.status(404).json({ error: 'Member not found' });
     }
 
@@ -734,10 +859,22 @@ router.post('/member/change-password', [
     if (member.password !== '') {
       // Password exists, require current password
       if (!currentPassword) {
+        logger.auditInfo('Password change attempt', {
+          outcome: 'failure',
+          reason: 'current_password_required',
+          memberId,
+          email: member.email,
+        });
         return res.status(400).json({ error: 'Current password is required' });
       }
       const isValid = await bcrypt.compare(currentPassword, member.password);
       if (!isValid) {
+        logger.auditInfo('Password change attempt', {
+          outcome: 'failure',
+          reason: 'incorrect_current_password',
+          memberId,
+          email: member.email,
+        });
         return res.status(401).json({ error: 'Current password is incorrect' });
       }
     }
@@ -755,9 +892,20 @@ router.post('/member/change-password', [
     });
     invalidateMemberCheckInStub(memberId);
 
+    logger.auditInfo('Password change attempt', {
+      outcome: 'success',
+      memberId,
+      email: member.email,
+    });
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
     logger.error('Member change password error', { error: error instanceof Error ? error.message : String(error) });
+    logger.auditInfo('Password change attempt', {
+      outcome: 'failure',
+      reason: 'server_error',
+      memberId: req.session?.member?.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -770,6 +918,12 @@ router.post('/member/:id/reset-password', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.auditInfo('Admin password reset attempt', {
+        outcome: 'failure',
+        reason: 'validation_failed',
+        targetMemberId: Number.isFinite(parseInt(req.params.id, 10)) ? parseInt(req.params.id, 10) : undefined,
+        adminMemberId: req.session?.member?.id,
+      });
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -778,6 +932,7 @@ router.post('/member/:id/reset-password', [
     const hasSessionAdmin = !!(sessionMember && Array.isArray(sessionMember.roles) && sessionMember.roles.includes('ADMIN'));
 
     let hasAdminAccess = hasSessionAdmin;
+    let adminMemberId: number | undefined = sessionMember?.id;
 
     if (!hasAdminAccess) {
       const authHeader = req.headers.authorization;
@@ -794,6 +949,9 @@ router.post('/member/:id/reset-password', [
             });
 
             hasAdminAccess = !!(requester && requester.isActive && Array.isArray(requester.roles) && requester.roles.includes('ADMIN'));
+            if (hasAdminAccess) {
+              adminMemberId = decoded.memberId;
+            }
           }
         } catch (jwtError) {
           logger.warn('Admin reset password JWT verification failed', {
@@ -804,11 +962,21 @@ router.post('/member/:id/reset-password', [
     }
 
     if (!hasAdminAccess) {
+      logger.auditInfo('Admin password reset attempt', {
+        outcome: 'failure',
+        reason: 'admin_required',
+        targetMemberId: Number.isFinite(parseInt(req.params.id, 10)) ? parseInt(req.params.id, 10) : undefined,
+      });
       return res.status(403).json({ error: 'Admin access required' });
     }
 
     const memberId = parseInt(req.params.id);
     if (isNaN(memberId)) {
+      logger.auditInfo('Admin password reset attempt', {
+        outcome: 'failure',
+        reason: 'invalid_member_id',
+        adminMemberId,
+      });
       return res.status(400).json({ error: 'Invalid member ID' });
     }
 
@@ -818,6 +986,12 @@ router.post('/member/:id/reset-password', [
     });
 
     if (!member) {
+      logger.auditInfo('Admin password reset attempt', {
+        outcome: 'failure',
+        reason: 'member_not_found',
+        targetMemberId: memberId,
+        adminMemberId,
+      });
       return res.status(404).json({ error: 'Member not found' });
     }
 
@@ -838,6 +1012,13 @@ router.post('/member/:id/reset-password', [
       });
       invalidateMemberCheckInStub(memberId);
 
+      logger.auditInfo('Admin password reset attempt', {
+        outcome: 'success',
+        mode: 'set_password',
+        targetMemberId: memberId,
+        email: member.email,
+        adminMemberId,
+      });
       return res.json({ message: 'Password reset successfully' });
     } else {
       // Set password to empty string and send reset link for immediate setup
@@ -845,6 +1026,13 @@ router.post('/member/:id/reset-password', [
       const expiresAt = getPasswordResetExpiryDate();
       const recipientEmail = requestedEmail || member.email;
       if (!recipientEmail) {
+        logger.auditInfo('Admin password reset attempt', {
+          outcome: 'failure',
+          reason: 'no_email',
+          mode: 'email_link',
+          targetMemberId: memberId,
+          adminMemberId,
+        });
         return res.status(400).json({
           error: 'This member has no email address. Add an email before sending a password setup link.',
         });
@@ -875,6 +1063,14 @@ router.post('/member/:id/reset-password', [
           email: recipientEmail,
           error: emailError instanceof Error ? emailError.message : String(emailError),
         });
+        logger.auditInfo('Admin password reset attempt', {
+          outcome: 'failure',
+          reason: 'email_send_failed',
+          mode: 'email_link',
+          targetMemberId: memberId,
+          email: recipientEmail,
+          adminMemberId,
+        });
 
         return res.status(500).json({
           error: 'Password was reset but failed to send reset email. Check SMTP settings.',
@@ -884,6 +1080,13 @@ router.post('/member/:id/reset-password', [
         });
       }
 
+      logger.auditInfo('Admin password reset attempt', {
+        outcome: 'success',
+        mode: 'email_link',
+        targetMemberId: memberId,
+        email: recipientEmail,
+        adminMemberId,
+      });
       return res.json({
         message: `Password reset successfully and reset link email sent to ${recipientEmail}`,
         ...(process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development'
@@ -893,6 +1096,13 @@ router.post('/member/:id/reset-password', [
     }
   } catch (error) {
     logger.error('Member password reset error', { error: error instanceof Error ? error.message : String(error) });
+    logger.auditInfo('Admin password reset attempt', {
+      outcome: 'failure',
+      reason: 'server_error',
+      targetMemberId: Number.isFinite(parseInt(req.params.id, 10)) ? parseInt(req.params.id, 10) : undefined,
+      adminMemberId: req.session?.member?.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

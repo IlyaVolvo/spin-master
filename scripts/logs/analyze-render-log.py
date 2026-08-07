@@ -9,6 +9,7 @@ Supports:
 Examples:
   ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log
   ./scripts/logs/analyze-render-log.py ~/logs/prod/*.jsonl --since 2026-08-05 --until 2026-08-05
+  ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --logins --since 2026-08-04
   ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --errors --restarts --since 2026-08-04
   ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --tournament-id 178 -o timeline.md
 """
@@ -58,7 +59,16 @@ PLAYER_MESSAGES = {
     "Member deleted",
 }
 
-INTERESTING = TOURNAMENT_MESSAGES | PLAYER_MESSAGES
+AUTH_MESSAGES = {
+    "Login attempt",
+    "Registration attempt",
+    "Password change attempt",
+    "Forgot password attempt",
+    "Password reset attempt",
+    "Admin password reset attempt",
+}
+
+INTERESTING = TOURNAMENT_MESSAGES | PLAYER_MESSAGES | AUTH_MESSAGES
 
 ERROR_LEVELS = frozenset({"error", "err", "fatal"})
 
@@ -95,7 +105,7 @@ class RawRecord:
 @dataclass
 class Event:
     ts: datetime
-    kind: str  # tournament | player | error | restart
+    kind: str  # tournament | player | auth | error | restart
     message: str
     data: dict[str, Any]
     source: str
@@ -118,6 +128,10 @@ class Event:
             self.data.get("matchId"),
             self.data.get("participantCount"),
             self.data.get("childCount"),
+            self.data.get("outcome"),
+            self.data.get("reason"),
+            self.data.get("email"),
+            self.data.get("targetMemberId"),
             str(err) if err is not None else None,
             json.dumps(self.data.get("changes"), sort_keys=True, default=str)
             if self.data.get("changes") is not None
@@ -569,10 +583,36 @@ def summarize_restart(message: str, data: dict[str, Any]) -> str:
     return f"Restart/deploy: {msg}"
 
 
+def summarize_auth(message: str, data: dict[str, Any]) -> str:
+    outcome = data.get("outcome") or "?"
+    reason = data.get("reason")
+    email = data.get("email")
+    mid = data.get("memberId")
+    target = data.get("targetMemberId")
+    admin = data.get("adminMemberId") or data.get("createdByMemberId")
+    mode = data.get("mode")
+    bits = [message, str(outcome)]
+    if reason:
+        bits.append(f"reason={reason}")
+    if mode:
+        bits.append(f"mode={mode}")
+    if email not in (None, ""):
+        bits.append(f"email={email}")
+    if mid is not None:
+        bits.append(f"member={mid}")
+    if target is not None:
+        bits.append(f"target={target}")
+    if admin is not None:
+        bits.append(f"by={admin}")
+    return " · ".join(bits)
+
+
 def summarize(message: str, data: dict[str, Any], *, level: str = "") -> str:
     d = data
     if is_restart_message(message):
         return summarize_restart(message, data)
+    if message in AUTH_MESSAGES:
+        return summarize_auth(message, data)
     if is_error_level(level) or message.startswith("Error ") or message.startswith("Failed "):
         return summarize_error(message, data, level)
     if message == "Tournament created":
@@ -678,6 +718,7 @@ def records_to_events(
     *,
     want_tournaments: bool,
     want_players: bool,
+    want_auth: bool,
     want_errors: bool,
     want_restarts: bool,
 ) -> list[Event]:
@@ -717,7 +758,14 @@ def records_to_events(
             continue
         if msg in PLAYER_MESSAGES and not want_players:
             continue
-        kind = "player" if msg in PLAYER_MESSAGES else "tournament"
+        if msg in AUTH_MESSAGES and not want_auth:
+            continue
+        if msg in AUTH_MESSAGES:
+            kind = "auth"
+        elif msg in PLAYER_MESSAGES:
+            kind = "player"
+        else:
+            kind = "tournament"
         events.append(
             Event(
                 ts=ensure_utc(rec.ts),
@@ -764,7 +812,7 @@ def filter_time_range(
 def filter_tournament_id(events: list[Event], tournament_id: int) -> list[Event]:
     out: list[Event] = []
     for ev in events:
-        if ev.kind == "player":
+        if ev.kind in ("player", "auth"):
             continue
         tid = ev.data.get("tournamentId")
         parent = ev.data.get("parentTournamentId")
@@ -801,11 +849,15 @@ def render_timeline(events: list[Event], *, group_tournaments: bool) -> str:
         # Bucket by root-ish id: parent if present else tournamentId; players/errors separate
         buckets: dict[str, list[Event]] = {}
         players: list[Event] = []
+        auth_events: list[Event] = []
         errors: list[Event] = []
         restarts: list[Event] = []
         for ev in events:
             if ev.kind == "player":
                 players.append(ev)
+                continue
+            if ev.kind == "auth":
+                auth_events.append(ev)
                 continue
             if ev.kind == "restart":
                 restarts.append(ev)
@@ -845,6 +897,13 @@ def render_timeline(events: list[Event], *, group_tournaments: bool) -> str:
             lines.append("## Players")
             lines.append("")
             for ev in players:
+                lines.append(f"{format_ts(ev.ts)}  {ev.summary}")
+            lines.append("")
+
+        if auth_events:
+            lines.append("## Logins / auth")
+            lines.append("")
+            for ev in auth_events:
                 lines.append(f"{format_ts(ev.ts)}  {ev.summary}")
             lines.append("")
 
@@ -898,6 +957,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("files", nargs="+", help="Log files (JSON and/or legacy text)")
     ap.add_argument("--tournaments", action="store_true", help="Include tournament events")
     ap.add_argument("--players", action="store_true", help="Include player events")
+    ap.add_argument(
+        "--logins",
+        action="store_true",
+        help="Include login / registration / password auth attempts",
+    )
     ap.add_argument("--errors", action="store_true", help="Include error-level events")
     ap.add_argument(
         "--restarts",
@@ -922,10 +986,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     want_t = args.tournaments
     want_p = args.players
+    want_a = args.logins
     want_e = args.errors
     want_r = args.restarts
-    if not want_t and not want_p and not want_e and not want_r:
-        want_t = want_p = want_e = want_r = True
+    if not want_t and not want_p and not want_a and not want_e and not want_r:
+        want_t = want_p = want_a = want_e = want_r = True
 
     since = parse_bound_ts(args.since, is_until=False) if args.since else None
     until = parse_bound_ts(args.until, is_until=True) if args.until else None
@@ -950,6 +1015,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         records,
         want_tournaments=want_t,
         want_players=want_p,
+        want_auth=want_a,
         want_errors=want_e,
         want_restarts=want_r,
     )
@@ -964,10 +1030,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             keep_kinds.add("error")
         if args.players:
             keep_kinds.add("player")
+        if args.logins:
+            keep_kinds.add("auth")
         if args.restarts:
             keep_kinds.add("restart")
         # With --tournament-id alone: tournaments + related errors
-        if not args.players and not args.tournaments and not args.errors and not args.restarts:
+        if not args.players and not args.tournaments and not args.errors and not args.restarts and not args.logins:
             keep_kinds = {"tournament", "error"}
         events = [e for e in events if e.kind in keep_kinds]
 

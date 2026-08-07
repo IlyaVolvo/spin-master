@@ -1220,6 +1220,13 @@ router.post('/', [
         createdByMemberId: req.memberId,
         passwordResetEmailSent: false,
       });
+      logger.auditInfo('Registration attempt', {
+        outcome: 'success',
+        memberId: member.id,
+        email: null,
+        hasLoginEmail: false,
+        createdByMemberId: req.memberId,
+      });
 
       emitToAll('player:created', {
         player: memberWithoutPassword,
@@ -1290,6 +1297,13 @@ router.post('/', [
         email: finalEmail,
         error: emailError instanceof Error ? emailError.message : String(emailError),
       });
+      logger.auditInfo('Registration attempt', {
+        outcome: 'failure',
+        reason: 'invite_email_failed',
+        memberId: member.id,
+        email: finalEmail,
+        createdByMemberId: req.memberId,
+      });
       return res.status(500).json({
         error: 'Failed to send password setup email. Member was not created.',
       });
@@ -1301,6 +1315,14 @@ router.post('/', [
 
     logger.info('Member created', {
       ...memberAuditLogFields(member),
+      createdByMemberId: req.memberId,
+      passwordResetEmailSent: true,
+    });
+    logger.auditInfo('Registration attempt', {
+      outcome: 'success',
+      memberId: member.id,
+      email: finalEmail,
+      hasLoginEmail: true,
       createdByMemberId: req.memberId,
       passwordResetEmailSent: true,
     });
@@ -1316,6 +1338,12 @@ router.post('/', [
     });
   } catch (error) {
     logger.error('Error creating member', { error: error instanceof Error ? error.message : String(error) });
+    logger.auditInfo('Registration attempt', {
+      outcome: 'failure',
+      reason: 'server_error',
+      createdByMemberId: req.memberId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

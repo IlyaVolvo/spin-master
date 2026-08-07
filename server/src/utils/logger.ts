@@ -81,6 +81,15 @@ class Logger {
     }
   }
 
+  /**
+   * INFO-level audit events that must reach log collectors (e.g. Render stdout)
+   * even when LOG_TO_CONSOLE is off. Still respects file logging when enabled.
+   */
+  auditInfo(message: string, data?: any): void {
+    this.writeLog('INFO', message, data);
+    console.log(this.formatConsoleMessage('INFO', message, data));
+  }
+
   error(message: string, data?: any): void {
     this.writeLog('ERROR', message, data);
     // Always log errors to console (even if LOG_TO_CONSOLE is false)
