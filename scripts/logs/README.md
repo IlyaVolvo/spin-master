@@ -60,6 +60,9 @@ Builds a chronological timeline from one or more log files.
 
 Sensitive fields (`password`, `scorePin`, tokens, etc.) are redacted in output.
 
+Match score lines include who entered the score when present in logs:
+`scoreEntryMode` (`organizer` | `participant` | `kiosk`), `recordedByMemberId`, `recordedByName`.
+
 ### Usage
 
 ```bash

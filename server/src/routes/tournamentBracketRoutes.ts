@@ -17,7 +17,7 @@ import {
   PlayoffBracketResultError,
 } from '../services/playoffBracketService';
 import { isOrganizer } from '../utils/organizerAccess';
-import { authorizeTournamentScoreEntryRequest, matchAuthFailureJson } from '../utils/matchScoreAuthorization';
+import { authorizeTournamentScoreEntryRequest, matchAuthFailureJson, scoreEntryAuditLogFields } from '../utils/matchScoreAuthorization';
 import { getTournamentRulesConfig } from '../services/systemConfigService';
 
 const router = express.Router();
@@ -236,7 +236,15 @@ router.patch('/:tournamentId/bracket-matches/:bracketMatchId', [
       player2Sets: finalPlayer2Sets,
       player1Forfeit: !!finalPlayer1Forfeit,
       player2Forfeit: !!finalPlayer2Forfeit,
-      recordedByMemberId: req.memberId,
+      ...scoreEntryAuditLogFields({
+        scoreEntryMode: scoreAuth.scoreEntryMode,
+        recordedByMemberId: req.memberId,
+        member1Id: newMatch.member1Id,
+        member2Id: newMatch.member2Id,
+        recordedByName: req.member
+          ? `${req.member.firstName} ${req.member.lastName}`.trim()
+          : null,
+      }),
       tournamentCompleted: !!tournamentCompleted,
     });
 

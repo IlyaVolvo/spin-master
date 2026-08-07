@@ -5,7 +5,7 @@ import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { processMatchRating } from '../services/matchRatingService';
 import { getTournamentRulesConfig } from '../services/systemConfigService';
-import { authorizeStandaloneMatchScoreWrite, matchAuthFailureJson } from '../utils/matchScoreAuthorization';
+import { authorizeStandaloneMatchScoreWrite, matchAuthFailureJson, scoreEntryAuditLogFields } from '../utils/matchScoreAuthorization';
 import { isOrganizer } from '../utils/organizerAccess';
 
 const router = express.Router();
@@ -259,7 +259,20 @@ router.post('/', [
       player2RatingChange: player2RatingHistory?.ratingChange ?? null,
     };
 
-    logger.info('Standalone match created', { matchId: match.id, member1Id, member2Id });
+    logger.info('Standalone match created', {
+      matchId: match.id,
+      member1Id,
+      member2Id,
+      ...scoreEntryAuditLogFields({
+        scoreEntryMode: scoreAuth.scoreEntryMode,
+        recordedByMemberId: req.memberId,
+        member1Id,
+        member2Id,
+        recordedByName: req.member
+          ? `${req.member.firstName} ${req.member.lastName}`.trim()
+          : null,
+      }),
+    });
     res.status(201).json(matchWithDetails);
   } catch (error) {
     logger.error('Error creating standalone match', { error });

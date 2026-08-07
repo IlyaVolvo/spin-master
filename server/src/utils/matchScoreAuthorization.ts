@@ -6,14 +6,44 @@ import { normalizeScorePin, scorePinsEqual } from './scorePin';
 
 export type InvalidScorePins = { member1: boolean; member2: boolean };
 
+/** How the score write was authorized. */
+export type ScoreEntryMode = 'organizer' | 'participant' | 'kiosk';
+
 export type MatchAuthFailure = {
   ok: false;
   status: number;
   error: string;
   invalidPins?: InvalidScorePins;
 };
-export type MatchAuthSuccess = { ok: true };
+export type MatchAuthSuccess = { ok: true; scoreEntryMode: ScoreEntryMode };
 export type MatchAuthResult = MatchAuthSuccess | MatchAuthFailure;
+
+/** Fields for match-score audit logs (no secrets). */
+export function scoreEntryAuditLogFields(input: {
+  scoreEntryMode: ScoreEntryMode;
+  recordedByMemberId: number | null | undefined;
+  member1Id?: number | null;
+  member2Id?: number | null;
+  recordedByName?: string | null;
+}): {
+  scoreEntryMode: ScoreEntryMode;
+  recordedByMemberId: number | null;
+  recordedByName: string | null;
+  recordedByIsParticipant: boolean;
+} {
+  const recordedByMemberId =
+    typeof input.recordedByMemberId === 'number' ? input.recordedByMemberId : null;
+  const participantIds = [input.member1Id, input.member2Id].filter(
+    (id): id is number => typeof id === 'number' && id > 0
+  );
+  return {
+    scoreEntryMode: input.scoreEntryMode,
+    recordedByMemberId,
+    recordedByName: input.recordedByName ?? null,
+    recordedByIsParticipant:
+      recordedByMemberId != null && participantIds.includes(recordedByMemberId),
+  };
+}
 
 /** JSON body for a failed match-auth check (includes which PINs failed when present). */
 export function matchAuthFailureJson(failure: MatchAuthFailure): {
@@ -184,7 +214,7 @@ async function verifyParticipantPins(
         invalidPins: { member1: true, member2: false },
       };
     }
-    return { ok: true };
+    return { ok: true, scoreEntryMode: 'kiosk' };
   }
 
   const pin1 = normalizeScorePin(member1Pin);
@@ -219,7 +249,7 @@ async function verifyParticipantPins(
     };
   }
 
-  return { ok: true };
+  return { ok: true, scoreEntryMode: 'kiosk' };
 }
 
 /**
@@ -250,7 +280,7 @@ export async function authorizeTournamentMatchScoreWrite(
   }
 
   if (input.isOrganizer) {
-    return { ok: true };
+    return { ok: true, scoreEntryMode: 'organizer' };
   }
 
   const me = input.actorMemberId;
@@ -274,7 +304,7 @@ export async function authorizeTournamentMatchScoreWrite(
   const bye = m2 == null || m2 === 0;
   if (bye) {
     if (me === m1) {
-      return { ok: true };
+      return { ok: true, scoreEntryMode: 'participant' };
     }
     return { ok: false, status: 403, error: 'Only the active player can record this match result' };
   }
@@ -283,7 +313,7 @@ export async function authorizeTournamentMatchScoreWrite(
     return { ok: false, status: 403, error: 'You can only record scores for matches you played in' };
   }
 
-  return { ok: true };
+  return { ok: true, scoreEntryMode: 'participant' };
 }
 
 /** Standalone match create auth (same rules as tournament score entry). */

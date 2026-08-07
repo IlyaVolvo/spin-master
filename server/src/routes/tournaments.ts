@@ -20,7 +20,7 @@ import bcrypt from 'bcryptjs';
 import { tournamentPluginRegistry } from '../plugins/TournamentPluginRegistry';
 import { ClientHttpError, isClientHttpError } from '../http/clientHttpError';
 import { isOrganizer } from '../utils/organizerAccess';
-import { authorizeTournamentScoreEntryRequest, authorizeStandaloneMatchScoreWrite, matchAuthFailureJson } from '../utils/matchScoreAuthorization';
+import { authorizeTournamentScoreEntryRequest, authorizeStandaloneMatchScoreWrite, matchAuthFailureJson, scoreEntryAuditLogFields } from '../utils/matchScoreAuthorization';
 import {
   duplicateTournamentMatchErrorForMatch,
   duplicateTournamentMatchErrorWithRecordedResult,
@@ -2276,7 +2276,15 @@ router.post('/matches/create', [
       player2Sets: finalPlayer2Sets,
       player1Forfeit: false,
       player2Forfeit: false,
-      recordedByMemberId: req.memberId,
+      ...scoreEntryAuditLogFields({
+        scoreEntryMode: scoreAuth.scoreEntryMode,
+        recordedByMemberId: req.memberId,
+        member1Id,
+        member2Id,
+        recordedByName: req.member
+          ? `${req.member.firstName ?? ''} ${req.member.lastName ?? ''}`.trim() || null
+          : null,
+      }),
     });
 
     res.status(201).json({
@@ -2454,6 +2462,28 @@ router.post('/:id/matches', [
     invalidateTournamentCache(tournamentId);
     emitMatchUpdate(match, tournamentId);
     emitCacheInvalidation(tournamentId);
+
+    logger.info('Match score updated', {
+      tournamentId,
+      tournamentName: tournament.name,
+      tournamentType: tournament.type,
+      matchId: match.id,
+      member1Id,
+      member2Id,
+      player1Sets: finalPlayer1Sets,
+      player2Sets: finalPlayer2Sets,
+      player1Forfeit: !!finalPlayer1Forfeit,
+      player2Forfeit: !!finalPlayer2Forfeit,
+      ...scoreEntryAuditLogFields({
+        scoreEntryMode: scoreAuth.scoreEntryMode,
+        recordedByMemberId: req.memberId,
+        member1Id,
+        member2Id,
+        recordedByName: req.member
+          ? `${req.member.firstName} ${req.member.lastName}`.trim()
+          : null,
+      }),
+    });
 
     res.status(201).json(match);
   } catch (error) {
@@ -2762,7 +2792,7 @@ router.patch('/:tournamentId/matches/:matchId', [
     }
     emitCacheInvalidation(tournamentId);
 
-    const playerIds = [updatedMatch.member1Id, updatedMatch.member2Id].filter(
+    const playerIds = [updatedMatch.member1Id, updatedMatch.member2Id, req.memberId].filter(
       (id: unknown): id is number => typeof id === 'number'
     );
     const matchPlayers = playerIds.length
@@ -2788,7 +2818,13 @@ router.patch('/:tournamentId/matches/:matchId', [
       player2Sets: updatedMatch.player2Sets,
       player1Forfeit: !!updatedMatch.player1Forfeit,
       player2Forfeit: !!updatedMatch.player2Forfeit,
-      recordedByMemberId: req.memberId,
+      ...scoreEntryAuditLogFields({
+        scoreEntryMode: scoreAuth.scoreEntryMode,
+        recordedByMemberId: req.memberId,
+        member1Id: updatedMatch.member1Id,
+        member2Id: updatedMatch.member2Id,
+        recordedByName: req.memberId != null ? nameById.get(req.memberId) ?? null : null,
+      }),
       tournamentCompleted: !!completedTournamentForNotification,
       parentTournamentCompleted: !!completedParentTournamentForNotification,
     });

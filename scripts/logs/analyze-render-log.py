@@ -619,11 +619,33 @@ def summarize(message: str, data: dict[str, Any], *, level: str = "") -> str:
         if d.get("parentTournamentCompleted"):
             done.append("parent completed")
         done_s = f" → {', '.join(done)}" if done else ""
+        entered = ""
+        mode = d.get("scoreEntryMode")
+        by_id = d.get("recordedByMemberId")
+        by_name = d.get("recordedByName")
+        if mode or by_id is not None:
+            who = by_name or (f"member {by_id}" if by_id is not None else "?")
+            mode_s = str(mode) if mode else "unknown"
+            part = ""
+            if d.get("recordedByIsParticipant") is True:
+                part = ", participant"
+            elif d.get("recordedByIsParticipant") is False and mode == "organizer":
+                part = ""
+            entered = f" · entered by {who} ({mode_s}{part})"
         return (
             f"Score on tournament **{d.get('tournamentId')}** "
             f"({d.get('tournamentName') or d.get('tournamentType')}): "
-            f"{a} vs {b} = {score}{extra}{done_s}"
+            f"{a} vs {b} = {score}{extra}{entered}{done_s}"
         )
+    if message in ("Standalone match created successfully", "Standalone match created"):
+        mode = d.get("scoreEntryMode")
+        by_id = d.get("recordedByMemberId")
+        by_name = d.get("recordedByName")
+        entered = ""
+        if mode or by_id is not None:
+            who = by_name or (f"member {by_id}" if by_id is not None else "?")
+            entered = f" · entered by {who} ({mode})"
+        return f"Standalone match created **{d.get('matchId')}**{entered}"
     if message == "Tournament completed":
         parent = d.get("parentTournamentId")
         parent_s = f" · parent={parent}" if parent not in (None, "null") else ""
@@ -634,8 +656,6 @@ def summarize(message: str, data: dict[str, Any], *, level: str = "") -> str:
         )
     if message in ("tournament_abandoned", "tournament_early_completed"):
         return f"{message}: tournament **{d.get('tournamentId')}** {d.get('name', '')}".strip()
-    if message in ("Standalone match created successfully", "Standalone match created"):
-        return f"Standalone match created **{d.get('matchId')}**"
     if message == "Member created":
         return (
             f"Player created **{d.get('memberId')}** {format_player_name(d)} "
