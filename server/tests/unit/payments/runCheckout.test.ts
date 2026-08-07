@@ -5,12 +5,21 @@ jest.mock('../../../src/index', () => ({
   prisma: {
     member: { findUnique: jest.fn() },
     clubVisit: { findMany: jest.fn(), updateMany: jest.fn() },
-    clubPayment: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
+    clubPayment: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
   },
 }));
 
 jest.mock('../../../src/utils/logger', () => ({
   logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+}));
+
+jest.mock('../../../src/services/socketService', () => ({
+  emitPaymentUpdated: jest.fn(),
 }));
 
 jest.mock('../../../src/payments/getActivePaymentProvider', () => ({
@@ -112,6 +121,14 @@ describe('runMemberCheckout', () => {
     (prisma.clubPayment.update as jest.Mock).mockImplementation(async ({ data }) => ({
       id: 100,
       ...data,
+    }));
+    (prisma.clubPayment.findUnique as jest.Mock).mockImplementation(async ({ where }) => ({
+      id: where.id ?? 100,
+      memberId: 10,
+      status: 'PENDING',
+      amountCents: 5500,
+      provider: 'cash',
+      purpose: 'Monthly',
     }));
     (resolvePlanForMember as jest.Mock).mockResolvedValue(monthlyPlan());
     (planChargeAmountCents as jest.Mock).mockReturnValue(5500);

@@ -186,6 +186,26 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
   }
 
   if (event.status === 'CANCELLED') {
+    // Pending cancel: remove the row — no CANCELLED ledger entry for abandoned checkouts.
+    if (payment.status === 'PENDING') {
+      const snapshot = {
+        id: payment.id,
+        memberId: payment.memberId,
+        amountCents: payment.amountCents,
+        provider: payment.provider,
+        purpose: payment.purpose,
+      };
+      await prisma.clubPayment.delete({ where: { id: payment.id } });
+      emitPaymentUpdated({
+        id: snapshot.id,
+        memberId: snapshot.memberId,
+        status: 'CANCELLED',
+        amountCents: snapshot.amountCents,
+        provider: snapshot.provider,
+        purpose: snapshot.purpose,
+      });
+      return { paymentId: snapshot.id, alreadyProcessed: false };
+    }
     const cancelled = await prisma.clubPayment.update({
       where: { id: payment.id },
       data: { status: 'CANCELLED' },

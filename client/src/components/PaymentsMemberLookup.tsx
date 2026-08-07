@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import api from '../utils/api';
 import { formatClubDateTime, formatYmd } from '../utils/clubDateTime';
 import { getErrorMessage } from '../utils/errorHandler';
+import { connectSocket, getSocket } from '../utils/socket';
 import { MemberPlanScreen } from './players/MemberPlanScreen';
 
 type PaymentRow = {
@@ -119,6 +120,18 @@ export function PaymentsMemberLookup({
       if (debounceRef.current != null) {
         window.clearTimeout(debounceRef.current);
       }
+    };
+  }, [loadPayments]);
+
+  useEffect(() => {
+    connectSocket();
+    const socket = getSocket();
+    const onPaymentUpdated = () => {
+      loadPayments();
+    };
+    socket?.on('payment:updated', onPaymentUpdated);
+    return () => {
+      socket?.off('payment:updated', onPaymentUpdated);
     };
   }, [loadPayments]);
 
@@ -378,7 +391,10 @@ export function PaymentsMemberLookup({
       {selectedMemberId != null ? (
         <MemberPlanScreen
           memberId={selectedMemberId}
-          onClose={() => setSelectedMemberId(null)}
+          onClose={() => {
+            setSelectedMemberId(null);
+            loadPayments();
+          }}
         />
       ) : null}
     </div>

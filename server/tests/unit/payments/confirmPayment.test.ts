@@ -7,6 +7,7 @@ jest.mock('../../../src/index', () => ({
       findFirst: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
+      delete: jest.fn(),
     },
     clubPlan: { findUnique: jest.fn() },
     clubEntitlement: { create: jest.fn() },
@@ -172,17 +173,18 @@ describe('confirmPayment', () => {
     expect(prisma.clubEntitlement.create).not.toHaveBeenCalled();
   });
 
-  it('rejects (CANCELLED) without deducting credit or granting plan', async () => {
+  it('rejects (CANCELLED) pending by deleting the payment with no ledger cancel row', async () => {
     (prisma.clubPayment.findFirst as jest.Mock).mockResolvedValue(pendingPayment());
     await confirmPayment({
       providerId: 'cash',
       externalRef: 'cash_50_x',
       status: 'CANCELLED',
     });
-    expect(prisma.clubPayment.update).toHaveBeenCalledWith({
-      where: { id: 50 },
-      data: { status: 'CANCELLED' },
-    });
+    expect(prisma.clubPayment.delete).toHaveBeenCalledWith({ where: { id: 50 } });
+    expect(prisma.clubPayment.update).not.toHaveBeenCalled();
+    expect(emitPaymentUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'CANCELLED', id: 50 }),
+    );
     expect(prisma.member.update).not.toHaveBeenCalled();
     expect(prisma.clubEntitlement.create).not.toHaveBeenCalled();
   });

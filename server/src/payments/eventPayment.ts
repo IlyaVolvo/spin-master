@@ -306,8 +306,10 @@ export async function clearEventUnpaid(params: {
 }
 
 /**
- * Credit full event list price back to purchaseCreditCents and cancel/void the payment link.
- * Call when cancelling a paid (SUCCEEDED) event registration or cancelling the preregistration tournament.
+ * Credit full event list price back to purchaseCreditCents.
+ * Keeps the original SUCCEEDED payment on the ledger and adds a CANCELLED
+ * credit row so both the payment and the cancellation are visible.
+ * Call when cancelling a paid event registration or cancelling the preregistration tournament.
  */
 export async function creditSucceededEventPayment(paymentId: number): Promise<number> {
   const payment = await prisma.clubPayment.findUnique({ where: { id: paymentId } });
@@ -316,6 +318,11 @@ export async function creditSucceededEventPayment(paymentId: number): Promise<nu
   const meta = asMetadata(payment.metadata);
   if (!isEventProduct(meta.product) && meta.kind !== 'event' && meta.kind !== 'event_obligation') {
     return 0;
+  }
+
+  const alreadyCredited = Math.max(0, Math.floor(Number(meta.reimbursedAsCreditCents) || 0));
+  if (alreadyCredited > 0) {
+    return alreadyCredited;
   }
 
   const creditCents = Math.max(
@@ -327,6 +334,10 @@ export async function creditSucceededEventPayment(paymentId: number): Promise<nu
   );
   if (creditCents <= 0) return 0;
 
+  const cancelPurpose = payment.purpose.startsWith('Cancelled:')
+    ? payment.purpose
+    : `Cancelled: ${payment.purpose}`;
+
   await prisma.$transaction(async (tx) => {
     await tx.member.update({
       where: { id: payment.memberId },
@@ -335,11 +346,27 @@ export async function creditSucceededEventPayment(paymentId: number): Promise<nu
     await tx.clubPayment.update({
       where: { id: payment.id },
       data: {
-        status: 'CANCELLED',
         metadata: {
           ...meta,
           reimbursedAsCreditCents: creditCents,
           reimbursedAt: new Date().toISOString(),
+        },
+      },
+    });
+    await tx.clubPayment.create({
+      data: {
+        memberId: payment.memberId,
+        amountCents: creditCents,
+        listAmountCents: creditCents,
+        creditAppliedCents: 0,
+        provider: payment.provider || 'manual',
+        status: 'CANCELLED',
+        purpose: cancelPurpose,
+        metadata: {
+          kind: 'event_cancel_credit',
+          originalPaymentId: payment.id,
+          creditGrantedCents: creditCents,
+          product: meta.product,
         },
       },
     });
@@ -348,7 +375,10 @@ export async function creditSucceededEventPayment(paymentId: number): Promise<nu
   return creditCents;
 }
 
-/** Cancel unpaid PENDING event payment without credit. */
+/**
+ * Drop an unpaid PENDING event payment entirely — no CANCELLED ledger row.
+ * Registration FKs are SetNull on payment delete.
+ */
 export async function cancelPendingEventPayment(paymentId: number): Promise<void> {
   const payment = await prisma.clubPayment.findUnique({ where: { id: paymentId } });
   if (!payment || payment.status !== 'PENDING') return;
@@ -356,10 +386,7 @@ export async function cancelPendingEventPayment(paymentId: number): Promise<void
   if (!isEventProduct(meta.product) && meta.kind !== 'event' && meta.kind !== 'event_obligation') {
     return;
   }
-  await prisma.clubPayment.update({
-    where: { id: payment.id },
-    data: { status: 'CANCELLED' },
-  });
+  await prisma.clubPayment.delete({ where: { id: payment.id } });
 }
 
 /**

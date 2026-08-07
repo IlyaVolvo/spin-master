@@ -1,5 +1,6 @@
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
+import { emitPaymentUpdated } from '../services/socketService';
 import { getActivePaymentProvider, getCashPaymentProvider } from './getActivePaymentProvider';
 import { resolvePlanForMember, planChargeAmountCents } from './resolvePlan';
 import { getFutureEntitlement, refreshCurrentEntitlement } from './entitlementQueue';
@@ -291,6 +292,23 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     forceFuture,
     confirmedImmediately,
   });
+
+  // Notify Admin Payment Log (and waiters) — PENDING cash and confirmed checkouts.
+  // Immediate cash confirm already emits SUCCEEDED via confirmPayment; emit again is fine.
+  const notified = await prisma.clubPayment.findUnique({
+    where: { id: payment.id },
+    select: {
+      id: true,
+      memberId: true,
+      status: true,
+      amountCents: true,
+      provider: true,
+      purpose: true,
+    },
+  });
+  if (notified) {
+    emitPaymentUpdated(notified);
+  }
 
   return {
     ...result,

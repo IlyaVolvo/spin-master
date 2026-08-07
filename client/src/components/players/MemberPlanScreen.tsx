@@ -80,6 +80,27 @@ type PricedPlan = {
 
 type PurchaseLineState = 'idle' | 'pending' | 'confirmed' | 'failed';
 
+/** Dark label like Ledger/Admin, but only as wide as the text. */
+const planSectionLabelStyle: React.CSSProperties = {
+  display: 'inline-block',
+  margin: 0,
+  padding: '6px 10px',
+  backgroundColor: '#2c3e50',
+  color: '#ffffff',
+  fontWeight: 600,
+  fontSize: '14px',
+  lineHeight: 1.3,
+};
+
+function planSlotLabelStyle(active: boolean): React.CSSProperties {
+  return {
+    ...planSectionLabelStyle,
+    marginBottom: '6px',
+    backgroundColor: active ? '#2c3e50' : '#c5ced6',
+    color: active ? '#ffffff' : '#2c3e50',
+  };
+}
+
 function formatMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
@@ -116,7 +137,7 @@ function purchaseBlockReason(summary: PlanSummary): string | null {
   if (summary.pendingPayment) return 'A payment is already in progress.';
   if (summary.future) return 'A next plan is already queued.';
   if (summary.current && summary.autoRenewEnabled) {
-    return 'Auto-renew is on for the current plan — Extend for Future is unavailable.';
+    return 'Auto-renew is on for the current plan — turn it off to choose a future plan.';
   }
   return null;
 }
@@ -186,7 +207,9 @@ export type MemberPlanScreenProps = {
 
 export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   const admin = isAdmin();
-  const adminActingOnBehalf = admin && getMember()?.id !== memberId;
+  const selfMemberId = getMember()?.id;
+  const adminActingOnBehalf =
+    admin && selfMemberId != null && Number(selfMemberId) !== Number(memberId);
   const [summary, setSummary] = useState<PlanSummary | null>(null);
   const [plans, setPlans] = useState<PricedPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -250,8 +273,11 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         : [];
       setSummary(nextSummary);
       setPlans(nextPlans);
-      setCreditDraft(String((nextSummary.purchaseCreditCents || 0) / 100));
-      const actingOnBehalf = isAdmin() && getMember()?.id !== memberId;
+      setCreditDraft('');
+      const actingOnBehalf =
+        isAdmin() &&
+        getMember()?.id != null &&
+        Number(getMember()?.id) !== Number(memberId);
       const buyingCurrent = !nextSummary.current && !nextSummary.inTrial;
       const canCash =
         isAdmin() &&
@@ -300,22 +326,74 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   const inTrial = summary?.inTrial === true;
   const canPurchase = summary?.canPurchase === true;
   const blockReason = summary ? purchaseBlockReason(summary) : null;
-  const actionLabel = inTrial
-    ? 'Purchase for after trial'
-    : hasCurrent
-      ? 'Extend for Future'
-      : 'Purchase';
   const trialStartsOn = summary?.trialPlanStartsOn || null;
   const trialEndsOnLabel = summary?.trialEndsOn || null;
-  const showStartDate =
-    !hasCurrent && !inTrial && selectedPlan?.kind === 'TIME' && canPurchase;
+  /** Cash: available to everyone who can purchase. Online: not when admin acts on behalf. */
+  const canPayCash = canPurchase;
   const canPayOnline =
     summary?.effectiveCanPayOnline === true && !adminActingOnBehalf;
   const hasEmail = Boolean(summary?.member.email?.trim());
-  /** Desk cash: current-plan purchases, or any purchase when admin acts on behalf (cash only). */
-  const buyingCurrentPlan = !hasCurrent && !inTrial;
-  const canPayCash =
-    admin && canPurchase && (adminActingOnBehalf || buyingCurrentPlan);
+
+  const purchasePanelTone: PurchaseLineState =
+    purchaseLineState !== 'idle'
+      ? purchaseLineState
+      : summary?.pendingPayment
+        ? 'pending'
+        : 'idle';
+
+  /** Where a new purchase can be started (picker). In-flight status uses statusTarget separately. */
+  const idlePurchaseSlot: 'current' | 'future' | null = inTrial
+    ? 'future'
+    : !hasCurrent
+      ? 'current'
+      : summary && !summary.autoRenewEnabled && !summary.future
+        ? 'future'
+        : null;
+  /** Only show Extend when Future purchase is actually available. */
+  const canExtendForFuture =
+    canPurchase &&
+    purchasePanelTone === 'idle' &&
+    idlePurchaseSlot === 'future' &&
+    plans.length > 0;
+  const actionLabel = canExtendForFuture
+    ? inTrial
+      ? 'Purchase for after trial'
+      : 'Extend for Future'
+    : 'Purchase';
+  const showStartDate =
+    !hasCurrent && !inTrial && selectedPlan?.kind === 'TIME' && canPurchase;
+  const showPurchasePicker =
+    canPurchase &&
+    purchasePanelTone === 'idle' &&
+    idlePurchaseSlot != null &&
+    plans.length > 0;
+  const purchaseStatusSlot: 'current' | 'future' | null =
+    purchasePanelTone !== 'idle'
+      ? statusTarget ??
+        (summary?.pendingPayment
+          ? hasCurrent || inTrial
+            ? 'future'
+            : 'current'
+          : null)
+      : null;
+  /** Active slot for purchase UI (picker or in-flight status). */
+  const purchaseSlot: 'current' | 'future' | null = showPurchasePicker
+    ? idlePurchaseSlot
+    : purchaseStatusSlot;
+
+  const futureSlotLockedReason = (() => {
+    if (summary?.future) return null;
+    if (canExtendForFuture) return null;
+    if (purchaseStatusSlot === 'future') return null;
+    if (!hasCurrent && !inTrial) {
+      return 'Future plan is unavailable until a current plan is in place.';
+    }
+    if (hasCurrent && summary?.autoRenewEnabled) {
+      return 'Turn off Auto-renew to select a future plan.';
+    }
+    if (summary?.pendingPayment) return 'A payment is already in progress.';
+    return null;
+  })();
 
   useEffect(() => {
     if (showStartDate && !startDate) {
@@ -324,19 +402,29 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   }, [showStartDate, startDate]);
 
   useEffect(() => {
-    if (adminActingOnBehalf && payMethod !== 'cash' && canPayCash) {
-      setPayMethod('cash');
+    if (adminActingOnBehalf && canPayCash) {
+      if (payMethod !== 'cash') setPayMethod('cash');
       return;
     }
-    if (payMethod === 'cash' && !canPayCash) {
+    if (canPayCash && !canPayOnline) {
+      if (payMethod !== 'cash') setPayMethod('cash');
+      return;
+    }
+    if (!canPayCash && canPayOnline) {
+      if (payMethod !== 'online') setPayMethod('online');
+      return;
+    }
+    if (!canPayCash && !canPayOnline && payMethod === 'cash') {
       setPayMethod('online');
-    } else if (!canPayOnline && payMethod === 'online' && canPayCash) {
-      setPayMethod('cash');
     }
   }, [adminActingOnBehalf, canPayOnline, canPayCash, payMethod]);
 
   const saveOnlineConsent = async (enabled: boolean) => {
     if (!hasEmail || adminActingOnBehalf) return;
+    if (!enabled && summary?.autoRenewEnabled) {
+      setError('Turn off Auto-renew before disabling online pay');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -374,18 +462,19 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       return;
     }
     if (payMethod === 'cash' && !canPayCash) {
-      setError(
-        admin
-          ? 'Cash is only available when purchasing a current plan'
-          : 'Cash payment can only be recorded by an administrator',
-      );
+      setError('Cash payment is not available right now');
       return;
     }
     if (showStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
       setError('Choose a valid plan start date');
       return;
     }
-    const target: 'current' | 'future' = hasCurrent || inTrial ? 'future' : 'current';
+    const target: 'current' | 'future' =
+      idlePurchaseSlot === 'current' || idlePurchaseSlot === 'future'
+        ? idlePurchaseSlot
+        : hasCurrent || inTrial
+          ? 'future'
+          : 'current';
     setStatusTarget(target);
     setBusy(true);
     setError('');
@@ -420,7 +509,11 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
           setPurchaseLineLabel(
             `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (PAID)`,
           );
-          setMessage('Cash payment recorded as paid. Plan updated.');
+          setMessage(
+            adminActingOnBehalf
+              ? 'Cash recorded as paid on the member’s behalf. Plan updated.'
+              : 'Cash payment recorded as paid. Plan updated.',
+          );
           await load({ silent: true });
           return;
         }
@@ -428,7 +521,9 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         setPurchaseLineLabel(
           `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (awaiting admin)`,
         );
-        setMessage('Cash payment recorded as pending. An administrator must clear it.');
+        setMessage(
+          'Cash selected — payment is PENDING until an administrator clears it at the desk.',
+        );
         await load({ silent: true });
         return;
       }
@@ -483,17 +578,18 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
     setError('');
     try {
       const dollars = Number(creditDraft);
-      if (!Number.isFinite(dollars) || dollars < 0) {
-        setError('Enter a valid credit amount');
+      if (!Number.isFinite(dollars) || dollars <= 0) {
+        setError('Enter a positive credit amount to add');
         return;
       }
       await api.post(`/club/members/${memberId}/plan/credit`, {
         purchaseCreditCents: Math.round(dollars * 100),
       });
-      setMessage('Credit updated');
+      setMessage(`Added ${formatMoney(Math.round(dollars * 100))} credit`);
+      setCreditDraft('');
       await load({ silent: true });
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to set credit'));
+      setError(getErrorMessage(err, 'Failed to add credit'));
     } finally {
       setBusy(false);
     }
@@ -516,21 +612,34 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
 
   const toggleAutoRenew = async (enabled: boolean) => {
     if (!summary?.current) return;
+    if (adminActingOnBehalf) {
+      setError('Only the member can change auto-renew');
+      return;
+    }
+    // Block only when a Future plan is already queued (selected and paid).
     if (enabled && summary.future) {
       setError('Auto-renew cannot be enabled while a future plan is queued');
       return;
     }
-    if (enabled && !summary.effectiveCanPayOnline) {
-      setError('Auto-renew requires email and consent to pay online');
+    if (enabled && !summary.onlinePayConsent) {
+      setError('Enable “I consent to pay online” before turning on Auto-renew');
       return;
     }
+    if (enabled && !summary.effectiveCanPayOnline) {
+      setError('Auto-renew requires an email address and online pay consent');
+      return;
+    }
+    // Prefer current entitlement family; server also resolves from current if omitted.
+    const familyKey =
+      summary.current.familyKey || summary.autoRenewFamilyKey || undefined;
     setBusy(true);
     setError('');
     try {
       await api.patch(`/club/members/${memberId}/plan/auto-renew`, {
         enabled,
-        familyKey: summary.current.familyKey || summary.autoRenewFamilyKey || undefined,
+        ...(enabled && familyKey ? { familyKey } : {}),
       });
+      setMessage(enabled ? 'Auto-renew enabled' : 'Auto-renew turned off');
       await load({ silent: true });
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to update auto-renew'));
@@ -557,12 +666,273 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
     purchaseLineState,
     pendingPayment: Boolean(summary?.pendingPayment),
   });
-  const purchasePanelTone: PurchaseLineState =
-    purchaseLineState !== 'idle'
-      ? purchaseLineState
-      : summary?.pendingPayment
-        ? 'pending'
-        : 'idle';
+
+  const renderPurchaseStatus = (slot: 'current' | 'future') => {
+    const label =
+      purchaseLineLabel ||
+      (purchasePanelTone === 'pending'
+        ? 'Payment pending…'
+        : purchasePanelTone === 'failed'
+          ? 'Payment failed'
+          : purchasePanelTone === 'confirmed'
+            ? 'Payment confirmed'
+            : 'Processing…');
+    return (
+      <div
+        style={{
+          padding: '10px 12px',
+          borderRadius: '6px',
+          fontSize: '14px',
+          color:
+            purchasePanelTone === 'failed'
+              ? '#c0392b'
+              : purchasePanelTone === 'confirmed'
+                ? '#1e7e34'
+                : '#546e7a',
+          ...statusPanelStyle(purchasePanelTone === 'idle' ? 'pending' : purchasePanelTone),
+        }}
+      >
+        <strong style={{ fontWeight: 700 }}>
+          {slot === 'future' ? 'Future plan' : 'Current plan'}
+        </strong>
+        <span style={{ fontWeight: 400 }}>
+          {' · '}
+          {label}
+        </span>
+        {purchasePanelTone === 'pending' && (
+          <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#666' }}>
+            Awaiting payment confirmation. See Ledger for PENDING → PAID.
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const renderPurchasePanel = () => (
+    <div
+      style={{
+        padding: '10px 12px',
+        borderRadius: '6px',
+        transition: 'background-color 0.2s ease',
+        ...statusPanelStyle(purchasePanelTone),
+        border:
+          purchasePanelTone === 'idle'
+            ? '1px solid #ccc'
+            : statusPanelStyle(purchasePanelTone).border,
+      }}
+    >
+      {inTrial && (
+        <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#1a5276', fontWeight: 600 }}>
+          This plan will be in effect after the trial
+          {trialStartsOn ? ` (from ${trialStartsOn})` : ' ends'}
+          {trialEndsOnLabel ? ` — trial ends ${trialEndsOnLabel}` : ''}.
+        </p>
+      )}
+      {blockReason && purchasePanelTone === 'idle' && (
+        <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#a65b00' }}>{blockReason}</p>
+      )}
+      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
+        Select plan
+      </label>
+      <select
+        value={selectedFamilyKey}
+        disabled={busy || !canPurchase || plans.length === 0}
+        onChange={(e) => setSelectedFamilyKey(e.target.value)}
+        style={{
+          width: '100%',
+          padding: '8px',
+          fontSize: '14px',
+          marginBottom: '8px',
+          fontWeight: 700,
+          color:
+            purchasePanelTone === 'failed'
+              ? '#c0392b'
+              : purchasePanelTone === 'confirmed'
+                ? '#1e7e34'
+                : purchasePanelTone === 'pending'
+                  ? '#455a64'
+                  : undefined,
+          background:
+            purchasePanelTone === 'failed'
+              ? '#fdecea'
+              : purchasePanelTone === 'confirmed'
+                ? '#e8f5e9'
+                : purchasePanelTone === 'pending'
+                  ? '#eceff1'
+                  : undefined,
+        }}
+      >
+        {plans.length === 0 && <option value="">No plans available</option>}
+        {plans.map((p) => (
+          <option key={p.familyKey} value={p.familyKey}>
+            {p.name}
+            {` — ${formatMoney(p.chargePreviewCents)}`}
+            {p.creditPreviewCents > 0
+              ? ` (after ${formatMoney(p.creditPreviewCents)} credit)`
+              : ''}
+          </option>
+        ))}
+      </select>
+
+      {selectedPlan && (
+        <p
+          style={{
+            margin: '0 0 10px',
+            fontSize: '12px',
+            color:
+              purchasePanelTone === 'failed'
+                ? '#c0392b'
+                : purchasePanelTone === 'confirmed'
+                  ? '#1e7e34'
+                  : '#555',
+          }}
+        >
+          <strong style={{ fontWeight: 700 }}>{selectedPlan.name}</strong>
+          <span style={{ fontWeight: 400 }}>
+            {' · '}
+            {selectedPlan.kind}
+            {selectedPlan.kind === 'VISIT' && selectedPlan.visitCount != null
+              ? ` · ${selectedPlan.visitCount} visits`
+              : ''}
+            {' · '}priced for segment {selectedPlan.segment}
+            {' · '}list {formatMoney(selectedPlan.listAmountCents)}
+          </span>
+          {inTrial && (
+            <span style={{ display: 'block', marginTop: '6px', fontWeight: 600, color: '#1a5276' }}>
+              Takes effect after trial
+              {trialStartsOn ? ` on ${trialStartsOn}` : ''}.
+            </span>
+          )}
+        </p>
+      )}
+
+      <div style={{ marginBottom: '10px', fontSize: '13px' }}>
+        <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Payment method</span>
+        {canPayCash && (
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginRight: '14px',
+            }}
+            title={
+              adminActingOnBehalf
+                ? 'Record cash as paid immediately on this member’s behalf'
+                : 'Pay at the desk — stays PENDING until an administrator clears it'
+            }
+          >
+            <input
+              type="radio"
+              name="payMethod"
+              checked={payMethod === 'cash'}
+              disabled={busy || !canPurchase}
+              onChange={() => setPayMethod('cash')}
+            />
+            Cash (paid now)
+          </label>
+        )}
+        {canPayOnline && (
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+            title="Pay with the active online provider"
+          >
+            <input
+              type="radio"
+              name="payMethod"
+              checked={payMethod === 'online'}
+              disabled={busy || !canPurchase}
+              onChange={() => setPayMethod('online')}
+            />
+            Pay online
+          </label>
+        )}
+        {!canPayCash && !canPayOnline && (
+          <p style={{ margin: 0, fontSize: '12px', color: '#a65b00' }}>
+            {hasEmail
+              ? 'Enable “I consent to pay online” to pay online, or choose cash when available.'
+              : 'Add an email and consent to pay online, or pay cash at the desk.'}
+          </p>
+        )}
+      </div>
+
+      {showStartDate && (
+        <label style={{ display: 'block', fontSize: '13px', marginBottom: '10px' }}>
+          <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+            First day
+          </span>
+          <input
+            type="date"
+            value={startDate}
+            min={clubTodayYmd()}
+            disabled={busy}
+            onChange={(e) => setStartDate(e.target.value || clubTodayYmd())}
+            style={{ padding: '8px', fontSize: '14px' }}
+          />
+        </label>
+      )}
+
+      {purchaseLineLabel && (
+        <p
+          style={{
+            margin: '0 0 10px',
+            fontSize: '13px',
+            color:
+              purchasePanelTone === 'failed'
+                ? '#c0392b'
+                : purchasePanelTone === 'confirmed'
+                  ? '#1e7e34'
+                  : '#546e7a',
+          }}
+        >
+          <strong style={{ fontWeight: 700 }}>
+            {purchaseLineLabel.split(' · ')[0] || purchaseLineLabel}
+          </strong>
+          {purchaseLineLabel.includes(' · ') && (
+            <span style={{ fontWeight: 400 }}>
+              {' · '}
+              {purchaseLineLabel.split(' · ').slice(1).join(' · ')}
+            </span>
+          )}
+        </p>
+      )}
+
+      {busy && purchasePanelTone === 'pending' && (
+        <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#666' }}>
+          Payment is processing. You can close this screen anytime — confirmation finishes in the background.
+        </p>
+      )}
+
+      <button
+        type="button"
+        className={purchasePanelTone === 'confirmed' ? 'success' : undefined}
+        disabled={
+          busy ||
+          (!canPurchase && purchasePanelTone === 'idle') ||
+          !selectedPlan ||
+          (payMethod === 'cash' ? !canPayCash : !canPayOnline)
+        }
+        onClick={() => void purchase()}
+        style={
+          purchasePanelTone === 'idle'
+            ? undefined
+            : purchaseButtonStyle(purchasePanelTone, busy)
+        }
+      >
+        {busy && purchasePanelTone === 'pending'
+          ? 'Processing…'
+          : purchasePanelTone === 'failed'
+            ? 'Failed — retry'
+            : purchasePanelTone === 'confirmed'
+              ? 'Purchased'
+              : `${actionLabel} · ${payMethod === 'cash' ? 'Cash' : 'Online'}`}
+      </button>
+    </div>
+  );
 
   return (
     <div
@@ -590,7 +960,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-          <h3 style={{ margin: 0 }}>Plan — {name}</h3>
+          <h3 style={{ ...planSectionLabelStyle, fontSize: '16px' }}>Plan — {name}</h3>
           <button
             type="button"
             onClick={(e) => {
@@ -615,8 +985,6 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
           <>
             <p style={{ margin: '12px 0 0', fontSize: '13px', color: '#555' }}>
               Pricing segment: <strong>{summary.member.segment || 'Regular'}</strong>
-              {' · '}
-              Credit: {formatMoney(summary.purchaseCreditCents)}
             </p>
             {inTrial && (
               <div
@@ -655,20 +1023,31 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                   gap: '8px',
                   marginTop: '12px',
                   fontSize: '13px',
-                  cursor: busy || adminActingOnBehalf ? 'not-allowed' : 'pointer',
+                  cursor:
+                    busy ||
+                    adminActingOnBehalf ||
+                    (summary.autoRenewEnabled && summary.onlinePayConsent === true)
+                      ? 'not-allowed'
+                      : 'pointer',
                   opacity: adminActingOnBehalf ? 0.45 : 1,
                   color: adminActingOnBehalf ? '#888' : undefined,
                 }}
                 title={
                   adminActingOnBehalf
                     ? 'Online consent can only be set by the member. Admin can record cash only.'
-                    : undefined
+                    : summary.autoRenewEnabled && summary.onlinePayConsent === true
+                      ? 'Turn off Auto-renew before disabling online pay'
+                      : undefined
                 }
               >
                 <input
                   type="checkbox"
                   checked={summary.onlinePayConsent === true}
-                  disabled={busy || adminActingOnBehalf}
+                  disabled={
+                    busy ||
+                    adminActingOnBehalf ||
+                    (summary.autoRenewEnabled && summary.onlinePayConsent === true)
+                  }
                   onChange={(e) => void saveOnlineConsent(e.target.checked)}
                 />
                 I consent to pay online
@@ -676,7 +1055,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
             )}
 
             <section style={{ marginTop: '14px' }}>
-              <h4 style={{ margin: '0 0 6px' }}>Current plan</h4>
+              <h4 style={planSlotLabelStyle(Boolean(summary.current))}>Current plan</h4>
               {summary.current ? (
                 <div
                   style={{
@@ -696,52 +1075,72 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                       gap: '6px',
                       flexShrink: 0,
                       marginTop: '1px',
-                      cursor: busy || summary.future || !summary.effectiveCanPayOnline ? 'not-allowed' : 'pointer',
+                      cursor:
+                        busy ||
+                        adminActingOnBehalf ||
+                        summary.future ||
+                        (!summary.autoRenewEnabled && !summary.onlinePayConsent)
+                          ? 'not-allowed'
+                          : 'pointer',
                       fontSize: '13px',
-                      opacity: summary.future || !summary.effectiveCanPayOnline ? 0.55 : 1,
+                      opacity:
+                        adminActingOnBehalf ||
+                        summary.future ||
+                        (!summary.autoRenewEnabled && !summary.onlinePayConsent)
+                          ? 0.55
+                          : 1,
                     }}
                     title={
-                      summary.future
-                        ? 'Auto-renew is unavailable while a future plan is queued'
-                        : !summary.effectiveCanPayOnline
-                          ? 'Auto-renew requires email and online pay consent'
-                          : 'Auto-renew this plan when it ends'
+                      adminActingOnBehalf
+                        ? 'Only the member can change auto-renew'
+                        : summary.future
+                          ? 'Auto-renew is unavailable while a future plan is queued (selected and paid)'
+                          : !summary.autoRenewEnabled && !summary.onlinePayConsent
+                            ? 'Enable “I consent to pay online” first'
+                            : summary.autoRenewEnabled
+                              ? 'Auto-renew is on — uncheck to choose a future plan instead'
+                              : 'Auto-renew this plan when it ends'
                     }
                   >
                     <input
                       type="checkbox"
                       checked={summary.autoRenewEnabled && !summary.future}
-                      disabled={busy || Boolean(summary.future) || !summary.effectiveCanPayOnline}
+                      disabled={
+                        busy ||
+                        adminActingOnBehalf ||
+                        Boolean(summary.future) ||
+                        (!summary.autoRenewEnabled && !summary.onlinePayConsent)
+                      }
                       onChange={(e) => void toggleAutoRenew(e.target.checked)}
                     />
                     Auto-renew
                   </label>
                   <EntitlementLine entitlement={summary.current} tone={currentTone} />
                 </div>
-              ) : purchasePanelTone === 'pending' && statusTarget === 'current' ? (
-                <div
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    color: '#546e7a',
-                    ...statusPanelStyle('pending'),
-                  }}
-                >
-                  Purchase pending…
-                </div>
+              ) : showPurchasePicker && idlePurchaseSlot === 'current' ? (
+                renderPurchasePanel()
+              ) : purchaseSlot === 'current' ? (
+                renderPurchaseStatus('current')
               ) : (
                 <p style={{ margin: 0, fontSize: '14px', color: '#333' }}>None</p>
               )}
               {summary.current && summary.future && (
                 <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#666' }}>
-                  Auto-renew is off while a future plan is selected.
+                  Auto-renew is off while a future plan is queued.
                 </p>
               )}
             </section>
 
-            <section style={{ marginTop: '12px' }}>
-              <h4 style={{ margin: '0 0 6px' }}>Next plan</h4>
+            <section
+              style={{
+                marginTop: '12px',
+                opacity:
+                  summary.future || canExtendForFuture || purchaseSlot === 'future'
+                    ? 1
+                    : 0.5,
+              }}
+            >
+              <h4 style={planSlotLabelStyle(Boolean(summary.future))}>Future plan</h4>
               {summary.future ? (
                 <div
                   style={{
@@ -752,20 +1151,23 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                 >
                   <EntitlementLine entitlement={summary.future} tone={futureTone} />
                 </div>
-              ) : purchasePanelTone === 'pending' && statusTarget === 'future' ? (
+              ) : canExtendForFuture ? (
+                renderPurchasePanel()
+              ) : purchaseSlot === 'future' ? (
+                renderPurchaseStatus('future')
+              ) : (
                 <div
                   style={{
                     padding: '8px 10px',
                     borderRadius: '6px',
-                    fontSize: '14px',
-                    color: '#546e7a',
-                    ...statusPanelStyle('pending'),
+                    background: '#f4f6f7',
+                    border: '1px solid #e0e4e8',
+                    color: '#7f8c8d',
+                    fontSize: '13px',
                   }}
                 >
-                  Extension pending…
+                  {futureSlotLockedReason || 'None'}
                 </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: '14px', color: '#333' }}>None</p>
               )}
               {admin && summary.future && (
                 <button
@@ -779,282 +1181,97 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
               )}
             </section>
 
-            <section
-              style={{
-                marginTop: '14px',
-                opacity: admin ? 1 : 0.45,
-                pointerEvents: admin ? 'auto' : 'none',
-              }}
-              title={admin ? undefined : 'Admin only'}
-            >
-              <h4 style={{ margin: '0 0 6px' }}>Admin credit</h4>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={creditDraft}
-                  onChange={(e) => setCreditDraft(e.target.value)}
-                  style={{ width: '100px', padding: '6px' }}
-                  disabled={busy || !admin}
-                />
-                <button type="button" disabled={busy || !admin} onClick={() => void saveCredit()}>
-                  Set credit ($)
-                </button>
-              </div>
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginTop: '12px',
-                  fontSize: '13px',
-                  cursor: busy || !admin ? 'not-allowed' : 'pointer',
-                  color: admin ? undefined : '#888',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={summary.member.courtesySuspended !== true}
-                  disabled={busy || !admin}
-                  onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
-                />
-                Courtesy check-in enabled
-              </label>
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
-                {admin
-                  ? 'Default is on. Uncheck to suspend courtesy for this member until re-enabled.'
-                  : 'Only an administrator can change credit or courtesy.'}
+            <section style={{ marginTop: '12px' }}>
+              <h4 style={{ margin: '0 0 6px' }}>Current credit</h4>
+              <p style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#2c3e50' }}>
+                {formatMoney(summary.purchaseCreditCents)}
               </p>
             </section>
 
-            <section style={{ marginTop: '18px' }}>
-              <h4 style={{ margin: '0 0 6px' }}>{actionLabel}</h4>
-              {inTrial && (
-                <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#1a5276', fontWeight: 600 }}>
-                  This plan will be in effect after the trial
-                  {trialStartsOn ? ` (from ${trialStartsOn})` : ' ends'}
-                  {trialEndsOnLabel ? ` — trial ends ${trialEndsOnLabel}` : ''}.
-                </p>
-              )}
-              {blockReason && (
-                <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#a65b00' }}>{blockReason}</p>
-              )}
+            <hr
+              style={{
+                margin: '16px 0',
+                border: 'none',
+                borderTop: '1px solid #d0d7de',
+              }}
+            />
 
-              <div
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: '6px',
-                  transition: 'background-color 0.2s ease',
-                  opacity: canPurchase || purchasePanelTone !== 'idle' ? 1 : 0.65,
-                  ...statusPanelStyle(purchasePanelTone),
-                  border:
-                    purchasePanelTone === 'idle'
-                      ? '1px solid #ccc'
-                      : statusPanelStyle(purchasePanelTone).border,
-                }}
-              >
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                  Plan
-                </label>
-                <select
-                  value={selectedFamilyKey}
-                  disabled={busy || !canPurchase || plans.length === 0}
-                  onChange={(e) => setSelectedFamilyKey(e.target.value)}
+            {admin && (
+              <section style={{ marginTop: '18px' }}>
+                <div
                   style={{
-                    width: '100%',
-                    padding: '8px',
-                    fontSize: '14px',
-                    marginBottom: '8px',
-                    fontWeight: 700,
-                    color:
-                      purchasePanelTone === 'failed'
-                        ? '#c0392b'
-                        : purchasePanelTone === 'confirmed'
-                          ? '#1e7e34'
-                          : purchasePanelTone === 'pending'
-                            ? '#455a64'
-                            : undefined,
-                    background:
-                      purchasePanelTone === 'failed'
-                        ? '#fdecea'
-                        : purchasePanelTone === 'confirmed'
-                          ? '#e8f5e9'
-                          : purchasePanelTone === 'pending'
-                            ? '#eceff1'
-                            : undefined,
+                    marginLeft: '-20px',
+                    marginRight: '-20px',
+                    marginBottom: '10px',
+                    padding: '10px 20px',
+                    backgroundColor: '#2c3e50',
+                    color: '#ffffff',
                   }}
                 >
-                  {plans.length === 0 && <option value="">No plans available</option>}
-                  {plans.map((p) => (
-                    <option key={p.familyKey} value={p.familyKey}>
-                      {p.name}
-                      {` — ${formatMoney(p.chargePreviewCents)}`}
-                      {p.creditPreviewCents > 0
-                        ? ` (after ${formatMoney(p.creditPreviewCents)} credit)`
-                        : ''}
-                    </option>
-                  ))}
-                </select>
-
-                {selectedPlan && (
-                  <p
-                    style={{
-                      margin: '0 0 10px',
-                      fontSize: '12px',
-                      color:
-                        purchasePanelTone === 'failed'
-                          ? '#c0392b'
-                          : purchasePanelTone === 'confirmed'
-                            ? '#1e7e34'
-                            : '#555',
-                    }}
-                  >
-                    <strong style={{ fontWeight: 700 }}>{selectedPlan.name}</strong>
-                    <span style={{ fontWeight: 400 }}>
-                      {' · '}
-                      {selectedPlan.kind}
-                      {selectedPlan.kind === 'VISIT' && selectedPlan.visitCount != null
-                        ? ` · ${selectedPlan.visitCount} visits`
-                        : ''}
-                      {' · '}priced for segment {selectedPlan.segment}
-                      {' · '}list {formatMoney(selectedPlan.listAmountCents)}
-                    </span>
-                    {inTrial && (
-                      <span style={{ display: 'block', marginTop: '6px', fontWeight: 600, color: '#1a5276' }}>
-                        Takes effect after trial
-                        {trialStartsOn ? ` on ${trialStartsOn}` : ''}.
-                      </span>
-                    )}
-                  </p>
-                )}
-
-                <div style={{ marginBottom: '10px', fontSize: '13px' }}>
-                  <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Payment method</span>
-                  <label
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      marginRight: '14px',
-                      opacity: canPayCash ? 1 : 0.45,
-                      color: canPayCash ? undefined : '#888',
-                    }}
-                    title={
-                      canPayCash
-                        ? 'Record cash as paid immediately'
-                        : admin
-                          ? 'Cash is only for purchasing a current plan (not trial / next plan), unless acting on behalf'
-                          : 'Cash can only be recorded by an administrator'
-                    }
-                  >
-                    <input
-                      type="radio"
-                      name="payMethod"
-                      checked={payMethod === 'cash'}
-                      disabled={busy || !canPurchase || !canPayCash}
-                      onChange={() => setPayMethod('cash')}
-                    />
-                    Cash (paid now)
-                  </label>
-                  <label
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      opacity: canPayOnline ? 1 : 0.5,
-                    }}
-                    title={
-                      adminActingOnBehalf
-                        ? 'Admin acting on behalf can only record cash'
-                        : canPayOnline
-                          ? 'Pay with the active online provider'
-                          : 'Requires email and online pay consent'
-                    }
-                  >
-                    <input
-                      type="radio"
-                      name="payMethod"
-                      checked={payMethod === 'online'}
-                      disabled={busy || !canPurchase || !canPayOnline}
-                      onChange={() => setPayMethod('online')}
-                    />
-                    Pay online
-                  </label>
+                  <h4 style={{ margin: 0, color: '#ffffff', fontWeight: 600 }}>Admin</h4>
                 </div>
-
-                {showStartDate && (
-                  <label style={{ display: 'block', fontSize: '13px', marginBottom: '10px' }}>
-                    <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                      First day
-                    </span>
-                    <input
-                      type="date"
-                      value={startDate}
-                      min={clubTodayYmd()}
-                      disabled={busy}
-                      onChange={(e) => setStartDate(e.target.value || clubTodayYmd())}
-                      style={{ padding: '8px', fontSize: '14px' }}
-                    />
-                  </label>
-                )}
-
-                {purchaseLineLabel && (
-                  <p
-                    style={{
-                      margin: '0 0 10px',
-                      fontSize: '13px',
-                      color:
-                        purchasePanelTone === 'failed'
-                          ? '#c0392b'
-                          : purchasePanelTone === 'confirmed'
-                            ? '#1e7e34'
-                            : '#546e7a',
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={creditDraft}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '') {
+                        setCreditDraft('');
+                        return;
+                      }
+                      const n = Number(v);
+                      if (!Number.isFinite(n) || n < 0) return;
+                      setCreditDraft(v);
                     }}
-                  >
-                    <strong style={{ fontWeight: 700 }}>
-                      {purchaseLineLabel.split(' · ')[0] || purchaseLineLabel}
-                    </strong>
-                    {purchaseLineLabel.includes(' · ') && (
-                      <span style={{ fontWeight: 400 }}>
-                        {' · '}
-                        {purchaseLineLabel.split(' · ').slice(1).join(' · ')}
-                      </span>
-                    )}
-                  </p>
-                )}
-
-                {busy && purchasePanelTone === 'pending' && (
-                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#666' }}>
-                    Payment is processing. You can close this screen anytime — confirmation finishes in the background.
-                  </p>
-                )}
-
-                <button
-                  type="button"
-                  className={purchasePanelTone === 'idle' ? 'success' : undefined}
-                  disabled={
-                    busy ||
-                    (!canPurchase && purchasePanelTone === 'idle') ||
-                    !selectedPlan ||
-                    (payMethod === 'cash' ? !canPayCash : !canPayOnline)
-                  }
-                  onClick={() => void purchase()}
-                  style={purchaseButtonStyle(purchasePanelTone, busy)}
+                    placeholder="0.00"
+                    style={{ width: '100px', padding: '6px' }}
+                    disabled={busy}
+                    aria-label="Amount to add to credit"
+                  />
+                  <button type="button" disabled={busy} onClick={() => void saveCredit()}>
+                    Add Credit
+                  </button>
+                </div>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '12px',
+                    fontSize: '13px',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                  }}
                 >
-                  {busy && purchasePanelTone === 'pending'
-                    ? 'Processing…'
-                    : purchasePanelTone === 'failed'
-                      ? 'Failed — retry'
-                      : purchasePanelTone === 'confirmed'
-                        ? 'Purchased'
-                        : `${actionLabel} · ${payMethod === 'cash' ? 'Cash' : 'Online'}`}
-                </button>
-              </div>
-            </section>
+                  <input
+                    type="checkbox"
+                    checked={summary.member.courtesySuspended !== true}
+                    disabled={busy}
+                    onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
+                  />
+                  Courtesy check-in enabled
+                </label>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
+                  Add Credit increases the balance. Default courtesy is on; uncheck to suspend.
+                </p>
+              </section>
+            )}
 
             <section style={{ marginTop: '18px' }}>
-              <h4 style={{ margin: '0 0 6px' }}>Ledger</h4>
+              <div
+                style={{
+                  marginLeft: '-20px',
+                  marginRight: '-20px',
+                  marginBottom: '10px',
+                  padding: '10px 20px',
+                  backgroundColor: '#2c3e50',
+                  color: '#ffffff',
+                }}
+              >
+                <h4 style={{ margin: 0, color: '#ffffff', fontWeight: 600 }}>Ledger</h4>
+              </div>
               {!summary.payments || summary.payments.length === 0 ? (
                 <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>No entries yet.</p>
               ) : (

@@ -274,14 +274,7 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       return res.json(result);
     }
 
-    // Plan/PPV cash from Member Plan is admin (or check-in kiosk staff) only.
-    if (method === 'cash' && !isAdmin(req) && !checkinKioskStaff) {
-      return res.status(403).json({
-        error: 'Cash payment can only be recorded by an administrator',
-      });
-    }
-
-    // Admin (or check-in staff) paying for another member: cash only.
+    // Admin / check-in staff paying for another member: cash only (no online on their behalf).
     if (
       method === 'online' &&
       (isAdmin(req) || checkinKioskStaff) &&
@@ -292,8 +285,12 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
       });
     }
 
+    // Member-chosen cash → PENDING (admin clears later).
+    // Admin/kiosk cash on a member's behalf → PAID immediately.
+    const actingOnBehalf =
+      targetMemberId !== req.memberId && (isAdmin(req) || checkinKioskStaff);
     const confirmCashImmediately =
-      method === 'cash' && (isAdmin(req) || checkinKioskStaff);
+      method === 'cash' && (checkinKioskStaff || actingOnBehalf);
 
     const result = await runMemberCheckout({
       memberId: targetMemberId,

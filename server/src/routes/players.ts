@@ -1672,6 +1672,8 @@ router.patch('/:id', [
         picture: true,
         tournamentNotificationsEnabled: true,
         autoRelinquishPrivileges: true,
+        autoRenewEnabled: true,
+        onlinePayConsent: true,
       },
     });
 
@@ -1804,6 +1806,9 @@ router.patch('/:id', [
     } else if (Object.prototype.hasOwnProperty.call(updateData, 'email') && !updateData.email) {
       updateData.tournamentNotificationsEnabled = false;
       updateData.onlinePayConsent = false;
+      // Auto-renew requires online pay; clear it when email (and thus pay online) is removed.
+      updateData.autoRenewEnabled = false;
+      updateData.autoRenewFamilyKey = null;
     }
 
     // Online pay consent: only with email; member self or admin
@@ -1819,8 +1824,21 @@ router.patch('/:id', [
           : existingMember.email;
       if (!finalEmail) {
         updateData.onlinePayConsent = false;
+        updateData.autoRenewEnabled = false;
+        updateData.autoRenewFamilyKey = null;
       } else {
-        updateData.onlinePayConsent = Boolean(req.body.onlinePayConsent);
+        const nextConsent = Boolean(req.body.onlinePayConsent);
+        if (
+          !nextConsent &&
+          existingMember.autoRenewEnabled &&
+          // Allow clearing consent only if this same request also turns off auto-renew
+          updateData.autoRenewEnabled !== false
+        ) {
+          return res.status(400).json({
+            error: 'Turn off Auto-renew before disabling online pay',
+          });
+        }
+        updateData.onlinePayConsent = nextConsent;
       }
     }
     

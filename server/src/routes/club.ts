@@ -1538,7 +1538,17 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
     });
 
     const paymentHistory = await prisma.clubPayment.findMany({
-      where: { memberId },
+      where: {
+        memberId,
+        // Same rule as Payment Log: money / credit only — exclude check-in stubs
+        // (covered visits, visit-pack debits, $0 courtesy obligations).
+        OR: [
+          { amountCents: { gt: 0 } },
+          { listAmountCents: { gt: 0 } },
+          { creditAppliedCents: { gt: 0 } },
+          { status: 'PENDING', provider: 'cash' },
+        ],
+      },
       orderBy: { recordedAt: 'desc' },
       take: 50,
       select: {
@@ -1651,7 +1661,7 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** POST /api/club/members/:id/plan/credit — admin set purchase credit */
+/** POST /api/club/members/:id/plan/credit — admin add purchase credit (increments; never negative) */
 router.post('/members/:id/plan/credit', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdminOrOrganizer(req)) {
@@ -1661,18 +1671,26 @@ router.post('/members/:id/plan/credit', async (req: AuthRequest, res: Response) 
     if (!Number.isInteger(memberId) || memberId < 1) {
       return res.status(400).json({ error: 'Invalid member id' });
     }
-    const credit = Math.max(0, Math.floor(Number(req.body?.purchaseCreditCents)));
-    if (!Number.isFinite(credit)) {
-      return res.status(400).json({ error: 'purchaseCreditCents is required' });
+    const addCents = Math.floor(Number(req.body?.purchaseCreditCents));
+    if (!Number.isFinite(addCents) || addCents < 0) {
+      return res.status(400).json({ error: 'purchaseCreditCents must be a non-negative integer' });
+    }
+    if (addCents === 0) {
+      const member = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: { id: true, purchaseCreditCents: true },
+      });
+      if (!member) return res.status(404).json({ error: 'Member not found' });
+      return res.json({ member });
     }
     const member = await prisma.member.update({
       where: { id: memberId },
-      data: { purchaseCreditCents: credit },
+      data: { purchaseCreditCents: { increment: addCents } },
       select: { id: true, purchaseCreditCents: true },
     });
     res.json({ member });
   } catch (error) {
-    logger.error('Error setting purchase credit', {
+    logger.error('Error adding purchase credit', {
       error: error instanceof Error ? error.message : String(error),
     });
     res.status(500).json({ error: 'Internal server error' });
@@ -1728,6 +1746,10 @@ router.patch('/members/:id/plan/auto-renew', async (req: AuthRequest, res: Respo
     if (!canAccessMemberPlan(req, memberId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    // Auto-renew is a member preference — only the plan owner may change it.
+    if (req.memberId !== memberId) {
+      return res.status(403).json({ error: 'Only the member can change auto-renew' });
+    }
 
     const enabled = Boolean(req.body?.enabled);
     let familyKey =
@@ -1762,6 +1784,13 @@ router.patch('/members/:id/plan/auto-renew', async (req: AuthRequest, res: Respo
           select: { autoRenewFamilyKey: true },
         });
         familyKey = memberExisting?.autoRenewFamilyKey || current.familyKey || null;
+      }
+      if (!familyKey && current.planId) {
+        const plan = await prisma.clubPlan.findUnique({
+          where: { id: current.planId },
+          select: { familyKey: true },
+        });
+        familyKey = plan?.familyKey || null;
       }
       if (!familyKey) {
         return res.status(400).json({ error: 'familyKey is required to enable auto-renew' });
@@ -2218,17 +2247,22 @@ router.post('/admin/payments/:id/cancel', async (req: AuthRequest, res: Response
         raw: { cancelledByAdminId: req.memberId },
       });
     } else {
-      const cancelled = await prisma.clubPayment.update({
-        where: { id: payment.id },
-        data: { status: 'CANCELLED' },
-      });
+      // Pending with no external ref: delete — no CANCELLED ledger row.
+      const snapshot = {
+        id: payment.id,
+        memberId: payment.memberId,
+        amountCents: payment.amountCents,
+        provider: payment.provider,
+        purpose: payment.purpose,
+      };
+      await prisma.clubPayment.delete({ where: { id: payment.id } });
       emitPaymentUpdated({
-        id: cancelled.id,
-        memberId: cancelled.memberId,
+        id: snapshot.id,
+        memberId: snapshot.memberId,
         status: 'CANCELLED',
-        amountCents: cancelled.amountCents,
-        provider: cancelled.provider,
-        purpose: cancelled.purpose,
+        amountCents: snapshot.amountCents,
+        provider: snapshot.provider,
+        purpose: snapshot.purpose,
       });
     }
 

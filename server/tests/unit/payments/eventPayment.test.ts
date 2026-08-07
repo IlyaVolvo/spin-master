@@ -8,6 +8,7 @@ jest.mock('../../../src/index', () => ({
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
     },
     tournamentRegistration: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn() },
     $transaction: jest.fn(),
@@ -341,13 +342,15 @@ describe('clearEventUnpaid / apply / credit / cancel', () => {
     });
   });
 
-  it('creditSucceededEventPayment refunds list amount to purchase credit', async () => {
+  it('creditSucceededEventPayment refunds list amount to purchase credit and keeps SUCCEEDED payment', async () => {
     (prisma.clubPayment.findUnique as jest.Mock).mockResolvedValue({
       id: 26,
       memberId: 170,
       status: 'SUCCEEDED',
       listAmountCents: 1000,
       amountCents: 0,
+      purpose: 'Event registration: Club Championship',
+      provider: 'test',
       metadata: {
         kind: 'event',
         product: { kind: 'event', tournamentId: 35, registrationId: 9, amountCents: 1000 },
@@ -356,7 +359,7 @@ describe('clearEventUnpaid / apply / credit / cancel', () => {
     (prisma.$transaction as jest.Mock).mockImplementation(async (fn: any) =>
       fn({
         member: { update: prisma.member.update },
-        clubPayment: { update: prisma.clubPayment.update },
+        clubPayment: { update: prisma.clubPayment.update, create: prisma.clubPayment.create },
       }),
     );
 
@@ -366,22 +369,36 @@ describe('clearEventUnpaid / apply / credit / cancel', () => {
       where: { id: 170 },
       data: { purchaseCreditCents: { increment: 1000 } },
     });
+    expect(prisma.clubPayment.update).toHaveBeenCalledWith({
+      where: { id: 26 },
+      data: expect.objectContaining({
+        metadata: expect.objectContaining({ reimbursedAsCreditCents: 1000 }),
+      }),
+    });
+    const updateData = (prisma.clubPayment.update as jest.Mock).mock.calls[0][0].data;
+    expect(updateData.status).toBeUndefined();
+    expect(prisma.clubPayment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        memberId: 170,
+        amountCents: 1000,
+        status: 'CANCELLED',
+        purpose: 'Cancelled: Event registration: Club Championship',
+      }),
+    });
   });
 
-  it('cancelPendingEventPayment cancels PENDING event payments only', async () => {
+  it('cancelPendingEventPayment deletes PENDING event payments', async () => {
     (prisma.clubPayment.findUnique as jest.Mock).mockResolvedValue({
       id: 26,
       status: 'PENDING',
       metadata: { kind: 'event', product: { kind: 'event' } },
     });
     await cancelPendingEventPayment(26);
-    expect(prisma.clubPayment.update).toHaveBeenCalledWith({
-      where: { id: 26 },
-      data: { status: 'CANCELLED' },
-    });
+    expect(prisma.clubPayment.delete).toHaveBeenCalledWith({ where: { id: 26 } });
+    expect(prisma.clubPayment.update).not.toHaveBeenCalled();
   });
 
-  it('expirePendingEventRegistrations declines overdue PENDING and cancels payment', async () => {
+  it('expirePendingEventRegistrations declines overdue PENDING and deletes payment', async () => {
     const now = new Date('2026-08-05T12:00:00.000Z');
     (prisma.tournamentRegistration.findMany as jest.Mock).mockResolvedValue([
       { id: 9, eventPaymentId: 26 },
@@ -394,10 +411,7 @@ describe('clearEventUnpaid / apply / credit / cancel', () => {
 
     const count = await expirePendingEventRegistrations(now);
     expect(count).toBe(1);
-    expect(prisma.clubPayment.update).toHaveBeenCalledWith({
-      where: { id: 26 },
-      data: { status: 'CANCELLED' },
-    });
+    expect(prisma.clubPayment.delete).toHaveBeenCalledWith({ where: { id: 26 } });
     expect(prisma.tournamentRegistration.update).toHaveBeenCalledWith({
       where: { id: 9 },
       data: expect.objectContaining({
