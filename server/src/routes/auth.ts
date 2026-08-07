@@ -28,6 +28,7 @@ import {
 } from '../utils/checkinPaymentUnlock';
 import { memberHasPaymentLogin } from '../utils/paymentLoginEligibility';
 import { invalidateMemberCheckInStub } from '../payments/checkInStateCache';
+import { broadcastMembersUpdated } from '../services/playerSocketBroadcast';
 
 const router = express.Router();
 
@@ -669,6 +670,7 @@ router.post('/member/reset-password-with-token', [
       } as any,
     });
     invalidateMemberCheckInStub(member.id);
+    await broadcastMembersUpdated(prisma, [member.id]);
 
     logger.auditInfo('Password reset attempt', {
       outcome: 'success',
@@ -891,6 +893,7 @@ router.post('/member/change-password', [
       } as any,
     });
     invalidateMemberCheckInStub(memberId);
+    await broadcastMembersUpdated(prisma, [memberId]);
 
     logger.auditInfo('Password change attempt', {
       outcome: 'success',
