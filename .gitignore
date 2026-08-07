@@ -4,7 +4,10 @@ build/
 .env
 .env.local
 *.log
-logs/
+/logs/
+# Collected Render dumps live under ~/logs (or LOGS_DATA_ROOT); keep scripts/logs tracked
+scripts/logs/**/*.jsonl
+scripts/logs/**/render-service.*
 .DS_Store
 .vscode/
 .idea/
