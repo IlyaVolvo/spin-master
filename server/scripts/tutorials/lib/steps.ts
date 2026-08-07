@@ -431,6 +431,12 @@ export async function hotspotForFirstPaymentClear(ctx: CaptureContext): Promise<
 }
 
 export async function clearFirstPendingCashPayment(ctx: CaptureContext): Promise<void> {
+  const before = await ctx.page.evaluate(
+    () =>
+      [...document.querySelectorAll('button')].filter(
+        (b) => (b.textContent || '').trim() === 'Clear' && !(b as HTMLButtonElement).disabled,
+      ).length,
+  );
   const clicked = await ctx.page.evaluate(() => {
     const btn = [...document.querySelectorAll('button')].find(
       (b) => (b.textContent || '').trim() === 'Clear' && !(b as HTMLButtonElement).disabled,
@@ -442,13 +448,14 @@ export async function clearFirstPendingCashPayment(ctx: CaptureContext): Promise
   if (!clicked) throw new Error('No Clear button available');
   await ctx.delay(900);
   await ctx.page.waitForFunction(
-    () => {
+    (prev) => {
       const clears = [...document.querySelectorAll('button')].filter(
         (b) => (b.textContent || '').trim() === 'Clear',
       );
-      return clears.length <= 1;
+      return clears.length < prev;
     },
     { timeout: 15000 },
+    Math.max(before, 1),
   );
   await ctx.delay(400);
 }
@@ -2380,6 +2387,573 @@ export async function enterTournamentScoreKiosk(
     { timeout: 20000 },
   );
   await ctx.delay(400);
+}
+
+/** Payment Log: Paid on, Pending off. */
+export async function setPaymentLogPaidOnly(ctx: CaptureContext): Promise<void> {
+  await ctx.page.evaluate(() => {
+    const paid = document.querySelector(
+      'input[aria-label="Show paid payments"]',
+    ) as HTMLInputElement | null;
+    const pending = document.querySelector(
+      'input[aria-label="Show pending payments"]',
+    ) as HTMLInputElement | null;
+    if (!paid || !pending) throw new Error('Payment status filters missing');
+    if (!paid.checked) paid.click();
+    if (pending.checked) pending.click();
+  });
+  await ctx.delay(300);
+}
+
+export async function hotspotForPaymentLogPendingFilter(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    document
+      .querySelector('input[aria-label="Show pending payments"]')
+      ?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle(
+    () => document.querySelector('input[aria-label="Show pending payments"]') || null,
+  );
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Show pending payments checkbox not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Show pending payments has no bounding box');
+  return boxToPct(
+    { x: box.x - 4, y: box.y - 4, width: Math.max(box.width + 56, 80), height: box.height + 8 },
+    VIEWPORT.width,
+    VIEWPORT.height,
+  );
+}
+
+export async function hotspotForPaymentLogDateFilters(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.evaluate(() => {
+    document.querySelector('#payments-date-from')?.scrollIntoView({ block: 'center' });
+  });
+  await ctx.delay(150);
+  const box = await ctx.page.evaluate(() => {
+    const from = document.querySelector('#payments-date-from');
+    const to = document.querySelector('#payments-date-to');
+    if (!from) return null;
+    const a = from.getBoundingClientRect();
+    const b = to?.getBoundingClientRect();
+    if (!b) return { x: a.x, y: a.y, width: a.width, height: a.height };
+    const left = Math.min(a.left, b.left);
+    const top = Math.min(a.top, b.top);
+    return {
+      x: left,
+      y: top,
+      width: Math.max(a.right, b.right) - left,
+      height: Math.max(a.bottom, b.bottom) - top,
+    };
+  });
+  if (!box) throw new Error('Payment date filters not found');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function hotspotForPaymentLogMemberSearch(ctx: CaptureContext): Promise<HotspotPct> {
+  return ctx.hotspotFor('#member-payments-filter');
+}
+
+export async function setPaymentLogMemberFilter(ctx: CaptureContext, value: string): Promise<void> {
+  await ctx.page.waitForSelector('#member-payments-filter', { timeout: 10000 });
+  const ok = await ctx.page.evaluate((v) => {
+    const input = document.querySelector('#member-payments-filter') as HTMLInputElement | null;
+    if (!input) return false;
+    const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    proto?.call(input, v);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }, value);
+  if (!ok) throw new Error('Payment member filter not found');
+  await ctx.delay(600);
+}
+
+/** Click a payment-log member name button to open MemberPlanScreen (ledger). */
+export async function openMemberLedgerFromPaymentLog(
+  ctx: CaptureContext,
+  firstName: string,
+  lastName: string,
+): Promise<void> {
+  const needle = `${firstName} ${lastName}`;
+  const clicked = await ctx.page.evaluate((name) => {
+    const btn = [...document.querySelectorAll('button')].find((b) =>
+      (b.textContent || '').trim().startsWith(name),
+    ) as HTMLButtonElement | undefined;
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, needle);
+  if (!clicked) throw new Error(`Payment log member button for "${needle}" not found`);
+  await ctx.delay(1100);
+  await ctx.page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('h3, label')].some((el) =>
+        /^Plan\b/i.test((el.textContent || '').trim()),
+      ),
+    { timeout: 15000 },
+  );
+}
+
+export async function hotspotForPaymentLogMemberName(
+  ctx: CaptureContext,
+  firstName: string,
+  lastName: string,
+): Promise<HotspotPct> {
+  const needle = `${firstName} ${lastName}`;
+  await ctx.page.evaluate((name) => {
+    const btn = [...document.querySelectorAll('button')].find((b) =>
+      (b.textContent || '').trim().startsWith(name),
+    ) as HTMLElement | undefined;
+    btn?.scrollIntoView({ block: 'center' });
+  }, needle);
+  await ctx.delay(150);
+  const handle = await ctx.page.evaluateHandle((name) => {
+    return (
+      [...document.querySelectorAll('button')].find((b) =>
+        (b.textContent || '').trim().startsWith(name),
+      ) || null
+    );
+  }, needle);
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error(`Payment log member "${needle}" not found`);
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error(`Payment log member "${needle}" has no box`);
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function hotspotForCheckinTypeSelect(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('label')].some((l) =>
+        (l.textContent || '').includes('Check-in type'),
+      ),
+    { timeout: 15000 },
+  );
+  const handle = await ctx.page.evaluateHandle(() => {
+    const lab = [...document.querySelectorAll('label')].find((l) =>
+      (l.textContent || '').includes('Check-in type'),
+    );
+    const sel = lab?.parentElement?.querySelector('select') || document.querySelector('.card select');
+    return sel || null;
+  });
+  const el = handle.asElement();
+  if (!el) {
+    await handle.dispose();
+    throw new Error('Check-in type select not found');
+  }
+  const box = await el.boundingBox();
+  await handle.dispose();
+  if (!box) throw new Error('Check-in type select has no box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+/** Prefer an actionable event_check_in option in the PIN modal select. */
+export async function selectEventCheckInOption(ctx: CaptureContext): Promise<void> {
+  await ctx.page.waitForFunction(
+    () => Boolean(document.querySelector('.card select')),
+    { timeout: 15000 },
+  );
+  const ok = await ctx.page.evaluate(() => {
+    const sel = document.querySelector('.card select') as HTMLSelectElement | null;
+    if (!sel) return false;
+    const opt = [...sel.options].find(
+      (o) => o.value.startsWith('event:') && !o.disabled,
+    );
+    if (!opt) return false;
+    sel.value = opt.value;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  });
+  if (!ok) throw new Error('No actionable event check-in option in select');
+  await ctx.delay(300);
+}
+
+/** Enable Pre-registration mode on the tournament type modal (RR should already be selected). */
+export async function enablePreregistrationMode(ctx: CaptureContext): Promise<void> {
+  const ok = await ctx.page.evaluate(() => {
+    const labels = [...document.querySelectorAll('label')];
+    const lab = labels.find((l) => (l.textContent || '').includes('Pre-registration mode'));
+    if (!lab) return false;
+    const input = lab.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    if (input) {
+      if (!input.checked) {
+        input.click();
+      }
+      return input.checked || true;
+    }
+    lab.click();
+    return true;
+  });
+  if (!ok) throw new Error('Pre-registration mode checkbox not found');
+  await ctx.delay(500);
+  await ctx.page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('button')].some((b) =>
+        (b.textContent || '').includes('Create Pre-registration'),
+      ),
+    { timeout: 10000 },
+  );
+}
+
+export async function hotspotForPreregistrationMode(ctx: CaptureContext): Promise<HotspotPct> {
+  const box = await ctx.page.evaluate(() => {
+    const labels = [...document.querySelectorAll('label')];
+    const lab = labels.find((l) => (l.textContent || '').includes('Pre-registration mode'));
+    if (!lab) return null;
+    const input = lab.querySelector('input') || lab;
+    const r = (input as HTMLElement).getBoundingClientRect();
+    return { x: r.x, y: r.y, width: Math.max(r.width, 180), height: Math.max(r.height, 24) };
+  });
+  if (!box) throw new Error('Pre-registration mode control not found');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+/** Open + Tournament and enable Pre-registration mode (type not selected yet). */
+export async function openPreregistrationWizard(ctx: CaptureContext): Promise<void> {
+  await openTournamentWizard(ctx);
+  await enablePreregistrationMode(ctx);
+}
+
+/** Enable Paid event under Pre-registration mode (prereg must already be on). */
+export async function enablePaidEventMode(ctx: CaptureContext): Promise<void> {
+  const ok = await ctx.page.evaluate(() => {
+    const labels = [...document.querySelectorAll('label')];
+    const lab = labels.find((l) => (l.textContent || '').includes('Paid event'));
+    if (!lab) return false;
+    (lab as HTMLElement).scrollIntoView({ block: 'center', inline: 'nearest' });
+    const input = lab.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    if (input) {
+      if (!input.checked) input.click();
+      return true;
+    }
+    lab.click();
+    return true;
+  });
+  if (!ok) throw new Error('Paid event checkbox not found');
+  await ctx.delay(500);
+  await ctx.page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('label')].some((l) =>
+        /Event Name/i.test(l.textContent || ''),
+      ),
+    { timeout: 10000 },
+  );
+}
+
+export async function hotspotForPaidEventMode(ctx: CaptureContext): Promise<HotspotPct> {
+  const box = await ctx.page.evaluate(() => {
+    const labels = [...document.querySelectorAll('label')];
+    const lab = labels.find((l) => (l.textContent || '').includes('Paid event'));
+    if (!lab) return null;
+    (lab as HTMLElement).scrollIntoView({ block: 'center', inline: 'nearest' });
+    const input = lab.querySelector('input') || lab;
+    const r = (input as HTMLElement).getBoundingClientRect();
+    return { x: r.x, y: r.y, width: Math.max(r.width, 180), height: Math.max(r.height, 36) };
+  });
+  if (!box) throw new Error('Paid event control not found');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function hotspotForEventNameField(ctx: CaptureContext): Promise<HotspotPct> {
+  const box = await ctx.page.evaluate(() => {
+    const labeled = [...document.querySelectorAll('input[type="text"]')].find((el) => {
+      const wrap = el.closest('div');
+      return !!wrap && /(tournament|event) name/i.test(wrap.textContent || '');
+    }) as HTMLInputElement | undefined;
+    const byPlaceholder = document.querySelector(
+      'input[placeholder*="Auto-generated" i], input[placeholder*="event name" i]',
+    ) as HTMLInputElement | null;
+    const el = labeled || byPlaceholder;
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: Math.max(r.width, 160), height: Math.max(r.height, 28) };
+  });
+  if (!box) throw new Error('Event/Tournament Name field not found');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+/** Fill only the wizard Tournament/Event Name (does not set date). */
+export async function fillPreregistrationName(ctx: CaptureContext, name: string): Promise<void> {
+  await ctx.page.evaluate((n) => {
+    const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    const labeled = [...document.querySelectorAll('input[type="text"]')].find((el) => {
+      const wrap = el.closest('div');
+      return !!wrap && /(tournament|event) name/i.test(wrap.textContent || '');
+    }) as HTMLInputElement | undefined;
+    const byPlaceholder = document.querySelector(
+      'input[placeholder*="Auto-generated" i], input[placeholder*="event name" i]',
+    ) as HTMLInputElement | null;
+    const nameInput = labeled || byPlaceholder;
+    if (!nameInput) return;
+    proto?.call(nameInput, n);
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+  }, name);
+  await ctx.delay(300);
+}
+
+export async function hotspotForPreregistrationDate(ctx: CaptureContext): Promise<HotspotPct> {
+  const box = await ctx.page.evaluate(() => {
+    const input = document.querySelector('input[type="datetime-local"]') as HTMLInputElement | null;
+    if (!input) return null;
+    input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const r = input.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: Math.max(r.width, 160), height: Math.max(r.height, 28) };
+  });
+  if (!box) throw new Error('Tournament Date field not found');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function hotspotForPreregistrationDeadline(ctx: CaptureContext): Promise<HotspotPct> {
+  const box = await ctx.page.evaluate(() => {
+    const inputs = [...document.querySelectorAll('input[type="datetime-local"]')] as HTMLInputElement[];
+    const input = inputs[1];
+    if (!input) return null;
+    input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const r = input.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: Math.max(r.width, 160), height: Math.max(r.height, 28) };
+  });
+  if (!box) throw new Error('Registration Deadline field not found');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+/** Set tournament date only — registration deadline auto-fills from club offset; do not touch it. */
+export async function fillPreregistrationDate(ctx: CaptureContext): Promise<void> {
+  await ctx.page.evaluate(() => {
+    const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    const dateInput = document.querySelector(
+      'input[type="datetime-local"]',
+    ) as HTMLInputElement | null;
+    if (!dateInput) return;
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    d.setMinutes(0, 0, 0);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    proto?.call(dateInput, local);
+    dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+    dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await ctx.delay(400);
+}
+
+export async function setPreregistrationNumericByLabel(
+  ctx: CaptureContext,
+  label: string,
+  value: string,
+): Promise<void> {
+  const filled = await ctx.page.evaluate(
+    (lab, val) => {
+      const input = document.querySelector(
+        `input[aria-label="${lab}"]`,
+      ) as HTMLInputElement | null;
+      if (!input) return false;
+      input.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      proto?.call(input, val);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new Event('blur', { bubbles: true }));
+      return true;
+    },
+    label,
+    value,
+  );
+  if (!filled) throw new Error(`Preregistration field "${label}" not found`);
+  await ctx.delay(250);
+}
+
+export async function hotspotForPreregistrationNumeric(
+  ctx: CaptureContext,
+  label: string,
+): Promise<HotspotPct> {
+  const box = await ctx.page.evaluate((lab) => {
+    const input = document.querySelector(`input[aria-label="${lab}"]`) as HTMLInputElement | null;
+    if (!input) return null;
+    input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const r = input.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: Math.max(r.width, 80), height: Math.max(r.height, 28) };
+  }, label);
+  if (!box) throw new Error(`Preregistration field "${label}" not found for hotspot`);
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function setPreregistrationEventPrice(
+  ctx: CaptureContext,
+  dollars: string,
+): Promise<void> {
+  const filled = await ctx.page.evaluate((val) => {
+    const labeled = [...document.querySelectorAll('input[type="text"]')].find((el) => {
+      const wrap = el.closest('div');
+      return !!wrap && /event price/i.test(wrap.textContent || '');
+    }) as HTMLInputElement | undefined;
+    if (!labeled) return false;
+    labeled.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    proto?.call(labeled, val);
+    labeled.dispatchEvent(new Event('input', { bubbles: true }));
+    labeled.dispatchEvent(new Event('change', { bubbles: true }));
+    labeled.dispatchEvent(new Event('blur', { bubbles: true }));
+    return true;
+  }, dollars);
+  if (!filled) throw new Error('Event Price field not found');
+  await ctx.delay(300);
+}
+
+export async function hotspotForPreregistrationEventPrice(ctx: CaptureContext): Promise<HotspotPct> {
+  const box = await ctx.page.evaluate(() => {
+    const labeled = [...document.querySelectorAll('input[type="text"]')].find((el) => {
+      const wrap = el.closest('div');
+      return !!wrap && /event price/i.test(wrap.textContent || '');
+    }) as HTMLInputElement | undefined;
+    if (!labeled) return null;
+    labeled.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const r = labeled.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: Math.max(r.width, 80), height: Math.max(r.height, 28) };
+  });
+  if (!box) throw new Error('Event Price field not found for hotspot');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
+}
+
+export async function fillPreregistrationBasics(
+  ctx: CaptureContext,
+  name: string,
+): Promise<void> {
+  await ctx.page.evaluate((n) => {
+    const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    // Prefer the labeled Tournament/Event Name field in the wizard (not Players "Filter by name").
+    const labeled = [...document.querySelectorAll('input[type="text"]')].find((el) => {
+      const wrap = el.closest('div');
+      return !!wrap && /(tournament|event) name/i.test(wrap.textContent || '');
+    }) as HTMLInputElement | undefined;
+    const byPlaceholder = document.querySelector(
+      'input[placeholder*="Auto-generated" i], input[placeholder*="event name" i]',
+    ) as HTMLInputElement | null;
+    const nameInput = labeled || byPlaceholder;
+    if (nameInput) {
+      proto?.call(nameInput, n);
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // Tournament date is required for Create Pre-registration.
+    const dateInput = document.querySelector(
+      'input[type="datetime-local"]',
+    ) as HTMLInputElement | null;
+    if (dateInput) {
+      const d = new Date();
+      d.setDate(d.getDate() + 3);
+      d.setMinutes(0, 0, 0);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+      proto?.call(dateInput, local);
+      dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+      dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }, name);
+  await ctx.delay(400);
+}
+
+export async function submitCreatePreregistration(ctx: CaptureContext): Promise<void> {
+  const clicked = await ctx.clickButtonContaining('Create Pre-registration');
+  if (!clicked) throw new Error('Create Pre-registration button not found');
+  await ctx.delay(2000);
+  // Prefer landing on tournaments / leaving the type modal.
+  await ctx.page.waitForFunction(
+    () =>
+      ![...document.querySelectorAll('button')].some((b) =>
+        (b.textContent || '').includes('Create Pre-registration'),
+      ) || /Pre-Registration|Active|Completed/i.test(document.body.innerText || ''),
+    { timeout: 20000 },
+  );
+  await ctx.delay(500);
+}
+
+/** Open the Preregistration stage tab on the tournaments list. */
+export async function openPreregistrationStage(ctx: CaptureContext): Promise<void> {
+  await gotoPath(ctx, '/tournaments');
+  await ctx.delay(400);
+  // UI label is "Preregistration" (see stageTabLabel); keep hyphenated aliases for older copy.
+  const onTab =
+    (await ctx.clickButtonContaining('Preregistration')) ||
+    (await ctx.clickButtonContaining('Pre-Registration')) ||
+    (await ctx.clickButtonContaining('Pre-registration'));
+  if (!onTab) throw new Error('Preregistration stage tab not found');
+  await ctx.delay(700);
+}
+
+/** Open Pre-Registration stage and a tournament by name (detail). */
+export async function openPreregistrationTournament(
+  ctx: CaptureContext,
+  name: string,
+): Promise<void> {
+  await openPreregistrationStage(ctx);
+  await ctx.page.waitForFunction(
+    (n) => (document.body.innerText || '').includes(n),
+    { timeout: 20000 },
+    name,
+  );
+  const opened = await ctx.page.evaluate((n) => {
+    const candidates = [...document.querySelectorAll('a, button, h2, h3, div, span')];
+    const el = candidates.find((node) => {
+      const t = (node.textContent || '').trim();
+      return t === n || (t.includes(n) && t.length < n.length + 40);
+    }) as HTMLElement | undefined;
+    if (!el) return false;
+    const clickable =
+      (el.closest('a') as HTMLElement | null) ||
+      (el.closest('button') as HTMLElement | null) ||
+      el;
+    clickable.click();
+    return true;
+  }, name);
+  if (!opened) throw new Error(`Pre-registration tournament "${name}" not found in list`);
+  await ctx.delay(1000);
+  await ctx.page.waitForFunction(
+    (n) =>
+      (document.body.innerText || '').includes(n) &&
+      ([...document.querySelectorAll('button')].some((b) =>
+        /Register|Decline|Finalize|Cancel/i.test(b.textContent || ''),
+      ) ||
+        /Pre-Registration|Registered|Invited|Your status/i.test(document.body.innerText || '')),
+    { timeout: 20000 },
+    name,
+  );
+}
+
+export async function hotspotForRegisterOnPreregDetail(ctx: CaptureContext): Promise<HotspotPct> {
+  await ctx.page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('button')].some((b) =>
+        /^Register/i.test((b.textContent || '').trim()),
+      ),
+    { timeout: 20000 },
+  );
+  return ctx.hotspotForButton('Register');
+}
+
+export async function clickRegisterOnPreregDetail(ctx: CaptureContext): Promise<void> {
+  const clicked = await ctx.page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) =>
+      /^Register/i.test((b.textContent || '').trim()),
+    ) as HTMLButtonElement | undefined;
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  if (!clicked) throw new Error('Register button not found on prereg detail');
+  await ctx.delay(1200);
 }
 
 /** Type both participant PINs in the Match Entry kiosk dialog (does not save). */

@@ -11,9 +11,12 @@ import {
   TUTORIAL_CHECKIN_MEMBER,
   TUTORIAL_CLUB_NAME,
   TUTORIAL_EMAILS,
+  TUTORIAL_EVENT_FEE_MEMBER,
+  TUTORIAL_EVENT_NIGHT_NAME,
   TUTORIAL_PASSWORD,
   TUTORIAL_SCORE_PIN,
 } from './lib/constants';
+import { eventPurpose } from '../../src/payments/eventPayment';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -278,6 +281,24 @@ async function main() {
       },
     });
 
+    // Today’s event night — window open for kiosk event check-in + pending event fee.
+    const eventNightStart = new Date(Date.now() + 45 * 60 * 1000);
+    const eventNightPriceCents = 1500;
+    const eventNight = await prisma.tournament.create({
+      data: {
+        name: TUTORIAL_EVENT_NIGHT_NAME,
+        type: 'ROUND_ROBIN',
+        status: 'PRE_REGISTRATION',
+        isEvent: true,
+        tournamentDate: eventNightStart,
+        registrationDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        eventPriceCents: eventNightPriceCents,
+        eventCheckInLeadMinutes: 24 * 60,
+        eventCheckInCloseMinutesBeforeStart: 0,
+        maxParticipants: 24,
+      },
+    });
+
     // Completed RR with a full scored matrix — used for score-correction showcase.
     // Must remain the latest rating event for its participants (no later history).
     const completedParticipants = [player.id, ...rosterIds.slice(0, 3)];
@@ -388,7 +409,7 @@ async function main() {
       },
     });
 
-    // Payment Log showcase: mix of pending cash (clearable) + paid cash/online.
+    // Payment helpers (used by event fee + Payment Log seeds below).
     const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000);
     const visitProduct = {
       kind: 'plan' as const,
@@ -403,6 +424,151 @@ async function main() {
       planSegment: 'Regular',
     };
 
+    // Event night: Eden REGISTERED (paid) for kiosk event check-in; Finley PENDING cash event fee.
+    const eventFeeMember = await prisma.member.findFirstOrThrow({
+      where: {
+        firstName: TUTORIAL_EVENT_FEE_MEMBER.firstName,
+        lastName: TUTORIAL_EVENT_FEE_MEMBER.lastName,
+      },
+    });
+    const eventPurposeText = eventPurpose(TUTORIAL_EVENT_NIGHT_NAME, eventNight.id);
+    const edenEventPayment = await prisma.clubPayment.create({
+      data: {
+        memberId: checkinMember.id,
+        amountCents: eventNightPriceCents,
+        listAmountCents: eventNightPriceCents,
+        creditAppliedCents: 0,
+        currency: 'USD',
+        provider: 'cash',
+        status: 'SUCCEEDED',
+        purpose: eventPurposeText,
+        externalRef: 'tutorial_event_paid_eden',
+        recordedAt: hoursAgo(1),
+        metadata: {
+          tutorialSeed: true,
+          kind: 'event',
+          product: {
+            kind: 'event',
+            tournamentId: eventNight.id,
+            registrationId: 0,
+            amountCents: eventNightPriceCents,
+          },
+          paymentMethod: 'cash',
+          tournamentId: eventNight.id,
+        },
+      },
+    });
+    const edenReg = await prisma.tournamentRegistration.create({
+      data: {
+        tournamentId: eventNight.id,
+        memberId: checkinMember.id,
+        status: 'REGISTERED',
+        registrationCodeHash: qrHash(`event-reg-eden-${eventNight.id}`),
+        registeredAt: hoursAgo(1),
+        eventPaymentId: edenEventPayment.id,
+      },
+    });
+    await prisma.clubPayment.update({
+      where: { id: edenEventPayment.id },
+      data: {
+        metadata: {
+          tutorialSeed: true,
+          kind: 'event',
+          product: {
+            kind: 'event',
+            tournamentId: eventNight.id,
+            registrationId: edenReg.id,
+            amountCents: eventNightPriceCents,
+          },
+          paymentMethod: 'cash',
+          tournamentId: eventNight.id,
+          registrationId: edenReg.id,
+        },
+      },
+    });
+
+    const finleyEventPayment = await prisma.clubPayment.create({
+      data: {
+        memberId: eventFeeMember.id,
+        amountCents: eventNightPriceCents,
+        listAmountCents: eventNightPriceCents,
+        creditAppliedCents: 0,
+        currency: 'USD',
+        provider: 'cash',
+        status: 'PENDING',
+        purpose: eventPurposeText,
+        externalRef: 'tutorial_event_pending_finley',
+        recordedAt: hoursAgo(0.5),
+        metadata: {
+          tutorialSeed: true,
+          awaitingClear: true,
+          kind: 'event',
+          product: {
+            kind: 'event',
+            tournamentId: eventNight.id,
+            registrationId: 0,
+            amountCents: eventNightPriceCents,
+          },
+          paymentMethod: 'cash',
+          tournamentId: eventNight.id,
+        },
+      },
+    });
+    const finleyReg = await prisma.tournamentRegistration.create({
+      data: {
+        tournamentId: eventNight.id,
+        memberId: eventFeeMember.id,
+        status: 'PENDING',
+        registrationCodeHash: qrHash(`event-reg-finley-${eventNight.id}`),
+        eventPaymentId: finleyEventPayment.id,
+      },
+    });
+    await prisma.clubPayment.update({
+      where: { id: finleyEventPayment.id },
+      data: {
+        metadata: {
+          tutorialSeed: true,
+          awaitingClear: true,
+          kind: 'event',
+          product: {
+            kind: 'event',
+            tournamentId: eventNight.id,
+            registrationId: finleyReg.id,
+            amountCents: eventNightPriceCents,
+          },
+          paymentMethod: 'cash',
+          tournamentId: eventNight.id,
+          registrationId: finleyReg.id,
+        },
+      },
+    });
+
+    // Cancelled/rejected plan payment — visible when both Paid + Pending filters are on.
+    await prisma.clubPayment.create({
+      data: {
+        memberId: rosterIds[2],
+        amountCents: 4000,
+        listAmountCents: 4000,
+        creditAppliedCents: 0,
+        currency: 'USD',
+        provider: 'cash',
+        status: 'CANCELLED',
+        purpose: 'Plan purchase: 5-visit pack (Regular)',
+        externalRef: 'tutorial_cash_rejected_visit',
+        recordedAt: hoursAgo(12),
+        metadata: {
+          tutorialSeed: true,
+          kind: 'checkout',
+          product: visitProduct,
+          planId: visitPackPlan.id,
+          familyKey: 'visit-pack-5',
+          planSegment: 'Regular',
+          paymentMethod: 'cash',
+        },
+      },
+    });
+
+    // Payment Log showcase: mix of pending cash (clearable) + paid cash/online.
     await prisma.clubPayment.create({
       data: {
         memberId: organizer.id,
@@ -592,7 +758,9 @@ async function main() {
     console.log(
       '[tutorials:seed] Sample tournaments: active id',
       active.id,
-      '+ prereg + completed id',
+      '+ prereg + event night id',
+      eventNight.id,
+      '+ completed id',
       completed.id,
       '(scored)',
     );

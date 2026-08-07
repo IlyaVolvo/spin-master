@@ -1,0 +1,89 @@
+{
+  "slug": "showcase-admin-event-fee-ledger",
+  "role": "admin",
+  "title": "Admin reviews a pending event fee",
+  "description": "Find a pending event fee in Payment Log, open the member’s plan ledger, then continue to Clear in the cash-payment walkthrough.",
+  "relatedSlugs": [
+    "showcase-admin-payment-log",
+    "showcase-player-event-checkin"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "admin-home",
+      "title": "Admin home",
+      "body": "When a member pays cash for an event at the desk, a Pending row appears in Payment Log until an admin Clears it.",
+      "image": "assets/showcase-admin-event-fee-ledger/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-payment-log",
+      "title": "Open Payment Log",
+      "body": "Open Payment Log to see pending event fees alongside plan purchases.",
+      "image": "assets/showcase-admin-event-fee-ledger/step-02.png",
+      "kind": "action",
+      "actionHint": "Click Payment Log",
+      "hotspot": {
+        "x": 48.6,
+        "y": 14.5,
+        "w": 15.2,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "filter-member",
+      "title": "Find the member",
+      "body": "Filter by Finley Ortiz to focus on their pending event fee for Tutorial Event Night.",
+      "image": "assets/showcase-admin-event-fee-ledger/step-03.png",
+      "kind": "action",
+      "actionHint": "Type the member name",
+      "hotspot": {
+        "x": 13.8,
+        "y": 27.6,
+        "w": 26.3,
+        "h": 3.5
+      }
+    },
+    {
+      "id": "pending-event-row",
+      "title": "Pending event fee",
+      "body": "The purpose line shows Event registration for Tutorial Event Night. Status stays Pending with Clear / Reject until the desk confirms cash.",
+      "image": "assets/showcase-admin-event-fee-ledger/step-04.png",
+      "kind": "result",
+      "resultNote": "Event fee is cash Pending — not a plan purchase."
+    },
+    {
+      "id": "open-ledger",
+      "title": "Open member ledger",
+      "body": "Click the member name to open their plan / payment ledger without leaving Payments.",
+      "image": "assets/showcase-admin-event-fee-ledger/step-05.png",
+      "kind": "action",
+      "actionHint": "Click the member name",
+      "hotspot": {
+        "x": 27.4,
+        "y": 37.4,
+        "w": 4.8,
+        "h": 1.6
+      }
+    },
+    {
+      "id": "ledger-open",
+      "title": "Member plan ledger",
+      "body": "The overlay shows the member’s plan status and payment history. Close it when you are ready to Clear the pending event fee in Payment Log.",
+      "image": "assets/showcase-admin-event-fee-ledger/step-06.png",
+      "kind": "result",
+      "resultNote": "Ledger opened from the Payment Log name link."
+    },
+    {
+      "id": "attention-clear",
+      "title": "Next: clear the cash",
+      "body": "Clearing this pending event fee is the same Clear action as plan cash. Continue with “Admin clears a cash payment” for that step.",
+      "image": "assets/showcase-admin-event-fee-ledger/step-07.png",
+      "kind": "attention"
+    }
+  ],
+  "showcase": true
+}

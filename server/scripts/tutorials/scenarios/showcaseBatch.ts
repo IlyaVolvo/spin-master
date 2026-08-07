@@ -4,6 +4,8 @@ import {
   TUTORIAL_CHECKOUT_MEMBER,
   TUTORIAL_COMPLETED_RR_NAME,
   TUTORIAL_EMAILS,
+  TUTORIAL_EVENT_FEE_MEMBER,
+  TUTORIAL_EVENT_NIGHT_NAME,
   TUTORIAL_HISTORY_MEMBER,
   TUTORIAL_HISTORY_OPPONENTS,
   TUTORIAL_MONTHLY_PLAN_NAME,
@@ -27,6 +29,7 @@ import {
   startStatsSelection,
   togglePlayerForStats,
   enableCompletedScoreCorrection,
+  enablePaidEventMode,
   ensureAdminSession,
   ensureLoggedIn,
   ensureSystemSectionOpen,
@@ -37,11 +40,15 @@ import {
   fillMatchEntryPins,
   fillMatchEntryScores,
   fillPlanFormTotalPrice,
+  fillPreregistrationDate,
+  fillPreregistrationName,
   gotoPath,
+  hotspotForEventNameField,
   hotspotForCorrectScoresToggle,
   hotspotForCreatePlan,
   hotspotForPlanFormSegment,
   hotspotForPlanFormTotalPrice,
+  hotspotForCheckinTypeSelect,
   hotspotForFirstEmptyScoreCell,
   hotspotForFirstScoredResultCell,
   hotspotForHref,
@@ -51,7 +58,17 @@ import {
   hotspotForAttendanceStatusCheckbox,
   hotspotForAttendanceStatusFilters,
   hotspotForFirstPaymentClear,
+  hotspotForPaymentLogDateFilters,
+  hotspotForPaymentLogMemberName,
+  hotspotForPaymentLogMemberSearch,
   hotspotForPaymentLogPaidFilter,
+  hotspotForPaymentLogPendingFilter,
+  hotspotForPaidEventMode,
+  hotspotForPreregistrationDate,
+  hotspotForPreregistrationDeadline,
+  hotspotForPreregistrationEventPrice,
+  hotspotForPreregistrationMode,
+  hotspotForPreregistrationNumeric,
   hotspotForSystemNumericByAriaLabel,
   hotspotForMatchEntryPinField,
   hotspotForMatchEntrySave,
@@ -84,6 +101,7 @@ import {
   hotspotForModifyMatchResult,
   openMemberAttendancePinModal,
   openMemberCheckinPinModal,
+  openMemberLedgerFromPaymentLog,
   openMultiRrConfirmGroups,
   openMultiRrConfirmGroupsRearranged,
   openMultiRrFinalConfirm,
@@ -97,6 +115,9 @@ import {
   openPlayoffBracketOrganize,
   openPlayoffFirstRoundConfirm,
   openPlayoffPlayerSelection,
+  openPreregistrationStage,
+  openPreregistrationTournament,
+  openPreregistrationWizard,
   openRoundRobinConfirm,
   openRoundRobinPlayerSelection,
   openSeededActiveRoundRobin,
@@ -109,26 +130,95 @@ import {
   scrollPlanHeading,
   selectPlanFamilyKey,
   selectPlanFormSegment,
+  selectEventCheckInOption,
   selectTournamentPlayers,
   selectTournamentType,
   setAttendanceStatusOnly,
+  setPaymentLogMemberFilter,
+  setPaymentLogPaidOnly,
   setPaymentLogPendingOnly,
   setPlanPayMethod,
   setSystemNumericByAriaLabel,
   setPlayersNameFilter,
+  setPreregistrationEventPrice,
+  setPreregistrationNumericByLabel,
   submitAttendancePinModal,
   submitCheckinPinModal,
   submitCreatePlan,
+  submitCreatePreregistration,
   submitPlanPurchase,
 } from '../lib/steps';
 import { goToLoginForm } from '../lib/browser';
+import type { CaptureContext } from '../lib/browser';
 
 const SHOWCASE_RR_NAME = 'Tutorial Showcase Round Robin';
 const SHOWCASE_PLAYOFF_NAME = 'Tutorial Showcase Playoff';
 const SHOWCASE_MULTI_RR_NAME = 'Tutorial Showcase Multi RR';
+const SHOWCASE_EVENT_NAME = 'Tutorial Showcase Event';
+const SHOWCASE_EVENT_MIN_RATING = '1000';
+const SHOWCASE_EVENT_MAX_RATING = '2000';
+const SHOWCASE_EVENT_MIN_PARTICIPANTS = '4';
+const SHOWCASE_EVENT_MAX_PARTICIPANTS = '12';
+const SHOWCASE_EVENT_PRICE = '15.00';
+const SHOWCASE_EVENT_ADMISSION_HOURS = '2';
 const SHOWCASE_PLAN_FAMILY = 'visit-pack-5';
 const SHOWCASE_MULTI_RR_PLAYERS = 8;
 const SHOWCASE_PLAYOFF_PLAYERS = 8;
+
+type EventFormStage =
+  | 'prereg'
+  | 'name'
+  | 'type'
+  | 'date'
+  | 'ratings'
+  | 'max'
+  | 'paid'
+  | 'min'
+  | 'price'
+  | 'admission';
+
+const EVENT_FORM_STAGES: EventFormStage[] = [
+  'prereg',
+  'name',
+  'type',
+  'date',
+  'ratings',
+  'max',
+  'paid',
+  'min',
+  'price',
+  'admission',
+];
+
+/** Rebuild the create-Event wizard through the given stage (inclusive). */
+async function setupEventFormThrough(ctx: CaptureContext, through: EventFormStage): Promise<void> {
+  const stop = EVENT_FORM_STAGES.indexOf(through);
+  const reached = (stage: EventFormStage) => EVENT_FORM_STAGES.indexOf(stage) <= stop;
+
+  await openPreregistrationWizard(ctx);
+  if (reached('name')) await fillPreregistrationName(ctx, SHOWCASE_EVENT_NAME);
+  if (reached('type')) await selectTournamentType(ctx, 'MULTI_ROUND_ROBINS');
+  if (reached('date')) await fillPreregistrationDate(ctx);
+  if (reached('ratings')) {
+    await setPreregistrationNumericByLabel(ctx, 'Minimum Rating', SHOWCASE_EVENT_MIN_RATING);
+    await setPreregistrationNumericByLabel(ctx, 'Maximum Rating', SHOWCASE_EVENT_MAX_RATING);
+  }
+  if (reached('max')) {
+    await setPreregistrationNumericByLabel(ctx, 'Max Participants', SHOWCASE_EVENT_MAX_PARTICIPANTS);
+  }
+  if (reached('paid')) await enablePaidEventMode(ctx);
+  if (reached('min')) {
+    await setPreregistrationNumericByLabel(ctx, 'Min Participants', SHOWCASE_EVENT_MIN_PARTICIPANTS);
+  }
+  if (reached('price')) await setPreregistrationEventPrice(ctx, SHOWCASE_EVENT_PRICE);
+  if (reached('admission')) {
+    await setPreregistrationNumericByLabel(
+      ctx,
+      'Admissions starts hours before event',
+      SHOWCASE_EVENT_ADMISSION_HOURS,
+    );
+  }
+}
 
 /**
  * Role-grouped showcase walkthroughs (listed in the public catalog).
@@ -483,6 +573,145 @@ export const showcaseScenarios: ScenarioDef[] = [
             row?.scrollIntoView({ block: 'center' });
           }, `${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName}`);
           await ctx.delay(500);
+        },
+      },
+    ],
+  },
+
+  {
+    slug: 'showcase-player-event-checkin',
+    role: 'player',
+    showcase: true,
+    title: 'Player checks in for an event',
+    description:
+      'At the check-in kiosk, a registered member chooses today’s event, enters their PIN, and joins attendance for the event.',
+    relatedSlugs: [
+      'showcase-admin-payment-log',
+      'showcase-admin-event-fee-ledger',
+      'showcase-player-checkin',
+      'showcase-organizer-create-event',
+    ],
+    steps: [
+      {
+        id: 'kiosk-event-ready',
+        kind: 'context',
+        title: 'Event night at the kiosk',
+        body: `${TUTORIAL_EVENT_NIGHT_NAME} is open for check-in. ${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName} is already registered for the event.`,
+        capture: async (ctx) => {
+          await ctx.loginAs(TUTORIAL_EMAILS.admin);
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await ensurePlayersNameFilterVisible(ctx);
+          await setPlayersNameFilter(ctx, '');
+        },
+      },
+      {
+        id: 'find-member',
+        kind: 'action',
+        title: 'Find your name',
+        body: `Type part of ${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName} in the name search so their row is easy to find.`,
+        actionHint: 'Type in the name search field',
+        capture: async (ctx) => {
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await ensurePlayersNameFilterVisible(ctx);
+          await setPlayersNameFilter(ctx, '');
+          return { hotspot: await hotspotForPlayersNameFilter(ctx) };
+        },
+      },
+      {
+        id: 'start-checkin',
+        kind: 'action',
+        title: 'Start check-in',
+        body: 'Tap Check-in on your row. The kiosk asks for your score PIN and which admission to use.',
+        actionHint: 'Click Check-in on your row',
+        capture: async (ctx) => {
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKIN_MEMBER.firstName);
+          return {
+            hotspot: await hotspotForMemberCheckinButton(
+              ctx,
+              TUTORIAL_CHECKIN_MEMBER.firstName,
+              TUTORIAL_CHECKIN_MEMBER.lastName,
+            ),
+          };
+        },
+      },
+      {
+        id: 'choose-event',
+        kind: 'action',
+        title: 'Choose the event',
+        body: `Under Check-in type, select ${TUTORIAL_EVENT_NIGHT_NAME}. That records attendance for the event instead of a plain club visit.`,
+        actionHint: 'Select the event in Check-in type',
+        capture: async (ctx) => {
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await openMemberCheckinPinModal(
+            ctx,
+            TUTORIAL_CHECKIN_MEMBER.firstName,
+            TUTORIAL_CHECKIN_MEMBER.lastName,
+          );
+          await ctx.delay(800);
+          await selectEventCheckInOption(ctx);
+          return { hotspot: await hotspotForCheckinTypeSelect(ctx) };
+        },
+      },
+      {
+        id: 'confirm-pin',
+        kind: 'action',
+        title: 'Enter PIN and confirm',
+        body: 'Type your score PIN, then confirm Check-in. A correct PIN marks you Present for the event.',
+        actionHint: 'Click Check-in after entering the PIN',
+        capture: async (ctx) => {
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await openMemberCheckinPinModal(
+            ctx,
+            TUTORIAL_CHECKIN_MEMBER.firstName,
+            TUTORIAL_CHECKIN_MEMBER.lastName,
+          );
+          await ctx.delay(600);
+          await selectEventCheckInOption(ctx);
+          await fillCheckinPin(ctx, TUTORIAL_SCORE_PIN);
+          return { hotspot: await hotspotForPinModalCheckin(ctx) };
+        },
+      },
+      {
+        id: 'event-present',
+        kind: 'result',
+        title: 'Checked in for the event',
+        body: 'The row now offers Check-out. Event check-in is the fastest path for members who already registered.',
+        resultNote: 'Present for today’s event attendance.',
+        capture: async (ctx) => {
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKIN_MEMBER.firstName);
+          const needs = await ctx.page.evaluate((needle) => {
+            const row = [...document.querySelectorAll('tr')].find((r) =>
+              (r.textContent || '').includes(needle),
+            );
+            return [...(row?.querySelectorAll('button') || [])].some((b) => {
+              const t = (b.textContent || '').trim();
+              return t === 'Check-in' || t.includes('free re-entry');
+            });
+          }, `${TUTORIAL_CHECKIN_MEMBER.firstName} ${TUTORIAL_CHECKIN_MEMBER.lastName}`);
+          if (needs) {
+            await openMemberCheckinPinModal(
+              ctx,
+              TUTORIAL_CHECKIN_MEMBER.firstName,
+              TUTORIAL_CHECKIN_MEMBER.lastName,
+            );
+            await ctx.delay(500);
+            await selectEventCheckInOption(ctx);
+            await fillCheckinPin(ctx, TUTORIAL_SCORE_PIN);
+            await submitCheckinPinModal(ctx);
+          }
+          await ctx.delay(400);
+        },
+      },
+      {
+        id: 'attention-pay-clear',
+        kind: 'attention',
+        title: 'Paying for the event',
+        body: 'Members are responsible for approaching an Organizer or Admin to pay the event fee when required. Admins clear pending cash in Payment Log — see “Admin clears a cash payment.”',
+        capture: async (ctx) => {
+          await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
+          await setPlayersNameFilter(ctx, TUTORIAL_CHECKIN_MEMBER.firstName);
         },
       },
     ],
@@ -1991,6 +2220,218 @@ export const showcaseScenarios: ScenarioDef[] = [
   },
 
   {
+    slug: 'showcase-organizer-create-event',
+    role: 'organizer',
+    showcase: true,
+    title: 'Organizer creates an Event',
+    description:
+      'Step through creating a paid Event (same Pre-registration flow as a tournament): name, Multi Round Robin, date, ratings, capacity, Paid event, price, admission window, then create. Invitation emails to rating-qualified players are covered lightly — a dedicated scenario can expand that later.',
+    relatedSlugs: ['showcase-organizer-create-rr', 'showcase-player-event-checkin'],
+    steps: [
+      {
+        id: 'org-home',
+        kind: 'context',
+        title: 'Organizer on Players',
+        body: 'An Event is a pre-registration tournament with a fee and event check-in. Creation uses the same + Tournament Pre-registration path as a normal prereg tournament.',
+        capture: async (ctx) => {
+          await ctx.loginAs(TUTORIAL_EMAILS.organizer);
+          await gotoPath(ctx, '/players');
+          await ctx.delay(500);
+        },
+      },
+      {
+        id: 'open-wizard',
+        kind: 'action',
+        title: 'Open + Tournament',
+        body: 'Start the type modal, then turn on Pre-registration mode so Event fields appear.',
+        actionHint: 'Click + Tournament',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await gotoPath(ctx, '/players');
+          return { hotspot: await ctx.hotspotForButton('+ Tournament') };
+        },
+      },
+      {
+        id: 'enable-prereg',
+        kind: 'action',
+        title: 'Enable Pre-registration',
+        body: 'Same entry point as a pre-registration tournament: check Pre-registration mode. The primary button becomes Create Pre-registration.',
+        actionHint: 'Enable Pre-registration mode',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await openPreregistrationWizard(ctx);
+          return { hotspot: await hotspotForPreregistrationMode(ctx) };
+        },
+      },
+      {
+        id: 'name-event',
+        kind: 'action',
+        title: 'Name the Event (required)',
+        body: 'Type an Event name now. For an Event, a name is required — default auto-generation will not work once Paid event is on.',
+        actionHint: 'Type the Event name',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'name');
+          return { hotspot: await hotspotForEventNameField(ctx) };
+        },
+      },
+      {
+        id: 'pick-mrr',
+        kind: 'action',
+        title: 'Choose Multi Round Robin',
+        body: 'Select Multi Round Robin for this walkthrough. Events work with every format; MRR keeps the example simple.',
+        actionHint: 'Select Multi Round Robin',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'type');
+          return { hotspot: await hotspotForTournamentType(ctx, 'MULTI_ROUND_ROBINS') };
+        },
+      },
+      {
+        id: 'date-required',
+        kind: 'action',
+        title: 'Tournament date (required)',
+        body: 'Tournament Date starts empty and is required. Leave Registration Deadline alone for now — it will fill automatically when you set the date.',
+        actionHint: 'Focus Tournament Date',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'type');
+          return { hotspot: await hotspotForPreregistrationDate(ctx) };
+        },
+      },
+      {
+        id: 'date-deadline',
+        kind: 'result',
+        title: 'Registration deadline auto-fills',
+        body: 'After you set Tournament Date, Registration Deadline defaults to a fixed offset before that time (club Pre-registration setting, often 30 minutes). Do not change it unless you need a custom cutoff.',
+        resultNote: 'Deadline formed from the tournament date; left unchanged.',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'date');
+          return { hotspot: await hotspotForPreregistrationDeadline(ctx) };
+        },
+      },
+      {
+        id: 'ratings',
+        kind: 'action',
+        title: 'Rating bounds',
+        body: 'Set Minimum and Maximum Rating so only players in that band can register. Invitation emails go only to rating-qualified members who allow tournament notifications.',
+        actionHint: 'Set Minimum / Maximum Rating',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'ratings');
+          return { hotspot: await hotspotForPreregistrationNumeric(ctx, 'Minimum Rating') };
+        },
+      },
+      {
+        id: 'max-participants',
+        kind: 'action',
+        title: 'Max participants',
+        body: 'Set Max Participants to cap the field. When that many players hold a seat, further registration stops and invited players are notified that the event is full.',
+        actionHint: 'Set Max Participants',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'max');
+          return { hotspot: await hotspotForPreregistrationNumeric(ctx, 'Max Participants') };
+        },
+      },
+      {
+        id: 'paid-event',
+        kind: 'action',
+        title: 'Mark Paid event',
+        body: 'Check Paid event. That turns this pre-registration into an Event: fee, event check-in, and a required Event Name (auto-generation will not work).',
+        actionHint: 'Enable Paid event',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'paid');
+          return { hotspot: await hotspotForPaidEventMode(ctx) };
+        },
+      },
+      {
+        id: 'min-participants',
+        kind: 'action',
+        title: 'Min participants',
+        body: 'Set Min Participants (shown for Events). If you Finalize with fewer registered players than this minimum, the system warns that the field is below the Event minimum.',
+        actionHint: 'Set Min Participants',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'min');
+          return { hotspot: await hotspotForPreregistrationNumeric(ctx, 'Min Participants') };
+        },
+      },
+      {
+        id: 'event-price',
+        kind: 'action',
+        title: 'Event price',
+        body: 'Adjust Event Price from the club default. Players see Register & pay with this amount.',
+        actionHint: 'Edit Event Price',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'price');
+          return { hotspot: await hotspotForPreregistrationEventPrice(ctx) };
+        },
+      },
+      {
+        id: 'admission-window',
+        kind: 'action',
+        title: 'Admission window',
+        body: 'Admissions starts controls how far before start players can check in for the Event (without a separate club day charge in that window). Change the hours as needed.',
+        actionHint: 'Edit Admissions starts hours',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'admission');
+          return {
+            hotspot: await hotspotForPreregistrationNumeric(
+              ctx,
+              'Admissions starts hours before event',
+            ),
+          };
+        },
+      },
+      {
+        id: 'create-event',
+        kind: 'action',
+        title: 'Create Pre-registration',
+        body: 'Submit Create Pre-registration. The Event is listed under Preregistration, and invitation emails go to rating-qualified players who have tournament notifications on. (A future showcase can cover those emails in detail.)',
+        actionHint: 'Click Create Pre-registration',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await setupEventFormThrough(ctx, 'admission');
+          await ctx.page.waitForFunction(
+            () =>
+              [...document.querySelectorAll('button')].some((b) =>
+                (b.textContent || '').includes('Create Pre-registration'),
+              ),
+            { timeout: 15000 },
+          );
+          return { hotspot: await ctx.hotspotForButton('Create Pre-registration') };
+        },
+      },
+      {
+        id: 'created',
+        kind: 'result',
+        title: 'Event created',
+        body: 'The named Event is under Preregistration with its fee and check-in window. Players can register; organizers Finalize later when the field is ready.',
+        resultNote: 'Paid Event created; invitations sent to qualified members.',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.organizer);
+          await openPreregistrationStage(ctx);
+          const exists = await ctx.page.evaluate(
+            (n) => (document.body.innerText || '').includes(n),
+            SHOWCASE_EVENT_NAME,
+          );
+          if (!exists) {
+            await setupEventFormThrough(ctx, 'admission');
+            await submitCreatePreregistration(ctx);
+          }
+          await openPreregistrationTournament(ctx, SHOWCASE_EVENT_NAME);
+          await ctx.delay(500);
+        },
+      },
+    ],
+  },
+
+  {
     slug: 'showcase-organizer-correct-completed-score',
     role: 'organizer',
     showcase: true,
@@ -2499,13 +2940,141 @@ export const showcaseScenarios: ScenarioDef[] = [
   },
 
   {
+    slug: 'showcase-admin-event-fee-ledger',
+    role: 'admin',
+    showcase: true,
+    title: 'Admin reviews a pending event fee',
+    description:
+      'Find a pending event fee in Payment Log, open the member’s plan ledger, then continue to Clear in the cash-payment walkthrough.',
+    relatedSlugs: ['showcase-admin-payment-log', 'showcase-player-event-checkin'],
+    steps: [
+      {
+        id: 'admin-home',
+        kind: 'context',
+        title: 'Admin home',
+        body: 'When a member pays cash for an event at the desk, a Pending row appears in Payment Log until an admin Clears it.',
+        capture: async (ctx) => {
+          await ctx.loginAs(TUTORIAL_EMAILS.admin);
+          await gotoPath(ctx, '/players');
+          await ctx.delay(500);
+        },
+      },
+      {
+        id: 'open-payment-log',
+        kind: 'action',
+        title: 'Open Payment Log',
+        body: 'Open Payment Log to see pending event fees alongside plan purchases.',
+        actionHint: 'Click Payment Log',
+        capture: async (ctx) => {
+          await ensureLoggedIn(ctx, TUTORIAL_EMAILS.admin);
+          await gotoPath(ctx, '/players');
+          return { hotspot: await hotspotForAdminMenuItem(ctx, 'Payment Log') };
+        },
+      },
+      {
+        id: 'filter-member',
+        kind: 'action',
+        title: 'Find the member',
+        body: `Filter by ${TUTORIAL_EVENT_FEE_MEMBER.firstName} ${TUTORIAL_EVENT_FEE_MEMBER.lastName} to focus on their pending event fee for ${TUTORIAL_EVENT_NIGHT_NAME}.`,
+        actionHint: 'Type the member name',
+        capture: async (ctx) => {
+          await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          await setPaymentLogMemberFilter(ctx, '');
+          return { hotspot: await hotspotForPaymentLogMemberSearch(ctx) };
+        },
+      },
+      {
+        id: 'pending-event-row',
+        kind: 'result',
+        title: 'Pending event fee',
+        body: `The purpose line shows Event registration for ${TUTORIAL_EVENT_NIGHT_NAME}. Status stays Pending with Clear / Reject until the desk confirms cash.`,
+        resultNote: 'Event fee is cash Pending — not a plan purchase.',
+        capture: async (ctx) => {
+          await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          await setPaymentLogMemberFilter(
+            ctx,
+            `${TUTORIAL_EVENT_FEE_MEMBER.firstName} ${TUTORIAL_EVENT_FEE_MEMBER.lastName}`,
+          );
+          await ctx.delay(500);
+        },
+      },
+      {
+        id: 'open-ledger',
+        kind: 'action',
+        title: 'Open member ledger',
+        body: 'Click the member name to open their plan / payment ledger without leaving Payments.',
+        actionHint: 'Click the member name',
+        capture: async (ctx) => {
+          await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          await setPaymentLogMemberFilter(
+            ctx,
+            `${TUTORIAL_EVENT_FEE_MEMBER.firstName} ${TUTORIAL_EVENT_FEE_MEMBER.lastName}`,
+          );
+          return {
+            hotspot: await hotspotForPaymentLogMemberName(
+              ctx,
+              TUTORIAL_EVENT_FEE_MEMBER.firstName,
+              TUTORIAL_EVENT_FEE_MEMBER.lastName,
+            ),
+          };
+        },
+      },
+      {
+        id: 'ledger-open',
+        kind: 'result',
+        title: 'Member plan ledger',
+        body: 'The overlay shows the member’s plan status and payment history. Close it when you are ready to Clear the pending event fee in Payment Log.',
+        resultNote: 'Ledger opened from the Payment Log name link.',
+        capture: async (ctx) => {
+          await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          await setPaymentLogMemberFilter(
+            ctx,
+            `${TUTORIAL_EVENT_FEE_MEMBER.firstName} ${TUTORIAL_EVENT_FEE_MEMBER.lastName}`,
+          );
+          const open = await ctx.page.evaluate(
+            () =>
+              [...document.querySelectorAll('h3, label')].some((el) =>
+                /^Plan\b/i.test((el.textContent || '').trim()),
+              ),
+          );
+          if (!open) {
+            await openMemberLedgerFromPaymentLog(
+              ctx,
+              TUTORIAL_EVENT_FEE_MEMBER.firstName,
+              TUTORIAL_EVENT_FEE_MEMBER.lastName,
+            );
+          }
+          await ctx.delay(400);
+        },
+      },
+      {
+        id: 'attention-clear',
+        kind: 'attention',
+        title: 'Next: clear the cash',
+        body: 'Clearing this pending event fee is the same Clear action as plan cash. Continue with “Admin clears a cash payment” for that step.',
+        capture: async (ctx) => {
+          await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          await setPaymentLogMemberFilter(
+            ctx,
+            `${TUTORIAL_EVENT_FEE_MEMBER.firstName} ${TUTORIAL_EVENT_FEE_MEMBER.lastName}`,
+          );
+        },
+      },
+    ],
+  },
+
+  {
     slug: 'showcase-admin-payment-log',
     role: 'admin',
     showcase: true,
     title: 'Admin clears a cash payment',
     description:
-      'Open Payment Log, filter to Pending cash rows, Clear one payment, and confirm it becomes Paid so the member can check in.',
-    relatedSlugs: ['showcase-admin-attendance-log', 'showcase-player-plan'],
+      'Open Payment Log, use status and date filters, Clear one pending cash payment, and confirm it becomes Paid so the member can check in.',
+    relatedSlugs: [
+      'showcase-admin-event-fee-ledger',
+      'showcase-admin-attendance-log',
+      'showcase-player-plan',
+    ],
     steps: [
       {
         id: 'admin-home',
@@ -2534,7 +3103,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         id: 'payment-log-mixed',
         kind: 'result',
         title: 'Mixed Paid and Pending',
-        body: 'The seeded log shows several Paid rows (online test and cash) and a couple of unconfirmed cash payments with Clear / Reject.',
+        body: 'The seeded log shows Paid rows, Pending cash with Clear / Reject, and cancelled rows when both status filters are on.',
         resultNote: 'Pending cash stays unpaid until an admin Clears it.',
         capture: async (ctx) => {
           await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
@@ -2542,13 +3111,59 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
+        id: 'filter-paid-only',
+        kind: 'action',
+        title: 'Show Paid only',
+        body: 'Turn off Pending under Status so only Paid rows remain — useful when reconciling completed payments.',
+        actionHint: 'Uncheck Pending',
+        capture: async (ctx) => {
+          await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          return { hotspot: await hotspotForPaymentLogPendingFilter(ctx) };
+        },
+      },
+      {
+        id: 'paid-only',
+        kind: 'result',
+        title: 'Paid queue',
+        body: 'Only Paid rows remain. Turn Pending back on when you need the Clear / Reject queue again.',
+        resultNote: 'Paid filter on; Pending filter off.',
+        capture: async (ctx) => {
+          await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          await setPaymentLogPaidOnly(ctx);
+          await ctx.delay(300);
+        },
+      },
+      {
+        id: 'date-filters',
+        kind: 'action',
+        title: 'Date and member filters',
+        body: 'From / To and the Member search narrow the log to a club day or person. Combine them with Status filters.',
+        actionHint: 'Look at From, To, and Member',
+        capture: async (ctx) => {
+          await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          await setPaymentLogPaidOnly(ctx);
+          return { hotspot: await hotspotForPaymentLogDateFilters(ctx) };
+        },
+      },
+      {
         id: 'filter-pending',
         kind: 'action',
         title: 'Show Pending only',
-        body: 'Turn off Paid under Status so only unconfirmed cash payments remain. Leave Pending checked.',
+        body: 'Turn Paid off and leave Pending on so only unconfirmed cash payments remain.',
         actionHint: 'Uncheck Paid',
         capture: async (ctx) => {
           await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
+          await ctx.page.evaluate(() => {
+            const paid = document.querySelector(
+              'input[aria-label="Show paid payments"]',
+            ) as HTMLInputElement | null;
+            const pending = document.querySelector(
+              'input[aria-label="Show pending payments"]',
+            ) as HTMLInputElement | null;
+            if (pending && !pending.checked) pending.click();
+            if (paid && !paid.checked) paid.click();
+          });
+          await ctx.delay(200);
           return { hotspot: await hotspotForPaymentLogPaidFilter(ctx) };
         },
       },
@@ -2556,7 +3171,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         id: 'pending-only',
         kind: 'result',
         title: 'Pending cash queue',
-        body: 'Only Pending cash rows remain — each has Clear and Reject. These members paid at the desk but the plan is not active yet.',
+        body: 'Only Pending cash rows remain — each has Clear and Reject.',
         resultNote: 'Paid filter off; Pending filter on.',
         capture: async (ctx) => {
           await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
@@ -2568,7 +3183,7 @@ export const showcaseScenarios: ScenarioDef[] = [
         id: 'clear-payment',
         kind: 'action',
         title: 'Clear a cash payment',
-        body: 'Clear confirms the cash was received, marks the row Paid, and grants the plan on the payment.',
+        body: 'Clear confirms the cash was received, marks the row Paid, and grants the plan or event registration on the payment.',
         actionHint: 'Click Clear',
         capture: async (ctx) => {
           await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
@@ -2580,8 +3195,8 @@ export const showcaseScenarios: ScenarioDef[] = [
         id: 'cleared-result',
         kind: 'result',
         title: 'Payment cleared — member can check in',
-        body: 'That row is now Paid and the plan is active. The member should be able to check in (for example in check-in kiosk) with their new entitlement.',
-        resultNote: 'Clear grants the plan immediately; remaining Pending cash still waits for Clear or Reject.',
+        body: 'That row is now Paid and the entitlement or event registration is active.',
+        resultNote: 'Clear grants immediately; remaining Pending cash still waits for Clear or Reject.',
         capture: async (ctx) => {
           await openPaymentLog(ctx, TUTORIAL_EMAILS.admin);
           await setPaymentLogPendingOnly(ctx);
@@ -2591,10 +3206,9 @@ export const showcaseScenarios: ScenarioDef[] = [
                 (b) => (b.textContent || '').trim() === 'Clear',
               ).length,
           );
-          if (clearCount >= 2) {
+          if (clearCount >= 1) {
             await clearFirstPendingCashPayment(ctx);
           }
-          // Show mixed list again so Paid result is visible.
           await ctx.page.evaluate(() => {
             const paid = document.querySelector(
               'input[aria-label="Show paid payments"]',
@@ -2613,7 +3227,7 @@ export const showcaseScenarios: ScenarioDef[] = [
     showcase: true,
     title: 'Admin reviews Attendance Log',
     description:
-      'Open Attendance Log, filter to Present (who is in the club now), then note the date filters for reviewing what happened in the past.',
+      'Open Attendance Log, switch status filters (Present / Out), and use From / To dates to review a specific club day.',
     relatedSlugs: ['showcase-admin-payment-log', 'showcase-player-checkin'],
     steps: [
       {
@@ -2674,22 +3288,73 @@ export const showcaseScenarios: ScenarioDef[] = [
         },
       },
       {
-        id: 'date-filters',
+        id: 'filter-out',
         kind: 'action',
-        title: 'Date filters',
-        body: 'From and To sit next to Status. Use them when you need a specific club day instead of the default recent window.',
-        actionHint: 'Look at From and To',
+        title: 'Show Out only',
+        body: 'Switch to Out to see who already left (manual or auto check-out). Rejected attempts use the Rejected filter the same way.',
+        actionHint: 'Leave only Out checked',
         capture: async (ctx) => {
           await openAttendanceLog(ctx, TUTORIAL_EMAILS.admin);
           await setAttendanceStatusOnly(ctx, 'Present');
+          return { hotspot: await hotspotForAttendanceStatusCheckbox(ctx, 'Out') };
+        },
+      },
+      {
+        id: 'out-only',
+        kind: 'result',
+        title: 'Who is Out',
+        body: 'Only Out rows remain — members who checked in earlier and already left today.',
+        resultNote: 'Out filter on; Present and Rejected off.',
+        capture: async (ctx) => {
+          await openAttendanceLog(ctx, TUTORIAL_EMAILS.admin);
+          await setAttendanceStatusOnly(ctx, 'Out');
+          await ctx.delay(400);
+        },
+      },
+      {
+        id: 'date-filters',
+        kind: 'action',
+        title: 'Date filters',
+        body: 'From and To sit next to Status. Set both to the same club date to focus on one day, or widen the range for history.',
+        actionHint: 'Look at From and To',
+        capture: async (ctx) => {
+          await openAttendanceLog(ctx, TUTORIAL_EMAILS.admin);
+          await setAttendanceStatusOnly(ctx, 'Out');
           return { hotspot: await hotspotForAttendanceDateFrom(ctx) };
+        },
+      },
+      {
+        id: 'date-applied',
+        kind: 'result',
+        title: 'Day-scoped list',
+        body: 'With From and To set, the list only includes visits in that club-date window. Combine dates with Status to reconstruct a past day.',
+        resultNote: 'Date range + status filters work together.',
+        capture: async (ctx) => {
+          await openAttendanceLog(ctx, TUTORIAL_EMAILS.admin);
+          await setAttendanceStatusOnly(ctx, 'Present');
+          await ctx.page.evaluate(() => {
+            const from = document.querySelector('#attendance-date-from') as HTMLInputElement | null;
+            const to = document.querySelector('#attendance-date-to') as HTMLInputElement | null;
+            if (!from || !to) return;
+            const today = from.value || to.value;
+            if (today) {
+              const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+              proto?.call(from, today);
+              from.dispatchEvent(new Event('input', { bubbles: true }));
+              from.dispatchEvent(new Event('change', { bubbles: true }));
+              proto?.call(to, today);
+              to.dispatchEvent(new Event('input', { bubbles: true }));
+              to.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          });
+          await ctx.delay(500);
         },
       },
       {
         id: 'attention-past',
         kind: 'attention',
         title: 'Look back in time',
-        body: 'You could also check what happened in the past. Set From and To to an earlier club date to review who was Present, Out, or Rejected that day.',
+        body: 'To review another day, change From and To to that club date and flip Present / Out / Rejected as needed.',
         capture: async (ctx) => {
           await openAttendanceLog(ctx, TUTORIAL_EMAILS.admin);
           await setAttendanceStatusOnly(ctx, 'Present');

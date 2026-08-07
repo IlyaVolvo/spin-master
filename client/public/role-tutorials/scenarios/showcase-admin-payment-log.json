@@ -2,8 +2,9 @@
   "slug": "showcase-admin-payment-log",
   "role": "admin",
   "title": "Admin clears a cash payment",
-  "description": "Open Payment Log, filter to Pending cash rows, Clear one payment, and confirm it becomes Paid so the member can check in.",
+  "description": "Open Payment Log, use status and date filters, Clear one pending cash payment, and confirm it becomes Paid so the member can check in.",
   "relatedSlugs": [
+    "showcase-admin-event-fee-ledger",
     "showcase-admin-attendance-log",
     "showcase-player-plan"
   ],
@@ -27,7 +28,7 @@
       "kind": "action",
       "actionHint": "Click Payment Log",
       "hotspot": {
-        "x": 48.4,
+        "x": 48.6,
         "y": 14.5,
         "w": 15.2,
         "h": 3.6
@@ -36,16 +37,52 @@
     {
       "id": "payment-log-mixed",
       "title": "Mixed Paid and Pending",
-      "body": "The seeded log shows several Paid rows (online test and cash) and a couple of unconfirmed cash payments with Clear / Reject.",
+      "body": "The seeded log shows Paid rows, Pending cash with Clear / Reject, and cancelled rows when both status filters are on.",
       "image": "assets/showcase-admin-payment-log/step-03.png",
       "kind": "result",
       "resultNote": "Pending cash stays unpaid until an admin Clears it."
     },
     {
+      "id": "filter-paid-only",
+      "title": "Show Paid only",
+      "body": "Turn off Pending under Status so only Paid rows remain — useful when reconciling completed payments.",
+      "image": "assets/showcase-admin-payment-log/step-04.png",
+      "kind": "action",
+      "actionHint": "Uncheck Pending",
+      "hotspot": {
+        "x": 66,
+        "y": 28.2,
+        "w": 5,
+        "h": 2.1
+      }
+    },
+    {
+      "id": "paid-only",
+      "title": "Paid queue",
+      "body": "Only Paid rows remain. Turn Pending back on when you need the Clear / Reject queue again.",
+      "image": "assets/showcase-admin-payment-log/step-05.png",
+      "kind": "result",
+      "resultNote": "Paid filter on; Pending filter off."
+    },
+    {
+      "id": "date-filters",
+      "title": "Date and member filters",
+      "body": "From / To and the Member search narrow the log to a club day or person. Combine them with Status filters.",
+      "image": "assets/showcase-admin-payment-log/step-06.png",
+      "kind": "action",
+      "actionHint": "Look at From, To, and Member",
+      "hotspot": {
+        "x": 41.5,
+        "y": 27.4,
+        "w": 19.5,
+        "h": 3.7
+      }
+    },
+    {
       "id": "filter-pending",
       "title": "Show Pending only",
-      "body": "Turn off Paid under Status so only unconfirmed cash payments remain. Leave Pending checked.",
-      "image": "assets/showcase-admin-payment-log/step-04.png",
+      "body": "Turn Paid off and leave Pending on so only unconfirmed cash payments remain.",
+      "image": "assets/showcase-admin-payment-log/step-07.png",
       "kind": "action",
       "actionHint": "Uncheck Paid",
       "hotspot": {
@@ -58,16 +95,16 @@
     {
       "id": "pending-only",
       "title": "Pending cash queue",
-      "body": "Only Pending cash rows remain — each has Clear and Reject. These members paid at the desk but the plan is not active yet.",
-      "image": "assets/showcase-admin-payment-log/step-05.png",
+      "body": "Only Pending cash rows remain — each has Clear and Reject.",
+      "image": "assets/showcase-admin-payment-log/step-08.png",
       "kind": "result",
       "resultNote": "Paid filter off; Pending filter on."
     },
     {
       "id": "clear-payment",
       "title": "Clear a cash payment",
-      "body": "Clear confirms the cash was received, marks the row Paid, and grants the plan on the payment.",
-      "image": "assets/showcase-admin-payment-log/step-06.png",
+      "body": "Clear confirms the cash was received, marks the row Paid, and grants the plan or event registration on the payment.",
+      "image": "assets/showcase-admin-payment-log/step-09.png",
       "kind": "action",
       "actionHint": "Click Clear",
       "hotspot": {
@@ -80,10 +117,10 @@
     {
       "id": "cleared-result",
       "title": "Payment cleared — member can check in",
-      "body": "That row is now Paid and the plan is active. The member should be able to check in (for example in check-in kiosk) with their new entitlement.",
-      "image": "assets/showcase-admin-payment-log/step-07.png",
+      "body": "That row is now Paid and the entitlement or event registration is active.",
+      "image": "assets/showcase-admin-payment-log/step-10.png",
       "kind": "result",
-      "resultNote": "Clear grants the plan immediately; remaining Pending cash still waits for Clear or Reject."
+      "resultNote": "Clear grants immediately; remaining Pending cash still waits for Clear or Reject."
     }
   ],
   "showcase": true

@@ -3,12 +3,16 @@
     {
       "id": "player",
       "label": "Player",
-      "blurb": "Member walkthroughs — plan, kiosk, history, stats, and multi-player compare.",
+      "blurb": "Member walkthroughs — plan, kiosk, event check-in, history, stats, and multi-player compare.",
       "collapsed": false,
       "scenarios": [
         {
           "slug": "showcase-player-checkin",
           "title": "Player checks in at the kiosk"
+        },
+        {
+          "slug": "showcase-player-event-checkin",
+          "title": "Player checks in for an event"
         },
         {
           "slug": "showcase-player-checkout",
@@ -39,7 +43,7 @@
     {
       "id": "organizer",
       "label": "Organizer",
-      "blurb": "Tournament walkthroughs — create Round Robin, Playoff, Multi RR, and correct completed scores.",
+      "blurb": "Tournament walkthroughs — create Round Robin, Playoff, Multi RR, pre-registration, and correct completed scores.",
       "collapsed": false,
       "scenarios": [
         {
@@ -55,6 +59,10 @@
           "title": "Organizer creates a Multi Round Robin"
         },
         {
+          "slug": "showcase-organizer-create-event",
+          "title": "Organizer creates an Event"
+        },
+        {
           "slug": "showcase-organizer-correct-completed-score",
           "title": "Organizer corrects a completed tournament score"
         }
@@ -63,9 +71,13 @@
     {
       "id": "admin",
       "label": "Administrator",
-      "blurb": "Front desk, plans, system settings, kiosk, and tournament scores.",
+      "blurb": "Front desk, event fees, plans, system settings, kiosk, and tournament scores.",
       "collapsed": false,
       "scenarios": [
+        {
+          "slug": "showcase-admin-event-fee-ledger",
+          "title": "Admin reviews a pending event fee"
+        },
         {
           "slug": "showcase-admin-payment-log",
           "title": "Admin clears a cash payment"

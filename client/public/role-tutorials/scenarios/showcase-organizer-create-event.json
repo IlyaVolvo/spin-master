@@ -1,0 +1,214 @@
+{
+  "slug": "showcase-organizer-create-event",
+  "role": "organizer",
+  "title": "Organizer creates an Event",
+  "description": "Step through creating a paid Event (same Pre-registration flow as a tournament): name, Multi Round Robin, date, ratings, capacity, Paid event, price, admission window, then create. Invitation emails to rating-qualified players are covered lightly — a dedicated scenario can expand that later.",
+  "relatedSlugs": [
+    "showcase-organizer-create-rr",
+    "showcase-player-event-checkin"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "org-home",
+      "title": "Organizer on Players",
+      "body": "An Event is a pre-registration tournament with a fee and event check-in. Creation uses the same + Tournament Pre-registration path as a normal prereg tournament.",
+      "image": "assets/showcase-organizer-create-event/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-wizard",
+      "title": "Open + Tournament",
+      "body": "Start the type modal, then turn on Pre-registration mode so Event fields appear.",
+      "image": "assets/showcase-organizer-create-event/step-02.png",
+      "kind": "action",
+      "actionHint": "Click + Tournament",
+      "hotspot": {
+        "x": 38.9,
+        "y": 22.8,
+        "w": 6.6,
+        "h": 2.5
+      }
+    },
+    {
+      "id": "enable-prereg",
+      "title": "Enable Pre-registration",
+      "body": "Same entry point as a pre-registration tournament: check Pre-registration mode. The primary button becomes Create Pre-registration.",
+      "image": "assets/showcase-organizer-create-event/step-03.png",
+      "kind": "action",
+      "actionHint": "Enable Pre-registration mode",
+      "hotspot": {
+        "x": 37,
+        "y": 52.4,
+        "w": 11.3,
+        "h": 2.4
+      }
+    },
+    {
+      "id": "name-event",
+      "title": "Name the Event (required)",
+      "body": "Type an Event name now. For an Event, a name is required — default auto-generation will not work once Paid event is on.",
+      "image": "assets/showcase-organizer-create-event/step-04.png",
+      "kind": "action",
+      "actionHint": "Type the Event name",
+      "hotspot": {
+        "x": 36.3,
+        "y": 16.4,
+        "w": 27.5,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "pick-mrr",
+      "title": "Choose Multi Round Robin",
+      "body": "Select Multi Round Robin for this walkthrough. Events work with every format; MRR keeps the example simple.",
+      "image": "assets/showcase-organizer-create-event/step-05.png",
+      "kind": "action",
+      "actionHint": "Select Multi Round Robin",
+      "hotspot": {
+        "x": 37,
+        "y": 35.5,
+        "w": 0.8,
+        "h": 1.3
+      }
+    },
+    {
+      "id": "date-required",
+      "title": "Tournament date (required)",
+      "body": "Tournament Date starts empty and is required. Leave Registration Deadline alone for now — it will fill automatically when you set the date.",
+      "image": "assets/showcase-organizer-create-event/step-06.png",
+      "kind": "action",
+      "actionHint": "Focus Tournament Date",
+      "hotspot": {
+        "x": 48,
+        "y": 49.2,
+        "w": 14.1,
+        "h": 3.3
+      }
+    },
+    {
+      "id": "date-deadline",
+      "title": "Registration deadline auto-fills",
+      "body": "After you set Tournament Date, Registration Deadline defaults to a fixed offset before that time (club Pre-registration setting, often 30 minutes). Do not change it unless you need a custom cutoff.",
+      "image": "assets/showcase-organizer-create-event/step-07.png",
+      "kind": "result",
+      "resultNote": "Deadline formed from the tournament date; left unchanged.",
+      "hotspot": {
+        "x": 48,
+        "y": 53.5,
+        "w": 14.1,
+        "h": 2.8
+      }
+    },
+    {
+      "id": "ratings",
+      "title": "Rating bounds",
+      "body": "Set Minimum and Maximum Rating so only players in that band can register. Invitation emails go only to rating-qualified members who allow tournament notifications.",
+      "image": "assets/showcase-organizer-create-event/step-08.png",
+      "kind": "action",
+      "actionHint": "Set Minimum / Maximum Rating",
+      "hotspot": {
+        "x": 37.1,
+        "y": 59.4,
+        "w": 12.4,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "max-participants",
+      "title": "Max participants",
+      "body": "Set Max Participants to cap the field. When that many players hold a seat, further registration stops and invited players are notified that the event is full.",
+      "image": "assets/showcase-organizer-create-event/step-09.png",
+      "kind": "action",
+      "actionHint": "Set Max Participants",
+      "hotspot": {
+        "x": 37.1,
+        "y": 70.4,
+        "w": 25.8,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "paid-event",
+      "title": "Mark Paid event",
+      "body": "Check Paid event. That turns this pre-registration into an Event: fee, event check-in, and a required Event Name (auto-generation will not work).",
+      "image": "assets/showcase-organizer-create-event/step-10.png",
+      "kind": "action",
+      "actionHint": "Enable Paid event",
+      "hotspot": {
+        "x": 37.9,
+        "y": 58.6,
+        "w": 11.3,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "min-participants",
+      "title": "Min participants",
+      "body": "Set Min Participants (shown for Events). If you Finalize with fewer registered players than this minimum, the system warns that the field is below the Event minimum.",
+      "image": "assets/showcase-organizer-create-event/step-11.png",
+      "kind": "action",
+      "actionHint": "Set Min Participants",
+      "hotspot": {
+        "x": 50.5,
+        "y": 65.7,
+        "w": 12.4,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "event-price",
+      "title": "Event price",
+      "body": "Adjust Event Price from the club default. Players see Register & pay with this amount.",
+      "image": "assets/showcase-organizer-create-event/step-12.png",
+      "kind": "action",
+      "actionHint": "Edit Event Price",
+      "hotspot": {
+        "x": 37.1,
+        "y": 65.7,
+        "w": 12.4,
+        "h": 3.4
+      }
+    },
+    {
+      "id": "admission-window",
+      "title": "Admission window",
+      "body": "Admissions starts controls how far before start players can check in for the Event (without a separate club day charge in that window). Change the hours as needed.",
+      "image": "assets/showcase-organizer-create-event/step-13.png",
+      "kind": "action",
+      "actionHint": "Edit Admissions starts hours",
+      "hotspot": {
+        "x": 37.1,
+        "y": 76.7,
+        "w": 5,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "create-event",
+      "title": "Create Pre-registration",
+      "body": "Submit Create Pre-registration. The Event is listed under Preregistration, and invitation emails go to rating-qualified players who have tournament notifications on. (A future showcase can cover those emails in detail.)",
+      "image": "assets/showcase-organizer-create-event/step-14.png",
+      "kind": "action",
+      "actionHint": "Click Create Pre-registration",
+      "hotspot": {
+        "x": 51.8,
+        "y": 89.5,
+        "w": 12,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "created",
+      "title": "Event created",
+      "body": "The named Event is under Preregistration with its fee and check-in window. Players can register; organizers Finalize later when the field is ready.",
+      "image": "assets/showcase-organizer-create-event/step-15.png",
+      "kind": "result",
+      "resultNote": "Paid Event created; invitations sent to qualified members."
+    }
+  ],
+  "showcase": true
+}

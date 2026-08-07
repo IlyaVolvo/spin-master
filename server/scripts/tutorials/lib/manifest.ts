@@ -9,15 +9,16 @@ const ROLE_ORDER = ['player', 'organizer', 'admin'] as const;
 const ROLE_META: Record<(typeof ROLE_ORDER)[number], { label: string; blurb: string }> = {
   player: {
     label: 'Player',
-    blurb: 'Member walkthroughs — plan, kiosk, history, stats, and multi-player compare.',
+    blurb: 'Member walkthroughs — plan, kiosk, event check-in, history, stats, and multi-player compare.',
   },
   organizer: {
     label: 'Organizer',
-    blurb: 'Tournament walkthroughs — create Round Robin, Playoff, Multi RR, and correct completed scores.',
+    blurb:
+      'Tournament walkthroughs — create Round Robin, Playoff, Multi RR, pre-registration, and correct completed scores.',
   },
   admin: {
     label: 'Administrator',
-    blurb: 'Front desk, plans, system settings, kiosk, and tournament scores.',
+    blurb: 'Front desk, event fees, plans, system settings, kiosk, and tournament scores.',
   },
 };
 
@@ -87,6 +88,7 @@ export function writeScenarioJson(
 const SHOWCASE_ORDER_WITHIN_ROLE: Partial<Record<(typeof ROLE_ORDER)[number], string[]>> = {
   player: [
     'showcase-player-checkin',
+    'showcase-player-event-checkin',
     'showcase-player-checkout',
     'showcase-player-plan',
     'showcase-player-score-kiosk',
@@ -98,9 +100,11 @@ const SHOWCASE_ORDER_WITHIN_ROLE: Partial<Record<(typeof ROLE_ORDER)[number], st
     'showcase-organizer-create-rr',
     'showcase-organizer-create-playoff',
     'showcase-organizer-create-multi-rr',
+    'showcase-organizer-create-event',
     'showcase-organizer-correct-completed-score',
   ],
   admin: [
+    'showcase-admin-event-fee-ledger',
     'showcase-admin-payment-log',
     'showcase-admin-attendance-log',
     'showcase-admin-create-junior-plan',

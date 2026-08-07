@@ -267,10 +267,10 @@ export const organizerScenarios: ScenarioDef[] = [
         capture: async (ctx) => {
           await ctx.loginAs(E);
           await gotoPath(ctx, '/tournaments');
-          await ctx.clickButtonContaining('Pre-Registration');
+          await ctx.clickButtonContaining('Preregistration');
           await ctx.delay(500);
           try {
-            return { hotspot: await ctx.hotspotForButton('Pre-Registration') };
+            return { hotspot: await ctx.hotspotForButton('Preregistration') };
           } catch {
             return {};
           }

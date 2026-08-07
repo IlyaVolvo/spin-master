@@ -28,7 +28,7 @@
       "actionHint": "Click the history icon on the player row",
       "hotspot": {
         "x": 17.4,
-        "y": 78.8,
+        "y": 66.9,
         "w": 1.5,
         "h": 2.7
       }
@@ -72,7 +72,7 @@
       "actionHint": "Click the checkbox for Alex Rivera",
       "hotspot": {
         "x": 16.5,
-        "y": 80.1,
+        "y": 69.6,
         "w": 0.8,
         "h": 1.3
       }

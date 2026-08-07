@@ -27,6 +27,15 @@ export const TUTORIAL_CHECKOUT_MEMBER = {
   lastName: 'Rivera',
 } as const;
 
+/** Today’s paid event night — Eden is REGISTERED for event check-in showcase. */
+export const TUTORIAL_EVENT_NIGHT_NAME = 'Tutorial Event Night';
+
+/** Pending cash event fee — Payment Log + member ledger showcase. */
+export const TUTORIAL_EVENT_FEE_MEMBER = {
+  firstName: 'Finley',
+  lastName: 'Ortiz',
+} as const;
+
 /** Tutorial player account — has rating history from the seeded completed RR. */
 export const TUTORIAL_HISTORY_MEMBER = {
   firstName: 'Tutorial',

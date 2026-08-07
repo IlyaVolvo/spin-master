@@ -2,7 +2,7 @@
   "slug": "showcase-admin-attendance-log",
   "role": "admin",
   "title": "Admin reviews Attendance Log",
-  "description": "Open Attendance Log, filter to Present (who is in the club now), then note the date filters for reviewing what happened in the past.",
+  "description": "Open Attendance Log, switch status filters (Present / Out), and use From / To dates to review a specific club day.",
   "relatedSlugs": [
     "showcase-admin-payment-log",
     "showcase-player-checkin"
@@ -27,7 +27,7 @@
       "kind": "action",
       "actionHint": "Click Attendance Log",
       "hotspot": {
-        "x": 48.4,
+        "x": 48.6,
         "y": 18.1,
         "w": 15.2,
         "h": 3.6
@@ -64,10 +64,32 @@
       "resultNote": "Present filter on; Out and Rejected off."
     },
     {
+      "id": "filter-out",
+      "title": "Show Out only",
+      "body": "Switch to Out to see who already left (manual or auto check-out). Rejected attempts use the Rejected filter the same way.",
+      "image": "assets/showcase-admin-attendance-log/step-06.png",
+      "kind": "action",
+      "actionHint": "Leave only Out checked",
+      "hotspot": {
+        "x": 53.6,
+        "y": 28.4,
+        "w": 5,
+        "h": 2.1
+      }
+    },
+    {
+      "id": "out-only",
+      "title": "Who is Out",
+      "body": "Only Out rows remain — members who checked in earlier and already left today.",
+      "image": "assets/showcase-admin-attendance-log/step-07.png",
+      "kind": "result",
+      "resultNote": "Out filter on; Present and Rejected off."
+    },
+    {
       "id": "date-filters",
       "title": "Date filters",
-      "body": "From and To sit next to Status. Use them when you need a specific club day instead of the default recent window.",
-      "image": "assets/showcase-admin-attendance-log/step-06.png",
+      "body": "From and To sit next to Status. Set both to the same club date to focus on one day, or widen the range for history.",
+      "image": "assets/showcase-admin-attendance-log/step-08.png",
       "kind": "action",
       "actionHint": "Look at From and To",
       "hotspot": {
@@ -78,10 +100,18 @@
       }
     },
     {
+      "id": "date-applied",
+      "title": "Day-scoped list",
+      "body": "With From and To set, the list only includes visits in that club-date window. Combine dates with Status to reconstruct a past day.",
+      "image": "assets/showcase-admin-attendance-log/step-09.png",
+      "kind": "result",
+      "resultNote": "Date range + status filters work together."
+    },
+    {
       "id": "attention-past",
       "title": "Look back in time",
-      "body": "You could also check what happened in the past. Set From and To to an earlier club date to review who was Present, Out, or Rejected that day.",
-      "image": "assets/showcase-admin-attendance-log/step-07.png",
+      "body": "To review another day, change From and To to that club date and flip Present / Out / Rejected as needed.",
+      "image": "assets/showcase-admin-attendance-log/step-10.png",
       "kind": "attention",
       "hotspot": {
         "x": 27.8,

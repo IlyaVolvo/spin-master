@@ -50,7 +50,7 @@
       "actionHint": "Click Check-in on your row",
       "hotspot": {
         "x": 67.6,
-        "y": 47.5,
+        "y": 47.2,
         "w": 4.7,
         "h": 2.7
       }
@@ -64,7 +64,7 @@
       "actionHint": "Click Check-in after entering the PIN",
       "hotspot": {
         "x": 55.9,
-        "y": 53.2,
+        "y": 56.6,
         "w": 6,
         "h": 3.6
       }

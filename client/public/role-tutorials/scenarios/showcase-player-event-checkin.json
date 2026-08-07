@@ -1,0 +1,96 @@
+{
+  "slug": "showcase-player-event-checkin",
+  "role": "player",
+  "title": "Player checks in for an event",
+  "description": "At the check-in kiosk, a registered member chooses today’s event, enters their PIN, and joins attendance for the event.",
+  "relatedSlugs": [
+    "showcase-admin-payment-log",
+    "showcase-admin-event-fee-ledger",
+    "showcase-player-checkin"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "kiosk-event-ready",
+      "title": "Event night at the kiosk",
+      "body": "Tutorial Event Night is open for check-in. Eden Brooks is already registered for the event.",
+      "image": "assets/showcase-player-event-checkin/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "find-member",
+      "title": "Find your name",
+      "body": "Type part of Eden Brooks in the name search so their row is easy to find.",
+      "image": "assets/showcase-player-event-checkin/step-02.png",
+      "kind": "action",
+      "actionHint": "Type in the name search field",
+      "hotspot": {
+        "x": 15,
+        "y": 37.2,
+        "w": 30.4,
+        "h": 3.3
+      }
+    },
+    {
+      "id": "start-checkin",
+      "title": "Start check-in",
+      "body": "Tap Check-in on your row. The kiosk asks for your score PIN and which admission to use.",
+      "image": "assets/showcase-player-event-checkin/step-03.png",
+      "kind": "action",
+      "actionHint": "Click Check-in on your row",
+      "hotspot": {
+        "x": 67.6,
+        "y": 47.2,
+        "w": 4.7,
+        "h": 2.7
+      }
+    },
+    {
+      "id": "choose-event",
+      "title": "Choose the event",
+      "body": "Under Check-in type, select Tutorial Event Night. That records attendance for the event instead of a plain club visit.",
+      "image": "assets/showcase-player-event-checkin/step-04.png",
+      "kind": "action",
+      "actionHint": "Select the event in Check-in type",
+      "hotspot": {
+        "x": 38.1,
+        "y": 45.8,
+        "w": 23.8,
+        "h": 3.5
+      }
+    },
+    {
+      "id": "confirm-pin",
+      "title": "Enter PIN and confirm",
+      "body": "Type your score PIN, then confirm Check-in. A correct PIN marks you Present for the event.",
+      "image": "assets/showcase-player-event-checkin/step-05.png",
+      "kind": "action",
+      "actionHint": "Click Check-in after entering the PIN",
+      "hotspot": {
+        "x": 55.9,
+        "y": 56.6,
+        "w": 6,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "event-present",
+      "title": "Checked in for the event",
+      "body": "The row now offers Check-out. Event check-in is the fastest path for members who already registered.",
+      "image": "assets/showcase-player-event-checkin/step-06.png",
+      "kind": "result",
+      "resultNote": "Present for today’s event attendance."
+    },
+    {
+      "id": "attention-pay-clear",
+      "title": "Paying for the event",
+      "body": "Members are responsible for approaching an Organizer or Admin to pay the event fee when required. Admins clear pending cash in Payment Log — see “Admin clears a cash payment.”",
+      "image": "assets/showcase-player-event-checkin/step-07.png",
+      "kind": "attention"
+    }
+  ],
+  "showcase": true
+}
