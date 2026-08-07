@@ -2043,6 +2043,7 @@ router.patch('/:id', [
       players,
       prisma,
       additionalData,
+      actorMemberId: req.memberId ?? req.userId ?? null,
     });
 
     // Invalidate cache and emit update
@@ -3234,6 +3235,7 @@ router.patch('/:id/cancel', [
     }
 
     const plugin = tournamentPluginRegistry.get(tournament.type);
+    const actorMemberId = req.memberId ?? req.member?.id ?? req.userId ?? null;
 
     // Determine if this is a compound tournament (has children)
     const isCompound = tournament.childTournaments && tournament.childTournaments.length > 0;
@@ -3389,6 +3391,15 @@ router.patch('/:id/cancel', [
       }
       emitCacheInvalidation(tournamentId);
 
+      logger.info('tournament_early_completed', {
+        tournamentId,
+        name: completedTournament.name,
+        type: completedTournament.type,
+        actorMemberId,
+        earlyCompleteMinPercent: earlyCompleteMinPercentRaw ?? null,
+        playedMatches,
+      });
+
       const enriched = await enrichTournamentForApi(prisma, completedTournament);
       return res.json(enriched);
     }
@@ -3431,6 +3442,14 @@ router.patch('/:id/cancel', [
         where: { id: tournamentId },
       });
 
+      logger.info('tournament_abandoned', {
+        tournamentId,
+        name: tournament.name,
+        type: tournament.type,
+        actorMemberId,
+        result: 'deleted',
+      });
+
       if (parentSnapshot && childSnapshot) {
         const parentPlugin = tournamentPluginRegistry.get(parentSnapshot.type);
         if (parentPlugin.onChildAbandoned) {
@@ -3460,6 +3479,16 @@ router.patch('/:id/cancel', [
                   ...(parentResult.shouldMarkCancelled ? { cancelled: true } : {}),
                 },
               });
+              if (parentResult.shouldMarkCancelled) {
+                logger.info('tournament_abandoned', {
+                  tournamentId: refreshedParent.id,
+                  name: refreshedParent.name,
+                  type: refreshedParent.type,
+                  actorMemberId,
+                  result: 'marked_cancelled',
+                  triggeredByChildId: tournamentId,
+                });
+              }
               emitTournamentStateChanged(
                 { ...refreshedParent, status: 'COMPLETED', cancelled: !!parentResult.shouldMarkCancelled },
                 'ACTIVE',
@@ -3485,10 +3514,26 @@ router.patch('/:id/cancel', [
 
         if (child.matches.length === 0) {
           await prisma.tournament.delete({ where: { id: child.id } });
+          logger.info('tournament_abandoned', {
+            tournamentId: child.id,
+            name: child.name,
+            type: child.type,
+            actorMemberId,
+            result: 'deleted',
+            parentTournamentId: tournamentId,
+          });
         } else {
           await prisma.tournament.update({
             where: { id: child.id },
             data: { status: 'COMPLETED', cancelled: true },
+          });
+          logger.info('tournament_abandoned', {
+            tournamentId: child.id,
+            name: child.name,
+            type: child.type,
+            actorMemberId,
+            result: 'marked_cancelled',
+            parentTournamentId: tournamentId,
           });
         }
       }
@@ -3514,6 +3559,15 @@ router.patch('/:id/cancel', [
           },
         },
       },
+    });
+
+    logger.info('tournament_abandoned', {
+      tournamentId,
+      name: updatedTournament.name,
+      type: updatedTournament.type,
+      actorMemberId,
+      result: 'marked_cancelled',
+      playedMatches,
     });
 
     // Child abandon → notify parent (not when abandoning a whole parent compound)
@@ -3547,6 +3601,16 @@ router.patch('/:id/cancel', [
                 ...(parentResult.shouldMarkCancelled ? { cancelled: true } : {}),
               },
             });
+            if (parentResult.shouldMarkCancelled) {
+              logger.info('tournament_abandoned', {
+                tournamentId: parentTournament.id,
+                name: parentTournament.name,
+                type: parentTournament.type,
+                actorMemberId,
+                result: 'marked_cancelled',
+                triggeredByChildId: tournamentId,
+              });
+            }
             emitTournamentStateChanged(
               {
                 ...parentTournament,

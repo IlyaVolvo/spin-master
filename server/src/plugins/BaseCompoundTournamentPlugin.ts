@@ -47,8 +47,10 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     players: any[];
     prisma: any;
     additionalData?: Record<string, any>;
+    actorMemberId?: number | null;
   }): Promise<any> {
-    const { tournamentId, name, participantIds, players, prisma, additionalData } = context;
+    const { tournamentId, name, participantIds, players, prisma, additionalData, actorMemberId } =
+      context;
 
     // 1. Fetch existing tournament with children
     const existingTournament = await prisma.tournament.findUnique({
@@ -69,20 +71,6 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
     if (!this.canModify(existingTournament)) {
       throw new Error('Tournament cannot be modified - matches have already been played in child tournaments');
     }
-
-    logger.info('Modifying compound tournament', {
-      tournamentId,
-      name,
-      type: existingTournament.type,
-      participantCount: participantIds.length,
-      participantIds,
-      participants: players.map((p: any) => ({
-        id: p.id,
-        name: `${p.firstName} ${p.lastName}`.trim(),
-        rating: p.rating ?? null,
-      })),
-      groupCount: Array.isArray(additionalData?.groups) ? additionalData.groups.length : undefined,
-    });
 
     // 2. Delete all child tournament data (order matters for FK constraints)
     const childIds = (existingTournament.childTournaments || []).map((c: any) => c.id);
@@ -159,12 +147,15 @@ export abstract class BaseCompoundTournamentPlugin implements TournamentPlugin {
       },
     });
 
-    logger.info('Compound tournament modified successfully', {
+    logger.info('tournament_modified', {
       tournamentId,
       name: result?.name,
-      type: result?.type,
+      type: result?.type ?? existingTournament.type,
+      actorMemberId: actorMemberId ?? null,
+      participantIds,
+      participantCount: participantIds.length,
       childCount: result?.childTournaments?.length,
-      participantCount: result?.participants?.length,
+      groupCount: Array.isArray(additionalData?.groups) ? additionalData.groups.length : undefined,
     });
 
     return result;

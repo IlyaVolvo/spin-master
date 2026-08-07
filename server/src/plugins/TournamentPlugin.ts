@@ -138,6 +138,8 @@ export interface TournamentPlugin {
     players: any[];
     prisma: any;
     additionalData?: Record<string, any>;
+    /** Organizer who performed the modify (for ops logs). */
+    actorMemberId?: number | null;
   }): Promise<Tournament>;
   
   // Query methods - plugins answer questions about their state

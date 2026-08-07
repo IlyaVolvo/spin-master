@@ -58,8 +58,10 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
     players: any[];
     prisma: any;
     additionalData?: Record<string, any>;
+    actorMemberId?: number | null;
   }): Promise<Tournament> {
-    const { tournamentId, name, participantIds, players, prisma, additionalData } = context;
+    const { tournamentId, name, participantIds, players, prisma, additionalData, actorMemberId } =
+      context;
 
     // Get existing tournament to verify it can be modified
     const existingTournament = await prisma.tournament.findUnique({
@@ -77,19 +79,6 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
     if (!this.canModify(existingTournament)) {
       throw new Error('Tournament cannot be modified - matches have already been played');
     }
-
-    logger.info('Modifying tournament', {
-      tournamentId,
-      name,
-      type: existingTournament.type,
-      participantCount: participantIds.length,
-      participantIds,
-      participants: players.map((p: any) => ({
-        id: p.id,
-        name: `${p.firstName} ${p.lastName}`.trim(),
-        rating: p.rating ?? null,
-      })),
-    });
 
     // Delete existing participants (they'll be recreated)
     await prisma.tournamentParticipant.deleteMany({
@@ -119,10 +108,12 @@ export abstract class BaseTournamentPlugin implements TournamentPlugin {
       },
     });
 
-    logger.info('Tournament modified successfully', {
+    logger.info('tournament_modified', {
       tournamentId,
       name: updatedTournament.name,
       type: updatedTournament.type,
+      actorMemberId: actorMemberId ?? null,
+      participantIds,
       participantCount: participantIds.length,
     });
 
