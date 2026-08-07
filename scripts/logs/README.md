@@ -6,6 +6,7 @@ Scripts for collecting Render service logs and turning them into a readable time
 |--------|------|
 | `monitor-env.sh` | Tail Render logs into local JSONL files |
 | `analyze-render-log.py` | Extract tournament / player / error timelines |
+| `tail-render-jsonl.sh` | Follow a JSONL file from the last complete JSON line via compact `jq` |
 
 Collected dumps live under **`~/logs/<env>/`** by default (not in this repo). Override with `LOGS_DATA_ROOT`.
 
@@ -137,13 +138,33 @@ Match score lines include who entered the score when present in logs:
 
 ---
 
+## `tail-render-jsonl.sh`
+
+Follow a growing JSON log file on screen: finds the **last complete JSON object** (works with pretty-printed multi-line Render `-o json` or NDJSON), then follows appends through compact `jq`.
+
+```bash
+./scripts/logs/tail-render-jsonl.sh ~/logs/prod/render-service.jsonl
+./scripts/logs/tail-render-jsonl.sh /path/to/any-capture.jsonl
+```
+
+Output shape (one object per line):
+
+```json
+{"t":"2026-08-07T…","msg":"…","resource":"srv-…","level":"info"}
+```
+
+---
+
 ## Typical workflow
 
 ```bash
 # Terminal 1 — collect
 ./scripts/logs/monitor-env.sh prod
 
-# Terminal 2 — analyze (legacy text and/or new jsonl)
+# Terminal 2 — live compact view of the same file
+./scripts/logs/tail-render-jsonl.sh ~/logs/prod/render-service.jsonl
+
+# Terminal 3 — analyze (legacy text and/or new jsonl)
 ./scripts/logs/analyze-render-log.py \
   ~/logs/prod/render-service.log \
   ~/logs/prod/render-service.jsonl \

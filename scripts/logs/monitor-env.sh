@@ -60,7 +60,9 @@ while true; do
     args+=(--start "$start")
     echo "resuming from $start" >&2
   fi
-  render logs "${args[@]}" 2>&1 | tee -a "$OUT" || true
+  # Compact each Render JSON object to one line (CLI pretty-prints by default).
+  # Keep CLI stderr out of the JSON stream so jq can parse.
+  render logs "${args[@]}" 2>/dev/null | jq -c . | tee -a "$OUT" || true
   # Reconnect marker as a JSON line so the analyzer can ignore it easily
   echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"message\":\"stream ended; reconnecting…\",\"labels\":[]}" | tee -a "$OUT" >&2
   sleep 2
