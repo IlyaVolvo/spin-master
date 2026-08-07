@@ -675,6 +675,7 @@ function Header({
   const [kioskKind, setKioskKind] = useState<KioskKind | undefined>(() => getKioskKind());
   const [kioskTournamentId, setKioskTournamentId] = useState<number | undefined>(() => getKioskTournamentId());
   const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
   const [restorePassword, setRestorePassword] = useState('');
   const [restoreError, setRestoreError] = useState('');
   const [restoreLoading, setRestoreLoading] = useState(false);
@@ -1090,7 +1091,43 @@ function Header({
           maxWidth: '100%',
         }}
       >
-        <div style={{ flex: '1 1 0', minWidth: 0 }} aria-hidden="true" />
+        <div
+          style={{
+            flex: '1 1 0',
+            minWidth: 0,
+            display: 'flex',
+            justifyContent: 'flex-start',
+          }}
+        >
+          <button
+            type="button"
+            className="app-header-club"
+            onClick={() => setShowAboutModal(true)}
+            aria-haspopup="dialog"
+            aria-label="About Spin Master"
+            style={{
+              display: 'inline-block',
+              boxSizing: 'border-box',
+              maxWidth: '100%',
+              padding: '6px 16px',
+              backgroundColor: '#2c3e50',
+              color: 'white',
+              borderRadius: '999px',
+              border: 'none',
+              fontSize: '17px',
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+              lineHeight: 1.25,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            About
+          </button>
+        </div>
         <div
           style={{
             flex: '0 1 auto',
@@ -1804,6 +1841,137 @@ function Header({
             <button type="button" onClick={handleRestore} disabled={restoreLoading} className="success">
               {restoreLoading ? 'Restoring…' : 'Restore'}
             </button>
+          </div>
+        </div>
+      </div>
+    )}
+    {showAboutModal && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="about-modal-title"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15, 32, 48, 0.62)',
+          zIndex: 20000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+        }}
+        onClick={() => setShowAboutModal(false)}
+      >
+        <div
+          style={{
+            background: 'linear-gradient(165deg, #ffffff 0%, #f4f8fb 100%)',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '400px',
+            overflow: 'hidden',
+            boxShadow: '0 18px 48px rgba(15, 32, 48, 0.28)',
+            border: '1px solid rgba(70, 130, 180, 0.22)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(to bottom, #4682B4 0%, #5F9EA0 50%, #4682B4 100%)',
+              padding: '22px 24px 18px',
+              color: 'white',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: '22px', lineHeight: 1, marginBottom: '8px' }} aria-hidden="true">
+              🏓
+            </div>
+            <h3
+              id="about-modal-title"
+              style={{
+                margin: 0,
+                fontSize: '24px',
+                fontWeight: 700,
+                letterSpacing: '0.03em',
+              }}
+            >
+              Spin Master
+            </h3>
+            <p
+              style={{
+                margin: '8px 0 0',
+                fontSize: '13px',
+                lineHeight: 1.4,
+                opacity: 0.92,
+              }}
+            >
+              Built for day-by-day operations and events — less paperwork, clearer results.
+            </p>
+          </div>
+          <div style={{ padding: '20px 24px 22px' }}>
+            <p
+              style={{
+                margin: '0 0 8px',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: '#5F9EA0',
+              }}
+            >
+              Major features
+            </p>
+            <ul
+              style={{
+                margin: '0 0 20px',
+                padding: '0 0 0 1.15em',
+                fontSize: '14px',
+                lineHeight: 1.65,
+                color: '#2c3e50',
+              }}
+            >
+              <li>Member management</li>
+              <li>Tournaments &amp; live scoring</li>
+              <li>Player ratings</li>
+              <li>Club check-in/check-out</li>
+              <li>Payments</li>
+              <li>Admissions</li>
+            </ul>
+            <div
+              style={{
+                borderTop: '1px solid rgba(44, 62, 80, 0.12)',
+                paddingTop: '14px',
+                marginBottom: '16px',
+                textAlign: 'center',
+              }}
+            >
+              <p style={{ margin: '0 0 4px', fontSize: '14px', color: '#2c3e50', fontWeight: 600 }}>
+                Author: Ilya Volvovski
+              </p>
+              <p style={{ margin: 0, fontSize: '12px', color: '#6a7a8a' }}>
+                © {new Date().getFullYear()} Ilya Volvovski. All rights reserved.
+              </p>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setShowAboutModal(false)}
+                autoFocus
+                style={{
+                  padding: '9px 28px',
+                  background: 'linear-gradient(to bottom, #4682B4 0%, #3a6d96 100%)',
+                  color: 'white',
+                  border: '1px solid #3a6d96',
+                  borderRadius: '999px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  letterSpacing: '0.02em',
+                  boxShadow: '0 2px 6px rgba(70, 130, 180, 0.35)',
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>
