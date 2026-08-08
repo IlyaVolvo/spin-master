@@ -23,20 +23,21 @@ function sampleNormal(mean: number, stdDev: number): number {
   return mean + stdDev * z;
 }
 
-function readTestDelaySettings(): { meanMs: number; stdDevMs: number } {
-  const cfg = getPaymentsConfig().providers?.test;
+function readDummyDelaySettings(): { meanMs: number; stdDevMs: number } {
+  const cfg = getPaymentsConfig().providers?.dummy;
   const meanMs = Math.max(0, Math.floor(Number(cfg?.confirmDelayMeanMs) || DEFAULT_MEAN_MS));
   const stdDevMs = Math.max(0, Math.floor(Number(cfg?.confirmDelayStdDevMs) || DEFAULT_STDDEV_MS));
   return { meanMs, stdDevMs };
 }
 
 /**
- * Test (dev) provider: leaves payment PENDING, then confirms via webhook path
+ * Dummy (dev) provider: leaves payment PENDING, then confirms via webhook path
  * after a Normal(μ, σ) delay (imitates a real PSP).
  */
-export class TestPaymentProvider implements PaymentProvider {
-  readonly id = 'test';
-  readonly displayName = 'Test (dev)';
+export class DummyPaymentProvider implements PaymentProvider {
+  readonly id = 'dummy';
+  readonly displayName = 'Dummy (dev)';
+  readonly environment = 'testing' as const;
 
   isUsable(): boolean {
     return true;
@@ -83,7 +84,7 @@ export class TestPaymentProvider implements PaymentProvider {
   }
 
   async startCheckout(input: StartCheckoutInput): Promise<StartCheckoutResult> {
-    const externalRef = input.externalRef || `test_${input.paymentId}_${randomUUID()}`;
+    const externalRef = input.externalRef || `dummy_${input.paymentId}_${randomUUID()}`;
 
     await prisma.clubPayment.update({
       where: { id: input.paymentId },
@@ -95,7 +96,7 @@ export class TestPaymentProvider implements PaymentProvider {
       },
     });
 
-    const { meanMs, stdDevMs } = readTestDelaySettings();
+    const { meanMs, stdDevMs } = readDummyDelaySettings();
     const delayMs = Math.max(0, Math.round(sampleNormal(meanMs, stdDevMs)));
 
     setTimeout(() => {
@@ -106,7 +107,7 @@ export class TestPaymentProvider implements PaymentProvider {
         amountCents: input.amountCents,
         raw: { simulatedWebhook: true, delayMs },
       }).catch((err) => {
-        logger.error('Test provider delayed confirm failed', {
+        logger.error('Dummy provider delayed confirm failed', {
           externalRef,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -116,7 +117,7 @@ export class TestPaymentProvider implements PaymentProvider {
     return {
       paymentId: input.paymentId,
       externalRef,
-      instructions: `Test payment pending; webhook success expected in ~${delayMs}ms.`,
+      instructions: `Dummy payment pending; webhook success expected in ~${delayMs}ms.`,
       confirmedImmediately: false,
     };
   }

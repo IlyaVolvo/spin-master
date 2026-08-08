@@ -15,6 +15,8 @@ import type {
 export class CashPaymentProvider implements PaymentProvider {
   readonly id = 'cash';
   readonly displayName = 'Cash (desk)';
+  /** Placeholder; cash is not filtered by payments.installMode. */
+  readonly environment = 'testing' as const;
 
   isUsable(): boolean {
     return true;

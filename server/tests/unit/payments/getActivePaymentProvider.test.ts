@@ -1,5 +1,5 @@
 /**
- * Payment feature — active online provider selection (excludes cash)
+ * Payment feature — online provider selection (installMode + no global providerId)
  */
 const mockGetUsableOffered = jest.fn();
 const mockHas = jest.fn();
@@ -16,59 +16,65 @@ jest.mock('../../../src/payments/PaymentProviderRegistry', () => ({
 }));
 
 jest.mock('../../../src/services/systemConfigService', () => ({
-  getSystemConfig: jest.fn(),
+  getPaymentsConfig: jest.fn(),
 }));
 
-import { getSystemConfig } from '../../../src/services/systemConfigService';
+import { getPaymentsConfig } from '../../../src/services/systemConfigService';
 import {
   getActivePaymentProvider,
   getCashPaymentProvider,
+  listAssignableOnlineProviders,
   listPaymentProvidersForAdmin,
 } from '../../../src/payments/getActivePaymentProvider';
 
-function fakeProvider(id: string, usable = true, offered = true) {
+function fakeProvider(
+  id: string,
+  opts: { usable?: boolean; offered?: boolean; environment?: 'testing' | 'production' } = {},
+) {
   return {
     id,
     displayName: id,
-    isUsable: () => usable,
-    isOfferedForNewPayments: () => offered,
+    environment: opts.environment ?? 'testing',
+    isUsable: () => opts.usable !== false,
+    isOfferedForNewPayments: () => opts.offered !== false,
   };
 }
 
 describe('getActivePaymentProvider', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (getPaymentsConfig as jest.Mock).mockReturnValue({ installMode: 'test' });
   });
 
-  it('throws when no online providers are available', () => {
-    mockGetUsableOffered.mockReturnValue([fakeProvider('cash')]);
+  it('throws when no online providers match install mode', () => {
+    mockGetUsableOffered.mockReturnValue([
+      fakeProvider('cash'),
+      fakeProvider('stripe', { environment: 'production' }),
+    ]);
     expect(() => getActivePaymentProvider()).toThrow(/No usable online payment provider/);
   });
 
-  it('uses configured online provider when usable', () => {
-    const test = fakeProvider('test');
-    mockGetUsableOffered.mockReturnValue([test, fakeProvider('other')]);
-    (getSystemConfig as jest.Mock).mockReturnValue({ payments: { providerId: 'test' } });
-    mockHas.mockReturnValue(true);
-    mockGet.mockReturnValue(test);
-
-    expect(getActivePaymentProvider()).toBe(test);
+  it('uses sole matching online provider', () => {
+    const dummy = fakeProvider('dummy');
+    mockGetUsableOffered.mockReturnValue([dummy, fakeProvider('cash')]);
+    expect(getActivePaymentProvider()).toBe(dummy);
   });
 
-  it('ignores configured cash and falls back to sole online provider', () => {
-    const test = fakeProvider('test');
-    mockGetUsableOffered.mockReturnValue([test]);
-    (getSystemConfig as jest.Mock).mockReturnValue({ payments: { providerId: 'cash' } });
-
-    expect(getActivePaymentProvider()).toBe(test);
+  it('throws when multiple matching online providers (need per-member assignment)', () => {
+    mockGetUsableOffered.mockReturnValue([
+      fakeProvider('dummy'),
+      fakeProvider('stripe-test', { environment: 'testing' }),
+    ]);
+    expect(() => getActivePaymentProvider()).toThrow(/Member\.paymentProviderId/);
   });
 
-  it('throws when multiple online providers and config is ambiguous', () => {
-    mockGetUsableOffered.mockReturnValue([fakeProvider('a'), fakeProvider('b')]);
-    (getSystemConfig as jest.Mock).mockReturnValue({ payments: { providerId: '' } });
-    mockHas.mockReturnValue(false);
-
-    expect(() => getActivePaymentProvider()).toThrow(/Multiple payment providers/);
+  it('listAssignableOnlineProviders excludes cash and wrong environment', () => {
+    mockGetUsableOffered.mockReturnValue([
+      fakeProvider('cash'),
+      fakeProvider('dummy'),
+      fakeProvider('stripe', { environment: 'production' }),
+    ]);
+    expect(listAssignableOnlineProviders().map((p) => p.id)).toEqual(['dummy']);
   });
 
   it('getCashPaymentProvider requires registration', () => {
@@ -81,11 +87,16 @@ describe('getActivePaymentProvider', () => {
     expect(getCashPaymentProvider()).toBe(cash);
   });
 
-  it('lists providers for admin', () => {
-    mockGetAll.mockReturnValue([fakeProvider('cash'), fakeProvider('test', false, true)]);
+  it('listPaymentProvidersForAdmin marks assignableToMembers', () => {
+    mockGetAll.mockReturnValue([
+      fakeProvider('dummy'),
+      fakeProvider('cash'),
+      fakeProvider('stripe', { environment: 'production' }),
+    ]);
     expect(listPaymentProvidersForAdmin()).toEqual([
-      { id: 'cash', displayName: 'cash', usable: true, offered: true },
-      { id: 'test', displayName: 'test', usable: false, offered: true },
+      expect.objectContaining({ id: 'dummy', assignableToMembers: true }),
+      expect.objectContaining({ id: 'cash', assignableToMembers: false }),
+      expect.objectContaining({ id: 'stripe', assignableToMembers: false }),
     ]);
   });
 });

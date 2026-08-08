@@ -143,14 +143,19 @@ export type PaymentsReminderConfig = {
   visitPackVisitsRemaining: number;
 };
 
-export type TestPaymentProviderSettings = {
+export type DummyPaymentProviderSettings = {
   confirmDelayMeanMs: number;
   confirmDelayStdDevMs: number;
 };
 
+export type PaymentsInstallMode = 'test' | 'production';
+
 export type PaymentsConfig = {
-  /** Active provider plugin id; empty = auto when exactly one usable offered provider. */
-  providerId: string;
+  /**
+   * Immutable after first DB init: which provider.environment values Admin may assign.
+   * Set from PAYMENTS_INSTALL_MODE env or --payments-install-mode= CLI at bootstrap.
+   */
+  installMode: PaymentsInstallMode;
   /** Applied when creating new members; consent is OFF by default. */
   defaultOnlinePayConsent: boolean;
   adminNotifyEmails: string[];
@@ -162,7 +167,7 @@ export type PaymentsConfig = {
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */
   providers: {
-    test: TestPaymentProviderSettings;
+    dummy: DummyPaymentProviderSettings;
     [providerId: string]: Record<string, unknown>;
   };
 };
@@ -216,6 +221,27 @@ function isValidIanaTimezone(value: string): boolean {
 function getEnvClubName(): string | null {
   const raw = process.env.CLUB_NAME;
   return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
+}
+
+/**
+ * Bootstrap-only source for payments.installMode (env or CLI).
+ * Defaults to test so local/staging never silently go live.
+ */
+export function resolvePaymentsInstallModeFromProcess(
+  env: NodeJS.ProcessEnv = process.env,
+  argv: string[] = process.argv,
+): PaymentsInstallMode {
+  for (const arg of argv) {
+    const m = /^--payments-install-mode=(.+)$/i.exec(arg.trim());
+    if (m) {
+      const v = m[1].trim().toLowerCase();
+      if (v === 'production' || v === 'prod' || v === 'live') return 'production';
+      if (v === 'test' || v === 'testing') return 'test';
+    }
+  }
+  const raw = (env.PAYMENTS_INSTALL_MODE || env.PAYMENTS_MODE || '').trim().toLowerCase();
+  if (raw === 'production' || raw === 'prod' || raw === 'live') return 'production';
+  return 'test';
 }
 
 function getDefaultWeeklyHours(): Record<ClubWeekday, ClubDayHours> {
@@ -320,7 +346,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       ) as AchievementsPublicAccessConfig,
     },
     payments: {
-      providerId: '',
+      installMode: resolvePaymentsInstallModeFromProcess(),
       defaultOnlinePayConsent: false,
       adminNotifyEmails: [],
       notifyAdminsOnCourtesy: true,
@@ -334,7 +360,7 @@ export function getDefaultSystemConfig(): SystemConfig {
         visitPackVisitsRemaining: 2,
       },
       providers: {
-        test: {
+        dummy: {
           confirmDelayMeanMs: 2500,
           confirmDelayStdDevMs: 800,
         },
@@ -748,9 +774,15 @@ function validatePublicAccess(value: unknown): PublicAccessConfig {
 
 function validatePayments(value: unknown): PaymentsConfig {
   const config = deepMerge(getDefaultSystemConfig().payments, value);
-  if (typeof config.providerId !== 'string') {
-    throw new Error('payments.providerId must be a string');
+  // Drop legacy global providerId if present in stored JSON.
+  delete (config as { providerId?: unknown }).providerId;
+
+  if (config.installMode === 'production' || config.installMode === 'test') {
+    // keep
+  } else {
+    config.installMode = resolvePaymentsInstallModeFromProcess();
   }
+
   config.defaultOnlinePayConsent = Boolean(config.defaultOnlinePayConsent);
   if (!Array.isArray(config.adminNotifyEmails)) {
     throw new Error('payments.adminNotifyEmails must be an array');
@@ -779,18 +811,24 @@ function validatePayments(value: unknown): PaymentsConfig {
   if (!isRecord(config.providers)) {
     config.providers = getDefaultSystemConfig().payments.providers;
   }
-  const testDefaults = getDefaultSystemConfig().payments.providers.test;
-  const testRaw: Record<string, unknown> = isRecord(config.providers.test)
-    ? config.providers.test
+  // Migrate legacy providers.test → providers.dummy (no lasting legacy key).
+  if (isRecord(config.providers.test) && !isRecord(config.providers.dummy)) {
+    config.providers.dummy = { ...(config.providers.test as Record<string, unknown>) } as DummyPaymentProviderSettings;
+  }
+  delete config.providers.test;
+
+  const dummyDefaults = getDefaultSystemConfig().payments.providers.dummy;
+  const dummyRaw: Record<string, unknown> = isRecord(config.providers.dummy)
+    ? config.providers.dummy
     : {};
-  config.providers.test = {
+  config.providers.dummy = {
     confirmDelayMeanMs: Math.max(
       0,
-      Math.floor(Number(testRaw.confirmDelayMeanMs) || testDefaults.confirmDelayMeanMs),
+      Math.floor(Number(dummyRaw.confirmDelayMeanMs) || dummyDefaults.confirmDelayMeanMs),
     ),
     confirmDelayStdDevMs: Math.max(
       0,
-      Math.floor(Number(testRaw.confirmDelayStdDevMs) || testDefaults.confirmDelayStdDevMs),
+      Math.floor(Number(dummyRaw.confirmDelayStdDevMs) || dummyDefaults.confirmDelayStdDevMs),
     ),
   };
 
@@ -884,7 +922,10 @@ export async function updateSystemConfig(patch: SystemConfigPatch): Promise<Syst
     await initializeSystemConfig();
   }
 
+  const lockedInstallMode = cachedConfig.payments.installMode;
   const nextConfig = validateSystemConfig(deepMerge(cachedConfig, patch));
+  // installMode is immutable after bootstrap — ignore any patch value.
+  nextConfig.payments.installMode = lockedInstallMode;
   await persistConfig(nextConfig);
   cachedConfig = nextConfig;
   setRatingValidationBounds(nextConfig.ratingValidation);

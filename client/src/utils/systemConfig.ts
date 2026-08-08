@@ -112,7 +112,7 @@ export type SystemConfig = {
     achievements: Record<AchievementCategoryId, number>;
   };
   payments: {
-    providerId: string;
+    installMode: 'test' | 'production';
     defaultOnlinePayConsent: boolean;
     adminNotifyEmails: string[];
     notifyAdminsOnCourtesy: boolean;
@@ -126,7 +126,7 @@ export type SystemConfig = {
       visitPackVisitsRemaining: number;
     };
     providers: {
-      test: {
+      dummy: {
         confirmDelayMeanMs: number;
         confirmDelayStdDevMs: number;
       };
@@ -240,7 +240,7 @@ const defaultSystemConfig: SystemConfig = {
     ) as Record<AchievementCategoryId, number>,
   },
   payments: {
-    providerId: '',
+    installMode: 'test',
     defaultOnlinePayConsent: false,
     adminNotifyEmails: [],
     notifyAdminsOnCourtesy: true,
@@ -254,7 +254,7 @@ const defaultSystemConfig: SystemConfig = {
       visitPackVisitsRemaining: 2,
     },
     providers: {
-      test: {
+      dummy: {
         confirmDelayMeanMs: 2500,
         confirmDelayStdDevMs: 800,
       },

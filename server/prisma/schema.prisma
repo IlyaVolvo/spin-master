@@ -81,6 +81,12 @@ model Member {
   /** Member must opt in (and have email) before online/automatic checkout is offered. */
   onlinePayConsent Boolean @default(false)
 
+  /**
+   * Admin-assigned online PSP id (e.g. test, stripe-test, stripe).
+   * Null = Pay online not available. Must match installMode-offered providers.
+   */
+  paymentProviderId String?
+
   // QR-based authentication token hash
   qrTokenHash String @unique
 

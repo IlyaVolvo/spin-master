@@ -350,7 +350,7 @@ describe('clearEventUnpaid / apply / credit / cancel', () => {
       listAmountCents: 1000,
       amountCents: 0,
       purpose: 'Event registration: Club Championship',
-      provider: 'test',
+      provider: 'dummy',
       metadata: {
         kind: 'event',
         product: { kind: 'event', tournamentId: 35, registrationId: 9, amountCents: 1000 },

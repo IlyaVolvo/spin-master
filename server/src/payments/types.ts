@@ -43,6 +43,9 @@ export type PaymentProviderInfo = {
   displayName: string;
 };
 
+/** Declared by each online PSP; installMode filters Admin assignment list. */
+export type PaymentProviderEnvironment = 'testing' | 'production';
+
 export type PaymentProviderSettingField = {
   key: string;
   label: string;
@@ -58,6 +61,11 @@ export type PaymentProviderSettingField = {
 export interface PaymentProvider {
   readonly id: string;
   readonly displayName: string;
+  /**
+   * testing | production for online PSPs. Cash uses testing as a placeholder;
+   * cash is never filtered by installMode for desk flows.
+   */
+  readonly environment: PaymentProviderEnvironment;
   /** Whether this install can start new checkouts with this provider. */
   isUsable(): boolean;
   /** Whether new checkouts may select this provider (soft-retire). */

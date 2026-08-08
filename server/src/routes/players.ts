@@ -1664,6 +1664,7 @@ router.patch('/:id', [
   body('autoRelinquishPrivileges').optional({ nullable: true }).isBoolean(),
   body('trialEndsOn').optional({ nullable: true }),
   body('onlinePayConsent').optional().isBoolean(),
+  body('paymentProviderId').optional({ nullable: true }).isString(),
 ], async (req: AuthRequest, res: Response) => {
   try {
     if (isKioskMode(req)) {
@@ -1702,6 +1703,7 @@ router.patch('/:id', [
         autoRelinquishPrivileges: true,
         autoRenewEnabled: true,
         onlinePayConsent: true,
+        paymentProviderId: true,
       },
     });
 
@@ -1835,6 +1837,7 @@ router.patch('/:id', [
       updateData.tournamentNotificationsEnabled = false;
       updateData.onlinePayConsent = false;
       // Auto-renew requires online pay; clear it when email (and thus pay online) is removed.
+      // Keep paymentProviderId so Admin need not re-assign when email returns.
       updateData.autoRenewEnabled = false;
       updateData.autoRenewFamilyKey = null;
     }
@@ -1868,6 +1871,39 @@ router.patch('/:id', [
         }
         updateData.onlinePayConsent = nextConsent;
       }
+    }
+
+    // Online payment service: Admin only; requires email; must be assignable for installMode
+    if (Object.prototype.hasOwnProperty.call(req.body, 'paymentProviderId')) {
+      if (!hasAdminAccess) {
+        return res.status(403).json({
+          error: 'Only Administrators can set the online payment service',
+        });
+      }
+      const finalEmail =
+        Object.prototype.hasOwnProperty.call(updateData, 'email')
+          ? updateData.email
+          : existingMember.email;
+      const raw = req.body.paymentProviderId;
+      const nextId =
+        raw === null || raw === undefined || String(raw).trim() === ''
+          ? null
+          : String(raw).trim();
+      if (nextId) {
+        if (!finalEmail) {
+          return res.status(400).json({
+            error: 'Assign an email before setting an online payment service',
+          });
+        }
+        const { listAssignableOnlineProviders } = await import('../payments/getActivePaymentProvider');
+        const allowed = listAssignableOnlineProviders();
+        if (!allowed.some((p) => p.id === nextId)) {
+          return res.status(400).json({
+            error: 'That payment service is not available for this install',
+          });
+        }
+      }
+      updateData.paymentProviderId = nextId;
     }
     
     // Roles can only be changed by Admins

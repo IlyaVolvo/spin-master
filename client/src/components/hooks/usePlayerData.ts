@@ -20,6 +20,7 @@ interface Member {
   segment?: string | null;
   trialEndsOn?: string | null;
   onlinePayConsent?: boolean;
+  paymentProviderId?: string | null;
   tournamentNotificationsEnabled?: boolean;
   /** null = inherit club default. */
   autoRelinquishPrivileges?: boolean | null;

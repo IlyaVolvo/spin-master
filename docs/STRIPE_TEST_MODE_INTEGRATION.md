@@ -7,7 +7,7 @@
 **Related code today:**
 
 - Provider interface: `server/src/payments/types.ts`
-- Registry init: `server/src/payments/index.ts` (`test`, `cash` only)
+- Registry init: `server/src/payments/index.ts` (`dummy`, `cash` only)
 - Online selection: `getActivePaymentProvider()` + `SystemConfig.payments.providerId`
 - Checkout: `runMemberCheckout` → `provider.startCheckout`
 - Webhook: `POST /api/payments/webhook/:providerId`
@@ -28,7 +28,7 @@ Related manual payment/check-in tests: [`MANUAL_PAYMENT_CHECKIN_TESTS.md`](./MAN
 
 Test mode hits **Stripe’s real API and Checkout UI** with test cards. Behavior matches production; settlement does not.
 
-Keep the `test` (dev) provider registered for offline CI; do **not** use it to validate Stripe.
+Keep the `dummy` (dev) provider registered for offline CI; do **not** use it to validate Stripe.
 
 ---
 
@@ -104,7 +104,7 @@ Implement `PaymentProvider`:
 
 In `initializePaymentProviders()`:
 
-- `register(new StripePaymentProvider())` alongside `test` and `cash`.
+- `register(new StripePaymentProvider())` alongside `dummy` and `cash`.
 
 ### 3.4 Raw body for webhooks (critical)
 
@@ -127,10 +127,10 @@ In `MemberPlanScreen` (and any other online checkout callers):
 
 Cash path unchanged (no URL).
 
-### 3.6 Soft-retire / coexistence with `test`
+### 3.6 Soft-retire / coexistence with `dummy`
 
 - With `providerId: 'stripe'`, online checkouts use Stripe.
-- If Stripe keys missing, `isUsable()` false → admin cannot select it; fall back guidance: keep using `test` until keys exist.
+- If Stripe keys missing, `isUsable()` false → admin cannot select it; fall back guidance: keep using `dummy` until keys exist.
 - Do not auto-pick among multiple online providers beyond existing rules until multi-provider work later.
 
 ### 3.7 Tests (automated)

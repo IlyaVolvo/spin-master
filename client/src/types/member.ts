@@ -19,6 +19,8 @@ export interface Member {
   trialEndsOn?: string | null;
   /** Consent to use online/automatic payment (requires email). */
   onlinePayConsent?: boolean;
+  /** Admin-assigned online PSP id; null = Pay online unavailable. */
+  paymentProviderId?: string | null;
   tournamentNotificationsEnabled?: boolean;
   /** Present on session/me payloads when returned by API. */
   hasPassword?: boolean;

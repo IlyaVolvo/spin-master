@@ -235,6 +235,8 @@ function PaymentsSettingsEditor({
       displayName: string;
       usable: boolean;
       offered: boolean;
+      environment?: 'testing' | 'production';
+      assignableToMembers?: boolean;
       settingsSchema?: Array<{
         key: string;
         label: string;
@@ -245,6 +247,9 @@ function PaymentsSettingsEditor({
       settings?: Record<string, unknown>;
     }>
   >([]);
+  const [installMode, setInstallMode] = useState<'test' | 'production'>(
+    payments.installMode === 'production' ? 'production' : 'test',
+  );
   const [configureProviderId, setConfigureProviderId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -252,6 +257,9 @@ function PaymentsSettingsEditor({
       .get('/payments/providers')
       .then((res) => {
         setProviders(Array.isArray(res.data?.providers) ? res.data.providers : []);
+        if (res.data?.installMode === 'production' || res.data?.installMode === 'test') {
+          setInstallMode(res.data.installMode);
+        }
       })
       .catch(() => setProviders([]));
   }, []);
@@ -260,14 +268,14 @@ function PaymentsSettingsEditor({
     if (!payments.providers) {
       updateConfig((draft) => {
         draft.payments.providers = {
-          test: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
+          dummy: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
         };
       });
     }
   }, [payments.providers, updateConfig]);
 
-  const usableOffered = providers.filter((p) => p.usable && p.offered && p.id !== 'cash');
-  const showProviderSelect = usableOffered.length >= 1;
+  const assignableOnline = providers.filter((p) => p.assignableToMembers);
+  const configurableOnline = providers.filter((p) => p.usable && p.offered && p.id !== 'cash');
   const configuring = configureProviderId
     ? providers.find((p) => p.id === configureProviderId)
     : null;
@@ -304,7 +312,7 @@ function PaymentsSettingsEditor({
                   updateConfig((draft) => {
                     if (!draft.payments.providers) {
                       draft.payments.providers = {
-                        test: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
+                        dummy: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
                       };
                     }
                     draft.payments.providers[configuring.id] = {
@@ -325,7 +333,7 @@ function PaymentsSettingsEditor({
                   updateConfig((draft) => {
                     if (!draft.payments.providers) {
                       draft.payments.providers = {
-                        test: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
+                        dummy: { confirmDelayMeanMs: 2500, confirmDelayStdDevMs: 800 },
                       };
                     }
                     draft.payments.providers[configuring.id] = {
@@ -354,9 +362,25 @@ function PaymentsSettingsEditor({
   return (
     <div>
       <p style={{ margin: '0 0 12px', color: '#666', fontSize: '13px' }}>
-        One online payment provider per install. Cash is separate and cleared by an administrator.
-        If only one usable online provider exists, it is used automatically.
+        Online payment services are assigned per member in Player Settings. Cash remains a separate
+        desk path. Which services Admin may assign is fixed by this install&apos;s payments mode.
       </p>
+      <FieldRow label="Payments install mode">
+        <div>
+          <strong>{installMode === 'production' ? 'Production' : 'Test'}</strong>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
+            Set once at database initialization (PAYMENTS_INSTALL_MODE or --payments-install-mode).
+            Not editable here.
+          </p>
+        </div>
+      </FieldRow>
+      <FieldRow label="Available Payment services">
+        <div style={{ fontSize: '14px' }}>
+          {assignableOnline.length === 0
+            ? 'None usable for this install mode'
+            : assignableOnline.map((p) => p.displayName).join(', ')}
+        </div>
+      </FieldRow>
       <FieldRow label="Default online pay consent (new members)">
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
           <input
@@ -372,37 +396,13 @@ function PaymentsSettingsEditor({
         </label>
       </FieldRow>
       <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#666' }}>
-        Consent is OFF by default. Members without email cannot enable online payment.
+        Consent is OFF by default. Members need email, an assigned payment service, and consent for
+        Pay online.
       </p>
-      {showProviderSelect ? (
-        <FieldRow label="Active payment provider">
-          <select
-            value={payments.providerId}
-            onChange={(e) =>
-              updateConfig((draft) => {
-                draft.payments.providerId = e.target.value;
-              })
-            }
-            style={valueInputStyle}
-          >
-            <option value="">— Auto / select —</option>
-            {usableOffered.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.displayName}
-              </option>
-            ))}
-          </select>
-        </FieldRow>
-      ) : (
-        <p style={{ fontSize: '14px', color: '#333' }}>
-          Active provider:{' '}
-          <strong>{usableOffered[0]?.displayName || payments.providerId || 'none'}</strong>
-        </p>
-      )}
 
-      {usableOffered.length > 0 && (
+      {configurableOnline.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-          {usableOffered.map((p) => (
+          {configurableOnline.map((p) => (
             <button key={p.id} type="button" onClick={() => setConfigureProviderId(p.id)}>
               Configure {p.displayName}
             </button>

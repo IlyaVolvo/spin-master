@@ -60,7 +60,7 @@ const cashProvider = {
 };
 
 const onlineProvider = {
-  id: 'test',
+  id: 'dummy',
   startCheckout: jest.fn(),
 };
 
@@ -339,7 +339,7 @@ describe('runMemberCheckout', () => {
       initiatedBy: 'MEMBER',
     });
     expect(result.method).toBe('online');
-    expect(result.providerId).toBe('test');
+    expect(result.providerId).toBe('dummy');
     expect(getActivePaymentProvider).toHaveBeenCalled();
     expect(getCashPaymentProvider).not.toHaveBeenCalled();
   });

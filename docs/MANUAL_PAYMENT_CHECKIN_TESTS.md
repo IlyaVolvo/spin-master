@@ -227,7 +227,7 @@ Mark each: Pass / Fail / Skip. Prefer **UI** unless the DB recipe is listed.
 | B1 | Member `$` → buy TIME cash | PENDING cash; Cash Queue shows Amount / Credit / Cash / Effective date | Credit: set `purchaseCreditCents` |
 | B2 | Admin Clear cash | SUCCEEDED; CURRENT entitlement; credit deducted; history shows list/credit/cash | — |
 | B3 | Buy cash then Reject | CANCELLED; no entitlement; credit **not** deducted | — |
-| B4 | Buy online (consent + email; test provider) | Confirms after delay; history + receipt email if mail configured | — |
+| B4 | Buy online (consent + email; dummy provider) | Confirms after delay; history + receipt email if mail configured | — |
 | B5 | Buy while CURRENT (no auto-renew) | FUTURE queued; purchase blocked until FUTURE gone | Insert FUTURE entitlement |
 | B6 | Enable auto-renew | Blocks further purchase; needs email+consent | — |
 | B7 | Kiosk session: attempt checkout | 403 | — |

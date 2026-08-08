@@ -147,7 +147,7 @@ async function main() {
         }),
         publicAccess: toJson({ achievements: {} }),
         payments: toJson({
-          providerId: 'test',
+          installMode: 'test',
           defaultOnlinePayConsent: true,
           adminNotifyEmails: [],
           notifyAdminsOnCourtesy: true,
@@ -161,7 +161,7 @@ async function main() {
             visitPackVisitsRemaining: 2,
           },
           providers: {
-            test: {
+            dummy: {
               confirmDelayMeanMs: 500,
               confirmDelayStdDevMs: 100,
             },
@@ -605,7 +605,7 @@ async function main() {
     }> = [
       {
         memberId: rosterIds[0],
-        provider: 'test',
+        provider: 'dummy',
         amountCents: 4000,
         purpose: 'Plan purchase: 5-visit pack (Regular)',
         product: visitProduct,
@@ -614,7 +614,7 @@ async function main() {
       },
       {
         memberId: rosterIds[1],
-        provider: 'test',
+        provider: 'dummy',
         amountCents: 8000,
         purpose: 'Plan purchase: Monthly membership (Regular)',
         product: monthlyProduct,
@@ -632,7 +632,7 @@ async function main() {
       },
       {
         memberId: checkinMember.id,
-        provider: 'test',
+        provider: 'dummy',
         amountCents: 4000,
         purpose: 'Plan purchase: 5-visit pack (Regular)',
         product: visitProduct,

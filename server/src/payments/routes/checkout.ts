@@ -43,7 +43,12 @@ router.get('/providers', authenticate, async (req: AuthRequest, res: Response) =
     } catch {
       activeId = '';
     }
-    res.json({ providers, activeProviderId: activeId });
+    res.json({
+      providers,
+      installMode: cfg.installMode,
+      activeProviderId: activeId,
+      assignableProviders: providers.filter((p) => p.assignableToMembers),
+    });
   } catch (error) {
     logger.error('List providers failed', {
       error: error instanceof Error ? error.message : String(error),
