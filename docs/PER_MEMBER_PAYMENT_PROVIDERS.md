@@ -1,6 +1,6 @@
 # Per-member online payment services
 
-**Status:** Design approved. **Step 1 implemented** on branch `feature/payments-member-provider-step1`. Steps 2–4 not yet implemented.
+**Status:** Design approved. **Steps 1–2 implemented** on branch `feature/payments-member-provider-step1`. Steps 3–4 not yet implemented.
 
 **Related:**
 - Manual check-in/payment tests: [`MANUAL_PAYMENT_CHECKIN_TESTS.md`](./MANUAL_PAYMENT_CHECKIN_TESTS.md)
@@ -14,7 +14,7 @@ Replace the old model of **one global online payment provider per install** with
 
 1. **Multiple** online payment services registered in code (e.g. `dummy`, `stripe-test`, later `stripe`).
 2. An **immutable install mode** (`test` | `production`) that decides which services Admin may assign.
-3. **Per-member** assignment of at most one online service (Admin only, in Player Settings).
+3. **Per-member** assignment of at most one online service (Admin only, on Member Plan / payment screen).
 4. Online checkout that is **async**: the app creates a payment intent and emails a pay link; confirmation happens only via provider webhook (or reconcile)—the app does not drive card UI.
 
 Cash (desk) remains a separate path and is never chosen as the member’s “online payment service.”
@@ -72,7 +72,7 @@ Each provider implements `PaymentProvider` (`server/src/payments/types.ts`) and 
 | `email` | Required for any online setup and for pay-link delivery. |
 | `autoRenewEnabled` | Requires online capability; cleared when online is disabled via email removal / consent rules. |
 
-New members: `paymentProviderId` starts **unset** (`null`). Admin must assign a service before online pay can be used (once step 2 enforces this).
+New members: `paymentProviderId` starts **unset** (`null`). Admin must assign a service before online pay can be used.
 
 ### 2.4 What members vs Admin choose
 
@@ -110,7 +110,7 @@ Pay online is available only when **all** are true:
 
 ### 3.3 Auto-renew
 
-Uses the same online capability. If email is removed or online is otherwise disabled, auto-renew is turned off. (Full resolution via `paymentProviderId` is step 2.)
+Uses the same online capability (`memberCanPayOnline`: email + assigned usable provider + consent). If email is removed or online is otherwise disabled, auto-renew is turned off. Midnight auto-renew skips members who fail that gate.
 
 ---
 
@@ -121,7 +121,7 @@ Code registry: dummy | stripe-test | stripe | cash | …
         ↓
 Immutable installMode: test | production
         ↓
-Admin Player Settings: assign one offered online service (or None)
+Admin Member Plan: assign one offered online service (or None)
         ↓
 Checkout method: Cash | Pay online  (member or Admin on behalf)
         ↓
@@ -184,14 +184,16 @@ Mail failure alone does **not** mean the online payment failed—a Session might
 - Other club payment knobs (trial, courtesy, default consent, reminders) unchanged in role
 - **No** global “active online provider” selector
 
-### 6.2 Player Settings (Admin)
+### 6.2 Player Settings
 
-- **Online payment service** dropdown (only when member has email): None + assignable services
-- **Consent to pay online** checkbox (email required to show/enable meaningfully)
-- Non-admins cannot change `paymentProviderId`
+- Profile fields only (email, trial, etc.) — **no** payment service or online-consent controls
+- Clearing email still turns off consent + auto-renew on the server; `paymentProviderId` is kept
 
-### 6.3 Member Plan / checkout
+### 6.3 Member Plan / payment popup
 
+- **Pricing segment** and **Online payment service**: Admin only, on Member Plan **Admin** section
+- **Consent to pay online**: member only (Admin on behalf cannot change)
+- **Auto-renew**: member toggles under Current plan; Admin sees read-only green `+` / red `×` in Admin section
 - Member (or Admin on behalf) may still choose **Cash vs Pay online** when gates allow
 - Online → email pay link (step 3); Cash → existing desk PENDING / immediate confirm rules
 
@@ -201,12 +203,12 @@ Mail failure alone does **not** mean the online payment failed—a Session might
 
 | Step | Scope | Status |
 |------|--------|--------|
-| **1** | `Member.paymentProviderId`; `installMode`; drop global `providerId`; provider `environment`; Admin picker; email-clear keeps provider; Payments Admin read-only mode | **Done** (this branch) |
-| **2** | Checkout + auto-renew resolve from `member.paymentProviderId`; enforce gates in API/UI | Pending |
+| **1** | `Member.paymentProviderId`; `installMode`; drop global `providerId`; provider `environment`; Admin picker; email-clear keeps provider; Payments Admin read-only mode | **Done** |
+| **2** | Checkout + auto-renew resolve from `member.paymentProviderId`; enforce gates in API/UI | **Done** |
 | **3** | Stripe module (`stripe-test` / `stripe`); email pay link; webhooks; mail-fail + delayed cash escape | Pending |
 | **4** | Tests polish; update Stripe runbook for email-async + per-member model | Pending |
 
-Until step 2, online checkout may still use a **temporary** sole-matching-provider fallback when exactly one online PSP matches install mode (e.g. only `dummy`). That is intentional scaffolding, not the final rule.
+Online checkout and auto-renew resolve the PSP from **`Member.paymentProviderId` only** (no install-wide active provider).
 
 ---
 
@@ -250,12 +252,12 @@ ALTER TABLE "members" ADD COLUMN "paymentProviderId" TEXT;
 |------|----------|
 | Provider interface + `environment` | `server/src/payments/types.ts` |
 | Registry | `server/src/payments/PaymentProviderRegistry.ts`, `index.ts` |
-| Assignable list / install filter | `server/src/payments/getActivePaymentProvider.ts` |
+| Assignable list / member online resolve | `server/src/payments/getActivePaymentProvider.ts` (`memberCanPayOnline`, `resolveMemberOnlinePaymentProvider`) |
 | Install mode resolve + immutable update | `server/src/services/systemConfigService.ts` |
 | Member PATCH (`paymentProviderId`, email clear) | `server/src/routes/players.ts` |
 | Providers API (`installMode`, `assignableProviders`) | `server/src/payments/routes/checkout.ts` |
 | Admin payments UI | `client/src/components/PaymentsAdmin.tsx` |
-| Player Settings picker | `client/src/components/Players.tsx` |
+| Member Plan (service assign, consent, auto-renew) | `client/src/components/players/MemberPlanScreen.tsx` |
 | Client config types | `client/src/utils/systemConfig.ts` |
 
 ---
@@ -276,7 +278,7 @@ ALTER TABLE "members" ADD COLUMN "paymentProviderId" TEXT;
 See also conversational checklist; summary:
 
 1. Payments Admin: read-only install mode; assignable list; no global provider select  
-2. Admin Player Settings: assign / clear online service (email required)  
+2. Admin Member Plan: assign / clear online service (email required)  
 3. Clear email → consent + auto-renew off; service id retained  
 4. Non-admin cannot set `paymentProviderId`  
 5. Cash path still works; do not expect Stripe email flow yet  

@@ -24,7 +24,8 @@ jest.mock('../../../src/services/socketService', () => ({
 
 jest.mock('../../../src/payments/getActivePaymentProvider', () => ({
   getCashPaymentProvider: jest.fn(),
-  getActivePaymentProvider: jest.fn(),
+  resolveMemberOnlinePaymentProvider: jest.fn(),
+  memberCanPayOnline: jest.fn(),
 }));
 
 jest.mock('../../../src/payments/resolvePlan', () => ({
@@ -43,8 +44,9 @@ jest.mock('../../../src/payments/confirmPayment', () => ({
 
 import { prisma } from '../../../src/index';
 import {
-  getActivePaymentProvider,
   getCashPaymentProvider,
+  memberCanPayOnline,
+  resolveMemberOnlinePaymentProvider,
 } from '../../../src/payments/getActivePaymentProvider';
 import { planChargeAmountCents, resolvePlanForMember } from '../../../src/payments/resolvePlan';
 import {
@@ -74,6 +76,7 @@ function baseMember(overrides: Record<string, unknown> = {}) {
     isActive: true,
     purchaseCreditCents: 0,
     onlinePayConsent: false,
+    paymentProviderId: null as string | null,
     trialEndsOn: null,
     autoRenewEnabled: false,
     ...overrides,
@@ -99,7 +102,11 @@ describe('runMemberCheckout', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (getCashPaymentProvider as jest.Mock).mockReturnValue(cashProvider);
-    (getActivePaymentProvider as jest.Mock).mockReturnValue(onlineProvider);
+    (resolveMemberOnlinePaymentProvider as jest.Mock).mockReturnValue(onlineProvider);
+    (memberCanPayOnline as jest.Mock).mockImplementation(
+      (m: { email?: string | null; onlinePayConsent?: boolean; paymentProviderId?: string | null }) =>
+        Boolean(m.email?.trim() && m.onlinePayConsent === true && m.paymentProviderId?.trim()),
+    );
     cashProvider.startCheckout.mockResolvedValue({
       paymentId: 100,
       externalRef: 'cash_100_x',
@@ -147,7 +154,7 @@ describe('runMemberCheckout', () => {
     ).rejects.toThrow(/Member not found/);
   });
 
-  it('defaults to cash without email consent; requires email+consent for online', async () => {
+  it('defaults to cash without email consent; requires email+consent+provider for online', async () => {
     (prisma.member.findUnique as jest.Mock).mockResolvedValue(
       baseMember({ email: null, onlinePayConsent: false }),
     );
@@ -160,7 +167,7 @@ describe('runMemberCheckout', () => {
     expect(getCashPaymentProvider).toHaveBeenCalled();
 
     (prisma.member.findUnique as jest.Mock).mockResolvedValue(
-      baseMember({ email: null, onlinePayConsent: true }),
+      baseMember({ email: null, onlinePayConsent: true, paymentProviderId: 'dummy' }),
     );
     await expect(
       runMemberCheckout({
@@ -172,7 +179,7 @@ describe('runMemberCheckout', () => {
     ).rejects.toThrow(/email/);
 
     (prisma.member.findUnique as jest.Mock).mockResolvedValue(
-      baseMember({ email: 'm@ex.com', onlinePayConsent: false }),
+      baseMember({ email: 'm@ex.com', onlinePayConsent: false, paymentProviderId: 'dummy' }),
     );
     await expect(
       runMemberCheckout({
@@ -182,6 +189,18 @@ describe('runMemberCheckout', () => {
         initiatedBy: 'MEMBER',
       }),
     ).rejects.toThrow(/consent/);
+
+    (prisma.member.findUnique as jest.Mock).mockResolvedValue(
+      baseMember({ email: 'm@ex.com', onlinePayConsent: true, paymentProviderId: null }),
+    );
+    await expect(
+      runMemberCheckout({
+        memberId: 10,
+        familyKey: 'monthly',
+        method: 'online',
+        initiatedBy: 'MEMBER',
+      }),
+    ).rejects.toThrow(/assigned payment service/);
   });
 
   it('blocks purchase when future entitlement exists', async () => {
@@ -328,9 +347,9 @@ describe('runMemberCheckout', () => {
     ).rejects.toThrow(/greater than zero/);
   });
 
-  it('uses online provider when method=online with consent', async () => {
+  it('uses online provider when method=online with consent and assigned service', async () => {
     (prisma.member.findUnique as jest.Mock).mockResolvedValue(
-      baseMember({ onlinePayConsent: true }),
+      baseMember({ onlinePayConsent: true, paymentProviderId: 'dummy' }),
     );
     const result = await runMemberCheckout({
       memberId: 10,
@@ -340,7 +359,7 @@ describe('runMemberCheckout', () => {
     });
     expect(result.method).toBe('online');
     expect(result.providerId).toBe('dummy');
-    expect(getActivePaymentProvider).toHaveBeenCalled();
+    expect(resolveMemberOnlinePaymentProvider).toHaveBeenCalled();
     expect(getCashPaymentProvider).not.toHaveBeenCalled();
   });
 

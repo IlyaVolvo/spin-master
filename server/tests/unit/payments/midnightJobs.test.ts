@@ -27,8 +27,16 @@ jest.mock('../../../src/payments/runCheckout', () => ({
   runMemberCheckout: jest.fn(),
 }));
 
+jest.mock('../../../src/payments/getActivePaymentProvider', () => ({
+  memberCanPayOnline: jest.fn(),
+}));
+
 jest.mock('../../../src/payments/memberTrial', () => ({
   notifyCompletedTrials: jest.fn(),
+}));
+
+jest.mock('../../../src/payments/eventPayment', () => ({
+  expirePendingEventRegistrations: jest.fn(),
 }));
 
 import { prisma } from '../../../src/index';
@@ -39,7 +47,9 @@ import {
   refreshCurrentEntitlement,
 } from '../../../src/payments/entitlementQueue';
 import { runMemberCheckout } from '../../../src/payments/runCheckout';
+import { memberCanPayOnline } from '../../../src/payments/getActivePaymentProvider';
 import { notifyCompletedTrials } from '../../../src/payments/memberTrial';
+import { expirePendingEventRegistrations } from '../../../src/payments/eventPayment';
 import { runClubMidnightJobs } from '../../../src/payments/midnightJobs';
 
 describe('runClubMidnightJobs', () => {
@@ -49,6 +59,8 @@ describe('runClubMidnightJobs', () => {
     (prisma.member.findMany as jest.Mock).mockResolvedValue([]);
     (notifyCompletedTrials as jest.Mock).mockResolvedValue({ emailed: 0, marked: 0 });
     (prisma.clubEntitlement.update as jest.Mock).mockResolvedValue({});
+    (memberCanPayOnline as jest.Mock).mockReturnValue(false);
+    (expirePendingEventRegistrations as jest.Mock).mockResolvedValue(0);
   });
 
   it('ends expired TIME and exhausted visit packs', async () => {
@@ -137,8 +149,10 @@ describe('runClubMidnightJobs', () => {
         autoRenewFamilyKey: 'monthly',
         email: 'a@ex.com',
         onlinePayConsent: true,
+        paymentProviderId: 'dummy',
       },
     ]);
+    (memberCanPayOnline as jest.Mock).mockReturnValue(true);
     (refreshCurrentEntitlement as jest.Mock).mockResolvedValue(null);
     (getCurrentEntitlement as jest.Mock).mockResolvedValue(null);
     (getFutureEntitlement as jest.Mock).mockResolvedValue(null);
@@ -162,15 +176,17 @@ describe('runClubMidnightJobs', () => {
     );
   });
 
-  it('counts auto-renew errors when consent missing', async () => {
+  it('counts auto-renew errors when online pay not fully enabled', async () => {
     (prisma.member.findMany as jest.Mock).mockResolvedValue([
       {
         id: 21,
         autoRenewFamilyKey: 'monthly',
         email: 'a@ex.com',
         onlinePayConsent: false,
+        paymentProviderId: null,
       },
     ]);
+    (memberCanPayOnline as jest.Mock).mockReturnValue(false);
     (refreshCurrentEntitlement as jest.Mock).mockResolvedValue(null);
     (getCurrentEntitlement as jest.Mock).mockResolvedValue(null);
     (getFutureEntitlement as jest.Mock).mockResolvedValue(null);

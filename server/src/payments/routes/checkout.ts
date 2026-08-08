@@ -2,7 +2,7 @@ import express, { Response } from 'express';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 import { prisma } from '../../index';
 import { logger } from '../../utils/logger';
-import { getActivePaymentProvider, listPaymentProvidersForAdmin } from '../getActivePaymentProvider';
+import { listPaymentProvidersForAdmin } from '../getActivePaymentProvider';
 import { listActivePlanFamilies, resolvePlanForMember, planChargeAmountCents } from '../resolvePlan';
 import { runMemberCheckout } from '../runCheckout';
 import { paymentProviderRegistry } from '../PaymentProviderRegistry';
@@ -37,16 +37,9 @@ router.get('/providers', authenticate, async (req: AuthRequest, res: Response) =
         settings: cfg.providers?.[p.id] ?? provider.getDefaultSettings?.() ?? {},
       };
     });
-    let activeId = '';
-    try {
-      activeId = getActivePaymentProvider().id;
-    } catch {
-      activeId = '';
-    }
     res.json({
       providers,
       installMode: cfg.installMode,
-      activeProviderId: activeId,
       assignableProviders: providers.filter((p) => p.assignableToMembers),
     });
   } catch (error) {

@@ -16,10 +16,12 @@ initializePaymentProviders();
 
 export { paymentProviderRegistry } from './PaymentProviderRegistry';
 export {
-  getActivePaymentProvider,
   getCashPaymentProvider,
   listAssignableOnlineProviders,
   listPaymentProvidersForAdmin,
+  memberCanPayOnline,
+  resolveMemberOnlinePaymentProvider,
 } from './getActivePaymentProvider';
+export type { MemberOnlinePayFields } from './getActivePaymentProvider';
 export { confirmPayment } from './confirmPayment';
 export { reconcilePendingPayments } from './reconcilePending';

@@ -21,6 +21,8 @@ export interface Member {
   onlinePayConsent?: boolean;
   /** Admin-assigned online PSP id; null = Pay online unavailable. */
   paymentProviderId?: string | null;
+  /** Member opted into auto-renew of current plan. */
+  autoRenewEnabled?: boolean;
   tournamentNotificationsEnabled?: boolean;
   /** Present on session/me payloads when returned by API. */
   hasPassword?: boolean;

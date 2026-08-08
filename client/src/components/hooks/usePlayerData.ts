@@ -21,6 +21,7 @@ interface Member {
   trialEndsOn?: string | null;
   onlinePayConsent?: boolean;
   paymentProviderId?: string | null;
+  autoRenewEnabled?: boolean;
   tournamentNotificationsEnabled?: boolean;
   /** null = inherit club default. */
   autoRelinquishPrivileges?: boolean | null;

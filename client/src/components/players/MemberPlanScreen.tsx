@@ -3,6 +3,7 @@ import api from '../../utils/api';
 import { clubTodayYmd, formatClubDate, formatClubDateTime } from '../../utils/clubDateTime';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { isAdmin, getMember } from '../../utils/auth';
+import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
 import {
   clearCheckinPaymentUnlock,
   getCheckinPaymentUnlockToken,
@@ -40,6 +41,7 @@ type PlanSummary = {
   futureReimburseCents: number;
   canPurchase: boolean;
   onlinePayConsent?: boolean;
+  paymentProviderId?: string | null;
   effectiveCanPayOnline?: boolean;
   inTrial?: boolean;
   trialEndsOn?: string | null;
@@ -224,6 +226,10 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   const [statusTarget, setStatusTarget] = useState<'current' | 'future' | null>(null);
   const [startDate, setStartDate] = useState(clubTodayYmd);
   const [payMethod, setPayMethod] = useState<'cash' | 'online'>('cash');
+  const [assignablePaymentProviders, setAssignablePaymentProviders] = useState<
+    Array<{ id: string; displayName: string }>
+  >([]);
+  const [segmentNames, setSegmentNames] = useState<string[]>(() => getSystemConfig().clubPlans.segments);
   const paymentAbortRef = useRef<AbortController | null>(null);
   const closedRef = useRef(false);
 
@@ -316,6 +322,44 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   useEffect(() => {
     void load({ applyPendingHighlight: true });
   }, [load]);
+
+  useEffect(() => {
+    if (!admin) {
+      setAssignablePaymentProviders([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const providersRes = await api.get('/payments/providers');
+        const list = Array.isArray(providersRes.data?.assignableProviders)
+          ? providersRes.data.assignableProviders
+          : Array.isArray(providersRes.data?.providers)
+            ? providersRes.data.providers.filter(
+                (p: { assignableToMembers?: boolean }) => p.assignableToMembers,
+              )
+            : [];
+        if (cancelled) return;
+        setAssignablePaymentProviders(
+          list.map((p: { id: string; displayName: string }) => ({
+            id: p.id,
+            displayName: p.displayName,
+          })),
+        );
+      } catch {
+        if (!cancelled) setAssignablePaymentProviders([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [admin, memberId]);
+
+  useEffect(() => {
+    return subscribeToSystemConfig((config) => {
+      setSegmentNames(config.clubPlans.segments);
+    });
+  }, []);
 
   const selectedPlan = useMemo(
     () => plans.find((p) => p.familyKey === selectedFamilyKey) || null,
@@ -433,6 +477,48 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       setMessage(enabled ? 'Online pay consent saved' : 'Online pay consent cleared');
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to update consent'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const savePaymentProvider = async (providerId: string) => {
+    if (!admin) return;
+    if (providerId && !summary?.member.email?.trim()) {
+      setError('Assign an email before setting an online payment service');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api.patch(`/players/${memberId}`, {
+        paymentProviderId: providerId.trim() || null,
+      });
+      await load({ silent: true });
+      setMessage(
+        providerId.trim()
+          ? 'Online payment service updated'
+          : 'Online payment service cleared',
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to update payment service'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveSegment = async (segment: string) => {
+    if (!admin) return;
+    const next = segment.trim() || 'Regular';
+    if (next === (summary?.member.segment || 'Regular')) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.patch(`/players/${memberId}`, { segment: next });
+      await load({ silent: true });
+      setMessage(`Pricing segment set to ${next}`);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to update segment'));
     } finally {
       setBusy(false);
     }
@@ -853,9 +939,13 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         )}
         {!canPayCash && !canPayOnline && (
           <p style={{ margin: 0, fontSize: '12px', color: '#a65b00' }}>
-            {hasEmail
-              ? 'Enable “I consent to pay online” to pay online, or choose cash when available.'
-              : 'Add an email and consent to pay online, or pay cash at the desk.'}
+            {!hasEmail
+              ? 'Add an email and consent to pay online, or pay cash at the desk.'
+              : summary?.onlinePayConsent !== true
+                ? 'Enable “I consent to pay online” to pay online, or choose cash when available.'
+                : !summary?.paymentProviderId
+                  ? 'An administrator must assign an online payment service before Pay online is available.'
+                  : 'Online payment is not available right now. Choose cash when available.'}
           </p>
         )}
       </div>
@@ -1015,7 +1105,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
               </div>
             )}
 
-            {hasEmail && (
+            {hasEmail && !adminActingOnBehalf && (
               <label
                 style={{
                   display: 'flex',
@@ -1024,29 +1114,21 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                   marginTop: '12px',
                   fontSize: '13px',
                   cursor:
-                    busy ||
-                    adminActingOnBehalf ||
-                    (summary.autoRenewEnabled && summary.onlinePayConsent === true)
+                    busy || (summary.autoRenewEnabled && summary.onlinePayConsent === true)
                       ? 'not-allowed'
                       : 'pointer',
-                  opacity: adminActingOnBehalf ? 0.45 : 1,
-                  color: adminActingOnBehalf ? '#888' : undefined,
                 }}
                 title={
-                  adminActingOnBehalf
-                    ? 'Online consent can only be set by the member. Admin can record cash only.'
-                    : summary.autoRenewEnabled && summary.onlinePayConsent === true
-                      ? 'Turn off Auto-renew before disabling online pay'
-                      : undefined
+                  summary.autoRenewEnabled && summary.onlinePayConsent === true
+                    ? 'Turn off Auto-renew before disabling online pay'
+                    : undefined
                 }
               >
                 <input
                   type="checkbox"
                   checked={summary.onlinePayConsent === true}
                   disabled={
-                    busy ||
-                    adminActingOnBehalf ||
-                    (summary.autoRenewEnabled && summary.onlinePayConsent === true)
+                    busy || (summary.autoRenewEnabled && summary.onlinePayConsent === true)
                   }
                   onChange={(e) => void saveOnlineConsent(e.target.checked)}
                 />
@@ -1068,53 +1150,85 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                     ...statusPanelStyle(currentTone),
                   }}
                 >
-                  <label
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      flexShrink: 0,
-                      marginTop: '1px',
-                      cursor:
-                        busy ||
-                        adminActingOnBehalf ||
-                        summary.future ||
-                        (!summary.autoRenewEnabled && !summary.onlinePayConsent)
-                          ? 'not-allowed'
-                          : 'pointer',
-                      fontSize: '13px',
-                      opacity:
-                        adminActingOnBehalf ||
-                        summary.future ||
-                        (!summary.autoRenewEnabled && !summary.onlinePayConsent)
-                          ? 0.55
-                          : 1,
-                    }}
-                    title={
-                      adminActingOnBehalf
-                        ? 'Only the member can change auto-renew'
-                        : summary.future
+                  {adminActingOnBehalf ? (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flexShrink: 0,
+                        marginTop: '1px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                      }}
+                      title={
+                        summary.future
+                          ? 'Auto-renew is off while a future plan is queued'
+                          : summary.autoRenewEnabled
+                            ? 'Member has Auto-renew on (Admin cannot change)'
+                            : 'Member has Auto-renew off (Admin cannot change)'
+                      }
+                    >
+                      <span
+                        aria-hidden
+                        style={{
+                          color:
+                            summary.autoRenewEnabled && !summary.future ? '#1e8449' : '#c0392b',
+                          fontWeight: 800,
+                          fontSize: '20px',
+                          lineHeight: 1,
+                          width: '1.1em',
+                          textAlign: 'center',
+                        }}
+                      >
+                        {summary.autoRenewEnabled && !summary.future ? '+' : '×'}
+                      </span>
+                      <span>Auto-renew</span>
+                    </span>
+                  ) : (
+                    <label
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flexShrink: 0,
+                        marginTop: '1px',
+                        cursor:
+                          busy ||
+                          summary.future ||
+                          (!summary.autoRenewEnabled && !summary.onlinePayConsent)
+                            ? 'not-allowed'
+                            : 'pointer',
+                        fontSize: '13px',
+                        opacity:
+                          summary.future ||
+                          (!summary.autoRenewEnabled && !summary.onlinePayConsent)
+                            ? 0.55
+                            : 1,
+                      }}
+                      title={
+                        summary.future
                           ? 'Auto-renew is unavailable while a future plan is queued (selected and paid)'
                           : !summary.autoRenewEnabled && !summary.onlinePayConsent
                             ? 'Enable “I consent to pay online” first'
                             : summary.autoRenewEnabled
                               ? 'Auto-renew is on — uncheck to choose a future plan instead'
                               : 'Auto-renew this plan when it ends'
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={summary.autoRenewEnabled && !summary.future}
-                      disabled={
-                        busy ||
-                        adminActingOnBehalf ||
-                        Boolean(summary.future) ||
-                        (!summary.autoRenewEnabled && !summary.onlinePayConsent)
                       }
-                      onChange={(e) => void toggleAutoRenew(e.target.checked)}
-                    />
-                    Auto-renew
-                  </label>
+                    >
+                      <input
+                        type="checkbox"
+                        checked={summary.autoRenewEnabled && !summary.future}
+                        disabled={
+                          busy ||
+                          Boolean(summary.future) ||
+                          (!summary.autoRenewEnabled && !summary.onlinePayConsent)
+                        }
+                        onChange={(e) => void toggleAutoRenew(e.target.checked)}
+                      />
+                      Auto-renew
+                    </label>
+                  )}
                   <EntitlementLine entitlement={summary.current} tone={currentTone} />
                 </div>
               ) : showPurchasePicker && idlePurchaseSlot === 'current' ? (
@@ -1210,7 +1324,34 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                 >
                   <h4 style={{ margin: 0, color: '#ffffff', fontWeight: 600 }}>Admin</h4>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '12px',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '13px',
+                      cursor: busy ? 'not-allowed' : 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={summary.member.courtesySuspended !== true}
+                      disabled={busy}
+                      onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
+                    />
+                    Courtesy check-in enabled
+                  </label>
                   <input
                     type="number"
                     min={0}
@@ -1235,27 +1376,88 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                     Add Credit
                   </button>
                 </div>
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    marginTop: '12px',
-                    fontSize: '13px',
-                    cursor: busy ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={summary.member.courtesySuspended !== true}
-                    disabled={busy}
-                    onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
-                  />
-                  Courtesy check-in enabled
-                </label>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
+                <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#666' }}>
                   Add Credit increases the balance. Default courtesy is on; uncheck to suspend.
                 </p>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '13px',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    Pricing segment
+                  </label>
+                  <select
+                    value={summary.member.segment || 'Regular'}
+                    disabled={busy}
+                    onChange={(e) => void saveSegment(e.target.value)}
+                    style={{
+                      width: '100%',
+                      maxWidth: '420px',
+                      padding: '8px',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    {segmentNames.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                    {summary.member.segment &&
+                      !segmentNames.includes(summary.member.segment) && (
+                        <option value={summary.member.segment}>{summary.member.segment}</option>
+                      )}
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '13px',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    Online payment service
+                  </label>
+                  <select
+                    value={summary.paymentProviderId || ''}
+                    disabled={busy || !hasEmail}
+                    onChange={(e) => void savePaymentProvider(e.target.value)}
+                    style={{
+                      width: '100%',
+                      maxWidth: '420px',
+                      padding: '8px',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                      backgroundColor: !hasEmail ? '#f0f2f4' : 'white',
+                    }}
+                  >
+                    <option value="">— None (Pay online unavailable) —</option>
+                    {assignablePaymentProviders.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.displayName}
+                      </option>
+                    ))}
+                    {summary.paymentProviderId &&
+                      !assignablePaymentProviders.some((p) => p.id === summary.paymentProviderId) && (
+                        <option value={summary.paymentProviderId}>
+                          {summary.paymentProviderId} (not available for this install)
+                        </option>
+                      )}
+                  </select>
+                  <div style={{ marginTop: '4px', fontSize: '12px', color: '#666' }}>
+                    {hasEmail
+                      ? 'Required (with member consent) before Pay online. List matches install test/production mode.'
+                      : 'Set an email on the member profile before assigning a payment service.'}
+                  </div>
+                </div>
               </section>
             )}
 
@@ -1275,7 +1477,16 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
               {!summary.payments || summary.payments.length === 0 ? (
                 <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>No entries yet.</p>
               ) : (
-                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                <ul
+                  style={{
+                    listStyle: 'none',
+                    margin: 0,
+                    padding: 0,
+                    maxHeight: '220px',
+                    overflowY: 'auto',
+                    overscrollBehavior: 'contain',
+                  }}
+                >
                   {summary.payments.map((p) => (
                     <li
                       key={p.id}

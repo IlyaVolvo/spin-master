@@ -8,7 +8,7 @@
 
 - Provider interface: `server/src/payments/types.ts`
 - Registry init: `server/src/payments/index.ts` (`dummy`, `cash` only)
-- Online selection: `getActivePaymentProvider()` + `SystemConfig.payments.providerId`
+- Online selection: `resolveMemberOnlinePaymentProvider(member)` from `Member.paymentProviderId`
 - Checkout: `runMemberCheckout` → `provider.startCheckout`
 - Webhook: `POST /api/payments/webhook/:providerId`
 - Confirm: `confirmPayment`

@@ -1,10 +1,10 @@
 /**
- * Payment feature — online provider selection (installMode + no global providerId)
+ * Payment feature — per-member online provider resolution
  */
-const mockGetUsableOffered = jest.fn();
 const mockHas = jest.fn();
 const mockGet = jest.fn();
 const mockGetAll = jest.fn();
+const mockGetUsableOffered = jest.fn();
 
 jest.mock('../../../src/payments/PaymentProviderRegistry', () => ({
   paymentProviderRegistry: {
@@ -21,10 +21,11 @@ jest.mock('../../../src/services/systemConfigService', () => ({
 
 import { getPaymentsConfig } from '../../../src/services/systemConfigService';
 import {
-  getActivePaymentProvider,
   getCashPaymentProvider,
   listAssignableOnlineProviders,
   listPaymentProvidersForAdmin,
+  memberCanPayOnline,
+  resolveMemberOnlinePaymentProvider,
 } from '../../../src/payments/getActivePaymentProvider';
 
 function fakeProvider(
@@ -40,32 +41,92 @@ function fakeProvider(
   };
 }
 
-describe('getActivePaymentProvider', () => {
+describe('resolveMemberOnlinePaymentProvider / memberCanPayOnline', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (getPaymentsConfig as jest.Mock).mockReturnValue({ installMode: 'test' });
   });
 
-  it('throws when no online providers match install mode', () => {
-    mockGetUsableOffered.mockReturnValue([
-      fakeProvider('cash'),
-      fakeProvider('stripe', { environment: 'production' }),
-    ]);
-    expect(() => getActivePaymentProvider()).toThrow(/No usable online payment provider/);
-  });
-
-  it('uses sole matching online provider', () => {
+  it('resolves a valid assigned provider', () => {
     const dummy = fakeProvider('dummy');
-    mockGetUsableOffered.mockReturnValue([dummy, fakeProvider('cash')]);
-    expect(getActivePaymentProvider()).toBe(dummy);
+    mockHas.mockReturnValue(true);
+    mockGet.mockReturnValue(dummy);
+    expect(
+      resolveMemberOnlinePaymentProvider({
+        email: 'a@ex.com',
+        onlinePayConsent: true,
+        paymentProviderId: 'dummy',
+      }),
+    ).toBe(dummy);
   });
 
-  it('throws when multiple matching online providers (need per-member assignment)', () => {
-    mockGetUsableOffered.mockReturnValue([
-      fakeProvider('dummy'),
-      fakeProvider('stripe-test', { environment: 'testing' }),
-    ]);
-    expect(() => getActivePaymentProvider()).toThrow(/Member\.paymentProviderId/);
+  it('throws when paymentProviderId missing', () => {
+    expect(() =>
+      resolveMemberOnlinePaymentProvider({
+        email: 'a@ex.com',
+        onlinePayConsent: true,
+        paymentProviderId: null,
+      }),
+    ).toThrow(/assigned payment service/i);
+  });
+
+  it('throws when provider environment mismatches install mode', () => {
+    mockHas.mockReturnValue(true);
+    mockGet.mockReturnValue(fakeProvider('stripe', { environment: 'production' }));
+    expect(() =>
+      resolveMemberOnlinePaymentProvider({
+        email: 'a@ex.com',
+        onlinePayConsent: true,
+        paymentProviderId: 'stripe',
+      }),
+    ).toThrow(/install mode/i);
+  });
+
+  it('throws when provider is not usable', () => {
+    mockHas.mockReturnValue(true);
+    mockGet.mockReturnValue(fakeProvider('dummy', { usable: false }));
+    expect(() =>
+      resolveMemberOnlinePaymentProvider({
+        email: 'a@ex.com',
+        onlinePayConsent: true,
+        paymentProviderId: 'dummy',
+      }),
+    ).toThrow(/not available/i);
+  });
+
+  it('memberCanPayOnline requires email, consent, and valid provider', () => {
+    const dummy = fakeProvider('dummy');
+    mockHas.mockReturnValue(true);
+    mockGet.mockReturnValue(dummy);
+
+    expect(
+      memberCanPayOnline({
+        email: 'a@ex.com',
+        onlinePayConsent: true,
+        paymentProviderId: 'dummy',
+      }),
+    ).toBe(true);
+    expect(
+      memberCanPayOnline({
+        email: 'a@ex.com',
+        onlinePayConsent: false,
+        paymentProviderId: 'dummy',
+      }),
+    ).toBe(false);
+    expect(
+      memberCanPayOnline({
+        email: null,
+        onlinePayConsent: true,
+        paymentProviderId: 'dummy',
+      }),
+    ).toBe(false);
+    expect(
+      memberCanPayOnline({
+        email: 'a@ex.com',
+        onlinePayConsent: true,
+        paymentProviderId: null,
+      }),
+    ).toBe(false);
   });
 
   it('listAssignableOnlineProviders excludes cash and wrong environment', () => {

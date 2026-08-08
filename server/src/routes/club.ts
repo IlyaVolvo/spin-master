@@ -40,6 +40,7 @@ import {
   type MemberCheckInStub,
 } from '../payments/checkInStateCache';
 import { getPresenceBoardVersion } from '../payments/presenceBoardVersion';
+import { memberCanPayOnline } from '../payments/getActivePaymentProvider';
 
 const router = express.Router();
 
@@ -1524,6 +1525,7 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
         autoRenewEnabled: true,
         autoRenewFamilyKey: true,
         onlinePayConsent: true,
+        paymentProviderId: true,
         courtesySuspended: true,
         trialEndsOn: true,
       },
@@ -1584,9 +1586,8 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
     const clubDate = getClubDate();
     const inTrial = isMemberInTrialPeriod(member.trialEndsOn, clubDate);
     const trialEndsOnYmd = trialEndsOnToYmd(member.trialEndsOn);
-    const hasEmail = Boolean(member.email?.trim());
     const onlinePayConsent = member.onlinePayConsent === true;
-    const effectiveCanPayOnline = hasEmail && onlinePayConsent;
+    const effectiveCanPayOnline = memberCanPayOnline(member);
 
     res.json({
       member: {
@@ -1605,6 +1606,7 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
       futureReimburseCents,
       canPurchase,
       onlinePayConsent,
+      paymentProviderId: member.paymentProviderId ?? null,
       effectiveCanPayOnline,
       inTrial,
       trialEndsOn: trialEndsOnYmd,
@@ -1758,7 +1760,7 @@ router.patch('/members/:id/plan/auto-renew', async (req: AuthRequest, res: Respo
     if (enabled) {
       const memberCheck = await prisma.member.findUnique({
         where: { id: memberId },
-        select: { email: true, onlinePayConsent: true },
+        select: { email: true, onlinePayConsent: true, paymentProviderId: true },
       });
       if (!memberCheck?.email?.trim()) {
         return res.status(400).json({ error: 'Auto-renew requires a member email address' });
@@ -1766,6 +1768,11 @@ router.patch('/members/:id/plan/auto-renew', async (req: AuthRequest, res: Respo
       if (!memberCheck.onlinePayConsent) {
         return res.status(400).json({
           error: 'Auto-renew requires consent to pay online',
+        });
+      }
+      if (!memberCanPayOnline(memberCheck)) {
+        return res.status(400).json({
+          error: 'Auto-renew requires an assigned online payment service',
         });
       }
       const current = await refreshCurrentEntitlement(memberId);

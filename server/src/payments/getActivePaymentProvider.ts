@@ -6,7 +6,13 @@ function installModeToEnvironment(mode: PaymentsInstallMode): PaymentProviderEnv
   return mode === 'production' ? 'production' : 'testing';
 }
 
-/** Online PSPs only — cash is never auto-selected for online checkout. */
+export type MemberOnlinePayFields = {
+  email?: string | null;
+  onlinePayConsent?: boolean | null;
+  paymentProviderId?: string | null;
+};
+
+/** Online PSPs Admin may assign (usable, offered, match installMode, not cash). */
 function getUsableOnlineOfferedMatchingInstall(): PaymentProvider[] {
   const wanted = installModeToEnvironment(getPaymentsConfig().installMode);
   return paymentProviderRegistry
@@ -15,20 +21,43 @@ function getUsableOnlineOfferedMatchingInstall(): PaymentProvider[] {
 }
 
 /**
- * @deprecated Prefer resolveMemberOnlinePaymentProvider (step 2).
- * Temporary: sole usable online provider matching installMode (dev with only `test`).
+ * Resolve the online PSP for a member from `paymentProviderId`.
+ * Requires registered, non-cash, usable, offered, and environment matching installMode.
  */
-export function getActivePaymentProvider(): PaymentProvider {
-  const usable = getUsableOnlineOfferedMatchingInstall();
-  if (usable.length === 0) {
-    throw new Error('No usable online payment provider is available for this install mode');
+export function resolveMemberOnlinePaymentProvider(
+  member: MemberOnlinePayFields,
+): PaymentProvider {
+  const id = typeof member.paymentProviderId === 'string' ? member.paymentProviderId.trim() : '';
+  if (!id) {
+    throw new Error('Online payment requires an assigned payment service');
   }
-  if (usable.length === 1) {
-    return usable[0];
+  if (id === 'cash') {
+    throw new Error('Cash cannot be used as an online payment service');
   }
-  throw new Error(
-    'Multiple online payment providers match install mode; assign Member.paymentProviderId',
-  );
+  if (!paymentProviderRegistry.has(id)) {
+    throw new Error('Assigned payment service is not registered');
+  }
+  const provider = paymentProviderRegistry.get(id);
+  if (!provider.isUsable() || !provider.isOfferedForNewPayments()) {
+    throw new Error('Assigned payment service is not available');
+  }
+  const wanted = installModeToEnvironment(getPaymentsConfig().installMode);
+  if (provider.environment !== wanted) {
+    throw new Error('Assigned payment service does not match this install mode');
+  }
+  return provider;
+}
+
+/** True when email, consent, and a valid assignable online provider are all set. */
+export function memberCanPayOnline(member: MemberOnlinePayFields): boolean {
+  if (!member.email?.trim()) return false;
+  if (member.onlinePayConsent !== true) return false;
+  try {
+    resolveMemberOnlinePaymentProvider(member);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

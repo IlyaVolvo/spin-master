@@ -101,7 +101,10 @@ function planIndicatorButtonStyle(
   if (indicator === 'expiring_soon') {
     return { background: '#f9a825', color: '#212121' };
   }
-  // active or unknown: neutral $
+  if (indicator === 'active') {
+    return { background: '#27ae60', color: '#fff' };
+  }
+  // unknown: neutral $
   return { background: 'transparent', color: 'inherit' };
 }
 
@@ -110,14 +113,18 @@ function planIndicatorOf(member: Member): 'active' | 'expiring_soon' | 'none' | 
 }
 
 /** Roster status mark for online pay (alongside active/inactive symbol). */
-function onlinePayEnabledMarkOf(member: Member): { symbol: string; label: string } | null {
+function onlinePayEnabledMarkOf(member: Member): { symbol: string; label: string; autoRenew: boolean } | null {
   const hasEmail = Boolean(member.email?.trim());
   const hasProvider = Boolean(member.paymentProviderId?.trim());
   const consent = member.onlinePayConsent === true;
   if (!hasEmail || !hasProvider || !consent) return null;
+  const autoRenew = member.autoRenewEnabled === true;
   return {
     symbol: '💳',
-    label: `Online payment enabled (${member.paymentProviderId})`,
+    label: autoRenew
+      ? `Online payment enabled with Auto-renew (${member.paymentProviderId})`
+      : `Online payment enabled (${member.paymentProviderId})`,
+    autoRenew,
   };
 }
 
@@ -130,10 +137,7 @@ type PlayerEditBaseline = {
   phone: string;
   address: string;
   picture: string;
-  segment: string;
   trialEndsOn: string;
-  onlinePayConsent: boolean;
-  paymentProviderId: string;
   isActive: boolean;
   tournamentNotificationsEnabled: boolean;
   rolesKey: string;
@@ -258,10 +262,7 @@ function buildPlayerEditBaseline(member: Member): PlayerEditBaseline {
     phone: member.phone || '',
     address: member.address || '',
     picture: member.picture || '',
-    segment: (member as any).segment || 'Regular',
     trialEndsOn: trialEndsOnToInputValue(member.trialEndsOn),
-    onlinePayConsent: Boolean(member.onlinePayConsent),
-    paymentProviderId: member.paymentProviderId || '',
     isActive: member.isActive !== undefined ? member.isActive : true,
     tournamentNotificationsEnabled: Boolean(member.tournamentNotificationsEnabled && member.email),
     rolesKey: [...(member.roles || [])].sort().join(','),
@@ -494,13 +495,7 @@ const Players: React.FC = () => {
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editPicture, setEditPicture] = useState('');
-  const [editSegment, setEditSegment] = useState('Regular');
   const [editTrialEndsOn, setEditTrialEndsOn] = useState('');
-  const [editOnlinePayConsent, setEditOnlinePayConsent] = useState(false);
-  const [editPaymentProviderId, setEditPaymentProviderId] = useState('');
-  const [assignablePaymentProviders, setAssignablePaymentProviders] = useState<
-    Array<{ id: string; displayName: string }>
-  >([]);
   const [editIsActive, setEditIsActive] = useState(true);
   const [editTournamentNotificationsEnabled, setEditTournamentNotificationsEnabled] = useState(false);
   const [editRoles, setEditRoles] = useState<string[]>([]);
@@ -2410,10 +2405,7 @@ const Players: React.FC = () => {
       setEditBirthDate(member.birthDate ? parseBirthDateToLocalDate(member.birthDate) : null);
       setEditPhone(member.phone || '');
       setEditAddress(member.address || '');
-      setEditSegment((member as any).segment || 'Regular');
       setEditTrialEndsOn(trialEndsOnToInputValue(member.trialEndsOn));
-      setEditOnlinePayConsent(Boolean(member.onlinePayConsent));
-      setEditPaymentProviderId(member.paymentProviderId || '');
       setEditPicture(member.picture || '');
       setEditIsActive(member.isActive !== undefined ? member.isActive : true);
       setEditTournamentNotificationsEnabled(Boolean(member.email && member.tournamentNotificationsEnabled));
@@ -2447,26 +2439,6 @@ const Players: React.FC = () => {
         setMemberDeleteEligibility(null);
       }
 
-      if (isAdminUser) {
-        try {
-          const providersRes = await api.get('/payments/providers');
-          const list = Array.isArray(providersRes.data?.assignableProviders)
-            ? providersRes.data.assignableProviders
-            : Array.isArray(providersRes.data?.providers)
-              ? providersRes.data.providers.filter((p: { assignableToMembers?: boolean }) => p.assignableToMembers)
-              : [];
-          setAssignablePaymentProviders(
-            list.map((p: { id: string; displayName: string }) => ({
-              id: p.id,
-              displayName: p.displayName,
-            })),
-          );
-        } catch {
-          setAssignablePaymentProviders([]);
-        }
-      } else {
-        setAssignablePaymentProviders([]);
-      }
     } catch (err: unknown) {
       // Provide detailed error information
       const error = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
@@ -2518,9 +2490,7 @@ const Players: React.FC = () => {
     setEditBirthDate(null);
     setEditPhone('');
     setEditAddress('');
-    setEditSegment('Regular');
     setEditTrialEndsOn('');
-    setEditOnlinePayConsent(false);
     setEditPicture('');
     setEditIsActive(true);
     setEditTournamentNotificationsEnabled(false);
@@ -2614,10 +2584,7 @@ const Players: React.FC = () => {
         birthMs !== b.birthDateMs ||
         editPhone !== b.phone ||
         editAddress !== b.address ||
-        editSegment !== b.segment ||
         editTrialEndsOn !== b.trialEndsOn ||
-        editOnlinePayConsent !== b.onlinePayConsent ||
-        editPaymentProviderId !== b.paymentProviderId ||
         editPicture !== b.picture ||
         editIsActive !== b.isActive ||
         (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
@@ -2629,10 +2596,7 @@ const Players: React.FC = () => {
     if (
       isAdminUser &&
       (editAutoRelinquishKey !== b.autoRelinquishKey ||
-        editTrialEndsOn !== b.trialEndsOn ||
-        editOnlinePayConsent !== b.onlinePayConsent ||
-        editPaymentProviderId !== b.paymentProviderId ||
-        editSegment !== b.segment)
+        editTrialEndsOn !== b.trialEndsOn)
     ) {
       return true;
     }
@@ -2641,7 +2605,6 @@ const Players: React.FC = () => {
       editPhone !== b.phone ||
       editAddress !== b.address ||
       editPicture !== b.picture ||
-      editOnlinePayConsent !== b.onlinePayConsent ||
       (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
       (playerEditBaselineRef.current?.birthDateMs == null && birthMs !== b.birthDateMs)
     );
@@ -2687,7 +2650,6 @@ const Players: React.FC = () => {
             birthMs !== b.birthDateMs ||
             editPhone !== b.phone ||
             editAddress !== b.address ||
-            editSegment !== b.segment ||
             editPicture !== b.picture ||
             editIsActive !== b.isActive ||
             (Boolean(editEmail.trim()) && editTournamentNotificationsEnabled) !== b.tournamentNotificationsEnabled ||
@@ -2773,19 +2735,10 @@ const Players: React.FC = () => {
           updateData.autoRelinquishPrivileges =
             editAutoRelinquishKey === 'always' ? true : editAutoRelinquishKey === 'never' ? false : null;
           updateData.trialEndsOn = editTrialEndsOn.trim() || null;
-          updateData.segment = editSegment || 'Regular';
-          // Keep paymentProviderId when email is cleared (server clears consent + auto-renew only).
-          if (editEmail.trim()) {
-            updateData.paymentProviderId = editPaymentProviderId.trim() || null;
-          }
         }
-        if (editEmail.trim()) {
-          updateData.onlinePayConsent = editOnlinePayConsent;
-        } else {
-          updateData.onlinePayConsent = false;
-        }
-        
+
         // Both admin and regular members can edit these fields
+        // Email clear: server turns off consent + auto-renew; paymentProviderId is kept.
         updateData.email = editEmail.trim() === '' ? null : editEmail.trim();
         updateData.tournamentNotificationsEnabled = Boolean(editEmail.trim() && editTournamentNotificationsEnabled);
         updateData.phone = editPhone.trim() || null;
@@ -6712,7 +6665,7 @@ const Players: React.FC = () => {
                     <span
                       style={{
                         display: 'inline-grid',
-                        gridTemplateColumns: '1.25em 1.25em',
+                        gridTemplateColumns: '1.25em 1.25em 0.75em',
                         columnGap: '2px',
                         alignItems: 'center',
                         justifyItems: 'center',
@@ -6730,16 +6683,36 @@ const Players: React.FC = () => {
                       {(() => {
                         const online = onlinePayEnabledMarkOf(player);
                         if (!online) {
-                          return <span aria-hidden="true" />;
+                          return (
+                            <>
+                              <span aria-hidden="true" />
+                              <span aria-hidden="true" />
+                            </>
+                          );
                         }
                         return (
-                          <span
-                            title={online.label}
-                            aria-label={online.label}
-                            style={{ color: '#27ae60', lineHeight: 1 }}
-                          >
-                            {online.symbol}
-                          </span>
+                          <>
+                            <span
+                              title={online.label}
+                              aria-label={online.label}
+                              style={{ color: '#27ae60', lineHeight: 1 }}
+                            >
+                              {online.symbol}
+                            </span>
+                            <span
+                              title={online.autoRenew ? 'Auto-renew on' : undefined}
+                              aria-label={online.autoRenew ? 'Auto-renew on' : undefined}
+                              aria-hidden={online.autoRenew ? undefined : true}
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                color: '#27ae60',
+                                lineHeight: 1,
+                              }}
+                            >
+                              {online.autoRenew ? 'A' : ''}
+                            </span>
+                          </>
                         );
                       })()}
                     </span>
@@ -7177,37 +7150,6 @@ const Players: React.FC = () => {
                                 color: !isAdminUser ? PLAYERS_MUTED : 'inherit',
                               }}
                             >
-                              Segment
-                            </label>
-                            <select
-                              value={editSegment}
-                              disabled={!isAdminUser}
-                              onChange={(e) => setEditSegment(e.target.value)}
-                              style={{
-                                width: '100%',
-                                padding: '8px',
-                                border: '1px solid #ddd',
-                                borderRadius: '4px',
-                                backgroundColor: !isAdminUser ? '#f0f2f4' : 'white',
-                                color: !isAdminUser ? PLAYERS_MUTED : 'inherit',
-                                cursor: !isAdminUser ? 'not-allowed' : 'pointer'
-                              }}
-                            >
-                              {segmentNames.map((cat) => (
-                                <option key={cat} value={cat}>{cat}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div style={{ gridColumn: '1 / -1' }}>
-                            <label
-                              style={{
-                                display: 'block',
-                                marginBottom: '4px',
-                                fontSize: '13px',
-                                fontWeight: 'bold',
-                                color: !isAdminUser ? PLAYERS_MUTED : 'inherit',
-                              }}
-                            >
                               Trial ends on
                             </label>
                             <input
@@ -7233,71 +7175,6 @@ const Players: React.FC = () => {
                                   : 'No active trial.'}
                             </div>
                           </div>
-                          {Boolean(editEmail.trim()) && isAdminUser && (
-                            <div style={{ gridColumn: '1 / -1' }}>
-                              <label
-                                style={{
-                                  display: 'block',
-                                  marginBottom: '4px',
-                                  fontSize: '13px',
-                                  fontWeight: 'bold',
-                                }}
-                              >
-                                Online payment service
-                              </label>
-                              <select
-                                value={editPaymentProviderId}
-                                onChange={(e) => setEditPaymentProviderId(e.target.value)}
-                                style={{
-                                  width: '100%',
-                                  padding: '8px',
-                                  border: '1px solid #ddd',
-                                  borderRadius: '4px',
-                                }}
-                              >
-                                <option value="">— None (Pay online unavailable) —</option>
-                                {assignablePaymentProviders.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.displayName}
-                                  </option>
-                                ))}
-                                {editPaymentProviderId &&
-                                  !assignablePaymentProviders.some((p) => p.id === editPaymentProviderId) && (
-                                    <option value={editPaymentProviderId}>
-                                      {editPaymentProviderId} (not available for this install)
-                                    </option>
-                                  )}
-                              </select>
-                              <div style={{ marginTop: '4px', fontSize: '12px', color: '#666' }}>
-                                Admin only. Required (with consent) before Pay online. List matches this
-                                install&apos;s test/production mode.
-                              </div>
-                            </div>
-                          )}
-                          {Boolean(editEmail.trim()) && (
-                            <div style={{ gridColumn: '1 / -1' }}>
-                              <label
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                  fontSize: '13px',
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={editOnlinePayConsent}
-                                  onChange={(e) => setEditOnlinePayConsent(e.target.checked)}
-                                />
-                                <span style={{ fontWeight: 'bold' }}>Consent to pay online</span>
-                              </label>
-                              <div style={{ marginTop: '4px', fontSize: '12px', color: '#666' }}>
-                                Required for automatic/online checkout. Off by default. Needs an assigned
-                                payment service for Pay online to work.
-                              </div>
-                            </div>
-                          )}
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 'bold' }}>Picture URL</label>
                             <input

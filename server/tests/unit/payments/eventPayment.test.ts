@@ -21,7 +21,8 @@ jest.mock('../../../src/utils/logger', () => ({
 
 jest.mock('../../../src/payments/getActivePaymentProvider', () => ({
   getCashPaymentProvider: jest.fn(),
-  getActivePaymentProvider: jest.fn(),
+  resolveMemberOnlinePaymentProvider: jest.fn(),
+  memberCanPayOnline: jest.fn(),
 }));
 
 jest.mock('../../../src/payments/confirmPayment', () => ({
@@ -58,6 +59,7 @@ function member(overrides: Record<string, unknown> = {}) {
     isActive: true,
     purchaseCreditCents: 0,
     onlinePayConsent: false,
+    paymentProviderId: null as string | null,
     ...overrides,
   };
 }
@@ -88,6 +90,21 @@ describe('runEventCheckout', () => {
       paymentId: 26,
       externalRef: 'cash_26_x',
       confirmedImmediately: false,
+    });
+    const { memberCanPayOnline, resolveMemberOnlinePaymentProvider } = jest.requireMock(
+      '../../../src/payments/getActivePaymentProvider',
+    );
+    (memberCanPayOnline as jest.Mock).mockImplementation(
+      (m: { email?: string | null; onlinePayConsent?: boolean; paymentProviderId?: string | null }) =>
+        Boolean(m.email?.trim() && m.onlinePayConsent === true && m.paymentProviderId?.trim()),
+    );
+    (resolveMemberOnlinePaymentProvider as jest.Mock).mockReturnValue({
+      id: 'dummy',
+      startCheckout: jest.fn().mockResolvedValue({
+        paymentId: 26,
+        externalRef: 'dummy_26',
+        confirmedImmediately: false,
+      }),
     });
     (prisma.member.findUnique as jest.Mock).mockResolvedValue(member());
     (prisma.tournamentRegistration.findUnique as jest.Mock).mockResolvedValue({

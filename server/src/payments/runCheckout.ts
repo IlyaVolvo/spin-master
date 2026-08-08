@@ -1,7 +1,7 @@
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { emitPaymentUpdated } from '../services/socketService';
-import { getActivePaymentProvider, getCashPaymentProvider } from './getActivePaymentProvider';
+import { getCashPaymentProvider, memberCanPayOnline, resolveMemberOnlinePaymentProvider } from './getActivePaymentProvider';
 import { resolvePlanForMember, planChargeAmountCents } from './resolvePlan';
 import { getFutureEntitlement, refreshCurrentEntitlement } from './entitlementQueue';
 import { planAllowsMemberPurchase } from './planPurchaseRules';
@@ -69,6 +69,7 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
       isActive: true,
       purchaseCreditCents: true,
       onlinePayConsent: true,
+      paymentProviderId: true,
       trialEndsOn: true,
       autoRenewEnabled: true,
     },
@@ -78,21 +79,23 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     throw new Error('Member not found');
   }
 
-  const hasEmail = Boolean(member.email?.trim());
-  const hasConsent = member.onlinePayConsent === true;
+  const canPayOnline = memberCanPayOnline(member);
   let method: CheckoutMethod =
     params.method === 'cash' || params.method === 'online'
       ? params.method
-      : hasEmail && hasConsent
+      : canPayOnline
         ? 'online'
         : 'cash';
 
   if (method === 'online') {
-    if (!hasEmail) {
+    if (!member.email?.trim()) {
       throw new Error('Online payment requires a member email address');
     }
-    if (!hasConsent) {
+    if (member.onlinePayConsent !== true) {
       throw new Error('Online payment requires member consent to pay online');
+    }
+    if (!member.paymentProviderId?.trim()) {
+      throw new Error('Online payment requires an assigned payment service');
     }
   }
 
@@ -257,7 +260,8 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     });
   }
 
-  const provider = method === 'cash' ? getCashPaymentProvider() : getActivePaymentProvider();
+  const provider =
+    method === 'cash' ? getCashPaymentProvider() : resolveMemberOnlinePaymentProvider(member);
   const result = await provider.startCheckout({
     memberId: member.id,
     memberEmail: member.email,

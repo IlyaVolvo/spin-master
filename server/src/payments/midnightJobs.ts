@@ -7,6 +7,7 @@ import {
   refreshCurrentEntitlement,
 } from './entitlementQueue';
 import { runMemberCheckout } from './runCheckout';
+import { memberCanPayOnline } from './getActivePaymentProvider';
 import { notifyCompletedTrials } from './memberTrial';
 import { getClubDate } from '../utils/clubDate';
 import { invalidateCurrentEntitlement } from './checkInStateCache';
@@ -113,6 +114,7 @@ export async function runClubMidnightJobs(options?: {
       autoRenewFamilyKey: true,
       email: true,
       onlinePayConsent: true,
+      paymentProviderId: true,
     },
   });
 
@@ -144,13 +146,13 @@ export async function runClubMidnightJobs(options?: {
     }
     if (!expiredPrevDay) continue;
 
-    if (!member.email?.trim()) {
-      logger.warn('Auto-renew skipped: member has no email', { memberId: member.id });
-      autoRenewErrors += 1;
-      continue;
-    }
-    if (!member.onlinePayConsent) {
-      logger.warn('Auto-renew skipped: member has no online pay consent', { memberId: member.id });
+    if (!memberCanPayOnline(member)) {
+      logger.warn('Auto-renew skipped: online payment not fully enabled', {
+        memberId: member.id,
+        hasEmail: Boolean(member.email?.trim()),
+        onlinePayConsent: member.onlinePayConsent === true,
+        paymentProviderId: member.paymentProviderId ?? null,
+      });
       autoRenewErrors += 1;
       continue;
     }
