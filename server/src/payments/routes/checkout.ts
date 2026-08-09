@@ -323,4 +323,41 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
   }
 });
 
+/**
+ * POST /api/payments/:paymentId/escape-to-cash
+ * After pay-link mail failure (and delay), cancel online Session and switch to cash PENDING.
+ */
+router.post('/:paymentId/escape-to-cash', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const paymentId = Number(req.params.paymentId);
+    if (!Number.isInteger(paymentId) || paymentId < 1) {
+      return res.status(400).json({ error: 'Invalid payment id' });
+    }
+    const payment = await prisma.clubPayment.findUnique({
+      where: { id: paymentId },
+      select: { id: true, memberId: true, status: true },
+    });
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+    if (!isAdmin(req) && req.memberId !== payment.memberId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const { escapeOnlinePaymentToCash } = await import('../onlinePayLink');
+    const result = await escapeOnlinePaymentToCash(paymentId);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Cash escape failed';
+    logger.error('Cash escape failed', { error: message });
+    const status =
+      message.includes('not pending') ||
+      message.includes('not available yet') ||
+      message.includes('already cash') ||
+      message.includes('not found')
+        ? 400
+        : 500;
+    res.status(status).json({ error: message });
+  }
+});
+
 export default router;

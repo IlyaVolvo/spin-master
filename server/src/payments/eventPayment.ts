@@ -9,6 +9,7 @@ import type {
 } from './types';
 import type { CheckoutMethod, RunCheckoutResult } from './runCheckout';
 import { confirmPayment } from './confirmPayment';
+import { deliverOnlinePayLink } from './onlinePayLink';
 
 export const EVENT_PAYMENT_PURPOSE_PREFIX = 'Event registration:';
 
@@ -214,6 +215,26 @@ export async function runEventCheckout(params: {
     amountCents,
   });
 
+  let payLinkEmailed: boolean | undefined;
+  let mailFailClass: 'irrecoverable' | 'recoverable' | undefined;
+  let mailFailMessage: string | undefined;
+  let cashEscapeAvailableAt: string | undefined;
+
+  if (method === 'online' && result.checkoutUrl && member.email?.trim() && amountCents > 0) {
+    const mail = await deliverOnlinePayLink({
+      paymentId: payment.id,
+      memberEmail: member.email.trim(),
+      memberName: `${member.firstName} ${member.lastName}`.trim(),
+      purpose,
+      amountCents,
+      checkoutUrl: result.checkoutUrl,
+    });
+    payLinkEmailed = mail.emailed;
+    mailFailClass = mail.mailFailClass;
+    mailFailMessage = mail.mailFailMessage;
+    cashEscapeAvailableAt = mail.cashEscapeAvailableAt;
+  }
+
   return {
     ...result,
     paymentId: payment.id,
@@ -222,6 +243,10 @@ export async function runEventCheckout(params: {
     creditAppliedCents,
     amountCents,
     method,
+    payLinkEmailed,
+    mailFailClass,
+    mailFailMessage,
+    cashEscapeAvailableAt,
   };
 }
 

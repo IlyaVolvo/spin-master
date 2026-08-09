@@ -119,6 +119,8 @@ export type SystemConfig = {
     courtesyGraceDays: number;
     courtesyExtraVisits: number;
     newMemberTrialDays: number;
+    /** Minutes before cash escape after recoverable pay-link mail failure. */
+    mailFailCashEscapeDelayMinutes: number;
     reminders: {
       checkInBannerEnabled: boolean;
       emailEnabled: boolean;
@@ -247,6 +249,7 @@ const defaultSystemConfig: SystemConfig = {
     courtesyGraceDays: 7,
     courtesyExtraVisits: 3,
     newMemberTrialDays: 7,
+    mailFailCashEscapeDelayMinutes: 15,
     reminders: {
       checkInBannerEnabled: true,
       emailEnabled: true,

@@ -30,6 +30,7 @@ const TournamentRegistrationLink = lazyWithReload(() => import('./components/Tou
 const SystemSettings = lazyWithReload(() => import('./components/SystemSettings'));
 const PaymentsAdmin = lazyWithReload(() => import('./components/PaymentsAdmin'));
 const AttendanceLogAdmin = lazyWithReload(() => import('./components/AttendanceLogAdmin'));
+const PaymentReturnPage = lazyWithReload(() => import('./components/PaymentReturnPage'));
 const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
 const PublicResultsLatestPage = lazyWithReload(() =>
   import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsLatestPage })),
@@ -393,6 +394,16 @@ function AppRoutes({
           <ErrorBoundary>
             <Suspense fallback={<div>Loading...</div>}>
               <TournamentRegistrationLink />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/payment-return"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PaymentReturnPage />
             </Suspense>
           </ErrorBoundary>
         }

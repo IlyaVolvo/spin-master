@@ -18,7 +18,8 @@ router.post('/webhook/:providerId', async (req: Request, res: Response) => {
     const provider = paymentProviderRegistry.get(providerId);
     const event = await provider.parseWebhook(req);
     if (!event) {
-      return res.status(400).json({ error: 'Unrecognized webhook payload' });
+      // Valid delivery we choose not to act on (e.g. unrelated Stripe event type).
+      return res.json({ ok: true, ignored: true });
     }
     const result = await confirmPayment(event);
     res.json({ ok: true, ...result });

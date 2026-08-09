@@ -77,6 +77,11 @@ export interface PaymentProvider {
     externalRef: string | null;
     metadata: unknown;
   }): Promise<ConfirmEvent | null>;
+  /**
+   * Cancel/expire an unpaid external checkout (e.g. Stripe Session) before cash escape.
+   * Optional — only online PSPs that create payable sessions need this.
+   */
+  cancelPendingCheckout?(externalRef: string): Promise<void>;
   /** Optional admin settings form fields for this provider. */
   getSettingsSchema?(): PaymentProviderSettingField[];
   getDefaultSettings?(): Record<string, unknown>;
@@ -104,4 +109,12 @@ export type PaymentMetadata = {
   registrationId?: number;
   reimbursedAsCreditCents?: number;
   reimbursedAt?: string;
+  /** Online pay-link email outcome (Stripe async flow). */
+  payLinkEmailedAt?: string;
+  mailFailClass?: 'irrecoverable' | 'recoverable';
+  mailFailMessage?: string;
+  /** ISO time when cash escape becomes available after mail failure. */
+  cashEscapeAvailableAt?: string;
+  /** When true, online Session was cancelled and payment switched to cash PENDING. */
+  escapedToCashAt?: string;
 };

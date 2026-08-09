@@ -11,6 +11,7 @@ import {
   trialPlanStartYmd,
 } from './memberTrial';
 import { confirmPayment } from './confirmPayment';
+import { deliverOnlinePayLink } from './onlinePayLink';
 import type {
   CheckoutProduct,
   PaymentInitiatedBy,
@@ -43,11 +44,17 @@ export type RunCheckoutParams = {
 };
 
 export type RunCheckoutResult = StartCheckoutResult & {
+  confirmedImmediately?: boolean;
+  paymentId: number;
   providerId: string;
   listAmountCents: number;
   creditAppliedCents: number;
   amountCents: number;
   method: CheckoutMethod;
+  payLinkEmailed?: boolean;
+  mailFailClass?: 'irrecoverable' | 'recoverable';
+  mailFailMessage?: string;
+  cashEscapeAvailableAt?: string;
 };
 
 function clubTodayYmd(): string {
@@ -314,6 +321,31 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     emitPaymentUpdated(notified);
   }
 
+  let payLinkEmailed: boolean | undefined;
+  let mailFailClass: 'irrecoverable' | 'recoverable' | undefined;
+  let mailFailMessage: string | undefined;
+  let cashEscapeAvailableAt: string | undefined;
+
+  if (
+    method === 'online' &&
+    result.checkoutUrl &&
+    member.email?.trim() &&
+    !confirmedImmediately
+  ) {
+    const mail = await deliverOnlinePayLink({
+      paymentId: payment.id,
+      memberEmail: member.email.trim(),
+      memberName: `${member.firstName} ${member.lastName}`.trim(),
+      purpose,
+      amountCents,
+      checkoutUrl: result.checkoutUrl,
+    });
+    payLinkEmailed = mail.emailed;
+    mailFailClass = mail.mailFailClass;
+    mailFailMessage = mail.mailFailMessage;
+    cashEscapeAvailableAt = mail.cashEscapeAvailableAt;
+  }
+
   return {
     ...result,
     confirmedImmediately,
@@ -323,5 +355,9 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     creditAppliedCents,
     amountCents,
     method,
+    payLinkEmailed,
+    mailFailClass,
+    mailFailMessage,
+    cashEscapeAvailableAt,
   };
 }

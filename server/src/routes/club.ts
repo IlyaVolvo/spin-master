@@ -1612,15 +1612,32 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
       trialEndsOn: trialEndsOnYmd,
       trialPlanStartsOn: inTrial ? trialPlanStartYmd(member.trialEndsOn) : null,
       pendingPayment: pendingPayment
-        ? {
-            id: pendingPayment.id,
-            status: pendingPayment.status,
-            amountCents: pendingPayment.amountCents,
-            listAmountCents: pendingPayment.listAmountCents,
-            creditAppliedCents: pendingPayment.creditAppliedCents,
-            purpose: pendingPayment.purpose,
-            provider: pendingPayment.provider,
-          }
+        ? (() => {
+            const meta =
+              pendingPayment.metadata &&
+              typeof pendingPayment.metadata === 'object' &&
+              !Array.isArray(pendingPayment.metadata)
+                ? (pendingPayment.metadata as Record<string, unknown>)
+                : {};
+            return {
+              id: pendingPayment.id,
+              status: pendingPayment.status,
+              amountCents: pendingPayment.amountCents,
+              listAmountCents: pendingPayment.listAmountCents,
+              creditAppliedCents: pendingPayment.creditAppliedCents,
+              purpose: pendingPayment.purpose,
+              provider: pendingPayment.provider,
+              cashEscapeAvailableAt:
+                typeof meta.cashEscapeAvailableAt === 'string'
+                  ? meta.cashEscapeAvailableAt
+                  : null,
+              mailFailClass:
+                meta.mailFailClass === 'irrecoverable' || meta.mailFailClass === 'recoverable'
+                  ? meta.mailFailClass
+                  : null,
+              payLinkEmailed: Boolean(meta.payLinkEmailedAt),
+            };
+          })()
         : null,
       payments: paymentHistory.map((p) => {
         const meta =

@@ -96,6 +96,26 @@ app.use(cors({
   origin: normalizedClientUrl,
   credentials: true, // Allow cookies/sessions
 }));
+
+// Stripe webhooks need the exact raw body for signature verification (before JSON parser).
+// IMPORTANT: use exact path match — app.use('/…/webhook/stripe') would also match
+// '/…/webhook/stripe-test' (prefix), re-run raw parsing on an already-consumed stream,
+// overwrite rawBody with an empty buffer, and break signature verification (500s).
+const stripeWebhookPaths = new Set([
+  '/api/payments/webhook/stripe-test',
+  '/api/payments/webhook/stripe',
+]);
+const stripeWebhookRaw = express.raw({ type: 'application/json' });
+app.use((req, res, next) => {
+  if (!stripeWebhookPaths.has(req.path)) {
+    return next();
+  }
+  return stripeWebhookRaw(req, res, (err) => {
+    if (err) return next(err);
+    (req as express.Request & { rawBody?: Buffer }).rawBody = req.body as Buffer;
+    next();
+  });
+});
 app.use(express.json());
 
 // Session configuration - MUST be before routes

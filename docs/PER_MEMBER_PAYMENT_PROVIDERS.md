@@ -205,7 +205,7 @@ Mail failure alone does **not** mean the online payment failed—a Session might
 |------|--------|--------|
 | **1** | `Member.paymentProviderId`; `installMode`; drop global `providerId`; provider `environment`; Admin picker; email-clear keeps provider; Payments Admin read-only mode | **Done** |
 | **2** | Checkout + auto-renew resolve from `member.paymentProviderId`; enforce gates in API/UI | **Done** |
-| **3** | Stripe module (`stripe-test` / `stripe`); email pay link; webhooks; mail-fail + delayed cash escape | Pending |
+| **3** | Stripe module (`stripe-test` / `stripe`); email pay link; webhooks; mail-fail + delayed cash escape | **Done** |
 | **4** | Tests polish; update Stripe runbook for email-async + per-member model | Pending |
 
 Online checkout and auto-renew resolve the PSP from **`Member.paymentProviderId` only** (no install-wide active provider).
@@ -230,10 +230,10 @@ node … --payments-install-mode=production
 ### 8.2 Stripe (step 3; not required for step 1)
 
 ```bash
-STRIPE_SECRET_KEY=sk_test_…         # stripe-test
+STRIPE_SECRET_KEY=sk_test_…         # stripe-test (sk_live_… only with STRIPE_ALLOW_LIVE=1)
 STRIPE_WEBHOOK_SECRET=whsec_…
-CLIENT_URL=https://…                # return page origin
-# Production later: sk_live_… + production installMode + stripe webhook path
+CLIENT_URL=https://…                # return page origin (/payment-return)
+# Production: sk_live_… + production installMode + STRIPE_ALLOW_LIVE=1 + /webhook/stripe
 ```
 
 ### 8.3 Database
@@ -257,8 +257,9 @@ ALTER TABLE "members" ADD COLUMN "paymentProviderId" TEXT;
 | Member PATCH (`paymentProviderId`, email clear) | `server/src/routes/players.ts` |
 | Providers API (`installMode`, `assignableProviders`) | `server/src/payments/routes/checkout.ts` |
 | Admin payments UI | `client/src/components/PaymentsAdmin.tsx` |
-| Member Plan (service assign, consent, auto-renew) | `client/src/components/players/MemberPlanScreen.tsx` |
-| Client config types | `client/src/utils/systemConfig.ts` |
+| Stripe module (`stripe-test` / `stripe`) | `server/src/payments/providers/stripe/` |
+| Email pay link + cash escape | `server/src/payments/onlinePayLink.ts` |
+| Payment return page | `client/src/components/PaymentReturnPage.tsx` (`/payment-return`) |
 
 ---
 

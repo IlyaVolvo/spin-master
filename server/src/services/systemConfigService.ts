@@ -164,6 +164,11 @@ export type PaymentsConfig = {
   courtesyExtraVisits: number;
   /** Trial length granted automatically to newly created members; 0 = no trial. */
   newMemberTrialDays: number;
+  /**
+   * After a recoverable pay-link email failure, minutes before cash escape is allowed.
+   * Irrecoverable failures allow escape immediately (delay ignored).
+   */
+  mailFailCashEscapeDelayMinutes: number;
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */
   providers: {
@@ -353,6 +358,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       courtesyGraceDays: 7,
       courtesyExtraVisits: 3,
       newMemberTrialDays: 7,
+      mailFailCashEscapeDelayMinutes: 15,
       reminders: {
         checkInBannerEnabled: true,
         emailEnabled: true,
@@ -796,6 +802,10 @@ function validatePayments(value: unknown): PaymentsConfig {
   config.courtesyGraceDays = Math.max(0, Math.floor(Number(config.courtesyGraceDays) || 0));
   config.courtesyExtraVisits = Math.max(0, Math.floor(Number(config.courtesyExtraVisits) || 0));
   config.newMemberTrialDays = Math.max(0, Math.floor(Number(config.newMemberTrialDays) || 0));
+  config.mailFailCashEscapeDelayMinutes = Math.max(
+    0,
+    Math.floor(Number(config.mailFailCashEscapeDelayMinutes) || 15),
+  );
   config.reminders.checkInBannerEnabled = Boolean(config.reminders.checkInBannerEnabled);
   config.reminders.emailEnabled = Boolean(config.reminders.emailEnabled);
   config.reminders.periodDaysBeforeExpiry = Math.max(

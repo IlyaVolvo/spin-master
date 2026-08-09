@@ -1,19 +1,23 @@
 # Stripe test-mode integration runbook
 
-**Purpose:** Integrate Stripe against this app’s pluggable payment layer and exercise the **full real-world flow** (Checkout redirect → pay → webhook → entitlement) **without live charges**. This is the last prep step before turning on live keys / real money.
+**Status (step 3):** Stripe Checkout is implemented as **email pay link** (not in-app redirect). Assign **`stripe-test`** per member (`Member.paymentProviderId`); webhooks: `/api/payments/webhook/stripe-test` (test) and `/webhook/stripe` (live). Full runbook polish is step 4 — see also [`PER_MEMBER_PAYMENT_PROVIDERS.md`](./PER_MEMBER_PAYMENT_PROVIDERS.md).
 
-**Scope for this phase:** one online provider (`stripe`) + existing **Cash**. Multi-provider picker and PayPal/Venmo are out of scope.
+**Purpose:** Exercise Stripe against this app’s pluggable payment layer (**Checkout Session → email link → pay → webhook → entitlement**) **without live charges**. Prep before live keys / real money.
+
+**Scope:** providers `stripe-test` + `stripe` (same module) + **Cash**. PayPal/Venmo out of scope.
 
 **Related code today:**
 
 - Provider interface: `server/src/payments/types.ts`
-- Registry init: `server/src/payments/index.ts` (`dummy`, `cash` only)
+- Registry init: `server/src/payments/index.ts` (`dummy`, `cash`, `stripe-test`, `stripe`)
+- Stripe module: `server/src/payments/providers/stripe/`
 - Online selection: `resolveMemberOnlinePaymentProvider(member)` from `Member.paymentProviderId`
-- Checkout: `runMemberCheckout` → `provider.startCheckout`
-- Webhook: `POST /api/payments/webhook/:providerId`
+- Checkout: `runMemberCheckout` → `provider.startCheckout` → `deliverOnlinePayLink`
+- Webhook: `POST /api/payments/webhook/:providerId` (raw body for Stripe paths)
 - Confirm: `confirmPayment`
-- Client plan UI: `MemberPlanScreen` — **does not open `checkoutUrl` yet**
-- Env already used for app URLs: `CLIENT_URL` (default `http://localhost:3000`)
+- Client plan UI: `MemberPlanScreen` — shows pending + “check email”; **does not** open `checkoutUrl`
+- Return page: `/payment-return` under `CLIENT_URL`
+- Env: `CLIENT_URL` (typical local client `http://localhost:3002`)
 
 Related manual payment/check-in tests: [`MANUAL_PAYMENT_CHECKIN_TESTS.md`](./MANUAL_PAYMENT_CHECKIN_TESTS.md).
 
@@ -54,13 +58,14 @@ STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...   # from `stripe listen` (local) or Dashboard endpoint (deployed staging)
 # Optional if needed later:
 # STRIPE_PUBLISHABLE_KEY=pk_test_...
+# STRIPE_ALLOW_LIVE=1                 # required before sk_live_ is accepted
 
 CLIENT_URL=http://localhost:3002   # must match the SPA origin used for success/cancel return
 ```
 
-**Usable rule for the plugin:** `isUsable()` should be true only when `STRIPE_SECRET_KEY` is set and starts with `sk_test_` or `sk_live_` (reject empty / wrong prefix). Prefer refusing live keys in local/dev unless an explicit `STRIPE_ALLOW_LIVE=1` (optional safety).
+**Usable rules:** `stripe-test` requires `sk_test_…` + webhook secret; `stripe` requires `sk_live_…` + `STRIPE_ALLOW_LIVE=1` + production install mode. Refuse empty / wrong prefix.
 
-Admin: set `SystemConfig.payments.providerId` to `stripe` once the plugin is registered and usable (Payments Admin / System Settings). Cash remains available via `method: 'cash'`.
+**Admin:** assign `stripe-test` on the member’s Member Plan Admin section (`paymentProviderId`). There is **no** install-wide active online provider. Cash remains available via `method: 'cash'`.
 
 ---
 
@@ -70,74 +75,50 @@ Admin: set `SystemConfig.payments.providerId` to `stripe` once the plugin is reg
 
 - Add official `stripe` package on the server.
 
-### 3.2 `StripePaymentProvider` (`id: 'stripe'`)
+### 3.2 Stripe providers (`stripe-test` / `stripe`)
 
-Implement `PaymentProvider`:
+Implemented in `server/src/payments/providers/stripe/` (shared module + thin wrappers).
 
 **`startCheckout`**
 
-1. Create Stripe Checkout Session (mode `payment`) with:
-   - `line_items` / `price_data` from `amountCents`, `currency`, description from `purpose` / product
-   - `customer_email` from `memberEmail` when present
-   - `client_reference_id` or `metadata`: `{ paymentId, memberId, … }` (needed for webhook ↔ `ClubPayment`)
-   - `success_url` / `cancel_url` under `CLIENT_URL` (e.g. return to plan/kiosk with query `?payment=success|cancel&paymentId=…`)
-2. Persist on `ClubPayment`: `provider: 'stripe'`, `externalRef` = session id (`cs_test_…`) or PaymentIntent id (pick one and use consistently in webhook + reconcile)
-3. Return `{ paymentId, externalRef, checkoutUrl: session.url, confirmedImmediately: false }`
+1. Create Stripe Checkout Session (mode `payment`) with line items, `customer_email`, `client_reference_id` / metadata (`paymentId`, `memberId`, `providerId`)
+2. `success_url` / `cancel_url` → `{CLIENT_URL}/payment-return?status=…&paymentId=…`
+3. Persist `externalRef` = session id; return `{ checkoutUrl, confirmedImmediately: false }`
+4. Orchestrator emails `checkoutUrl` via `deliverOnlinePayLink` (Member Plan does **not** open the URL)
 
-**`parseWebhook`**
+**`parseWebhook` / `reconcilePending` / `cancelPendingCheckout`**
 
-- Verify signature with `STRIPE_WEBHOOK_SECRET` and **raw body**
-- Map events, at minimum:
-  - `checkout.session.completed` (paid) → `SUCCEEDED`
-  - `checkout.session.expired` / payment failed paths → `FAILED` or `CANCELLED` as appropriate
-- Emit `ConfirmEvent` with `providerId: 'stripe'`, `externalRef` matching what you stored
+- Signature verify with raw body; `checkout.session.completed` → SUCCEEDED; expired → CANCELLED
+- Reconcile via Session retrieve; cash escape expires unpaid Session first
 
-**`reconcilePending`**
+### 3.3 Register providers
 
-- Retrieve Session (or PI) by `externalRef`; if paid, return `SUCCEEDED`; if expired/canceled, map accordingly; else `null`
-
-**Settings (optional for v1)**
-
-- Schema keys for success path labels only if needed; keys stay in env, not SystemConfig.
-
-### 3.3 Register provider
-
-In `initializePaymentProviders()`:
-
-- `register(new StripePaymentProvider())` alongside `dummy` and `cash`.
+`initializePaymentProviders()` registers `stripe-test` and `stripe` alongside `dummy` and `cash`.
 
 ### 3.4 Raw body for webhooks (critical)
 
-Today `server/src/index.ts` uses global `express.json()`, which **breaks** Stripe signature verification.
+`/api/payments/webhook/stripe-test` and `/webhook/stripe` mount `express.raw` **before** the global JSON parser; `req.rawBody` is set for signature verification.
 
-Before JSON parser (or only for this route):
+### 3.5 Client: email-async (not redirect)
 
-- Mount `POST /api/payments/webhook/stripe` with `express.raw({ type: 'application/json' })`, **or**
-- Use a verify callback that preserves `req.rawBody` for that path.
+In `MemberPlanScreen`:
 
-`parseWebhook` must use the raw Buffer Stripe signed.
+1. After `POST /payments/checkout`, if `checkoutUrl` / `payLinkEmailed`, show pending + “check your email” — **do not** `window.open(checkoutUrl)`.
+2. Entitlement updates when webhook → `confirmPayment` → socket / reload.
+3. Mail-fail → cash escape UI (`POST /payments/:id/escape-to-cash`) after Session cancel.
+4. Stripe return page is minimal (“You can close this page”).
 
-### 3.5 Client: open Checkout
-
-In `MemberPlanScreen` (and any other online checkout callers):
-
-1. After `POST /payments/checkout`, if `res.data.checkoutUrl` is present, `window.open(checkoutUrl, …)` or `window.location.assign` (prefer new tab on kiosk if you need the plan screen to keep listening).
-2. Keep existing `waitForPaymentUpdate` so when webhook → `confirmPayment` → socket `payment:updated`, UI flips to confirmed.
-3. On cancel return URL, show pending/cancelled messaging; do not grant entitlement without `SUCCEEDED`.
-
-Cash path unchanged (no URL).
+Cash and `dummy` paths unchanged (`dummy` may still wait in-app).
 
 ### 3.6 Soft-retire / coexistence with `dummy`
 
-- With `providerId: 'stripe'`, online checkouts use Stripe.
-- If Stripe keys missing, `isUsable()` false → admin cannot select it; fall back guidance: keep using `dummy` until keys exist.
-- Do not auto-pick among multiple online providers beyond existing rules until multi-provider work later.
+- Assign `stripe-test` per member when keys exist; otherwise keep `dummy` for offline CI.
+- If Stripe keys missing, `isUsable()` false → not in assignable list.
 
 ### 3.7 Tests (automated)
 
-- Unit: webhook signature parse → `ConfirmEvent`; map completed/expired.
-- Unit/mocks: `startCheckout` stores `externalRef` and returns URL.
-- Do not hit Stripe network in CI unless using recorded fixtures; prefer mocked Stripe SDK.
+- Unit: webhook parse → `ConfirmEvent`; `startCheckout` metadata; mail-fail classify; cash escape cancels Session.
+- Prefer mocked Stripe SDK in CI.
 
 ---
 
@@ -146,7 +127,7 @@ Cash path unchanged (no URL).
 Production will POST to your public URL. Locally:
 
 ```bash
-stripe listen --forward-to localhost:3003/api/payments/webhook/stripe
+stripe listen --forward-to localhost:3003/api/payments/webhook/stripe-test
 ```
 
 (Use your real API port.)
@@ -233,101 +214,113 @@ After a successful run, verify:
 
 ---
 
-## 8. After local test: Stripe **test mode** on staging deployment
+## 8. After local test: Stripe **test mode** on staging (Render)
 
 Do this only after §6–§7 pass locally. Staging still uses **test** keys (`sk_test_…`) — no live charges. Do **not** put `sk_live_…` on staging for this phase.
 
+**On Render you do not run `stripe listen`.** Stripe POSTs webhooks to your public API URL. The CLI is laptop-only.
+
 ### 8.1 Preconditions
 
-- [ ] Stripe provider code + raw webhook body fix are merged and ready to deploy
-- [ ] Local happy path (§6.1) passed with `stripe listen`
+- [ ] Stripe provider code + exact-path raw webhook body handling are merged and ready to deploy
+- [ ] Local happy path (§6.1) passed with `stripe listen` → `/api/payments/webhook/stripe-test`
 - [ ] You know staging URLs:
   - **API** (Render web service), e.g. `https://<staging-api>.onrender.com`
-  - **Client / SPA** origin used as `CLIENT_URL` (must match success/cancel redirect host)
+  - **Client / SPA** origin used as `CLIENT_URL` (must match Checkout success/cancel redirect host)
 
 ### 8.2 Deploy the build
 
-1. Deploy the server (and client if separate) that includes the Stripe plugin to the **staging** environment.
-2. Confirm the deploy is healthy (health check / login / existing cash checkout still works).
-3. Confirm `/api/payments/webhook/stripe` is reachable on the public API host (404 for wrong method is fine; the route must exist).
+1. Deploy the server (and client if separate) that includes Stripe + the webhook raw-body fix to **staging**.
+2. Confirm the deploy is healthy (health check / login / cash checkout still works).
+3. Confirm the test webhook route exists on the public API host:
+   `POST https://<staging-api-host>/api/payments/webhook/stripe-test`
+   (404 for wrong method is fine; the route must exist.)
 
-### 8.3 Stripe Dashboard — Test mode webhook for staging
+### 8.3 Render environment variables
 
-Stay in Dashboard **Test mode**.
+On the **staging** API service (Environment), set or update, then **redeploy / restart**:
+
+| Variable | Value |
+|----------|--------|
+| `STRIPE_SECRET_KEY` | `sk_test_…` (Dashboard → Test mode → API keys) |
+| `STRIPE_WEBHOOK_SECRET` | Staging Dashboard endpoint `whsec_…` from §8.4 — **not** the local CLI secret |
+| `CLIENT_URL` | Staging SPA origin members open in the browser (no trailing slash) |
+| `STRIPE_PUBLISHABLE_KEY` | `pk_test_…` only if the client needs it later |
+| `STRIPE_ALLOW_LIVE` | leave **unset** / not `1` |
+
+Also keep SMTP configured if pay-link emails should send on staging.
+
+Checklist:
+
+- [ ] No `sk_live_` / live `whsec_` on staging
+- [ ] Webhook secret matches the **staging Dashboard** endpoint, not `stripe listen`
+- [ ] `CLIENT_URL` is the URL members actually use for staging
+- [ ] Service restarted after env change
+
+### 8.4 Stripe Dashboard webhook (this replaces listeners on Render)
+
+Stay in Dashboard **Test mode**. No process to start on Render.
 
 1. **Developers → Webhooks → Add endpoint**.
-2. Endpoint URL:
+2. Endpoint URL (test provider path):
 
    ```text
-   https://<staging-api-host>/api/payments/webhook/stripe
+   https://<staging-api-host>/api/payments/webhook/stripe-test
    ```
 
 3. Subscribe at least to:
    - `checkout.session.completed`
    - `checkout.session.expired`
-   - any additional events your `parseWebhook` handles
-4. Create the endpoint and open **Reveal** under Signing secret → copy `whsec_…`.
-5. **Important:** this secret is **not** the one from `stripe listen`. Local CLI and staging Dashboard each have their own `whsec_…`.
+4. Create the endpoint → **Reveal** signing secret → copy `whsec_…` into Render `STRIPE_WEBHOOK_SECRET` (§8.3) → restart.
+5. **Important:** local CLI `whsec_…` and staging Dashboard `whsec_…` are different. Using the CLI secret on Render leaves payments **PENDING** after a successful card pay.
 
-Optional: disable or ignore the local-only CLI forwarding while testing staging (CLI is for laptop only).
-
-### 8.4 Render (or host) environment variables
-
-On the **staging** API service, set (or update) and **redeploy / restart** so the process picks them up:
-
-| Variable | Value |
-|----------|--------|
-| `STRIPE_SECRET_KEY` | Same or dedicated `sk_test_…` (Test mode API key) |
-| `STRIPE_WEBHOOK_SECRET` | Staging endpoint `whsec_…` from §8.3 |
-| `CLIENT_URL` | Staging SPA origin (no trailing slash issues — match what Checkout success/cancel URLs use) |
-| `STRIPE_PUBLISHABLE_KEY` | `pk_test_…` only if the client needs it |
-| `STRIPE_ALLOW_LIVE` | unset / not `1` |
-
-Checklist:
-
-- [ ] No `sk_live_` / live `whsec_` on staging
-- [ ] Webhook secret matches the **staging** Dashboard endpoint, not local CLI
-- [ ] `CLIENT_URL` is the URL members actually open in the browser for staging
-- [ ] Service restarted after env change
+Optional: stop local `stripe listen` while exercising staging so you are not confusing two endpoints.
 
 ### 8.5 App config on staging
 
+With `sk_test_…`, only **`stripe-test`** (`Stripe (test)`) is usable — not live `stripe`.
+
 1. Log in as admin on **staging**.
-2. System Settings / Payments: set active online provider to **`stripe`** (requires Stripe `isUsable()` with keys present).
-3. Pick a staging test member: email + `onlinePayConsent`, allowed to purchase.
-4. Prefer a small plan price for easy Dashboard verification.
+2. Open the test member → Member plan (admin):
+   - email set
+   - online payment service = **Stripe (test)** / `stripe-test`
+   - `onlinePayConsent` on
+   - allowed to purchase (no blocking FUTURE if you need a clean buy)
+3. Prefer a small plan price for easy Dashboard verification.
+
+There is no install-wide “active online provider”; assignment is **per member**.
 
 ### 8.6 Staging E2E (test cards, still no real money)
 
-Repeat the core of §6 against the **staging** URLs (not localhost):
+Repeat the core of §6 against **staging** URLs (not localhost):
 
-1. Happy path with `4242 4242 4242 4242`.
-2. In Stripe Dashboard → Webhooks → staging endpoint: delivery **succeeded** (HTTP 2xx).
-3. In Render logs: webhook received and confirm path ran.
-4. In staging DB / UI: `club_payments.provider = stripe`, `SUCCEEDED`, entitlement updated.
-5. Spot-check decline or cancel once if time allows.
-6. Confirm Cash path still works on staging.
+1. Member plan → Pay online → email link → pay with `4242 4242 4242 4242`.
+2. Stripe Dashboard → Webhooks → staging endpoint: delivery **succeeded** (HTTP 2xx).
+3. Render logs: webhook received; confirm path ran (no signature errors).
+4. Staging UI / DB: `club_payments.provider = stripe-test`, `SUCCEEDED`, entitlement updated.
+5. Spot-check decline or cancel if time allows.
+6. Confirm Cash still works on staging.
 
 ### 8.7 Staging-specific pitfalls
 
 | Symptom | Likely cause |
 |---------|----------------|
 | Checkout opens then return URL is wrong host | `CLIENT_URL` not set to staging SPA |
-| Payment succeeds in Stripe, app stays pending | Wrong `STRIPE_WEBHOOK_SECRET` (CLI secret on staging), or webhook URL points at wrong service |
-| Signature verification failures in logs | Body parsed as JSON before Stripe verify; or secret mismatch |
-| Provider not selectable / “not usable” | Missing `STRIPE_SECRET_KEY` on staging or deploy without Stripe code |
-| Webhook 404 | Path not `/api/payments/webhook/stripe`, or old deploy |
+| Payment succeeds in Stripe, app stays PENDING | Wrong `STRIPE_WEBHOOK_SECRET` (CLI secret on staging), or webhook URL points at wrong service / wrong path |
+| Signature verification failures in logs | Secret mismatch; or old deploy without exact-path raw-body handling |
+| Provider not selectable / “not usable” | Missing `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` on staging, or deploy without Stripe code |
+| Webhook 404 | Path not `/api/payments/webhook/stripe-test`, or old deploy |
+| Expecting a listener process on Render | Not needed — Dashboard endpoint is the listener |
 
 ### 8.8 Staging exit criteria (test mode ready in deployed env)
 
-- [ ] Staging deploy includes Stripe + raw body webhook handling
-- [ ] Dashboard **Test** webhook endpoint points at staging API and shows successful deliveries
-- [ ] Staging env uses `sk_test_…` + staging `whsec_…` only
-- [ ] Happy-path purchase on staging confirms payment and updates plan
+- [ ] Staging deploy includes Stripe + exact-path raw body webhook handling
+- [ ] Dashboard **Test** webhook points at `/api/payments/webhook/stripe-test` and shows successful deliveries
+- [ ] Staging env uses `sk_test_…` + staging Dashboard `whsec_…` only
+- [ ] Happy-path purchase on staging confirms payment and updates plan (no manual reconcile)
 - [ ] Cash still works on staging
 
 When §8.8 passes, staging is valid for ongoing test-mode demos. Live cutover is still §10.
-
 ---
 
 ## 9. Exit criteria (ready for “real” integration talk / live cutover)

@@ -54,6 +54,9 @@ type PlanSummary = {
     creditAppliedCents?: number;
     purpose: string;
     provider?: string;
+    cashEscapeAvailableAt?: string | null;
+    mailFailClass?: 'irrecoverable' | 'recoverable' | null;
+    payLinkEmailed?: boolean;
   } | null;
   payments?: Array<{
     id: number;
@@ -614,6 +617,35 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         return;
       }
 
+      // Stripe (and other URL-based) online: pay link is emailed — do not wait in-app.
+      if (res.data?.checkoutUrl || res.data?.payLinkEmailed === true) {
+        if (closedRef.current || abort.signal.aborted) return;
+        setPurchaseLineState('pending');
+        setPurchaseLineLabel(
+          `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (check email)`,
+        );
+        if (res.data?.payLinkEmailed === false) {
+          const escapeAt = res.data?.cashEscapeAvailableAt
+            ? new Date(String(res.data.cashEscapeAvailableAt))
+            : null;
+          setError(
+            res.data?.mailFailClass === 'irrecoverable'
+              ? 'Could not email the payment link. You can switch this payment to cash at the desk.'
+              : `Could not email the payment link yet.${
+                  escapeAt
+                    ? ` Cash escape available after ${escapeAt.toLocaleString()}.`
+                    : ''
+                }`,
+          );
+        } else {
+          setMessage(
+            'Check your email for the payment link. This page will update when payment is confirmed.',
+          );
+        }
+        await load({ silent: true });
+        return;
+      }
+
       const settled = await waitForPaymentUpdate({
         paymentId,
         timeoutMs: 90_000,
@@ -656,6 +688,22 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       if (!closedRef.current) {
         setBusy(false);
       }
+    }
+  };
+
+  const escapePendingToCash = async () => {
+    const pendingId = summary?.pendingPayment?.id;
+    if (!pendingId) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.post(`/payments/${pendingId}/escape-to-cash`);
+      setMessage('Switched to cash — PENDING until an administrator clears it at the desk.');
+      await load({ silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to switch to cash'));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -1070,6 +1118,45 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         {loading && !summary && <p style={{ color: '#666' }}>Loading…</p>}
         {error && <div style={{ color: '#c0392b', marginTop: '10px', fontSize: '14px' }}>{error}</div>}
         {message && <div style={{ color: '#1e8449', marginTop: '10px', fontSize: '14px' }}>{message}</div>}
+
+        {summary?.pendingPayment?.mailFailClass && (
+          <div
+            style={{
+              marginTop: '12px',
+              padding: '10px 12px',
+              borderRadius: '6px',
+              background: '#fdf2e9',
+              border: '1px solid #f5cba7',
+              fontSize: '13px',
+              color: '#6e2c00',
+            }}
+          >
+            <div style={{ marginBottom: '8px' }}>
+              Payment link email failed
+              {summary.pendingPayment.mailFailClass === 'irrecoverable'
+                ? ' (address rejected).'
+                : ' (temporary issue).'}{' '}
+              Online session must be cancelled before switching to cash.
+            </div>
+            <button
+              type="button"
+              disabled={
+                busy ||
+                (summary.pendingPayment.cashEscapeAvailableAt
+                  ? Date.now() < Date.parse(summary.pendingPayment.cashEscapeAvailableAt)
+                  : false)
+              }
+              onClick={() => void escapePendingToCash()}
+            >
+              {summary.pendingPayment.cashEscapeAvailableAt &&
+              Date.now() < Date.parse(summary.pendingPayment.cashEscapeAvailableAt)
+                ? `Cash escape after ${new Date(
+                    summary.pendingPayment.cashEscapeAvailableAt,
+                  ).toLocaleString()}`
+                : 'Switch to cash (cancel online link)'}
+            </button>
+          </div>
+        )}
 
         {summary && (
           <>
