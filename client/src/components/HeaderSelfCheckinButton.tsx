@@ -14,9 +14,17 @@ import { CheckInOptionMenu } from './CheckInOptionSelect';
 
 type HeaderSelfCheckinButtonProps = {
   controlStyle: CSSProperties;
+  /** When set, payment / buy-plan opens this instead of navigating to /players. */
+  onOpenOwnPlan?: () => void;
+  /** Large phone-hub tile instead of header icon. */
+  variant?: 'header' | 'tile';
 };
 
-export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButtonProps) {
+export function HeaderSelfCheckinButton({
+  controlStyle,
+  onOpenOwnPlan,
+  variant = 'header',
+}: HeaderSelfCheckinButtonProps) {
   const navigate = useNavigate();
   const [present, setPresent] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -61,12 +69,16 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
   }, [refreshStatus]);
 
   const openOwnPlan = () => {
+    setMenuOptions(null);
+    if (onOpenOwnPlan) {
+      onOpenOwnPlan();
+      return;
+    }
     const member = getMember();
     if (!member) return;
     clearAllScrollPositions();
     clearAllUIStates();
     window.scrollTo(0, 0);
-    setMenuOptions(null);
     navigate('/players', {
       state: { openOwnPlan: true, memberId: member.id },
       replace: false,
@@ -186,6 +198,7 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
   };
 
   const title = present ? 'Checked in — click to check out' : 'Not checked in — click to check in';
+  const isTile = variant === 'tile';
 
   return (
     <>
@@ -196,30 +209,57 @@ export function HeaderSelfCheckinButton({ controlStyle }: HeaderSelfCheckinButto
         title={title}
         aria-label={title}
         aria-pressed={present}
-        style={{
-          ...controlStyle,
-          backgroundColor: present ? 'rgba(39, 174, 96, 0.45)' : 'rgba(255, 255, 255, 0.1)',
-          color: present ? '#d5f5e3' : '#b0b0b0',
-          border: present ? '1px solid rgba(46, 204, 113, 0.85)' : 'none',
-          borderRadius: '4px',
-          cursor: loadingStatus || busy ? 'wait' : 'pointer',
-          fontWeight: 700,
-          transition: 'background-color 0.2s, color 0.2s, border-color 0.2s',
-          opacity: loadingStatus ? 0.7 : 1,
-        }}
+        style={
+          isTile
+            ? {
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                width: '100%',
+                minHeight: '72px',
+                borderRadius: '12px',
+                cursor: loadingStatus || busy ? 'wait' : 'pointer',
+                fontWeight: 700,
+                fontSize: '14px',
+                opacity: loadingStatus ? 0.7 : 1,
+                boxShadow: '0 1px 4px rgba(31, 59, 87, 0.08)',
+                padding: '10px 12px',
+                ...controlStyle,
+                border: present ? '2px solid #27ae60' : '1px solid #d5dbe3',
+                background: present ? '#dcefe3' : '#e8ecf0',
+                color: present ? '#1e8449' : '#1f3b57',
+              }
+            : {
+                ...controlStyle,
+                backgroundColor: present ? 'rgba(39, 174, 96, 0.45)' : 'rgba(255, 255, 255, 0.1)',
+                color: present ? '#d5f5e3' : '#b0b0b0',
+                border: present ? '1px solid rgba(46, 204, 113, 0.85)' : 'none',
+                borderRadius: '4px',
+                cursor: loadingStatus || busy ? 'wait' : 'pointer',
+                fontWeight: 700,
+                transition: 'background-color 0.2s, color 0.2s, border-color 0.2s',
+                opacity: loadingStatus ? 0.7 : 1,
+              }
+        }
         onMouseEnter={(e) => {
-          if (loadingStatus || busy) return;
+          if (loadingStatus || busy || isTile) return;
           e.currentTarget.style.backgroundColor = present
             ? 'rgba(39, 174, 96, 0.6)'
             : 'rgba(255, 255, 255, 0.2)';
         }}
         onMouseLeave={(e) => {
+          if (isTile) return;
           e.currentTarget.style.backgroundColor = present
             ? 'rgba(39, 174, 96, 0.45)'
             : 'rgba(255, 255, 255, 0.1)';
         }}
       >
-        📍
+        <span style={{ fontSize: isTile ? '22px' : undefined, lineHeight: 1 }} aria-hidden="true">
+          📍
+        </span>
+        {isTile ? <span>{present ? 'Check out' : 'Check in'}</span> : null}
       </button>
 
       {error ? (

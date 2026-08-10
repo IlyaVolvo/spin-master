@@ -19,6 +19,11 @@ import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail 
 import { lazyWithReload } from './utils/lazyWithReload';
 import { PlayersKioskEntryButton } from './components/PlayersKioskEntryButton';
 import { HeaderSelfCheckinButton } from './components/HeaderSelfCheckinButton';
+import {
+  clearPreferFullApp,
+  defaultAuthenticatedPath,
+  shouldShowMeReturnLink,
+} from './utils/meMode';
 
 // Lazy load route components for code splitting (auto-reload once if deploy invalidated chunks)
 const Players = lazyWithReload(() => import('./components/Players'));
@@ -39,6 +44,7 @@ const PublicResultsDetailPage = lazyWithReload(() =>
   import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsDetailPage })),
 );
 const PublicAchievementsPage = lazyWithReload(() => import('./components/public/PublicAchievementsPage'));
+const MePage = lazyWithReload(() => import('./components/me/MePage'));
 
 function isUnauthenticatedPublicPath(pathname: string): boolean {
   return (
@@ -92,21 +98,30 @@ function RoleTutorialsSpaRedirect() {
   return null;
 }
 
-// Component to handle navigation to /players on initial auth
+// Component to handle navigation to default home on initial auth
 function AuthRedirect() {
   const location = useLocation();
   const navigate = useNavigate();
   
   useEffect(() => {
     if (isRoleTutorialsPath(location.pathname)) return;
-    const validPaths = ['/players', '/tournaments', '/statistics', '/history', '/system-settings', '/payments', '/attendance-log'];
+    const validPaths = [
+      '/me',
+      '/players',
+      '/tournaments',
+      '/statistics',
+      '/history',
+      '/system-settings',
+      '/payments',
+      '/attendance-log',
+    ];
     const isTournamentDetail = /^\/tournaments\/\d+$/.test(location.pathname);
     if (location.pathname.startsWith('/tournaments/') && !isTournamentDetail) {
       navigate('/tournaments', { replace: true });
       return;
     }
     if (!validPaths.includes(location.pathname) && !isTournamentDetail) {
-      navigate('/players', { replace: true });
+      navigate(defaultAuthenticatedPath(getMember()), { replace: true });
     }
   }, [location.pathname, navigate]);
   
@@ -123,6 +138,7 @@ function App() {
 
   useEffect(() => {
     return subscribeAuthExpired((message) => {
+      clearPreferFullApp();
       setIsAuth(false);
       setShowPasswordReset(false);
       setIsCheckingAuth(false);
@@ -329,6 +345,7 @@ function App() {
     } catch (err) {
       // Ignore errors, continue with cleanup
     }
+    clearPreferFullApp();
     clearTournamentNameListCache();
     removeToken();
     removeMember();
@@ -452,6 +469,53 @@ function AppRoutes({
         }
       />
       <Route
+        path="/me"
+        element={
+          !isAuth ? (
+            <ErrorBoundary>
+              <Login onLogin={handleLogin} clubName={clubName} initialMessage={authExpiredMessage} />
+            </ErrorBoundary>
+          ) : (
+            <>
+              <ErrorBoundary>
+                <Suspense
+                  fallback={
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        height: '100vh',
+                        fontSize: '18px',
+                      }}
+                    >
+                      Loading...
+                    </div>
+                  }
+                >
+                  <MePage clubName={clubName} onLogout={handleLogout} />
+                </Suspense>
+              </ErrorBoundary>
+              {showPasswordReset && (
+                <PasswordResetModal
+                  onPasswordChanged={async () => {
+                    try {
+                      const response = await api.get('/auth/member/me');
+                      if (response.data.member) {
+                        setMember(response.data.member);
+                        setShowPasswordReset(false);
+                      }
+                    } catch (err) {
+                      setShowPasswordReset(false);
+                    }
+                  }}
+                />
+              )}
+            </>
+          )
+        }
+      />
+      <Route
         path="*"
         element={
           !isAuth ? (
@@ -480,7 +544,10 @@ function AppRoutes({
                       }
                     >
                       <Routes>
-                        <Route path="/" element={<Navigate to="/players" replace />} />
+                        <Route
+                          path="/"
+                          element={<Navigate to={defaultAuthenticatedPath(getMember())} replace />}
+                        />
                         <Route path="/players" element={<Players />} />
                         <Route path="/tournaments" element={<Tournaments />} />
                         <Route path="/tournaments/:id" element={<TournamentDetailGate />} />
@@ -685,6 +752,7 @@ function Header({
   const [kioskMode, setKioskMode] = useState(() => isKioskMode());
   const [kioskKind, setKioskKind] = useState<KioskKind | undefined>(() => getKioskKind());
   const [kioskTournamentId, setKioskTournamentId] = useState<number | undefined>(() => getKioskTournamentId());
+  const [showMeReturn, setShowMeReturn] = useState(() => shouldShowMeReturnLink());
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [restorePassword, setRestorePassword] = useState('');
@@ -808,6 +876,13 @@ function Header({
     window.addEventListener('kiosk-mode-changed', onKioskChanged);
     return () => window.removeEventListener('kiosk-mode-changed', onKioskChanged);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const syncMeReturn = () => setShowMeReturn(shouldShowMeReturnLink());
+    syncMeReturn();
+    window.addEventListener('resize', syncMeReturn);
+    return () => window.removeEventListener('resize', syncMeReturn);
+  }, [location.pathname, kioskMode, userRoles]);
 
   useEffect(() => {
     if (!kioskMode) return;
@@ -1585,6 +1660,38 @@ function Header({
           <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               {userName && !kioskMode && (
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      {showMeReturn ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearAllScrollPositions();
+                            clearAllUIStates();
+                            window.scrollTo(0, 0);
+                            navigate('/me', { replace: false });
+                          }}
+                          title="Simple phone hub"
+                          aria-label="Open simple phone hub"
+                          style={{
+                            ...headerIconControlSize,
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            transition: 'background-color 0.2s',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                          }}
+                        >
+                          Me
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {
