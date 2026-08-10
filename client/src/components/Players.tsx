@@ -90,6 +90,30 @@ const PLAN_INDICATOR_TITLE: Record<'active' | 'expiring_soon' | 'none', string> 
 
 const PLAN_INDICATOR_UNKNOWN_TITLE = 'Plan status unknown — open plan';
 
+const ALL_PLAN_STANDINGS = ['active', 'expiring_soon', 'none'] as const;
+type PlanStanding = (typeof ALL_PLAN_STANDINGS)[number];
+
+const PLAN_STANDING_META: Record<PlanStanding, { symbol: string; color: string; label: string; tooltip: string }> = {
+  active: {
+    symbol: '$',
+    color: '#27ae60',
+    label: 'Good standing',
+    tooltip: 'Good standing — current plan is valid (or expiring with a future plan queued)',
+  },
+  expiring_soon: {
+    symbol: '$',
+    color: '#f9a825',
+    label: 'Expiring',
+    tooltip: 'Expiring soon — current plan ends soon and no future plan is queued',
+  },
+  none: {
+    symbol: '$',
+    color: '#c62828',
+    label: 'No plan',
+    tooltip: 'No plan — member has no current membership plan',
+  },
+};
+
 type PlanIndicatorStyle = { background: string; color: string };
 
 function planIndicatorButtonStyle(
@@ -370,9 +394,36 @@ const Players: React.FC = () => {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [showRoleFilter, setShowRoleFilter] = useState(false);
   const roleFilterButtonRef = useRef<HTMLButtonElement>(null);
-  const ALL_STATUSES = ['active', 'inactive', 'active_no_password', 'waiting'] as const;
+  const ALL_STATUSES = ['active', 'active_no_password', 'waiting', 'inactive'] as const;
   type PlayerStatus = typeof ALL_STATUSES[number];
-  const [selectedStatuses, setSelectedStatuses] = useState<PlayerStatus[]>([...ALL_STATUSES]);
+  const [selectedStatuses, setSelectedStatuses] = useState<PlayerStatus[]>(() => {
+    try {
+      const saved = localStorage.getItem('players_selectedStatuses');
+      if (!saved) return [...ALL_STATUSES];
+      const parsed = JSON.parse(saved) as unknown;
+      if (!Array.isArray(parsed)) return [...ALL_STATUSES];
+      const next = parsed.filter((s): s is PlayerStatus =>
+        (ALL_STATUSES as readonly string[]).includes(String(s)),
+      );
+      return next.length > 0 ? next : [...ALL_STATUSES];
+    } catch {
+      return [...ALL_STATUSES];
+    }
+  });
+  const [selectedPlanStandings, setSelectedPlanStandings] = useState<PlanStanding[]>(() => {
+    try {
+      const saved = localStorage.getItem('players_selectedPlanStandings');
+      if (!saved) return [...ALL_PLAN_STANDINGS];
+      const parsed = JSON.parse(saved) as unknown;
+      if (!Array.isArray(parsed)) return [...ALL_PLAN_STANDINGS];
+      const next = parsed.filter((s): s is PlanStanding =>
+        (ALL_PLAN_STANDINGS as readonly string[]).includes(String(s)),
+      );
+      return next.length > 0 ? next : [...ALL_PLAN_STANDINGS];
+    } catch {
+      return [...ALL_PLAN_STANDINGS];
+    }
+  });
   const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('players_filtersCollapsed');
@@ -2215,6 +2266,16 @@ const Players: React.FC = () => {
       });
     }
 
+    // Filter by plan standing (AND with status); All = no plan filter
+    if (selectedPlanStandings.length > 0 && selectedPlanStandings.length < ALL_PLAN_STANDINGS.length) {
+      filtered = filtered.filter((p) => {
+        if (isSelectingForHistory && p.id === selectedPlayerForHistory) return true;
+        const indicator = planIndicatorOf(p);
+        if (indicator == null) return false;
+        return selectedPlanStandings.includes(indicator);
+      });
+    }
+
     // Check-in kiosk: optionally show only currently present members
     if (isCheckinKiosk && presentOnly) {
       filtered = filtered.filter(p => checkinStatusByMember[p.id]?.present === true);
@@ -2309,11 +2370,31 @@ const Players: React.FC = () => {
     return 'waiting';
   };
 
-  const STATUS_META: Record<PlayerStatus, { symbol: string; color: string; label: string }> = {
-    active:             { symbol: '✓',  color: '#27ae60', label: 'Active' },
-    inactive:           { symbol: '🛑', color: '#e74c3c', label: 'Inactive' },
-    active_no_password: { symbol: '✓',  color: '#f1c40f', label: 'Active (password not set)' },
-    waiting:            { symbol: '⏳', color: '#f39c12', label: 'Waiting (password not set, not active)' },
+  const STATUS_META: Record<PlayerStatus, { symbol: string; color: string; label: string; tooltip: string }> = {
+    active: {
+      symbol: '✓',
+      color: '#27ae60',
+      label: 'Active',
+      tooltip: 'Active — account is active and password is set',
+    },
+    active_no_password: {
+      symbol: '✓',
+      color: '#f1c40f',
+      label: 'No password',
+      tooltip: 'No password — account is active but password has not been set yet',
+    },
+    waiting: {
+      symbol: '⏳',
+      color: '#f39c12',
+      label: 'Waiting',
+      tooltip: 'Waiting — not active yet and password has not been set',
+    },
+    inactive: {
+      symbol: '🛑',
+      color: '#e74c3c',
+      label: 'Inactive',
+      tooltip: 'Inactive — account is deactivated (password may already be set)',
+    },
   };
 
   const getPlayerStatusIndicator = (player: Pick<Member, 'isActive' | 'emailConfirmedAt'>) => {
@@ -2913,6 +2994,7 @@ const Players: React.FC = () => {
     setMaxGames('');
     setSelectedRoles([]);
     setSelectedStatuses([...ALL_STATUSES]);
+    setSelectedPlanStandings([...ALL_PLAN_STANDINGS]);
     // Clear sticky filters from localStorage
     localStorage.removeItem('players_nameFilter');
     localStorage.removeItem('players_minRating');
@@ -2923,10 +3005,11 @@ const Players: React.FC = () => {
     localStorage.removeItem('players_maxGames');
     localStorage.removeItem('players_selectedRoles');
     localStorage.removeItem('players_selectedStatuses');
+    localStorage.removeItem('players_selectedPlanStandings');
   };
 
   const hasActiveFilters = () => {
-    return nameFilter.trim() !== '' || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '' || selectedRoles.length > 0 || selectedStatuses.length < ALL_STATUSES.length;
+    return nameFilter.trim() !== '' || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '' || selectedRoles.length > 0 || selectedStatuses.length < ALL_STATUSES.length || selectedPlanStandings.length < ALL_PLAN_STANDINGS.length;
   };
 
   
@@ -3519,9 +3602,17 @@ const Players: React.FC = () => {
     if (selectedStatuses.length > 0 && selectedStatuses.length < ALL_STATUSES.length) {
       filtered = filtered.filter(p => selectedStatuses.includes(getPlayerStatusKey(p)));
     }
+
+    if (selectedPlanStandings.length > 0 && selectedPlanStandings.length < ALL_PLAN_STANDINGS.length) {
+      filtered = filtered.filter((p) => {
+        const indicator = planIndicatorOf(p);
+        if (indicator == null) return false;
+        return selectedPlanStandings.includes(indicator);
+      });
+    }
     
     return filtered;
-  }, [members, showAllRoles, nameFilter, minRating, maxRating, minAge, maxAge, showAllPlayers, selectedRoles, selectedStatuses]);
+  }, [members, showAllRoles, nameFilter, minRating, maxRating, minAge, maxAge, showAllPlayers, selectedRoles, selectedStatuses, selectedPlanStandings]);
 
   const toggleFiltersCollapsed = () => {
     const newState = !filtersCollapsed;
@@ -5754,7 +5845,17 @@ const Players: React.FC = () => {
                     gap: '6px'
                   }}
                 >
-                  <span>{selectedStatuses.length === ALL_STATUSES.length ? 'All' : selectedStatuses.map(s => STATUS_META[s].symbol).join(' ')}</span>
+                  <span>
+                    {selectedStatuses.length === ALL_STATUSES.length ? 'All' : selectedStatuses.map(s => STATUS_META[s].symbol).join(' ')}
+                    {' · '}
+                    {selectedPlanStandings.length === ALL_PLAN_STANDINGS.length
+                      ? 'All'
+                      : selectedPlanStandings.map((s) => (
+                          <span key={s} style={{ color: PLAN_STANDING_META[s].color, marginLeft: s === selectedPlanStandings[0] ? 0 : 2 }}>
+                            $
+                          </span>
+                        ))}
+                  </span>
                   <span style={{ fontSize: '12px', color: 'white' }}>▼</span>
                 </button>
                 {showStatusFilter && (
@@ -5780,7 +5881,7 @@ const Players: React.FC = () => {
                         padding: '15px',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                        minWidth: '240px',
+                        minWidth: '220px',
                         zIndex: 10001,
                         border: '1px solid #ddd'
                       }}
@@ -5815,23 +5916,67 @@ const Players: React.FC = () => {
                           ×
                         </button>
                       </div>
-                      <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        gap: '6px'
-                      }}>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: '12px',
+                          alignItems: 'flex-start',
+                        }}
+                      >
+                      <div style={{ flex: '0 0 auto', minWidth: '72px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#2c3e50', marginBottom: '4px' }}>
+                        Status
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                        {(() => {
+                          const allSelected = selectedStatuses.length === ALL_STATUSES.length;
+                          return (
+                            <label
+                              title="All account statuses"
+                              style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              padding: '3px 6px',
+                              borderRadius: '4px',
+                              backgroundColor: allSelected ? '#e8f4f8' : 'transparent',
+                              fontWeight: 600,
+                            }}>
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    const next = [...ALL_STATUSES];
+                                    setSelectedStatuses(next);
+                                    localStorage.setItem('players_selectedStatuses', JSON.stringify(next));
+                                  }
+                                }}
+                                style={{ cursor: 'pointer', margin: 0, width: '14px', height: '14px' }}
+                              />
+                              <span>All</span>
+                            </label>
+                          );
+                        })()}
+                        <div style={{ borderTop: '1px solid #edf1f5', margin: '4px 0' }} />
                         {ALL_STATUSES.map(status => {
                           const meta = STATUS_META[status];
                           const isSelected = selectedStatuses.includes(status);
                           const wouldLeaveNone = isSelected && selectedStatuses.length === 1;
                           return (
-                            <label key={status} style={{ 
+                            <label
+                              key={status}
+                              title={meta.tooltip}
+                              style={{ 
                               display: 'flex', 
                               alignItems: 'center', 
-                              gap: '10px', 
+                              gap: '6px', 
                               cursor: wouldLeaveNone ? 'not-allowed' : 'pointer', 
-                              fontSize: '14px',
-                              padding: '8px',
+                              fontSize: '13px',
+                              padding: '3px 6px',
                               borderRadius: '4px',
                               backgroundColor: isSelected ? '#e8f4f8' : 'transparent',
                               opacity: wouldLeaveNone ? PLAYERS_DISABLED_OPACITY : 1,
@@ -5847,13 +5992,113 @@ const Players: React.FC = () => {
                                   setSelectedStatuses(next as PlayerStatus[]);
                                   localStorage.setItem('players_selectedStatuses', JSON.stringify(next));
                                 }}
-                                style={{ cursor: wouldLeaveNone ? 'not-allowed' : 'pointer', margin: 0, width: '16px', height: '16px' }}
+                                style={{ cursor: wouldLeaveNone ? 'not-allowed' : 'pointer', margin: 0, width: '14px', height: '14px' }}
                               />
-                              <span style={{ color: meta.color, fontSize: '16px' }}>{meta.symbol}</span>
-                              <span>{meta.label}</span>
+                              <span style={{ color: meta.color, fontSize: '14px' }}>{meta.symbol}</span>
                             </label>
                           );
                         })}
+                      </div>
+                      </div>
+
+                      <div
+                        style={{
+                          flex: '0 0 auto',
+                          borderLeft: '1px solid #edf1f5',
+                          paddingLeft: '12px',
+                        }}
+                      >
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#2c3e50', marginBottom: '4px' }}>
+                        Plan
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                        {(() => {
+                          const allSelected = selectedPlanStandings.length === ALL_PLAN_STANDINGS.length;
+                          return (
+                            <label
+                              title="All plan standings"
+                              style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              padding: '3px 6px',
+                              borderRadius: '4px',
+                              backgroundColor: allSelected ? '#e8f4f8' : 'transparent',
+                              fontWeight: 600,
+                            }}>
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    const next = [...ALL_PLAN_STANDINGS];
+                                    setSelectedPlanStandings(next);
+                                    localStorage.setItem('players_selectedPlanStandings', JSON.stringify(next));
+                                  }
+                                }}
+                                style={{ cursor: 'pointer', margin: 0, width: '14px', height: '14px' }}
+                              />
+                              <span>All</span>
+                            </label>
+                          );
+                        })()}
+                        <div style={{ borderTop: '1px solid #edf1f5', margin: '4px 0' }} />
+                        {ALL_PLAN_STANDINGS.map((standing) => {
+                          const meta = PLAN_STANDING_META[standing];
+                          const isSelected = selectedPlanStandings.includes(standing);
+                          const wouldLeaveNone = isSelected && selectedPlanStandings.length === 1;
+                          return (
+                            <label
+                              key={standing}
+                              title={meta.tooltip}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: wouldLeaveNone ? 'not-allowed' : 'pointer',
+                                fontSize: '13px',
+                                padding: '3px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: isSelected ? '#e8f4f8' : 'transparent',
+                                opacity: wouldLeaveNone ? PLAYERS_DISABLED_OPACITY : 1,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (!e.target.checked && wouldLeaveNone) return;
+                                  const next = e.target.checked
+                                    ? [...selectedPlanStandings, standing]
+                                    : selectedPlanStandings.filter((s) => s !== standing);
+                                  setSelectedPlanStandings(next);
+                                  localStorage.setItem('players_selectedPlanStandings', JSON.stringify(next));
+                                }}
+                                style={{ cursor: wouldLeaveNone ? 'not-allowed' : 'pointer', margin: 0, width: '14px', height: '14px' }}
+                              />
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  minWidth: '22px',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  background: meta.color,
+                                  color: standing === 'expiring_soon' ? '#212121' : '#fff',
+                                  fontWeight: 700,
+                                  fontSize: '13px',
+                                }}
+                              >
+                                $
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      </div>
                       </div>
                     </div>
                   </>
@@ -5920,6 +6165,11 @@ const Players: React.FC = () => {
             }
             if (selectedStatuses.length < ALL_STATUSES.length) {
               filterDescriptions.push(`Status: ${selectedStatuses.map(s => STATUS_META[s].symbol).join(' ')}`);
+            }
+            if (selectedPlanStandings.length < ALL_PLAN_STANDINGS.length) {
+              filterDescriptions.push(
+                `Plan: ${selectedPlanStandings.map((s) => PLAN_STANDING_META[s].label).join(', ')}`,
+              );
             }
             
             const hasFilters = filterDescriptions.length > 0;
@@ -6672,7 +6922,7 @@ const Players: React.FC = () => {
                       }}
                     >
                       <span
-                        title={getPlayerStatusIndicator(player).label}
+                        title={getPlayerStatusIndicator(player).tooltip}
                         style={{
                           color: getPlayerStatusIndicator(player).color,
                           lineHeight: 1,
