@@ -12,6 +12,7 @@ export async function reconcilePendingPayments(limit = 50): Promise<{
   failed: number;
 }> {
   const pending = await prisma.clubPayment.findMany({
+    // WRITTEN_OFF is terminal — never reconcile/revive.
     where: { status: 'PENDING' },
     orderBy: { recordedAt: 'asc' },
     take: limit,

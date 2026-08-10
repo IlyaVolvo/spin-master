@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import api from '../utils/api';
 import { formatClubDateTime, formatYmd } from '../utils/clubDateTime';
 import { getErrorMessage } from '../utils/errorHandler';
@@ -26,8 +33,267 @@ type PaymentsMemberLookupProps = {
   onOpenMemberConsumed?: () => void;
 };
 
+type ProviderOption = { id: string; displayName: string };
+type ProviderSelection = { mode: 'all' } | { mode: 'subset'; ids: Set<string> };
+
+const PAYMENT_STATUSES = [
+  'PENDING',
+  'SUCCEEDED',
+  'FAILED',
+  'CANCELLED',
+  'WRITTEN_OFF',
+] as const;
+type PaymentStatusFilter = (typeof PAYMENT_STATUSES)[number];
+
+const FILTER_ALL = 'all';
+const STATUS_FILTER_KEY = 'paymentLog_statuses';
+const PROVIDER_FILTER_KEY = 'paymentLog_providers';
+/** Legacy single-value keys (migrated on read). */
+const STATUS_FILTER_KEY_LEGACY = 'paymentLog_status';
+const PROVIDER_FILTER_KEY_LEGACY = 'paymentLog_provider';
+
+const STATUS_LABELS: Record<PaymentStatusFilter, string> = {
+  PENDING: 'Pending',
+  SUCCEEDED: 'Paid',
+  FAILED: 'Failed',
+  CANCELLED: 'Cancelled',
+  WRITTEN_OFF: 'Written off',
+};
+
+function isPaymentStatus(value: string): value is PaymentStatusFilter {
+  return (PAYMENT_STATUSES as readonly string[]).includes(value);
+}
+
+function allStatusesSet(): Set<PaymentStatusFilter> {
+  return new Set(PAYMENT_STATUSES);
+}
+
+function loadStickyStatuses(): Set<PaymentStatusFilter> {
+  try {
+    const raw = localStorage.getItem(STATUS_FILTER_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        if (parsed.includes(FILTER_ALL) || parsed.length === 0) return allStatusesSet();
+        const valid = parsed.filter((s): s is PaymentStatusFilter => isPaymentStatus(String(s)));
+        if (valid.length === 0) return allStatusesSet();
+        return new Set(valid);
+      }
+    }
+    const legacy = localStorage.getItem(STATUS_FILTER_KEY_LEGACY);
+    if (!legacy || legacy === FILTER_ALL) return allStatusesSet();
+    if (isPaymentStatus(legacy)) return new Set([legacy]);
+  } catch {
+    // localStorage may be unavailable
+  }
+  return allStatusesSet();
+}
+
+function loadStickyProviders(): ProviderSelection {
+  try {
+    const raw = localStorage.getItem(PROVIDER_FILTER_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        if (parsed.includes(FILTER_ALL) || parsed.includes('*') || parsed.length === 0) {
+          return { mode: 'all' };
+        }
+        const ids = parsed.map(String).filter(Boolean);
+        if (ids.length === 0) return { mode: 'all' };
+        return { mode: 'subset', ids: new Set(ids) };
+      }
+    }
+    const legacy = localStorage.getItem(PROVIDER_FILTER_KEY_LEGACY);
+    if (!legacy || legacy === FILTER_ALL) return { mode: 'all' };
+    return { mode: 'subset', ids: new Set([legacy]) };
+  } catch {
+    return { mode: 'all' };
+  }
+}
+
+function saveStickyJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
 function formatMoney(cents: number): string {
   return `$${(Math.max(0, cents) / 100).toFixed(2)}`;
+}
+
+const dateInputStyle: CSSProperties = {
+  padding: '9px 11px',
+  border: '1px solid #b9c7d8',
+  borderRadius: '6px',
+  backgroundColor: '#f8fbff',
+  color: '#17324d',
+  fontWeight: 600,
+};
+
+type MultiFilterOption = { value: string; label: string };
+
+/** One-line dropdown trigger; checkboxes inside; summary of selection below. */
+function MultiFilterDropdown({
+  id,
+  label,
+  options,
+  selectedValues,
+  allSelected,
+  summaryText,
+  onToggleAll,
+  onToggleValue,
+}: {
+  id: string;
+  label: string;
+  options: MultiFilterOption[];
+  selectedValues: Set<string>;
+  allSelected: boolean;
+  summaryText: string;
+  onToggleAll: () => void;
+  onToggleValue: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} style={{ minWidth: '160px' }}>
+      <label
+        htmlFor={id}
+        style={{ display: 'block', margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}
+      >
+        {label}
+      </label>
+      <div style={{ position: 'relative' }}>
+        <button
+          id={id}
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          style={{
+            ...dateInputStyle,
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontWeight: 600,
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {allSelected ? 'All' : `${selectedValues.size} selected`}
+          </span>
+          <span aria-hidden style={{ color: '#5a7a90', fontSize: '11px' }}>
+            {open ? '▲' : '▼'}
+          </span>
+        </button>
+        {open ? (
+          <div
+            role="listbox"
+            aria-multiselectable
+            aria-label={label}
+            style={{
+              position: 'absolute',
+              zIndex: 20,
+              top: 'calc(100% + 2px)',
+              left: 0,
+              minWidth: '100%',
+              maxHeight: '240px',
+              overflowY: 'auto',
+              padding: '6px 0',
+              border: '1px solid #b9c7d8',
+              borderRadius: '6px',
+              backgroundColor: '#fff',
+              boxShadow: '0 6px 18px rgba(23, 50, 77, 0.12)',
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: '#17324d',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={onToggleAll}
+                aria-label={`Select all ${label.toLowerCase()}`}
+              />
+              All
+            </label>
+            <div style={{ height: '1px', background: '#e8eef3', margin: '4px 0' }} />
+            {options.map((opt) => {
+              const checked = allSelected || selectedValues.has(opt.value);
+              return (
+                <label
+                  key={opt.value}
+                  role="option"
+                  aria-selected={checked}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6px 12px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    color: '#17324d',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggleValue(opt.value)}
+                    aria-label={opt.label}
+                  />
+                  {opt.label}
+                </label>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+      <div
+        style={{
+          marginTop: '4px',
+          fontSize: '12px',
+          color: '#5a6a7a',
+          lineHeight: 1.35,
+          maxWidth: '220px',
+        }}
+      >
+        {summaryText}
+      </div>
+    </div>
+  );
 }
 
 const thStyle: CSSProperties = {
@@ -51,15 +317,6 @@ const tdStyle: CSSProperties = {
   lineHeight: 1.35,
 };
 
-const dateInputStyle: CSSProperties = {
-  padding: '9px 11px',
-  border: '1px solid #b9c7d8',
-  borderRadius: '6px',
-  backgroundColor: '#f8fbff',
-  color: '#17324d',
-  fontWeight: 600,
-};
-
 export function PaymentsMemberLookup({
   openMemberId = null,
   onOpenMemberConsumed,
@@ -67,13 +324,19 @@ export function PaymentsMemberLookup({
   const [memberFilter, setMemberFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [showPaid, setShowPaid] = useState(true);
-  const [showPending, setShowPending] = useState(true);
+  const [statusSelected, setStatusSelected] = useState<Set<PaymentStatusFilter>>(loadStickyStatuses);
+  const [providerSelected, setProviderSelected] = useState<ProviderSelection>(loadStickyProviders);
+  const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
+  const [writeOffTarget, setWriteOffTarget] = useState<PaymentRow | null>(null);
+  const [writeOffName, setWriteOffName] = useState('');
+  const [writeOffPassword, setWriteOffPassword] = useState('');
+  const [writeOffBusy, setWriteOffBusy] = useState(false);
+  const [writeOffError, setWriteOffError] = useState('');
   const debounceRef = useRef<number | null>(null);
   const requestSeq = useRef(0);
 
@@ -82,6 +345,38 @@ export function PaymentsMemberLookup({
     setSelectedMemberId(openMemberId);
     onOpenMemberConsumed?.();
   }, [openMemberId, onOpenMemberConsumed]);
+
+  useEffect(() => {
+    api
+      .get('/payments/providers')
+      .then((res) => {
+        const list = Array.isArray(res.data?.providers) ? res.data.providers : [];
+        setProviderOptions(
+          list
+            .map((p: { id?: unknown; displayName?: unknown }) => ({
+              id: String(p?.id ?? ''),
+              displayName: String(p?.displayName || p?.id || ''),
+            }))
+            .filter((p: ProviderOption) => p.id),
+        );
+      })
+      .catch(() => setProviderOptions([]));
+  }, []);
+
+  useEffect(() => {
+    const all = PAYMENT_STATUSES.every((s) => statusSelected.has(s));
+    saveStickyJson(
+      STATUS_FILTER_KEY,
+      all ? [FILTER_ALL] : PAYMENT_STATUSES.filter((s) => statusSelected.has(s)),
+    );
+  }, [statusSelected]);
+
+  useEffect(() => {
+    saveStickyJson(
+      PROVIDER_FILTER_KEY,
+      providerSelected.mode === 'all' ? [FILTER_ALL] : Array.from(providerSelected.ids),
+    );
+  }, [providerSelected]);
 
   const loadPayments = useCallback(() => {
     if (debounceRef.current != null) {
@@ -135,23 +430,110 @@ export function PaymentsMemberLookup({
     };
   }, [loadPayments]);
 
+  const providerSelectOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const p of providerOptions) {
+      byId.set(p.id, p.displayName || p.id);
+    }
+    for (const row of payments) {
+      if (row.provider && !byId.has(row.provider)) {
+        byId.set(row.provider, row.provider);
+      }
+    }
+    if (providerSelected.mode === 'subset') {
+      for (const id of providerSelected.ids) {
+        if (!byId.has(id)) byId.set(id, id);
+      }
+    }
+    return Array.from(byId.entries())
+      .map(([id, displayName]) => ({ id, displayName }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [providerOptions, payments, providerSelected]);
+
+  const allStatusesSelected = PAYMENT_STATUSES.every((s) => statusSelected.has(s));
+  const allProvidersSelected = providerSelected.mode === 'all';
+
   const filteredPayments = useMemo(() => {
     return payments.filter((p) => {
-      if (p.status === 'SUCCEEDED') return showPaid;
-      if (p.status === 'PENDING') return showPending;
-      // Other statuses (FAILED / CANCELLED) only when both filters are on
-      return showPaid && showPending;
+      if (!allStatusesSelected && !statusSelected.has(p.status as PaymentStatusFilter)) {
+        return false;
+      }
+      if (providerSelected.mode === 'subset' && !providerSelected.ids.has(p.provider)) {
+        return false;
+      }
+      return true;
     });
-  }, [payments, showPaid, showPending]);
+  }, [payments, statusSelected, providerSelected, allStatusesSelected]);
 
-  const togglePaid = () => {
-    if (showPaid && !showPending) return;
-    setShowPaid((v) => !v);
+  const filtersActive =
+    Boolean(memberFilter.trim()) ||
+    Boolean(dateFrom) ||
+    Boolean(dateTo) ||
+    !allStatusesSelected ||
+    !allProvidersSelected;
+
+  const statusSummary = allStatusesSelected
+    ? 'All'
+    : PAYMENT_STATUSES.filter((s) => statusSelected.has(s))
+        .map((s) => STATUS_LABELS[s])
+        .join(', ');
+
+  const providerSummary = allProvidersSelected
+    ? 'All'
+    : providerSelectOptions
+        .filter((p) => providerSelected.mode === 'subset' && providerSelected.ids.has(p.id))
+        .map((p) => p.displayName)
+        .join(', ') ||
+      (providerSelected.mode === 'subset' ? Array.from(providerSelected.ids).join(', ') : 'All');
+
+  const toggleStatusAll = () => {
+    setStatusSelected(allStatusesSet());
   };
 
-  const togglePending = () => {
-    if (showPending && !showPaid) return;
-    setShowPending((v) => !v);
+  const toggleStatusValue = (value: string) => {
+    if (!isPaymentStatus(value)) return;
+    if (allStatusesSelected) {
+      setStatusSelected(new Set([value]));
+      return;
+    }
+    const next = new Set(statusSelected);
+    if (next.has(value)) {
+      if (next.size <= 1) return; // keep at least one
+      next.delete(value);
+    } else {
+      next.add(value);
+    }
+    if (PAYMENT_STATUSES.every((s) => next.has(s))) {
+      setStatusSelected(allStatusesSet());
+      return;
+    }
+    setStatusSelected(next);
+  };
+
+  const toggleProviderAll = () => {
+    setProviderSelected({ mode: 'all' });
+  };
+
+  const toggleProviderValue = (value: string) => {
+    if (providerSelected.mode === 'all') {
+      setProviderSelected({ mode: 'subset', ids: new Set([value]) });
+      return;
+    }
+    const next = new Set(providerSelected.ids);
+    if (next.has(value)) {
+      if (next.size <= 1) return;
+      next.delete(value);
+    } else {
+      next.add(value);
+    }
+    if (
+      providerSelectOptions.length > 0 &&
+      providerSelectOptions.every((p) => next.has(p.id))
+    ) {
+      setProviderSelected({ mode: 'all' });
+      return;
+    }
+    setProviderSelected({ mode: 'subset', ids: next });
   };
 
   const clearPayment = async (id: number) => {
@@ -167,16 +549,30 @@ export function PaymentsMemberLookup({
     }
   };
 
-  const rejectPayment = async (id: number) => {
-    setBusyId(id);
-    setError('');
+  const openWriteOff = (p: PaymentRow) => {
+    setWriteOffTarget(p);
+    setWriteOffName('');
+    setWriteOffPassword('');
+    setWriteOffError('');
+  };
+
+  const submitWriteOff = async () => {
+    if (!writeOffTarget) return;
+    setWriteOffBusy(true);
+    setWriteOffError('');
     try {
-      await api.post(`/club/admin/payments/${id}/cancel`);
+      await api.post(`/club/admin/payments/${writeOffTarget.id}/write-off`, {
+        memberNameConfirm: writeOffName,
+        password: writeOffPassword,
+      });
+      setWriteOffTarget(null);
+      setWriteOffName('');
+      setWriteOffPassword('');
       loadPayments();
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to reject payment'));
+      setWriteOffError(getErrorMessage(err, 'Failed to write off payment'));
     } finally {
-      setBusyId(null);
+      setWriteOffBusy(false);
     }
   };
 
@@ -187,7 +583,7 @@ export function PaymentsMemberLookup({
           display: 'flex',
           flexWrap: 'wrap',
           gap: '16px 24px',
-          alignItems: 'flex-end',
+          alignItems: 'flex-start',
           marginBottom: '4px',
         }}
       >
@@ -249,32 +645,41 @@ export function PaymentsMemberLookup({
             style={dateInputStyle}
           />
         </div>
-        <div>
-          <div style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}>
-            Status
-          </div>
-          <div style={{ display: 'flex', gap: '14px', alignItems: 'center', minHeight: '38px' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={showPaid}
-                onChange={togglePaid}
-                aria-label="Show paid payments"
-              />
-              Paid
-            </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={showPending}
-                onChange={togglePending}
-                aria-label="Show pending payments"
-              />
-              Pending
-            </label>
-          </div>
-        </div>
-        <button type="button" onClick={() => loadPayments()} style={{ fontSize: '12px', marginBottom: '2px' }}>
+        <MultiFilterDropdown
+          id="payments-status-filter"
+          label="Status"
+          options={PAYMENT_STATUSES.map((status) => ({
+            value: status,
+            label: STATUS_LABELS[status],
+          }))}
+          selectedValues={statusSelected as Set<string>}
+          allSelected={allStatusesSelected}
+          summaryText={statusSummary}
+          onToggleAll={toggleStatusAll}
+          onToggleValue={toggleStatusValue}
+        />
+        <MultiFilterDropdown
+          id="payments-provider-filter"
+          label="Provider"
+          options={providerSelectOptions.map((p) => ({
+            value: p.id,
+            label: p.displayName,
+          }))}
+          selectedValues={
+            providerSelected.mode === 'all'
+              ? new Set(providerSelectOptions.map((p) => p.id))
+              : providerSelected.ids
+          }
+          allSelected={allProvidersSelected}
+          summaryText={providerSummary}
+          onToggleAll={toggleProviderAll}
+          onToggleValue={toggleProviderValue}
+        />
+        <button
+          type="button"
+          onClick={() => loadPayments()}
+          style={{ fontSize: '12px', marginTop: '28px' }}
+        >
           Refresh
         </button>
       </div>
@@ -285,9 +690,7 @@ export function PaymentsMemberLookup({
       ) : null}
       {!loading && filteredPayments.length === 0 && !error ? (
         <div style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>
-          {memberFilter.trim() || dateFrom || dateTo || !showPaid || !showPending
-            ? 'No payments matched the current filters.'
-            : 'No payments yet.'}
+          {filtersActive ? 'No payments matched the current filters.' : 'No payments yet.'}
         </div>
       ) : null}
 
@@ -307,7 +710,8 @@ export function PaymentsMemberLookup({
             <tbody>
               {filteredPayments.map((p) => {
                 const effective = formatYmd(p.effectiveDate);
-                const isCashPending = p.status === 'PENDING' && p.provider === 'cash';
+                const isPending = p.status === 'PENDING';
+                const isCashPending = isPending && p.provider === 'cash';
                 return (
                   <tr key={p.id}>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>
@@ -356,24 +760,30 @@ export function PaymentsMemberLookup({
                     <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {p.status === 'SUCCEEDED' ? (
                         <span style={{ fontWeight: 700, color: '#17324d' }}>Paid</span>
-                      ) : isCashPending ? (
+                      ) : p.status === 'WRITTEN_OFF' ? (
+                        <span style={{ fontWeight: 700, color: '#7f8c8d' }} title="Written off — not revivable">
+                          Written off
+                        </span>
+                      ) : isPending ? (
                         <div style={{ display: 'inline-flex', flexDirection: 'row', gap: '6px', alignItems: 'center', justifyContent: 'flex-end' }}>
+                          {isCashPending ? (
+                            <button
+                              type="button"
+                              disabled={busyId === p.id}
+                              onClick={() => void clearPayment(p.id)}
+                              style={{ padding: '4px 10px', fontWeight: 600 }}
+                            >
+                              Clear
+                            </button>
+                          ) : null}
                           <button
                             type="button"
-                            disabled={busyId === p.id}
-                            onClick={() => void clearPayment(p.id)}
-                            style={{ padding: '4px 10px', fontWeight: 600 }}
-                          >
-                            Clear
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busyId === p.id}
-                            onClick={() => void rejectPayment(p.id)}
-                            title="Reject this pending cash payment. No plan is granted."
+                            disabled={busyId === p.id || writeOffBusy}
+                            onClick={() => openWriteOff(p)}
+                            title="Write off this pending payment. No plan is granted. Requires member name + your password."
                             style={{ padding: '4px 10px' }}
                           >
-                            Reject
+                            Write off
                           </button>
                         </div>
                       ) : (
@@ -385,6 +795,98 @@ export function PaymentsMemberLookup({
               })}
             </tbody>
           </table>
+        </div>
+      ) : null}
+
+      {writeOffTarget ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="write-off-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+          onClick={() => {
+            if (!writeOffBusy) setWriteOffTarget(null);
+          }}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '8px',
+              padding: '22px 20px',
+              width: '100%',
+              maxWidth: '420px',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.2)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="write-off-title" style={{ margin: '0 0 8px', fontSize: '18px', color: '#2c3e50' }}>
+              Write off pending payment
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#555', lineHeight: 1.45 }}>
+              This marks the payment as <strong>Written off</strong> (not revivable). No plan is granted.
+              If the charge later proves successful, add purchase credit on{' '}
+              <strong>{writeOffTarget.memberName}</strong>&apos;s member plan.
+            </p>
+            <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#333' }}>
+              {writeOffTarget.purpose || 'Payment'} · {formatMoney(writeOffTarget.amountCents)} ·{' '}
+              {writeOffTarget.provider}
+            </p>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '4px' }}>
+              Type member name to confirm
+            </label>
+            <input
+              type="text"
+              value={writeOffName}
+              onChange={(e) => setWriteOffName(e.target.value)}
+              placeholder={writeOffTarget.memberName}
+              autoFocus
+              disabled={writeOffBusy}
+              style={{ width: '100%', padding: '9px 10px', marginBottom: '12px', boxSizing: 'border-box' }}
+            />
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '4px' }}>
+              Your admin password
+            </label>
+            <input
+              type="password"
+              value={writeOffPassword}
+              onChange={(e) => setWriteOffPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void submitWriteOff();
+                }
+              }}
+              disabled={writeOffBusy}
+              style={{ width: '100%', padding: '9px 10px', marginBottom: '12px', boxSizing: 'border-box' }}
+            />
+            {writeOffError ? (
+              <div className="error-message" style={{ marginBottom: '10px' }}>
+                {writeOffError}
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" disabled={writeOffBusy} onClick={() => setWriteOffTarget(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={writeOffBusy || !writeOffName.trim() || !writeOffPassword}
+                onClick={() => void submitWriteOff()}
+                style={{ fontWeight: 700 }}
+              >
+                {writeOffBusy ? 'Writing off…' : 'Write off'}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

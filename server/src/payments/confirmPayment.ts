@@ -165,7 +165,19 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
     throw new Error(`No payment found for externalRef=${event.externalRef}`);
   }
 
-  if (payment.status === 'SUCCEEDED' || payment.status === 'CANCELLED') {
+  if (
+    payment.status === 'SUCCEEDED' ||
+    payment.status === 'CANCELLED' ||
+    payment.status === 'WRITTEN_OFF'
+  ) {
+    // WRITTEN_OFF is terminal: do not grant entitlement if a late webhook arrives.
+    if (payment.status === 'WRITTEN_OFF' && event.status === 'SUCCEEDED') {
+      logger.warn('Ignoring SUCCEEDED confirm for written-off payment', {
+        paymentId: payment.id,
+        externalRef: event.externalRef,
+        providerId: event.providerId,
+      });
+    }
     return { paymentId: payment.id, alreadyProcessed: true };
   }
 
@@ -173,6 +185,15 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
     const failed = await prisma.clubPayment.update({
       where: { id: payment.id },
       data: { status: 'FAILED' },
+    });
+    logger.auditInfo('Payment failed', {
+      paymentId: failed.id,
+      memberId: failed.memberId,
+      provider: event.providerId,
+      externalRef: event.externalRef,
+      amountCents: failed.amountCents,
+      purpose: failed.purpose,
+      status: 'FAILED',
     });
     emitPaymentUpdated({
       id: failed.id,
@@ -196,6 +217,16 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
         purpose: payment.purpose,
       };
       await prisma.clubPayment.delete({ where: { id: payment.id } });
+      logger.auditInfo('Payment cancelled', {
+        paymentId: snapshot.id,
+        memberId: snapshot.memberId,
+        provider: event.providerId,
+        externalRef: event.externalRef,
+        amountCents: snapshot.amountCents,
+        purpose: snapshot.purpose,
+        status: 'CANCELLED',
+        removed: true,
+      });
       emitPaymentUpdated({
         id: snapshot.id,
         memberId: snapshot.memberId,
@@ -209,6 +240,16 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
     const cancelled = await prisma.clubPayment.update({
       where: { id: payment.id },
       data: { status: 'CANCELLED' },
+    });
+    logger.auditInfo('Payment cancelled', {
+      paymentId: cancelled.id,
+      memberId: cancelled.memberId,
+      provider: event.providerId,
+      externalRef: event.externalRef,
+      amountCents: cancelled.amountCents,
+      purpose: cancelled.purpose,
+      status: 'CANCELLED',
+      removed: false,
     });
     emitPaymentUpdated({
       id: cancelled.id,
@@ -336,11 +377,17 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
     }
   }
 
-  logger.info('Payment confirmed', {
+  logger.auditInfo('Payment confirmed', {
     paymentId: payment.id,
+    memberId: payment.memberId,
     provider: event.providerId,
     externalRef: event.externalRef,
+    amountCents: amountPaid,
+    creditAppliedCents: creditApplied,
+    listAmountCents,
+    purpose: payment.purpose,
     isEventPayment,
+    status: 'SUCCEEDED',
   });
 
   emitPaymentUpdated({

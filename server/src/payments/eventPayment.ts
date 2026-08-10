@@ -206,13 +206,19 @@ export async function runEventCheckout(params: {
     });
   }
 
-  logger.info('Event checkout started', {
+  logger.auditInfo('Payment checkout started', {
     paymentId: payment.id,
     memberId: member.id,
+    providerId: provider.id,
+    method,
+    purpose: payment.purpose,
+    amountCents,
+    listAmountCents,
+    creditAppliedCents,
     tournamentId: params.tournamentId,
     registrationId: params.registrationId,
-    method,
-    amountCents,
+    kind: 'event',
+    status: amountCents === 0 && method === 'cash' ? 'SUCCEEDED' : 'PENDING',
   });
 
   let payLinkEmailed: boolean | undefined;

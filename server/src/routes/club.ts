@@ -1707,6 +1707,12 @@ router.post('/members/:id/plan/credit', async (req: AuthRequest, res: Response) 
       data: { purchaseCreditCents: { increment: addCents } },
       select: { id: true, purchaseCreditCents: true },
     });
+    logger.auditInfo('Payment credit added', {
+      memberId,
+      addedCents: addCents,
+      purchaseCreditCents: member.purchaseCreditCents,
+      byMemberId: req.memberId,
+    });
     res.json({ member });
   } catch (error) {
     logger.error('Error adding purchase credit', {
@@ -1740,6 +1746,14 @@ router.post('/members/:id/plan/reimburse-future', async (req: AuthRequest, res: 
         purchaseCreditCents: { increment: creditAdd },
       },
       select: { id: true, purchaseCreditCents: true },
+    });
+
+    logger.auditInfo('Payment future reimbursed', {
+      memberId,
+      reimbursedCents: creditAdd,
+      endedEntitlementId: future.id,
+      purchaseCreditCents: member.purchaseCreditCents,
+      byMemberId: req.memberId,
     });
 
     res.json({
@@ -2242,8 +2256,12 @@ router.post('/admin/payments/:id/clear', async (req: AuthRequest, res: Response)
   }
 });
 
-/** POST /api/club/admin/payments/:id/cancel — Admin cancels PENDING cash */
-router.post('/admin/payments/:id/cancel', async (req: AuthRequest, res: Response) => {
+/**
+ * POST /api/club/admin/payments/:id/write-off
+ * Admin writes off a PENDING payment (cash or online) → WRITTEN_OFF (terminal).
+ * Body: { memberNameConfirm, password }
+ */
+router.post('/admin/payments/:id/write-off', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) {
       return res.status(403).json({ error: 'Admin access required' });
@@ -2252,51 +2270,40 @@ router.post('/admin/payments/:id/cancel', async (req: AuthRequest, res: Response
     if (!Number.isInteger(paymentId) || paymentId < 1) {
       return res.status(400).json({ error: 'Invalid payment id' });
     }
-
-    const payment = await prisma.clubPayment.findUnique({ where: { id: paymentId } });
-    if (!payment) return res.status(404).json({ error: 'Payment not found' });
-    if (payment.status !== 'PENDING') {
-      return res.status(400).json({ error: 'Payment is not pending' });
-    }
-    if (payment.provider !== 'cash') {
-      return res.status(400).json({ error: 'Only cash payments can be cancelled here' });
+    if (req.memberId == null) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    if (payment.externalRef) {
-      await confirmPayment({
-        providerId: 'cash',
-        externalRef: payment.externalRef,
-        status: 'CANCELLED',
-        amountCents: payment.amountCents,
-        raw: { cancelledByAdminId: req.memberId },
-      });
-    } else {
-      // Pending with no external ref: delete — no CANCELLED ledger row.
-      const snapshot = {
-        id: payment.id,
-        memberId: payment.memberId,
-        amountCents: payment.amountCents,
-        provider: payment.provider,
-        purpose: payment.purpose,
-      };
-      await prisma.clubPayment.delete({ where: { id: payment.id } });
-      emitPaymentUpdated({
-        id: snapshot.id,
-        memberId: snapshot.memberId,
-        status: 'CANCELLED',
-        amountCents: snapshot.amountCents,
-        provider: snapshot.provider,
-        purpose: snapshot.purpose,
-      });
-    }
-
-    res.json({ ok: true });
-  } catch (error) {
-    logger.error('Error cancelling cash payment', {
-      error: error instanceof Error ? error.message : String(error),
+    const { writeOffPendingPayment } = await import('../payments/writeOffPendingPayment');
+    const result = await writeOffPendingPayment({
+      paymentId,
+      adminMemberId: req.memberId,
+      memberNameConfirm: String(req.body?.memberNameConfirm ?? ''),
+      password: String(req.body?.password ?? ''),
     });
+    res.json({
+      ok: true,
+      ...result,
+      note:
+        'If the provider later shows a successful charge, add purchase credit on the member plan — this payment will not auto-revive.',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Error writing off payment', { error: message });
+    if (
+      /required|not pending|not found|Incorrect password|Type the member|Admin access/i.test(message)
+    ) {
+      return res.status(400).json({ error: message });
+    }
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+/** @deprecated Use POST …/write-off (keeps ledger as WRITTEN_OFF with name + password confirmation). */
+router.post('/admin/payments/:id/cancel', async (req: AuthRequest, res: Response) => {
+  return res.status(400).json({
+    error: 'Use POST /club/admin/payments/:id/write-off with memberNameConfirm and password',
+  });
 });
 
 export default router;

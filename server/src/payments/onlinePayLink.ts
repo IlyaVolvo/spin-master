@@ -151,9 +151,11 @@ export async function deliverOnlinePayLink(opts: {
     });
   }
 
-  logger.info('Online pay link emailed', {
+  logger.auditInfo('Payment pay link emailed', {
     paymentId: opts.paymentId,
     to: opts.memberEmail,
+    amountCents: opts.amountCents,
+    purpose: opts.purpose,
   });
   return { emailed: true };
 }
@@ -191,6 +193,13 @@ async function markMailFailure(
     });
   }
 
+  logger.auditInfo('Payment pay link email failed', {
+    paymentId,
+    memberId: payment?.memberId,
+    mailFailClass,
+    message: message.slice(0, 300),
+    cashEscapeAvailableAt,
+  });
   logger.warn('Online pay link email failed', {
     paymentId,
     mailFailClass,
@@ -270,9 +279,13 @@ export async function escapeOnlinePaymentToCash(paymentId: number): Promise<{
     purpose: updated.purpose,
   });
 
-  logger.info('Escaped online payment to cash', {
+  logger.auditInfo('Payment escaped to cash', {
     paymentId: payment.id,
+    memberId: payment.memberId,
     priorProvider: providerId,
+    amountCents: payment.amountCents,
+    purpose: payment.purpose,
+    status: 'PENDING',
   });
 
   return { paymentId: payment.id, providerId: cash.id };

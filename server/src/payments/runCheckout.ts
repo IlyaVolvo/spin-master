@@ -293,15 +293,18 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     confirmedImmediately = true;
   }
 
-  logger.info('Checkout started', {
+  logger.auditInfo('Payment checkout started', {
     paymentId: payment.id,
     memberId: member.id,
     providerId: provider.id,
     method,
+    purpose,
     amountCents,
+    listAmountCents,
     creditAppliedCents,
     forceFuture,
     confirmedImmediately,
+    status: confirmedImmediately ? 'SUCCEEDED' : 'PENDING',
   });
 
   // Notify Admin Payment Log (and waiters) — PENDING cash and confirmed checkouts.

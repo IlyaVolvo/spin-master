@@ -36,3 +36,8 @@ export {
   escapeOnlinePaymentToCash,
   classifyMailSendError,
 } from './onlinePayLink';
+export {
+  writeOffPendingPayment,
+  normalizeMemberConfirmName,
+  memberDisplayName,
+} from './writeOffPendingPayment';

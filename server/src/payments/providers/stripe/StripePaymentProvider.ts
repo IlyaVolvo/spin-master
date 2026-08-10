@@ -104,10 +104,11 @@ export function createStripePaymentProvider(variant: StripeVariant): PaymentProv
         },
       });
 
-      logger.info('Stripe Checkout Session created', {
+      logger.auditInfo('Payment checkout session created', {
         providerId: variant.id,
         paymentId: input.paymentId,
         externalRef,
+        amountCents: amount,
         hasCheckoutUrl: Boolean(checkoutUrl),
       });
 

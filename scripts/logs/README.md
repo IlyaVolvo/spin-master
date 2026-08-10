@@ -57,7 +57,7 @@ Builds a chronological timeline from one or more log files.
 - App file NDJSON (`{"timestamp","level","message","data"}`)
 - Legacy Render **text** logs
 
-**Default event set** (if you pass no category flags): tournaments + players + logins/auth + errors + restarts.
+**Default event set** (if you pass no category flags): tournaments + players + logins/auth + payments + errors + restarts.
 
 Sensitive fields (`password`, `scorePin`, tokens, etc.) are redacted in output.
 
@@ -65,6 +65,8 @@ Match score lines include who entered the score when present in logs:
 `scoreEntryMode` (`organizer` | `participant` | `kiosk`), `recordedByMemberId`, `recordedByName`.
 
 Auth/login lines (`--logins`) cover login, registration, forgot/reset/change password, and admin password reset attempts (success and failure).
+
+Payment lines (`--payments`) cover checkout start/session, confirm/fail/cancel, write-off, pay-link email, cash escape, credit add, and future reimburse.
 
 ### Usage
 
@@ -90,6 +92,7 @@ Auth/login lines (`--logins`) cover login, registration, forgot/reset/change pas
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --restarts
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --tournaments --players
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --logins
+./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --payments
 
 # Write markdown or machine-readable JSON
 ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log \
@@ -108,6 +111,7 @@ Auth/login lines (`--logins`) cover login, registration, forgot/reset/change pas
 | `--tournaments` | Tournament create / modify / score / complete / abandon |
 | `--players` | Member created / updated / deleted |
 | `--logins` | Login / registration / password change & reset attempts |
+| `--payments` | Payment checkout / confirm / write-off / credit / pay-link events |
 | `--errors` | ERROR-level and `Error …` / `Failed …` messages |
 | `--restarts` | `Server started`, Render deploy lines, log-stream reconnects |
 | `--tournament-id N` | Only that tournament and its children (related errors when included) |

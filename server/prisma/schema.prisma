@@ -450,6 +450,8 @@ enum ClubPaymentStatus {
   SUCCEEDED
   FAILED
   CANCELLED
+  /** Admin wrote off a PENDING obligation; terminal — not revivable via webhook/reconcile. */
+  WRITTEN_OFF
 }
 
 // ClubVisit: Records member check-in/check-out at the club

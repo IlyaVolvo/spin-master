@@ -10,6 +10,7 @@ Examples:
   ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log
   ./scripts/logs/analyze-render-log.py ~/logs/prod/*.jsonl --since 2026-08-05 --until 2026-08-05
   ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --logins --since 2026-08-04
+  ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --payments --since 2026-08-04
   ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --errors --restarts --since 2026-08-04
   ./scripts/logs/analyze-render-log.py ~/logs/prod/render-service.log --tournament-id 178 -o timeline.md
 """
@@ -68,7 +69,29 @@ AUTH_MESSAGES = {
     "Admin password reset attempt",
 }
 
-INTERESTING = TOURNAMENT_MESSAGES | PLAYER_MESSAGES | AUTH_MESSAGES
+PAYMENT_MESSAGES = {
+    # Canonical (auditInfo)
+    "Payment checkout started",
+    "Payment checkout session created",
+    "Payment confirmed",
+    "Payment failed",
+    "Payment cancelled",
+    "Payment written off",
+    "Payment pay link emailed",
+    "Payment pay link email failed",
+    "Payment escaped to cash",
+    "Payment credit added",
+    "Payment future reimbursed",
+    # Legacy message names (older logs)
+    "Checkout started",
+    "Event checkout started",
+    "Stripe Checkout Session created",
+    "Online pay link emailed",
+    "Online pay link email failed",
+    "Escaped online payment to cash",
+}
+
+INTERESTING = TOURNAMENT_MESSAGES | PLAYER_MESSAGES | AUTH_MESSAGES | PAYMENT_MESSAGES
 
 ERROR_LEVELS = frozenset({"error", "err", "fatal"})
 
@@ -105,7 +128,7 @@ class RawRecord:
 @dataclass
 class Event:
     ts: datetime
-    kind: str  # tournament | player | auth | error | restart
+    kind: str  # tournament | player | auth | payment | error | restart
     message: str
     data: dict[str, Any]
     source: str
@@ -126,12 +149,14 @@ class Event:
             mid,
             parent,
             self.data.get("matchId"),
+            self.data.get("paymentId"),
             self.data.get("participantCount"),
             self.data.get("childCount"),
             self.data.get("outcome"),
             self.data.get("reason"),
             self.data.get("email"),
             self.data.get("targetMemberId"),
+            self.data.get("status"),
             str(err) if err is not None else None,
             json.dumps(self.data.get("changes"), sort_keys=True, default=str)
             if self.data.get("changes") is not None
@@ -607,12 +632,67 @@ def summarize_auth(message: str, data: dict[str, Any]) -> str:
     return " · ".join(bits)
 
 
+def summarize_payment(message: str, data: dict[str, Any]) -> str:
+    pid = data.get("paymentId")
+    mid = data.get("memberId")
+    amount = data.get("amountCents")
+    status = data.get("status")
+    purpose = data.get("purpose")
+    provider = data.get("provider") or data.get("providerId")
+    method = data.get("method")
+    bits = [message]
+    if pid is not None:
+        bits.append(f"payment={pid}")
+    if mid is not None:
+        bits.append(f"member={mid}")
+    if amount is not None:
+        try:
+            bits.append(f"${int(amount) / 100:.2f}")
+        except (TypeError, ValueError):
+            bits.append(f"amountCents={amount}")
+    if status:
+        bits.append(str(status))
+    if method:
+        bits.append(f"method={method}")
+    if provider:
+        bits.append(f"provider={provider}")
+    if purpose:
+        bits.append(str(purpose)[:80])
+    if data.get("externalRef"):
+        bits.append(f"ref={data['externalRef']}")
+    if data.get("to"):
+        bits.append(f"to={data['to']}")
+    if data.get("mailFailClass"):
+        bits.append(f"mailFail={data['mailFailClass']}")
+    if data.get("addedCents") is not None:
+        try:
+            bits.append(f"+${int(data['addedCents']) / 100:.2f}")
+        except (TypeError, ValueError):
+            bits.append(f"addedCents={data['addedCents']}")
+    if data.get("reimbursedCents") is not None:
+        try:
+            bits.append(f"reimburse=${int(data['reimbursedCents']) / 100:.2f}")
+        except (TypeError, ValueError):
+            bits.append(f"reimbursedCents={data['reimbursedCents']}")
+    if data.get("writtenOffByMemberId") is not None:
+        bits.append(f"by={data['writtenOffByMemberId']}")
+    if data.get("byMemberId") is not None:
+        bits.append(f"by={data['byMemberId']}")
+    if data.get("priorProvider"):
+        bits.append(f"from={data['priorProvider']}")
+    if data.get("tournamentId") is not None:
+        bits.append(f"tournament={data['tournamentId']}")
+    return " · ".join(bits)
+
+
 def summarize(message: str, data: dict[str, Any], *, level: str = "") -> str:
     d = data
     if is_restart_message(message):
         return summarize_restart(message, data)
     if message in AUTH_MESSAGES:
         return summarize_auth(message, data)
+    if message in PAYMENT_MESSAGES:
+        return summarize_payment(message, data)
     if is_error_level(level) or message.startswith("Error ") or message.startswith("Failed "):
         return summarize_error(message, data, level)
     if message == "Tournament created":
@@ -719,6 +799,7 @@ def records_to_events(
     want_tournaments: bool,
     want_players: bool,
     want_auth: bool,
+    want_payments: bool,
     want_errors: bool,
     want_restarts: bool,
 ) -> list[Event]:
@@ -760,8 +841,12 @@ def records_to_events(
             continue
         if msg in AUTH_MESSAGES and not want_auth:
             continue
+        if msg in PAYMENT_MESSAGES and not want_payments:
+            continue
         if msg in AUTH_MESSAGES:
             kind = "auth"
+        elif msg in PAYMENT_MESSAGES:
+            kind = "payment"
         elif msg in PLAYER_MESSAGES:
             kind = "player"
         else:
@@ -814,6 +899,15 @@ def filter_tournament_id(events: list[Event], tournament_id: int) -> list[Event]
     for ev in events:
         if ev.kind in ("player", "auth"):
             continue
+        # Keep payment rows tied to this tournament; drop unrelated payments.
+        if ev.kind == "payment":
+            tid = ev.data.get("tournamentId")
+            try:
+                if tid is not None and int(tid) == tournament_id:
+                    out.append(ev)
+            except (TypeError, ValueError):
+                pass
+            continue
         tid = ev.data.get("tournamentId")
         parent = ev.data.get("parentTournamentId")
         try:
@@ -850,6 +944,7 @@ def render_timeline(events: list[Event], *, group_tournaments: bool) -> str:
         buckets: dict[str, list[Event]] = {}
         players: list[Event] = []
         auth_events: list[Event] = []
+        payment_events: list[Event] = []
         errors: list[Event] = []
         restarts: list[Event] = []
         for ev in events:
@@ -858,6 +953,9 @@ def render_timeline(events: list[Event], *, group_tournaments: bool) -> str:
                 continue
             if ev.kind == "auth":
                 auth_events.append(ev)
+                continue
+            if ev.kind == "payment":
+                payment_events.append(ev)
                 continue
             if ev.kind == "restart":
                 restarts.append(ev)
@@ -904,6 +1002,13 @@ def render_timeline(events: list[Event], *, group_tournaments: bool) -> str:
             lines.append("## Logins / auth")
             lines.append("")
             for ev in auth_events:
+                lines.append(f"{format_ts(ev.ts)}  {ev.summary}")
+            lines.append("")
+
+        if payment_events:
+            lines.append("## Payments")
+            lines.append("")
+            for ev in payment_events:
                 lines.append(f"{format_ts(ev.ts)}  {ev.summary}")
             lines.append("")
 
@@ -962,6 +1067,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="Include login / registration / password auth attempts",
     )
+    ap.add_argument(
+        "--payments",
+        action="store_true",
+        help="Include payment checkout / confirm / write-off / credit events",
+    )
     ap.add_argument("--errors", action="store_true", help="Include error-level events")
     ap.add_argument(
         "--restarts",
@@ -987,10 +1097,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     want_t = args.tournaments
     want_p = args.players
     want_a = args.logins
+    want_pay = args.payments
     want_e = args.errors
     want_r = args.restarts
-    if not want_t and not want_p and not want_a and not want_e and not want_r:
-        want_t = want_p = want_a = want_e = want_r = True
+    if not want_t and not want_p and not want_a and not want_pay and not want_e and not want_r:
+        want_t = want_p = want_a = want_pay = want_e = want_r = True
 
     since = parse_bound_ts(args.since, is_until=False) if args.since else None
     until = parse_bound_ts(args.until, is_until=True) if args.until else None
@@ -1016,6 +1127,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         want_tournaments=want_t,
         want_players=want_p,
         want_auth=want_a,
+        want_payments=want_pay,
         want_errors=want_e,
         want_restarts=want_r,
     )
@@ -1032,10 +1144,19 @@ def main(argv: Optional[list[str]] = None) -> int:
             keep_kinds.add("player")
         if args.logins:
             keep_kinds.add("auth")
+        if args.payments:
+            keep_kinds.add("payment")
         if args.restarts:
             keep_kinds.add("restart")
         # With --tournament-id alone: tournaments + related errors
-        if not args.players and not args.tournaments and not args.errors and not args.restarts and not args.logins:
+        if (
+            not args.players
+            and not args.tournaments
+            and not args.errors
+            and not args.restarts
+            and not args.logins
+            and not args.payments
+        ):
             keep_kinds = {"tournament", "error"}
         events = [e for e in events if e.kind in keep_kinds]
 
