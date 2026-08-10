@@ -1,8 +1,8 @@
 # Stripe test-mode integration runbook
 
-**Status (step 3):** Stripe Checkout is implemented as **email pay link** (not in-app redirect). Assign **`stripe-test`** per member (`Member.paymentProviderId`); webhooks: `/api/payments/webhook/stripe-test` (test) and `/webhook/stripe` (live). Full runbook polish is step 4 — see also [`PER_MEMBER_PAYMENT_PROVIDERS.md`](./PER_MEMBER_PAYMENT_PROVIDERS.md).
+**Status:** Stripe Checkout Session URL is reused for both **email pay link** and **in-app** (new tab). Member `emailPayLink` defaults to `false` (in-app); Admin-on-behalf and auto-renew always email. Assign **`stripe-test`** per member (`Member.paymentProviderId`); webhooks: `/api/payments/webhook/stripe-test` (test) and `/webhook/stripe` (live). See also [`PER_MEMBER_PAYMENT_PROVIDERS.md`](./PER_MEMBER_PAYMENT_PROVIDERS.md).
 
-**Purpose:** Exercise Stripe against this app’s pluggable payment layer (**Checkout Session → email link → pay → webhook → entitlement**) **without live charges**. Prep before live keys / real money.
+**Purpose:** Exercise Stripe against this app’s pluggable payment layer (**Checkout Session → email or in-app → pay → webhook → entitlement**) **without live charges**. Prep before live keys / real money.
 
 **Scope:** providers `stripe-test` + `stripe` (same module) + **Cash**. PayPal/Venmo out of scope.
 
@@ -12,10 +12,11 @@
 - Registry init: `server/src/payments/index.ts` (`dummy`, `cash`, `stripe-test`, `stripe`)
 - Stripe module: `server/src/payments/providers/stripe/`
 - Online selection: `resolveMemberOnlinePaymentProvider(member)` from `Member.paymentProviderId`
-- Checkout: `runMemberCheckout` → `provider.startCheckout` → `deliverOnlinePayLink`
+- Checkout: `runMemberCheckout` → `provider.startCheckout` → email via `deliverOnlinePayLink` **or** `delivery: 'in_app'` + `checkoutUrl`
+- Cancel wipe: `POST /api/payments/:paymentId/cancel` (expire Session, delete PENDING); late SUCCEEDED → club credit
 - Webhook: `POST /api/payments/webhook/:providerId` (raw body for Stripe paths)
 - Confirm: `confirmPayment`
-- Client plan UI: `MemberPlanScreen` — shows pending + “check email”; **does not** open `checkoutUrl`
+- Client plan UI: `MemberPlanScreen` — **email** checkbox; in-app opens Checkout in a new tab + Cancel; email path keeps “check email”
 - Return page: `/payment-return` under `CLIENT_URL`
 - Env: `CLIENT_URL` (typical local client `http://localhost:3002`)
 
@@ -84,7 +85,7 @@ Implemented in `server/src/payments/providers/stripe/` (shared module + thin wra
 1. Create Stripe Checkout Session (mode `payment`) with line items, `customer_email`, `client_reference_id` / metadata (`paymentId`, `memberId`, `providerId`)
 2. `success_url` / `cancel_url` → `{CLIENT_URL}/payment-return?status=…&paymentId=…`
 3. Persist `externalRef` = session id; return `{ checkoutUrl, confirmedImmediately: false }`
-4. Orchestrator emails `checkoutUrl` via `deliverOnlinePayLink` (Member Plan does **not** open the URL)
+4. Orchestrator: if `delivery === 'email'` (Admin, auto-renew, or `emailPayLink`), email via `deliverOnlinePayLink`; if `in_app`, return `checkoutUrl` without email
 
 **`parseWebhook` / `reconcilePending` / `cancelPendingCheckout`**
 
@@ -99,14 +100,16 @@ Implemented in `server/src/payments/providers/stripe/` (shared module + thin wra
 
 `/api/payments/webhook/stripe-test` and `/webhook/stripe` mount `express.raw` **before** the global JSON parser; `req.rawBody` is set for signature verification.
 
-### 3.5 Client: email-async (not redirect)
+### 3.5 Client: email vs in-app
 
 In `MemberPlanScreen`:
 
-1. After `POST /payments/checkout`, if `checkoutUrl` / `payLinkEmailed`, show pending + “check your email” — **do not** `window.open(checkoutUrl)`.
-2. Entitlement updates when webhook → `confirmPayment` → socket / reload.
-3. Mail-fail → cash escape UI (`POST /payments/:id/escape-to-cash`) after Session cancel.
-4. Stripe return page is minimal (“You can close this page”).
+1. After `POST /payments/checkout`: if `delivery === 'in_app'` and `checkoutUrl`, `window.open` Checkout in a new tab; show pending + **Cancel** (`POST /api/payments/:id/cancel`).
+2. If `delivery === 'email'` / `payLinkEmailed`, show pending + “check your email”.
+3. **email** checkbox patches `emailPayLink` (Admin-on-behalf: checkbox disabled; server forces email).
+4. Entitlement updates when webhook → `confirmPayment` → socket / reload.
+5. Mail-fail → cash escape UI (`POST /payments/:id/escape-to-cash`) after Session cancel.
+6. Stripe return page is minimal (“You can close this page”).
 
 Cash and `dummy` paths unchanged (`dummy` may still wait in-app).
 
@@ -156,29 +159,36 @@ For staging after local E2E passes, do **not** reuse the CLI `whsec_…` — fol
 
 ## 6. Manual E2E — “real world” in test mode (no live charges)
 
-### 6.1 Happy path (card)
+### 6.1 Happy path (card) — in-app (default)
 
-1. Open Member plan → select plan → **Pay online** → purchase.
-2. Browser opens **Stripe Checkout** (hosted).
+1. Open Member plan → leave **email** unchecked → select plan → **Pay online**.
+2. Browser opens **Stripe Checkout** in a **new tab**.
 3. Pay with test card:
    - Success: `4242 4242 4242 4242`, any future expiry, any CVC, any postal.
 4. Complete payment → redirect to success URL.
 5. **Expect:**
    - Stripe Dashboard (Test) → Payments / Checkout: succeeded
    - `stripe listen` shows `checkout.session.completed` → `200` from your API
-   - `club_payments`: `provider=stripe`, `status=SUCCEEDED`, `externalRef` set
+   - `club_payments`: `provider=stripe-test` (or `stripe`), `status=SUCCEEDED`, `externalRef` set
    - Entitlement / plan UI updated; socket-driven “confirmed” on plan screen
    - Receipt email if member email + mail configured (optional)
+
+### 6.1b Happy path — email pay link
+
+1. Check **email** on plan → **Pay online**.
+2. **Expect:** no new Checkout tab; pending + “check email”; link in mail opens Checkout.
+3. Complete with test card; same success expectations as §6.1.
 
 ### 6.2 Decline / fail
 
 1. Use decline card `4000 0000 0000 0002` (or current Stripe test decline card).
 2. **Expect:** Checkout shows failure; `ClubPayment` stays `PENDING` or becomes `FAILED` per your mapping; **no** entitlement grant.
 
-### 6.3 Cancel / abandon
+### 6.3 Cancel / abandon (in-app Cancel wipe)
 
-1. Start checkout, close Stripe page or use cancel URL.
-2. **Expect:** no `SUCCEEDED`; no new CURRENT entitlement from this attempt; session may expire → webhook/`reconcile` maps to cancelled/failed later.
+1. Start in-app checkout; on plan screen click **Cancel** before paying (or expire Session via Stripe).
+2. **Expect:** PENDING row deleted; Stripe Session expired; plan UI clears pending; no ledger cancel row.
+3. Optional race: pay in Stripe **after** Cancel → `club_credits` row + `purchaseCreditCents` increase; **no** plan entitlement from that session.
 
 ### 6.4 Webhook missed → reconcile
 

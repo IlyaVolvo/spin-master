@@ -18,7 +18,13 @@ jest.mock('../../../src/index', () => ({
 }));
 
 jest.mock('../../../src/utils/logger', () => ({
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    auditInfo: jest.fn(),
+  },
 }));
 
 jest.mock('../../../src/services/socketService', () => ({
@@ -43,6 +49,10 @@ jest.mock('../../../src/utils/planDuration', () => ({
   computeValidTo: jest.fn(() => new Date('2026-09-01T12:00:00.000Z')),
 }));
 
+jest.mock('../../../src/payments/creditLedger', () => ({
+  creditPaidAfterCancel: jest.fn(),
+}));
+
 import { prisma } from '../../../src/index';
 import { emitPaymentUpdated } from '../../../src/services/socketService';
 import {
@@ -50,6 +60,7 @@ import {
   refreshCurrentEntitlement,
 } from '../../../src/payments/entitlementQueue';
 import { sendPaymentProcessedEmail } from '../../../src/payments/paymentReceiptEmail';
+import { creditPaidAfterCancel } from '../../../src/payments/creditLedger';
 import { confirmPayment } from '../../../src/payments/confirmPayment';
 
 function pendingPayment(overrides: Record<string, unknown> = {}) {
@@ -121,7 +132,7 @@ describe('confirmPayment', () => {
     });
   });
 
-  it('throws when payment externalRef is unknown', async () => {
+  it('throws when payment externalRef is unknown and memberId missing from webhook', async () => {
     (prisma.clubPayment.findFirst as jest.Mock).mockResolvedValue(null);
     await expect(
       confirmPayment({
@@ -129,7 +140,32 @@ describe('confirmPayment', () => {
         externalRef: 'missing',
         status: 'SUCCEEDED',
       }),
-    ).rejects.toThrow(/No payment found/);
+    ).rejects.toThrow(/memberId missing from webhook/);
+  });
+
+  it('credits member when SUCCEEDED arrives after PENDING was wiped', async () => {
+    (prisma.clubPayment.findFirst as jest.Mock).mockResolvedValue(null);
+    (creditPaidAfterCancel as jest.Mock).mockResolvedValue({
+      creditId: 9,
+      alreadyProcessed: false,
+    });
+
+    const result = await confirmPayment({
+      providerId: 'stripe-test',
+      externalRef: 'cs_late',
+      status: 'SUCCEEDED',
+      amountCents: 5500,
+      raw: { metadata: { memberId: '10' } },
+    });
+
+    expect(creditPaidAfterCancel).toHaveBeenCalledWith({
+      memberId: 10,
+      amountCents: 5500,
+      externalRef: 'cs_late',
+      providerId: 'stripe-test',
+    });
+    expect(result).toEqual({ paymentId: 0, alreadyProcessed: false });
+    expect(prisma.clubEntitlement.create).not.toHaveBeenCalled();
   });
 
   it('is idempotent for already SUCCEEDED / CANCELLED payments', async () => {

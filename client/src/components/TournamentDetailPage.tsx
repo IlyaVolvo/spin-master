@@ -1177,7 +1177,9 @@ const TournamentDetailPage: React.FC = () => {
     await runBusy(async () => {
       try {
         const response = await api.post(`/tournaments/${tournamentId}/register`);
-        const checkoutUrl = response.data?.checkout?.checkoutUrl;
+        const checkout = response.data?.checkout;
+        const checkoutUrl = checkout?.checkoutUrl;
+        const delivery = checkout?.delivery;
         const clubChargeWarning =
           typeof response.data?.clubChargeWarning === 'string'
             ? response.data.clubChargeWarning.trim()
@@ -1189,6 +1191,38 @@ const TournamentDetailPage: React.FC = () => {
               clubChargeWarning,
             );
           }
+          if (delivery === 'in_app') {
+            const opened = window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
+            if (!opened) {
+              setError(
+                'Could not open the payment page (popup blocked). Allow popups and retry, or enable email pay links on your Plan screen.',
+              );
+              return;
+            }
+            setSuccess(
+              clubChargeWarning
+                ? `Complete payment in the new tab. ${clubChargeWarning}`
+                : 'Complete payment in the new tab. This page will update when paid.',
+            );
+            if (response.data?.tournament) {
+              setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+            }
+            return;
+          }
+          if (delivery === 'email' || checkout?.payLinkEmailed === true) {
+            if (response.data?.tournament) {
+              setTournaments(prev => prev.map(t => t.id === tournamentId ? response.data.tournament : t));
+            }
+            const emailed =
+              checkout?.payLinkEmailed === true
+                ? 'Check your email for the payment link.'
+                : 'A payment link was prepared; check your email or Plan settings.';
+            setSuccess(
+              clubChargeWarning ? `${emailed} ${clubChargeWarning}` : emailed,
+            );
+            return;
+          }
+          // Legacy / unknown delivery: open Checkout in this tab.
           window.location.assign(checkoutUrl);
           return;
         }

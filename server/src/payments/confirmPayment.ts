@@ -11,10 +11,43 @@ import { invalidateCurrentEntitlement } from './checkInStateCache';
 import { resolvePlanLabelForProduct, sendPaymentProcessedEmail } from './paymentReceiptEmail';
 import type { ConfirmEvent, CheckoutProduct, PaymentMetadata } from './types';
 import { applyEventPaymentSuccess } from './eventPayment';
+import { creditPaidAfterCancel } from './creditLedger';
 
 function asMetadata(value: unknown): PaymentMetadata {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as PaymentMetadata;
+}
+
+function memberIdFromConfirmRaw(raw: unknown): number | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const session =
+    obj.data && typeof obj.data === 'object'
+      ? (obj.data as { object?: Record<string, unknown> }).object
+      : obj;
+  if (!session || typeof session !== 'object') return null;
+  const meta = (session as { metadata?: Record<string, unknown> }).metadata;
+  if (!meta) return null;
+  const id = Number(meta.memberId);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function amountFromConfirmEvent(event: ConfirmEvent): number {
+  if (typeof event.amountCents === 'number' && Number.isFinite(event.amountCents)) {
+    return Math.max(0, Math.floor(event.amountCents));
+  }
+  const raw = event.raw;
+  if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    const session =
+      obj.data && typeof obj.data === 'object'
+        ? (obj.data as { object?: { amount_total?: number | null } }).object
+        : (obj as { amount_total?: number | null });
+    if (session && typeof session.amount_total === 'number') {
+      return Math.max(0, Math.floor(session.amount_total));
+    }
+  }
+  return 0;
 }
 
 async function createEntitlementFromProduct(
@@ -162,6 +195,31 @@ export async function confirmPayment(event: ConfirmEvent): Promise<{ paymentId: 
   });
 
   if (!payment) {
+    // Late SUCCEEDED after PENDING was wiped (member/admin cancel) → credit, no plan.
+    if (event.status === 'SUCCEEDED') {
+      const memberId = memberIdFromConfirmRaw(event.raw);
+      if (!memberId) {
+        throw new Error(
+          `No payment found for externalRef=${event.externalRef} and memberId missing from webhook`,
+        );
+      }
+      const amountCents = amountFromConfirmEvent(event);
+      const credited = await creditPaidAfterCancel({
+        memberId,
+        amountCents,
+        externalRef: event.externalRef,
+        providerId: event.providerId,
+      });
+      logger.auditInfo('Payment succeeded after cancel — credited', {
+        memberId,
+        externalRef: event.externalRef,
+        providerId: event.providerId,
+        amountCents,
+        alreadyProcessed: credited.alreadyProcessed,
+        creditId: credited.creditId,
+      });
+      return { paymentId: 0, alreadyProcessed: credited.alreadyProcessed };
+    }
     throw new Error(`No payment found for externalRef=${event.externalRef}`);
   }
 

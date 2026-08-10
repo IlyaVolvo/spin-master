@@ -235,6 +235,10 @@ Mark each: Pass / Fail / Skip. Prefer **UI** unless the DB recipe is listed.
 | B9 | Full credit ≥ list price | Cash paid $0.00; clear still grants plan | `purchaseCreditCents` ≥ list |
 | B10 | Plan screen payment history | All statuses; list/credit/cash visible | — |
 | B11 | Admin reimburse FUTURE | FUTURE ended; credit increased | — |
+| B12 | Self online, **email** unchecked | Checkout opens new tab (`delivery=in_app`); no pay-link email | — |
+| B13 | Self online, **email** checked | Pending + email link; Admin-on-behalf always emails | — |
+| B14 | In-app pending → Cancel | PENDING deleted; Session expired; UI clears | — |
+| B15 | Payment Log: Payment / Credit filters | ≥1 on; credits list when Credit selected | `club_credits` |
 
 ### C. Check-in / check-out
 
@@ -294,8 +298,10 @@ Mark each: Pass / Fail / Skip. Prefer **UI** unless the DB recipe is listed.
 | Manual area | Unit tests |
 |-------------|------------|
 | Purchase rules | `planPurchaseRules.test.ts` |
-| Checkout / credit / trial FUTURE / cash | `runCheckout.test.ts` |
-| Confirm / reject / credit columns / packs | `confirmPayment.test.ts` |
+| Checkout / credit / trial FUTURE / cash / delivery | `runCheckout.test.ts` |
+| Confirm / reject / late-pay credit after cancel wipe | `confirmPayment.test.ts` |
+| Cancel pending online (R1 / wipe) | `cancelPendingOnlinePayment.test.ts` |
+| Credit ledger writes | `creditLedger.test.ts` |
 | Cash provider | `CashPaymentProvider.test.ts` |
 | Plan pricing / segments | `resolvePlan.test.ts` |
 | Courtesy evaluation | `evaluateCourtesy.test.ts` |

@@ -11,6 +11,8 @@ type RegisterResponse = {
     instructions?: string;
     method?: string;
     amountCents?: number;
+    delivery?: 'email' | 'in_app';
+    payLinkEmailed?: boolean;
   } | null;
   tournament?: {
     isEvent?: boolean;
@@ -79,7 +81,19 @@ const TournamentRegistrationLink: React.FC = () => {
       setClubChargeWarning(response.clubChargeWarning.trim());
     }
     const url = response.checkout?.checkoutUrl;
+    const delivery = response.checkout?.delivery;
     if (typeof url === 'string' && url.trim()) {
+      if (delivery === 'email' || response.checkout?.payLinkEmailed === true) {
+        setCheckoutUrl(null);
+        setCheckoutHint(
+          response.checkout?.payLinkEmailed === true
+            ? 'Check your email for the payment link to finish registration.'
+            : 'A payment link was prepared; check your email or enable email on your Plan screen.',
+        );
+        setMessage(response.message || 'Payment pending — check your email.');
+        setIsError(false);
+        return false;
+      }
       setCheckoutUrl(url.trim());
       setCheckoutHint(null);
       setMessage(response.message || 'Complete payment to finish event registration.');
@@ -126,8 +140,21 @@ const TournamentRegistrationLink: React.FC = () => {
         return;
       }
       const redirected = applyRegisterResponse(response.data || {});
-      if (redirected && response.data?.checkout?.checkoutUrl) {
-        window.location.assign(response.data.checkout.checkoutUrl);
+      const checkout = response.data?.checkout;
+      if (redirected && checkout?.checkoutUrl) {
+        if (checkout.delivery === 'in_app') {
+          const opened = window.open(checkout.checkoutUrl, '_blank', 'noopener,noreferrer');
+          if (!opened) {
+            setMessage(
+              'Could not open the payment page (popup blocked). Allow popups, or enable email on your Plan screen and retry.',
+            );
+            setIsError(true);
+          } else {
+            setMessage('Complete payment in the new tab. This page will update when paid.');
+          }
+        } else {
+          window.location.assign(checkout.checkoutUrl);
+        }
       }
     } catch (err: any) {
       setMessage(err.response?.data?.error || err.response?.data?.message || 'Registration response could not be completed.');

@@ -351,9 +351,15 @@ export default function SystemSettings() {
     setError('');
     setMessage('');
     try {
-      // Do not overwrite payment settings managed on /payments
+      // Payment provider/plans settings live on /payments; only sync the Payments section
+      // fields edited here so we do not clobber the rest of payments config.
       const { payments: _payments, clubPlans: _clubPlans, ...systemPatch } = config;
-      const saved = await saveAdminSystemConfig(systemPatch);
+      const saved = await saveAdminSystemConfig({
+        ...systemPatch,
+        payments: {
+          largeCreditConfirmCents: config.payments.largeCreditConfirmCents ?? 10000,
+        },
+      });
       setConfig(saved);
       setDirty(false);
       setMessage('System settings saved');
@@ -808,126 +814,6 @@ export default function SystemSettings() {
       </Section>
 
       <Section
-        title="Public Achievements"
-        tooltip="How many results to show for each board on the public achievements page. Use 0 to hide a board. Positive values include the board and cap the list length."
-        sectionId="public-achievements"
-        open={openSectionId === 'public-achievements'}
-        onToggle={toggleSection}
-      >
-        <FieldRow label="Set all to">
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <BoundedNumericInput
-              value={achievementsSetAll}
-              min={0}
-              max={100}
-              allowEmpty={false}
-              aria-label="Set all achievement counts"
-              onChange={(next) => setAchievementsSetAll(next ?? 0)}
-              inputStyle={{ ...valueInputStyle, width: '96px' }}
-            />
-            <button
-              type="button"
-              className="button-filter"
-              onClick={() => updateConfig((draft) => {
-                if (!draft.publicAccess) {
-                  draft.publicAccess = {
-                    achievements: Object.fromEntries(
-                      ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
-                    ) as SystemConfig['publicAccess']['achievements'],
-                  };
-                }
-                for (const id of ACHIEVEMENT_CATEGORY_IDS) {
-                  draft.publicAccess.achievements[id] = achievementsSetAll;
-                }
-              })}
-            >
-              Apply to all
-            </button>
-          </div>
-        </FieldRow>
-        {ACHIEVEMENT_CATEGORY_IDS.map((id) => (
-          <NumericInput
-            key={id}
-            label={ACHIEVEMENT_CATEGORY_LABELS[id]}
-            min={0}
-            max={100}
-            value={config.publicAccess?.achievements?.[id] ?? 0}
-            onChange={(value) => updateConfig((draft) => {
-              if (!draft.publicAccess) {
-                draft.publicAccess = {
-                  achievements: Object.fromEntries(
-                    ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
-                  ) as SystemConfig['publicAccess']['achievements'],
-                };
-              }
-              draft.publicAccess.achievements[id] = value;
-            })}
-          />
-        ))}
-      </Section>
-
-      <Section
-        title="Core Settings"
-        tooltip="Authentication, score PIN, privilege auto-relinquish, and rating validation."
-        sectionId="core"
-        open={openSectionId === 'core'}
-        onToggle={toggleSection}
-      >
-        <NumericInput
-          label="Minimum Password Length"
-          min={6}
-          value={config.authPolicy.minimumPasswordLength}
-          onChange={(value) => updateConfig(draft => { draft.authPolicy.minimumPasswordLength = value; })}
-        />
-        <NumericInput
-          label="Password Reset TTL (hours)"
-          min={1}
-          value={config.authPolicy.passwordResetTokenTtlHours}
-          onChange={(value) => updateConfig(draft => { draft.authPolicy.passwordResetTokenTtlHours = value; })}
-        />
-        <NumericInput
-          label="Score PIN Length"
-          min={4}
-          value={config.authPolicy.pinLength}
-          onChange={(value) => updateConfig(draft => { draft.authPolicy.pinLength = value; })}
-        />
-        <FieldRow label="Auto Relinquish Privileges (club default)">
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-            <input
-              type="checkbox"
-              checked={config.authPolicy.autoRelinquishPrivileges}
-              onChange={(event) => updateConfig(draft => {
-                draft.authPolicy.autoRelinquishPrivileges = event.target.checked;
-              })}
-            />
-            Elevated accounts enter kiosk mode on login by default
-          </label>
-        </FieldRow>
-        <NumericInput
-          label="Auto Relinquish Idle (minutes)"
-          tooltip="After restoring privileges, return to kiosk after this many idle minutes (0 = only on login)."
-          min={0}
-          value={config.authPolicy.autoRelinquishIdleMinutes}
-          onChange={(value) => updateConfig(draft => { draft.authPolicy.autoRelinquishIdleMinutes = value; })}
-        />
-        <NumericInput
-          label="Rating Input Max"
-          value={config.ratingValidation.ratingInputMax}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.ratingInputMax = value; })}
-        />
-        <NumericInput
-          label="Suspicious Rating Min"
-          value={config.ratingValidation.suspiciousRatingMin}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMin = value; })}
-        />
-        <NumericInput
-          label="Suspicious Rating Max"
-          value={config.ratingValidation.suspiciousRatingMax}
-          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMax = value; })}
-        />
-      </Section>
-
-      <Section
         title="Pre-registration/Event Settings"
         tooltip="Defaults for tournament pre-registration and paid events. Per-event overrides live on the event itself."
         sectionId="preregistration-event"
@@ -1009,6 +895,146 @@ export default function SystemSettings() {
             style={{ ...valueInputStyle, minHeight: '110px', resize: 'vertical' }}
           />
         </FieldRow>
+      </Section>
+
+      <Section
+        title="Public Achievements"
+        tooltip="How many results to show for each board on the public achievements page. Use 0 to hide a board. Positive values include the board and cap the list length."
+        sectionId="public-achievements"
+        open={openSectionId === 'public-achievements'}
+        onToggle={toggleSection}
+      >
+        <FieldRow label="Set all to">
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <BoundedNumericInput
+              value={achievementsSetAll}
+              min={0}
+              max={100}
+              allowEmpty={false}
+              aria-label="Set all achievement counts"
+              onChange={(next) => setAchievementsSetAll(next ?? 0)}
+              inputStyle={{ ...valueInputStyle, width: '96px' }}
+            />
+            <button
+              type="button"
+              className="button-filter"
+              onClick={() => updateConfig((draft) => {
+                if (!draft.publicAccess) {
+                  draft.publicAccess = {
+                    achievements: Object.fromEntries(
+                      ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
+                    ) as SystemConfig['publicAccess']['achievements'],
+                  };
+                }
+                for (const id of ACHIEVEMENT_CATEGORY_IDS) {
+                  draft.publicAccess.achievements[id] = achievementsSetAll;
+                }
+              })}
+            >
+              Apply to all
+            </button>
+          </div>
+        </FieldRow>
+        {ACHIEVEMENT_CATEGORY_IDS.map((id) => (
+          <NumericInput
+            key={id}
+            label={ACHIEVEMENT_CATEGORY_LABELS[id]}
+            min={0}
+            max={100}
+            value={config.publicAccess?.achievements?.[id] ?? 0}
+            onChange={(value) => updateConfig((draft) => {
+              if (!draft.publicAccess) {
+                draft.publicAccess = {
+                  achievements: Object.fromEntries(
+                    ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
+                  ) as SystemConfig['publicAccess']['achievements'],
+                };
+              }
+              draft.publicAccess.achievements[id] = value;
+            })}
+          />
+        ))}
+      </Section>
+
+      <Section
+        title="Payments"
+        tooltip="Club payment policy. More payment options live under Payment Plans."
+        sectionId="payments"
+        open={openSectionId === 'payments'}
+        onToggle={toggleSection}
+      >
+        <NumericInput
+          label="Large credit confirmation threshold ($)"
+          tooltip="Adding credit above this amount requires typing the member’s full name to confirm."
+          min={0}
+          value={Math.round((config.payments.largeCreditConfirmCents ?? 10000) / 100)}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.payments.largeCreditConfirmCents = Math.max(0, Math.floor(value) * 100);
+            })
+          }
+        />
+      </Section>
+
+      <Section
+        title="Core Settings"
+        tooltip="Authentication, score PIN, privilege auto-relinquish, and rating validation."
+        sectionId="core"
+        open={openSectionId === 'core'}
+        onToggle={toggleSection}
+      >
+        <NumericInput
+          label="Minimum Password Length"
+          min={6}
+          value={config.authPolicy.minimumPasswordLength}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.minimumPasswordLength = value; })}
+        />
+        <NumericInput
+          label="Password Reset TTL (hours)"
+          min={1}
+          value={config.authPolicy.passwordResetTokenTtlHours}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.passwordResetTokenTtlHours = value; })}
+        />
+        <NumericInput
+          label="Score PIN Length"
+          min={4}
+          value={config.authPolicy.pinLength}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.pinLength = value; })}
+        />
+        <FieldRow label="Auto Relinquish Privileges (club default)">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+            <input
+              type="checkbox"
+              checked={config.authPolicy.autoRelinquishPrivileges}
+              onChange={(event) => updateConfig(draft => {
+                draft.authPolicy.autoRelinquishPrivileges = event.target.checked;
+              })}
+            />
+            Elevated accounts enter kiosk mode on login by default
+          </label>
+        </FieldRow>
+        <NumericInput
+          label="Auto Relinquish Idle (minutes)"
+          tooltip="After restoring privileges, return to kiosk after this many idle minutes (0 = only on login)."
+          min={0}
+          value={config.authPolicy.autoRelinquishIdleMinutes}
+          onChange={(value) => updateConfig(draft => { draft.authPolicy.autoRelinquishIdleMinutes = value; })}
+        />
+        <NumericInput
+          label="Rating Input Max"
+          value={config.ratingValidation.ratingInputMax}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.ratingInputMax = value; })}
+        />
+        <NumericInput
+          label="Suspicious Rating Min"
+          value={config.ratingValidation.suspiciousRatingMin}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMin = value; })}
+        />
+        <NumericInput
+          label="Suspicious Rating Max"
+          value={config.ratingValidation.suspiciousRatingMax}
+          onChange={(value) => updateConfig(draft => { draft.ratingValidation.suspiciousRatingMax = value; })}
+        />
       </Section>
 
       <Section

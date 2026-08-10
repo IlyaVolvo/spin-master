@@ -117,4 +117,6 @@ export type PaymentMetadata = {
   cashEscapeAvailableAt?: string;
   /** When true, online Session was cancelled and payment switched to cash PENDING. */
   escapedToCashAt?: string;
+  /** How the checkout URL was delivered to the payer. */
+  checkoutDelivery?: 'email' | 'in_app';
 };

@@ -121,6 +121,8 @@ export type SystemConfig = {
     newMemberTrialDays: number;
     /** Minutes before cash escape after recoverable pay-link mail failure. */
     mailFailCashEscapeDelayMinutes: number;
+    /** Credits above this amount (cents) require typing the member name to confirm. */
+    largeCreditConfirmCents: number;
     reminders: {
       checkInBannerEnabled: boolean;
       emailEnabled: boolean;
@@ -250,6 +252,7 @@ const defaultSystemConfig: SystemConfig = {
     courtesyExtraVisits: 3,
     newMemberTrialDays: 7,
     mailFailCashEscapeDelayMinutes: 15,
+    largeCreditConfirmCents: 10000,
     reminders: {
       checkInBannerEnabled: true,
       emailEnabled: true,

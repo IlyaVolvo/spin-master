@@ -169,6 +169,11 @@ export type PaymentsConfig = {
    * Irrecoverable failures allow escape immediately (delay ignored).
    */
   mailFailCashEscapeDelayMinutes: number;
+  /**
+   * Admin Add Credit amounts strictly greater than this (cents) require typing the
+   * member's full name to confirm. Default $100 = 10000.
+   */
+  largeCreditConfirmCents: number;
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */
   providers: {
@@ -359,6 +364,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       courtesyExtraVisits: 3,
       newMemberTrialDays: 7,
       mailFailCashEscapeDelayMinutes: 15,
+      largeCreditConfirmCents: 10000,
       reminders: {
         checkInBannerEnabled: true,
         emailEnabled: true,
@@ -806,6 +812,11 @@ function validatePayments(value: unknown): PaymentsConfig {
     0,
     Math.floor(Number(config.mailFailCashEscapeDelayMinutes) || 15),
   );
+  config.largeCreditConfirmCents = (() => {
+    const raw = Number(config.largeCreditConfirmCents);
+    if (!Number.isFinite(raw)) return 10000;
+    return Math.max(0, Math.floor(raw));
+  })();
   config.reminders.checkInBannerEnabled = Boolean(config.reminders.checkInBannerEnabled);
   config.reminders.emailEnabled = Boolean(config.reminders.emailEnabled);
   config.reminders.periodDaysBeforeExpiry = Math.max(

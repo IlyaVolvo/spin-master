@@ -17,7 +17,13 @@ jest.mock('../../../src/index', () => ({
 }));
 
 jest.mock('../../../src/utils/logger', () => ({
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    auditInfo: jest.fn(),
+  },
 }));
 
 jest.mock('../../../src/services/socketService', () => ({

@@ -626,6 +626,23 @@ export default function PaymentsAdmin() {
 
       {tab === 'plans' ? (
         <>
+          <Subsection title="Payments">
+            <NumericInput
+              label="Large credit confirmation threshold ($)"
+              min={0}
+              value={Math.round((config.payments.largeCreditConfirmCents ?? 10000) / 100)}
+              onChange={(dollars) =>
+                updateConfig((draft) => {
+                  draft.payments.largeCreditConfirmCents = Math.max(0, Math.floor(dollars) * 100);
+                })
+              }
+            />
+            <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#666' }}>
+              Adding credit above this amount requires typing the member&apos;s full name to confirm.
+              Default is $100.
+            </p>
+          </Subsection>
+
           <Subsection title="Segments">
             <p style={{ margin: '8px 0', color: '#666', fontSize: '13px' }}>
               Segments assigned to members that determine which plan price is charged. &quot;Regular&quot; is always required and used as the default fallback.

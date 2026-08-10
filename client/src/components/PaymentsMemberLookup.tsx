@@ -14,6 +14,7 @@ import { MemberPlanScreen } from './players/MemberPlanScreen';
 
 type PaymentRow = {
   id: number;
+  kind?: 'payment';
   memberId: number;
   memberName: string;
   amountCents: number;
@@ -26,6 +27,23 @@ type PaymentRow = {
   status: string;
   recordedAt: string;
 };
+
+type CreditRow = {
+  id: number;
+  kind: 'credit';
+  memberId: number;
+  memberName: string;
+  amountCents: number;
+  reason: string;
+  issuerMemberId: number | null;
+  issuerName: string | null;
+  externalRef: string | null;
+  recordedAt: string;
+};
+
+type LogRow =
+  | (PaymentRow & { kind: 'payment' })
+  | CreditRow;
 
 type PaymentsMemberLookupProps = {
   /** When set, opens that member’s plan screen once */
@@ -328,6 +346,9 @@ export function PaymentsMemberLookup({
   const [providerSelected, setProviderSelected] = useState<ProviderSelection>(loadStickyProviders);
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [credits, setCredits] = useState<CreditRow[]>([]);
+  const [showPayments, setShowPayments] = useState(true);
+  const [showCredits, setShowCredits] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -387,7 +408,15 @@ export function PaymentsMemberLookup({
     debounceRef.current = window.setTimeout(() => {
       const seq = ++requestSeq.current;
       const q = memberFilter.trim();
-      const params: Record<string, string> = {};
+      let includePayments = showPayments;
+      let includeCredits = showCredits;
+      if (!includePayments && !includeCredits) {
+        includePayments = true;
+      }
+      const params: Record<string, string> = {
+        payments: includePayments ? '1' : '0',
+        credits: includeCredits ? '1' : '0',
+      };
       if (q) params.q = q;
       if (dateFrom) params.from = dateFrom;
       if (dateTo) params.to = dateTo;
@@ -396,18 +425,20 @@ export function PaymentsMemberLookup({
         .then((res) => {
           if (seq !== requestSeq.current) return;
           setPayments(Array.isArray(res.data?.payments) ? res.data.payments : []);
+          setCredits(Array.isArray(res.data?.credits) ? res.data.credits : []);
           setError('');
         })
         .catch((err) => {
           if (seq !== requestSeq.current) return;
           setPayments([]);
+          setCredits([]);
           setError(getErrorMessage(err, 'Failed to load payments'));
         })
         .finally(() => {
           if (seq === requestSeq.current) setLoading(false);
         });
     }, memberFilter.trim() ? 250 : 0);
-  }, [memberFilter, dateFrom, dateTo]);
+  }, [memberFilter, dateFrom, dateTo, showPayments, showCredits]);
 
   useEffect(() => {
     loadPayments();
@@ -453,24 +484,44 @@ export function PaymentsMemberLookup({
   const allStatusesSelected = PAYMENT_STATUSES.every((s) => statusSelected.has(s));
   const allProvidersSelected = providerSelected.mode === 'all';
 
-  const filteredPayments = useMemo(() => {
-    return payments.filter((p) => {
-      if (!allStatusesSelected && !statusSelected.has(p.status as PaymentStatusFilter)) {
-        return false;
-      }
-      if (providerSelected.mode === 'subset' && !providerSelected.ids.has(p.provider)) {
-        return false;
-      }
-      return true;
-    });
-  }, [payments, statusSelected, providerSelected, allStatusesSelected]);
+  const filteredRows = useMemo((): LogRow[] => {
+    const paymentRows: LogRow[] = showPayments
+      ? payments
+          .filter((p) => {
+            if (!allStatusesSelected && !statusSelected.has(p.status as PaymentStatusFilter)) {
+              return false;
+            }
+            if (providerSelected.mode === 'subset' && !providerSelected.ids.has(p.provider)) {
+              return false;
+            }
+            return true;
+          })
+          .map((p) => ({ ...p, kind: 'payment' as const }))
+      : [];
+    const creditRows: LogRow[] = showCredits
+      ? credits.map((c) => ({ ...c, kind: 'credit' as const }))
+      : [];
+    return [...paymentRows, ...creditRows].sort(
+      (a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt),
+    );
+  }, [
+    payments,
+    credits,
+    showPayments,
+    showCredits,
+    statusSelected,
+    providerSelected,
+    allStatusesSelected,
+  ]);
 
   const filtersActive =
     Boolean(memberFilter.trim()) ||
     Boolean(dateFrom) ||
     Boolean(dateTo) ||
     !allStatusesSelected ||
-    !allProvidersSelected;
+    !allProvidersSelected ||
+    !showPayments ||
+    !showCredits;
 
   const statusSummary = allStatusesSelected
     ? 'All'
@@ -675,6 +726,60 @@ export function PaymentsMemberLookup({
           onToggleAll={toggleProviderAll}
           onToggleValue={toggleProviderValue}
         />
+        <div>
+          <div
+            style={{
+              display: 'block',
+              margin: '0 0 6px',
+              fontSize: '13px',
+              fontWeight: 700,
+              color: '#2c3e50',
+            }}
+          >
+            Type
+          </div>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '14px',
+              padding: '8px 10px',
+              border: '1px solid #b9c7d8',
+              borderRadius: '6px',
+              backgroundColor: '#f8fbff',
+              fontSize: '13px',
+              minHeight: '38px',
+              boxSizing: 'border-box',
+            }}
+          >
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={showPayments}
+                onChange={() => {
+                  setShowPayments((prev) => {
+                    if (prev && !showCredits) return true;
+                    return !prev;
+                  });
+                }}
+              />
+              Payment
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={showCredits}
+                onChange={() => {
+                  setShowCredits((prev) => {
+                    if (prev && !showPayments) return true;
+                    return !prev;
+                  });
+                }}
+              />
+              Credit
+            </label>
+          </div>
+        </div>
         <button
           type="button"
           onClick={() => loadPayments()}
@@ -688,13 +793,13 @@ export function PaymentsMemberLookup({
       {loading ? (
         <div style={{ marginTop: '8px', fontSize: '13px', color: '#666' }}>Loading payments…</div>
       ) : null}
-      {!loading && filteredPayments.length === 0 && !error ? (
+      {!loading && filteredRows.length === 0 && !error ? (
         <div style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>
-          {filtersActive ? 'No payments matched the current filters.' : 'No payments yet.'}
+          {filtersActive ? 'No entries matched the current filters.' : 'No payments or credits yet.'}
         </div>
       ) : null}
 
-      {!loading && filteredPayments.length > 0 ? (
+      {!loading && filteredRows.length > 0 ? (
         <div style={{ overflowX: 'auto', marginTop: '10px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
             <thead>
@@ -708,12 +813,58 @@ export function PaymentsMemberLookup({
               </tr>
             </thead>
             <tbody>
-              {filteredPayments.map((p) => {
+              {filteredRows.map((row) => {
+                if (row.kind === 'credit') {
+                  return (
+                    <tr key={`credit-${row.id}`}>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>
+                        {formatClubDateTime(row.recordedAt)}
+                      </td>
+                      <td style={tdStyle}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMemberId(row.memberId)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            color: '#1a5276',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {row.memberName}
+                        </button>
+                        <span style={{ color: '#666', fontWeight: 500 }}> (#{row.memberId})</span>
+                      </td>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600 }}>Credit</div>
+                        <div style={{ color: '#666', fontSize: '12px' }}>
+                          {row.reason?.trim() || '—'}
+                          {row.issuerName
+                            ? ` · by ${row.issuerName}`
+                            : ' · system'}
+                        </div>
+                      </td>
+                      <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap', color: '#1e7e34' }}>
+                        +{formatMoney(row.amountCents)}
+                      </td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>credit</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontWeight: 700, color: '#1e7e34' }}>Credit</span>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                const p = row;
                 const effective = formatYmd(p.effectiveDate);
                 const isPending = p.status === 'PENDING';
                 const isCashPending = isPending && p.provider === 'cash';
                 return (
-                  <tr key={p.id}>
+                  <tr key={`payment-${p.id}`}>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#666' }}>
                       {formatClubDateTime(p.recordedAt)}
                     </td>

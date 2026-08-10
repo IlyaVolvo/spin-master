@@ -51,6 +51,8 @@ export type RunCheckoutResult = StartCheckoutResult & {
   creditAppliedCents: number;
   amountCents: number;
   method: CheckoutMethod;
+  /** email | in_app — how checkout URL was delivered (online only). */
+  delivery?: 'email' | 'in_app';
   payLinkEmailed?: boolean;
   mailFailClass?: 'irrecoverable' | 'recoverable';
   mailFailMessage?: string;
@@ -77,6 +79,7 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
       purchaseCreditCents: true,
       onlinePayConsent: true,
       paymentProviderId: true,
+      emailPayLink: true,
       trialEndsOn: true,
       autoRenewEnabled: true,
     },
@@ -328,6 +331,7 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
   let mailFailClass: 'irrecoverable' | 'recoverable' | undefined;
   let mailFailMessage: string | undefined;
   let cashEscapeAvailableAt: string | undefined;
+  let delivery: 'email' | 'in_app' | undefined;
 
   if (
     method === 'online' &&
@@ -335,18 +339,41 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     member.email?.trim() &&
     !confirmedImmediately
   ) {
-    const mail = await deliverOnlinePayLink({
-      paymentId: payment.id,
-      memberEmail: member.email.trim(),
-      memberName: `${member.firstName} ${member.lastName}`.trim(),
-      purpose,
-      amountCents,
-      checkoutUrl: result.checkoutUrl,
-    });
-    payLinkEmailed = mail.emailed;
-    mailFailClass = mail.mailFailClass;
-    mailFailMessage = mail.mailFailMessage;
-    cashEscapeAvailableAt = mail.cashEscapeAvailableAt;
+    // Admin-on-behalf and auto-renew always email; self uses emailPayLink preference.
+    const forceEmail =
+      params.initiatedBy === 'ADMIN' || params.autoRenew === true || member.emailPayLink === true;
+    delivery = forceEmail ? 'email' : 'in_app';
+
+    const paymentRow = await prisma.clubPayment.findUnique({ where: { id: payment.id } });
+    if (paymentRow) {
+      const meta = (paymentRow.metadata || {}) as PaymentMetadata;
+      await prisma.clubPayment.update({
+        where: { id: payment.id },
+        data: {
+          metadata: {
+            ...meta,
+            checkoutDelivery: delivery,
+          },
+        },
+      });
+    }
+
+    if (forceEmail) {
+      const mail = await deliverOnlinePayLink({
+        paymentId: payment.id,
+        memberEmail: member.email.trim(),
+        memberName: `${member.firstName} ${member.lastName}`.trim(),
+        purpose,
+        amountCents,
+        checkoutUrl: result.checkoutUrl,
+      });
+      payLinkEmailed = mail.emailed;
+      mailFailClass = mail.mailFailClass;
+      mailFailMessage = mail.mailFailMessage;
+      cashEscapeAvailableAt = mail.cashEscapeAvailableAt;
+    } else {
+      payLinkEmailed = false;
+    }
   }
 
   return {
@@ -358,6 +385,7 @@ export async function runMemberCheckout(params: RunCheckoutParams): Promise<RunC
     creditAppliedCents,
     amountCents,
     method,
+    delivery,
     payLinkEmailed,
     mailFailClass,
     mailFailMessage,

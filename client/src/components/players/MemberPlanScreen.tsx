@@ -42,6 +42,7 @@ type PlanSummary = {
   canPurchase: boolean;
   onlinePayConsent?: boolean;
   paymentProviderId?: string | null;
+  emailPayLink?: boolean;
   effectiveCanPayOnline?: boolean;
   inTrial?: boolean;
   trialEndsOn?: string | null;
@@ -67,6 +68,15 @@ type PlanSummary = {
     status: string;
     provider: string;
     purpose: string;
+  }>;
+  credits?: Array<{
+    id: number;
+    recordedAt: string;
+    amountCents: number;
+    reason: string;
+    issuerMemberId: number | null;
+    issuerName: string | null;
+    externalRef: string | null;
   }>;
 };
 
@@ -108,6 +118,21 @@ function planSlotLabelStyle(active: boolean): React.CSSProperties {
 
 function formatMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+/** Parse credit amount: no decimal → whole dollars; with `.` → dollars and cents. */
+function parseCreditDollars(raw: string): number | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) {
+    const dollars = Number(s);
+    return Number.isFinite(dollars) && dollars > 0 ? dollars : null;
+  }
+  if (/^\d+\.\d{1,2}$/.test(s)) {
+    const dollars = Number(s);
+    return Number.isFinite(dollars) && dollars > 0 ? dollars : null;
+  }
+  return null;
 }
 
 function entitlementDetail(e: EntitlementView): string {
@@ -223,6 +248,11 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   const [busy, setBusy] = useState(false);
   const [selectedFamilyKey, setSelectedFamilyKey] = useState('');
   const [creditDraft, setCreditDraft] = useState('');
+  const [creditReasonDraft, setCreditReasonDraft] = useState('');
+  const [creditNameConfirm, setCreditNameConfirm] = useState('');
+  const [creditConfirmOpen, setCreditConfirmOpen] = useState(false);
+  const [ledgerShowPayments, setLedgerShowPayments] = useState(true);
+  const [ledgerShowCredits, setLedgerShowCredits] = useState(true);
   const [purchaseLineState, setPurchaseLineState] = useState<PurchaseLineState>('idle');
   const [purchaseLineLabel, setPurchaseLineLabel] = useState('');
   /** Which plan row reflects the in-flight / last purchase outcome */
@@ -283,6 +313,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       setSummary(nextSummary);
       setPlans(nextPlans);
       setCreditDraft('');
+      setCreditReasonDraft('');
       const actingOnBehalf =
         isAdmin() &&
         getMember()?.id != null &&
@@ -617,14 +648,78 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         return;
       }
 
-      // Stripe (and other URL-based) online: pay link is emailed — do not wait in-app.
-      if (res.data?.checkoutUrl || res.data?.payLinkEmailed === true) {
+      // Online: email pay-link OR in-app Checkout tab.
+      if (res.data?.checkoutUrl || res.data?.payLinkEmailed === true || res.data?.delivery) {
         if (closedRef.current || abort.signal.aborted) return;
+        const delivery = res.data?.delivery === 'in_app' ? 'in_app' : 'email';
+        const checkoutUrl =
+          typeof res.data?.checkoutUrl === 'string' ? res.data.checkoutUrl.trim() : '';
+
+        if (delivery === 'in_app' && checkoutUrl) {
+          const opened = window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
+          if (!opened) {
+            // Popup blocked — fall back message; server already skipped email for in_app.
+            // Ask user to allow popups or use email preference next time.
+            setPurchaseLineState('pending');
+            setPurchaseLineLabel(
+              `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (pending)`,
+            );
+            setError(
+              'Could not open the payment page (popup blocked). Allow popups and retry, or enable email for pay links.',
+            );
+            await load({ silent: true });
+            return;
+          }
+          setPurchaseLineState('pending');
+          setPurchaseLineLabel(
+            `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (complete in new tab)`,
+          );
+          setMessage(
+            'Complete payment in the new tab. You can Cancel here to abandon this pending payment.',
+          );
+          const settled = await waitForPaymentUpdate({
+            paymentId,
+            timeoutMs: 300_000,
+            signal: abort.signal,
+            onStatus: (s) => {
+              if (closedRef.current) return;
+              if (s === 'PENDING') {
+                setPurchaseLineState('pending');
+              }
+              if (s === 'CANCELLED') {
+                setPurchaseLineState('idle');
+                setPurchaseLineLabel('');
+              }
+            },
+          });
+          if (closedRef.current || abort.signal.aborted) return;
+          if (settled.status === 'SUCCEEDED') {
+            setPurchaseLineState('confirmed');
+            setPurchaseLineLabel(
+              `${selectedPlan.name} · ${formatMoney(settled.amountCents)} (confirmed)`,
+            );
+            setMessage('Payment confirmed. Plan updated.');
+          } else if (settled.status === 'CANCELLED') {
+            setPurchaseLineState('idle');
+            setPurchaseLineLabel('');
+            setMessage('Payment cancelled.');
+          } else if (settled.status === 'PENDING') {
+            setPurchaseLineState('pending');
+            setMessage('Payment still pending. Use Cancel to wipe it, or finish in the payment tab.');
+          } else {
+            setPurchaseLineState('failed');
+            setPurchaseLineLabel(`${selectedPlan.name} (${settled.status.toLowerCase()})`);
+            setError(`Payment ${settled.status.toLowerCase()}`);
+          }
+          await load({ silent: true });
+          return;
+        }
+
         setPurchaseLineState('pending');
         setPurchaseLineLabel(
           `${selectedPlan.name} · ${formatMoney(selectedPlan.chargePreviewCents)} (check email)`,
         );
-        if (res.data?.payLinkEmailed === false) {
+        if (res.data?.payLinkEmailed === false && delivery === 'email') {
           const escapeAt = res.data?.cashEscapeAvailableAt
             ? new Date(String(res.data.cashEscapeAvailableAt))
             : null;
@@ -637,7 +732,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                     : ''
                 }`,
           );
-        } else {
+        } else if (delivery === 'email') {
           setMessage(
             'Check your email for the payment link. This page will update when payment is confirmed.',
           );
@@ -707,20 +802,91 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
     }
   };
 
-  const saveCredit = async () => {
+  const cancelPendingPayment = async () => {
+    const pendingId = summary?.pendingPayment?.id;
+    if (!pendingId) return;
+    if (!window.confirm('Cancel this pending payment? It will be removed with no ledger entry.')) {
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      const dollars = Number(creditDraft);
-      if (!Number.isFinite(dollars) || dollars <= 0) {
-        setError('Enter a positive credit amount to add');
-        return;
+      const res = await api.post(`/payments/${pendingId}/cancel`);
+      if (res.data?.outcome === 'already_paid') {
+        setMessage('Payment had already succeeded — plan updated.');
+        setPurchaseLineState('confirmed');
+      } else {
+        setMessage('Pending payment cancelled.');
+        setPurchaseLineState('idle');
+        setPurchaseLineLabel('');
       }
-      await api.post(`/club/members/${memberId}/plan/credit`, {
-        purchaseCreditCents: Math.round(dollars * 100),
+      await load({ silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not cancel payment'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveEmailPayLink = async (enabled: boolean) => {
+    if (adminActingOnBehalf) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.patch(`/club/members/${memberId}/plan/email-pay-link`, {
+        emailPayLink: enabled,
       });
-      setMessage(`Added ${formatMoney(Math.round(dollars * 100))} credit`);
+      await load({ silent: true });
+      setMessage(
+        enabled
+          ? 'Pay links will be emailed for future online payments.'
+          : 'Future online payments open in-app (new tab).',
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to update email preference'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const largeCreditConfirmCents =
+    getSystemConfig().payments.largeCreditConfirmCents ?? 10000;
+
+  const saveCredit = async (memberNameConfirm?: string) => {
+    const reason = creditReasonDraft.trim();
+    if (!reason) {
+      setError('Enter a reason for the credit');
+      return;
+    }
+    const dollars = parseCreditDollars(creditDraft);
+    if (dollars == null) {
+      setError('Enter a positive dollar amount (e.g. 25 or 25.50)');
+      return;
+    }
+    const addCents = Math.round(dollars * 100);
+    if (addCents > largeCreditConfirmCents && !memberNameConfirm?.trim()) {
+      setCreditNameConfirm('');
+      setCreditConfirmOpen(true);
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const body: {
+        purchaseCreditCents: number;
+        reason: string;
+        memberNameConfirm?: string;
+      } = {
+        purchaseCreditCents: addCents,
+        reason,
+      };
+      if (memberNameConfirm?.trim()) body.memberNameConfirm = memberNameConfirm.trim();
+      await api.post(`/club/members/${memberId}/plan/credit`, body);
+      setMessage(`Added ${formatMoney(addCents)} credit`);
       setCreditDraft('');
+      setCreditReasonDraft('');
+      setCreditNameConfirm('');
+      setCreditConfirmOpen(false);
       await load({ silent: true });
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to add credit'));
@@ -728,6 +894,39 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
       setBusy(false);
     }
   };
+
+  const creditAmountPositive = parseCreditDollars(creditDraft) != null;
+
+  const ledgerEntries = useMemo(() => {
+    type Entry =
+      | {
+          kind: 'payment';
+          id: number;
+          recordedAt: string;
+          amountCents: number;
+          status: string;
+          provider: string;
+          purpose: string;
+          creditAppliedCents?: number;
+        }
+      | {
+          kind: 'credit';
+          id: number;
+          recordedAt: string;
+          amountCents: number;
+          reason: string;
+          issuerName: string | null;
+        };
+    const payments: Entry[] = ledgerShowPayments
+      ? (summary?.payments ?? []).map((p) => ({ ...p, kind: 'payment' as const }))
+      : [];
+    const credits: Entry[] = ledgerShowCredits
+      ? (summary?.credits ?? []).map((c) => ({ ...c, kind: 'credit' as const }))
+      : [];
+    return [...payments, ...credits].sort(
+      (a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt),
+    );
+  }, [summary?.payments, summary?.credits, ledgerShowPayments, ledgerShowCredits]);
 
   const reimburseFuture = async () => {
     if (!window.confirm('Reimburse the future plan proportionally and remove it?')) return;
@@ -985,6 +1184,33 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
             Pay online
           </label>
         )}
+        {!adminActingOnBehalf && hasEmail && (
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginLeft: '10px',
+              opacity: busy ? 0.6 : 1,
+            }}
+            title="When checked, online pay links are emailed. When unchecked, Checkout opens in a new tab (in-app)."
+          >
+            <input
+              type="checkbox"
+              checked={summary?.emailPayLink === true}
+              disabled={busy}
+              onChange={(e) => void saveEmailPayLink(e.target.checked)}
+            />
+            via email
+          </label>
+        )}
+        {adminActingOnBehalf && (
+          <span style={{ marginLeft: '10px', fontSize: '12px', color: '#888' }}>
+            {summary?.emailPayLink === true
+              ? '(member prefers via email; admin always emails)'
+              : '(member prefers in-app; admin always emails)'}
+          </span>
+        )}
         {!canPayCash && !canPayOnline && (
           <p style={{ margin: 0, fontSize: '12px', color: '#a65b00' }}>
             {!hasEmail
@@ -1073,6 +1299,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   );
 
   return (
+    <>
     <div
       style={{
         position: 'fixed',
@@ -1158,6 +1385,32 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
           </div>
         )}
 
+        {summary?.pendingPayment &&
+          summary.pendingPayment.provider !== 'cash' &&
+          (admin || getMember()?.id === memberId) && (
+          <div
+            style={{
+              marginTop: '12px',
+              padding: '10px 12px',
+              borderRadius: '6px',
+              background: '#f4f6f7',
+              border: '1px solid #d5d8dc',
+              fontSize: '13px',
+            }}
+          >
+            <div style={{ marginBottom: '8px', color: '#566573' }}>
+              Online payment pending
+              {summary.pendingPayment.amountCents != null
+                ? ` · ${formatMoney(summary.pendingPayment.amountCents)}`
+                : ''}
+              . Cancel removes it with no ledger entry.
+            </div>
+            <button type="button" disabled={busy} onClick={() => void cancelPendingPayment()}>
+              Cancel pending payment
+            </button>
+          </div>
+        )}
+
         {summary && (
           <>
             <p style={{ margin: '12px 0 0', fontSize: '13px', color: '#555' }}>
@@ -1193,34 +1446,66 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
             )}
 
             {hasEmail && !adminActingOnBehalf && (
-              <label
+              <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  flexWrap: 'wrap',
+                  gap: '14px',
                   marginTop: '12px',
                   fontSize: '13px',
-                  cursor:
-                    busy || (summary.autoRenewEnabled && summary.onlinePayConsent === true)
-                      ? 'not-allowed'
-                      : 'pointer',
                 }}
-                title={
-                  summary.autoRenewEnabled && summary.onlinePayConsent === true
-                    ? 'Turn off Auto-renew before disabling online pay'
-                    : undefined
-                }
               >
-                <input
-                  type="checkbox"
-                  checked={summary.onlinePayConsent === true}
-                  disabled={
-                    busy || (summary.autoRenewEnabled && summary.onlinePayConsent === true)
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor:
+                      busy || (summary.autoRenewEnabled && summary.onlinePayConsent === true)
+                        ? 'not-allowed'
+                        : 'pointer',
+                  }}
+                  title={
+                    summary.autoRenewEnabled && summary.onlinePayConsent === true
+                      ? 'Turn off Auto-renew before disabling online pay'
+                      : undefined
                   }
-                  onChange={(e) => void saveOnlineConsent(e.target.checked)}
-                />
-                I consent to pay online
-              </label>
+                >
+                  <input
+                    type="checkbox"
+                    checked={summary.onlinePayConsent === true}
+                    disabled={
+                      busy || (summary.autoRenewEnabled && summary.onlinePayConsent === true)
+                    }
+                    onChange={(e) => void saveOnlineConsent(e.target.checked)}
+                  />
+                  I consent to pay online
+                </label>
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                  }}
+                  title="When checked, online pay links are emailed. When unchecked, Checkout opens in a new tab."
+                >
+                  <input
+                    type="checkbox"
+                    checked={summary.emailPayLink === true}
+                    disabled={busy}
+                    onChange={(e) => void saveEmailPayLink(e.target.checked)}
+                  />
+                  via email
+                </label>
+              </div>
+            )}
+            {adminActingOnBehalf && (
+              <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#888' }}>
+                Online pay delivery:{' '}
+                {summary.emailPayLink === true ? 'via email' : 'in-app'} (admin always emails)
+              </p>
             )}
 
             <section style={{ marginTop: '14px' }}>
@@ -1412,60 +1697,85 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                   <h4 style={{ margin: 0, color: '#ffffff', fontWeight: 600 }}>Admin</h4>
                 </div>
 
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '13px',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                    marginBottom: '10px',
+                  }}
+                  title="Default courtesy is on; uncheck to suspend courtesy check-in for this member."
+                >
+                  <input
+                    type="checkbox"
+                    checked={summary.member.courtesySuspended !== true}
+                    disabled={busy}
+                    onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
+                  />
+                  Courtesy check-in enabled
+                </label>
+
                 <div
                   style={{
                     display: 'flex',
-                    gap: '12px',
+                    gap: '10px',
                     alignItems: 'center',
                     flexWrap: 'wrap',
-                    marginBottom: '8px',
+                    marginBottom: '14px',
                   }}
                 >
-                  <label
+                  <input
+                    type="text"
+                    value={creditReasonDraft}
+                    onChange={(e) => setCreditReasonDraft(e.target.value)}
+                    placeholder="Reason"
+                    maxLength={200}
+                    style={{ flex: '1 1 140px', minWidth: '120px', padding: '6px' }}
+                    disabled={busy}
+                    aria-label="Reason for credit"
+                    title="Required. Stored on the credit ledger with this credit."
+                  />
+                  <span
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '8px',
-                      fontSize: '13px',
-                      cursor: busy ? 'not-allowed' : 'pointer',
+                      gap: '4px',
                       flexShrink: 0,
                     }}
+                    title={`Enter dollars (e.g. 25) or dollars and cents (e.g. 25.50). Amounts over ${formatMoney(largeCreditConfirmCents)} require typing this member’s name to confirm.`}
                   >
+                    <span aria-hidden="true">$</span>
                     <input
-                      type="checkbox"
-                      checked={summary.member.courtesySuspended !== true}
+                      type="text"
+                      inputMode="decimal"
+                      value={creditDraft}
+                      onChange={(e) => {
+                        const v = e.target.value.trim();
+                        if (v === '') {
+                          setCreditDraft('');
+                          return;
+                        }
+                        if (/^\d*\.?\d{0,2}$/.test(v)) {
+                          setCreditDraft(v);
+                        }
+                      }}
+                      placeholder="25 or 25.50"
+                      style={{ width: '110px', padding: '6px' }}
                       disabled={busy}
-                      onChange={(e) => void saveCourtesyEnabled(e.target.checked)}
+                      aria-label="Amount in dollars (no decimal) or dollars and cents"
                     />
-                    Courtesy check-in enabled
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={creditDraft}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === '') {
-                        setCreditDraft('');
-                        return;
-                      }
-                      const n = Number(v);
-                      if (!Number.isFinite(n) || n < 0) return;
-                      setCreditDraft(v);
-                    }}
-                    placeholder="0.00"
-                    style={{ width: '100px', padding: '6px' }}
-                    disabled={busy}
-                    aria-label="Amount to add to credit"
-                  />
-                  <button type="button" disabled={busy} onClick={() => void saveCredit()}>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy || !creditAmountPositive || !creditReasonDraft.trim()}
+                    onClick={() => void saveCredit()}
+                    title="Increases this member’s purchase credit balance."
+                  >
                     Add Credit
                   </button>
                 </div>
-                <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#666' }}>
-                  Add Credit increases the balance. Default courtesy is on; uncheck to suspend.
-                </p>
 
                 <div style={{ marginBottom: '14px' }}>
                   <label
@@ -1509,7 +1819,13 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                       marginBottom: '4px',
                       fontSize: '13px',
                       fontWeight: 'bold',
+                      cursor: 'help',
                     }}
+                    title={
+                      hasEmail
+                        ? 'Required (with member consent) before Pay online. List matches install test/production mode.'
+                        : 'Set an email on the member profile before assigning a payment service.'
+                    }
                   >
                     Online payment service
                   </label>
@@ -1525,6 +1841,11 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                       borderRadius: '4px',
                       backgroundColor: !hasEmail ? '#f0f2f4' : 'white',
                     }}
+                    title={
+                      hasEmail
+                        ? 'Required (with member consent) before Pay online. List matches install test/production mode.'
+                        : 'Set an email on the member profile before assigning a payment service.'
+                    }
                   >
                     <option value="">— None (Pay online unavailable) —</option>
                     {assignablePaymentProviders.map((p) => (
@@ -1539,11 +1860,6 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                         </option>
                       )}
                   </select>
-                  <div style={{ marginTop: '4px', fontSize: '12px', color: '#666' }}>
-                    {hasEmail
-                      ? 'Required (with member consent) before Pay online. List matches install test/production mode.'
-                      : 'Set an email on the member profile before assigning a payment service.'}
-                  </div>
                 </div>
               </section>
             )}
@@ -1557,11 +1873,52 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                   padding: '10px 20px',
                   backgroundColor: '#2c3e50',
                   color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap',
                 }}
               >
                 <h4 style={{ margin: 0, color: '#ffffff', fontWeight: 600 }}>Ledger</h4>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                  }}
+                >
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={ledgerShowPayments}
+                      onChange={() => {
+                        setLedgerShowPayments((prev) => {
+                          if (prev && !ledgerShowCredits) return true;
+                          return !prev;
+                        });
+                      }}
+                    />
+                    Payment
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={ledgerShowCredits}
+                      onChange={() => {
+                        setLedgerShowCredits((prev) => {
+                          if (prev && !ledgerShowPayments) return true;
+                          return !prev;
+                        });
+                      }}
+                    />
+                    Credit
+                  </label>
+                </div>
               </div>
-              {!summary.payments || summary.payments.length === 0 ? (
+              {ledgerEntries.length === 0 ? (
                 <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>No entries yet.</p>
               ) : (
                 <ul
@@ -1574,48 +1931,89 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                     overscrollBehavior: 'contain',
                   }}
                 >
-                  {summary.payments.map((p) => (
-                    <li
-                      key={p.id}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'baseline',
-                        gap: '10px',
-                        padding: '4px 0',
-                        borderBottom: '1px solid #f0f0f0',
-                        fontSize: '12px',
-                        lineHeight: 1.35,
-                      }}
-                    >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ fontWeight: 600 }}>
-                          {formatMoney(p.amountCents)}
-                          {' · '}
-                          {p.status === 'SUCCEEDED' ? 'PAID' : p.status}
-                        </span>
-                        <span style={{ color: '#666' }}> · {p.provider}</span>
-                        {p.purpose ? (
-                          <span style={{ color: '#555' }}> · {p.purpose}</span>
-                        ) : null}
-                        {(p.creditAppliedCents ?? 0) > 0 ? (
-                          <span style={{ color: '#666' }}>
-                            {' · '}credit {formatMoney(p.creditAppliedCents ?? 0)}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div
+                  {ledgerEntries.map((entry) =>
+                    entry.kind === 'credit' ? (
+                      <li
+                        key={`credit-${entry.id}`}
                         style={{
-                          color: '#888',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                          fontSize: '11px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'baseline',
+                          gap: '10px',
+                          padding: '4px 0',
+                          borderBottom: '1px solid #f0f0f0',
+                          fontSize: '12px',
+                          lineHeight: 1.35,
                         }}
                       >
-                        {formatClubDateTime(p.recordedAt)}
-                      </div>
-                    </li>
-                  ))}
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ fontWeight: 600, color: '#1e7e34' }}>
+                            +{formatMoney(entry.amountCents)}
+                            {' · '}
+                            Credit
+                          </span>
+                          {entry.reason?.trim() ? (
+                            <span style={{ color: '#555' }}> · {entry.reason.trim()}</span>
+                          ) : null}
+                          <span style={{ color: '#888' }}>
+                            {' · '}
+                            {entry.issuerName ? `by ${entry.issuerName}` : 'system'}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            color: '#888',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                            fontSize: '11px',
+                          }}
+                        >
+                          {formatClubDateTime(entry.recordedAt)}
+                        </div>
+                      </li>
+                    ) : (
+                      <li
+                        key={`payment-${entry.id}`}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'baseline',
+                          gap: '10px',
+                          padding: '4px 0',
+                          borderBottom: '1px solid #f0f0f0',
+                          fontSize: '12px',
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ fontWeight: 600 }}>
+                            {formatMoney(entry.amountCents)}
+                            {' · '}
+                            {entry.status === 'SUCCEEDED' ? 'PAID' : entry.status}
+                          </span>
+                          <span style={{ color: '#666' }}> · {entry.provider}</span>
+                          {entry.purpose ? (
+                            <span style={{ color: '#555' }}> · {entry.purpose}</span>
+                          ) : null}
+                          {(entry.creditAppliedCents ?? 0) > 0 ? (
+                            <span style={{ color: '#666' }}>
+                              {' · '}credit {formatMoney(entry.creditAppliedCents ?? 0)}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div
+                          style={{
+                            color: '#888',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                            fontSize: '11px',
+                          }}
+                        >
+                          {formatClubDateTime(entry.recordedAt)}
+                        </div>
+                      </li>
+                    ),
+                  )}
                 </ul>
               )}
             </section>
@@ -1623,6 +2021,82 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
         )}
       </div>
     </div>
+    {creditConfirmOpen ? (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          zIndex: 20050,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+        }}
+        onClick={() => {
+          if (!busy) setCreditConfirmOpen(false);
+        }}
+      >
+        <div
+          style={{
+            background: 'white',
+            borderRadius: '8px',
+            padding: '22px 20px',
+            width: '100%',
+            maxWidth: '400px',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.2)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 style={{ margin: '0 0 8px', fontSize: '18px', color: '#2c3e50' }}>
+            Confirm large credit
+          </h3>
+          <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#555', lineHeight: 1.45 }}>
+            Adding {formatMoney(Math.round((parseCreditDollars(creditDraft) ?? 0) * 100))} (over{' '}
+            {formatMoney(largeCreditConfirmCents)}) requires typing the member’s name.
+          </p>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '4px' }}>
+            Type member name to confirm
+          </label>
+          <input
+            type="text"
+            value={creditNameConfirm}
+            onChange={(e) => setCreditNameConfirm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && creditNameConfirm.trim()) {
+                e.preventDefault();
+                void saveCredit(creditNameConfirm);
+              }
+            }}
+            placeholder={name}
+            autoFocus
+            disabled={busy}
+            style={{ width: '100%', padding: '9px 10px', marginBottom: '12px', boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setCreditConfirmOpen(false);
+                setCreditNameConfirm('');
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy || !creditNameConfirm.trim()}
+              onClick={() => void saveCredit(creditNameConfirm)}
+              style={{ fontWeight: 700 }}
+            >
+              {busy ? 'Adding…' : 'Confirm'}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 

@@ -1526,6 +1526,7 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
         autoRenewFamilyKey: true,
         onlinePayConsent: true,
         paymentProviderId: true,
+        emailPayLink: true,
         courtesySuspended: true,
         trialEndsOn: true,
       },
@@ -1563,6 +1564,21 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
         provider: true,
         purpose: true,
         metadata: true,
+      },
+    });
+
+    const creditHistory = await prisma.clubCredit.findMany({
+      where: { memberId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        createdAt: true,
+        amountCents: true,
+        reason: true,
+        issuerMemberId: true,
+        externalRef: true,
+        issuer: { select: { firstName: true, lastName: true } },
       },
     });
 
@@ -1607,6 +1623,7 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
       canPurchase,
       onlinePayConsent,
       paymentProviderId: member.paymentProviderId ?? null,
+      emailPayLink: member.emailPayLink === true,
       effectiveCanPayOnline,
       inTrial,
       trialEndsOn: trialEndsOnYmd,
@@ -1671,6 +1688,17 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
           purpose: p.purpose,
         };
       }),
+      credits: creditHistory.map((c) => ({
+        id: c.id,
+        recordedAt: c.createdAt.toISOString(),
+        amountCents: c.amountCents,
+        reason: c.reason,
+        issuerMemberId: c.issuerMemberId,
+        issuerName: c.issuer
+          ? `${c.issuer.firstName} ${c.issuer.lastName}`.trim()
+          : null,
+        externalRef: c.externalRef,
+      })),
     });
   } catch (error) {
     logger.error('Error getting member plan', {
@@ -1680,7 +1708,9 @@ router.get('/members/:id/plan', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** POST /api/club/members/:id/plan/credit — admin add purchase credit (increments; never negative) */
+/** POST /api/club/members/:id/plan/credit — admin add purchase credit (increments; never negative).
+ * Amounts greater than payments.largeCreditConfirmCents require typing the member's full name.
+ */
 router.post('/members/:id/plan/credit', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdminOrOrganizer(req)) {
@@ -1694,6 +1724,7 @@ router.post('/members/:id/plan/credit', async (req: AuthRequest, res: Response) 
     if (!Number.isFinite(addCents) || addCents < 0) {
       return res.status(400).json({ error: 'purchaseCreditCents must be a non-negative integer' });
     }
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
     if (addCents === 0) {
       const member = await prisma.member.findUnique({
         where: { id: memberId },
@@ -1702,18 +1733,53 @@ router.post('/members/:id/plan/credit', async (req: AuthRequest, res: Response) 
       if (!member) return res.status(404).json({ error: 'Member not found' });
       return res.json({ member });
     }
-    const member = await prisma.member.update({
-      where: { id: memberId },
-      data: { purchaseCreditCents: { increment: addCents } },
-      select: { id: true, purchaseCreditCents: true },
-    });
-    logger.auditInfo('Payment credit added', {
+    if (!reason) {
+      return res.status(400).json({ error: 'reason is required' });
+    }
+
+    const thresholdCents = getPaymentsConfig().largeCreditConfirmCents;
+    if (addCents > thresholdCents) {
+      const { normalizeMemberConfirmName, memberDisplayName } = await import(
+        '../payments/writeOffPendingPayment'
+      );
+      const member = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      if (!member) return res.status(404).json({ error: 'Member not found' });
+      const nameConfirm =
+        typeof req.body?.memberNameConfirm === 'string' ? req.body.memberNameConfirm : '';
+      if (!nameConfirm.trim()) {
+        return res.status(400).json({
+          error: `Type the member name to confirm credits over $${(thresholdCents / 100).toFixed(2)}`,
+        });
+      }
+      if (
+        normalizeMemberConfirmName(nameConfirm) !==
+        normalizeMemberConfirmName(memberDisplayName(member))
+      ) {
+        return res.status(400).json({ error: 'Type the member name exactly to confirm' });
+      }
+    }
+
+    const { addPurchaseCredit } = await import('../payments/creditLedger');
+    const result = await addPurchaseCredit({
       memberId,
-      addedCents: addCents,
-      purchaseCreditCents: member.purchaseCreditCents,
-      byMemberId: req.memberId,
+      amountCents: addCents,
+      issuerMemberId: req.memberId ?? null,
+      reason,
     });
-    res.json({ member });
+    emitPaymentUpdated({
+      id: result.creditId,
+      memberId,
+      status: 'CREDIT',
+      amountCents: addCents,
+      purpose: reason,
+    });
+    res.json({
+      member: { id: memberId, purchaseCreditCents: result.purchaseCreditCents },
+      creditId: result.creditId,
+    });
   } catch (error) {
     logger.error('Error adding purchase credit', {
       error: error instanceof Error ? error.message : String(error),
@@ -1740,13 +1806,34 @@ router.post('/members/:id/plan/reimburse-future', async (req: AuthRequest, res: 
 
     const creditAdd = computeFutureReimburseCents(future);
     await endEntitlement(future.id);
-    const member = await prisma.member.update({
-      where: { id: memberId },
-      data: {
-        purchaseCreditCents: { increment: creditAdd },
-      },
-      select: { id: true, purchaseCreditCents: true },
-    });
+    const { addPurchaseCredit } = await import('../payments/creditLedger');
+    const creditResult =
+      creditAdd > 0
+        ? await addPurchaseCredit({
+            memberId,
+            amountCents: creditAdd,
+            issuerMemberId: req.memberId ?? null,
+            reason: 'Future plan reimbursement',
+          })
+        : { purchaseCreditCents: 0, creditId: 0 };
+    const member =
+      creditAdd > 0
+        ? { id: memberId, purchaseCreditCents: creditResult.purchaseCreditCents }
+        : await prisma.member.findUnique({
+            where: { id: memberId },
+            select: { id: true, purchaseCreditCents: true },
+          });
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    if (creditAdd > 0 && creditResult.creditId > 0) {
+      emitPaymentUpdated({
+        id: creditResult.creditId,
+        memberId,
+        status: 'CREDIT',
+        amountCents: creditAdd,
+        purpose: 'Future plan reimbursement',
+      });
+    }
 
     logger.auditInfo('Payment future reimbursed', {
       memberId,
@@ -1763,6 +1850,36 @@ router.post('/members/:id/plan/reimburse-future', async (req: AuthRequest, res: 
     });
   } catch (error) {
     logger.error('Error reimbursing future entitlement', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** PATCH /api/club/members/:id/plan/email-pay-link — member (or admin) sets email vs in-app preference */
+router.patch('/members/:id/plan/email-pay-link', async (req: AuthRequest, res: Response) => {
+  try {
+    const memberId = Number(req.params.id);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'Invalid member id' });
+    }
+    if (!canAccessMemberPlan(req, memberId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    // Admin acting on behalf cannot change the member's delivery preference here —
+    // only the member (or admin editing while viewing? plan says admin-on-behalf disables UI).
+    // Allow self always; allow admin for maintenance.
+    if (typeof req.body?.emailPayLink !== 'boolean') {
+      return res.status(400).json({ error: 'emailPayLink boolean is required' });
+    }
+    const member = await prisma.member.update({
+      where: { id: memberId },
+      data: { emailPayLink: req.body.emailPayLink === true },
+      select: { id: true, emailPayLink: true },
+    });
+    res.json({ member });
+  } catch (error) {
+    logger.error('Error updating emailPayLink', {
       error: error instanceof Error ? error.message : String(error),
     });
     res.status(500).json({ error: 'Internal server error' });
@@ -2011,7 +2128,7 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** GET /api/club/admin/payments — all payments, newest first; optional `q`, `from`, `to` (YYYY-MM-DD) */
+/** GET /api/club/admin/payments — payments and/or credits; optional `q`, `from`, `to`, `payments`, `credits` */
 router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) {
@@ -2024,6 +2141,18 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
       const t = raw.trim();
       return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
     };
+    const parseBool = (raw: unknown, defaultValue: boolean): boolean => {
+      if (raw === undefined || raw === null || raw === '') return defaultValue;
+      if (raw === '0' || raw === 'false' || raw === 'no') return false;
+      if (raw === '1' || raw === 'true' || raw === 'yes') return true;
+      return defaultValue;
+    };
+    let includePayments = parseBool(req.query.payments, true);
+    let includeCredits = parseBool(req.query.credits, true);
+    if (!includePayments && !includeCredits) {
+      includePayments = true;
+    }
+
     const dateFrom = parseYmd(req.query.from);
     const dateTo = parseYmd(req.query.to);
     const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
@@ -2036,8 +2165,6 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
 
     const recordedAtFilter = clubLocalDayRangeUtc(dateFrom, dateTo);
 
-    // Payment Log: money / credit only — exclude check-in ledger stubs (covered visits,
-    // visit-pack debits, $0 courtesy obligations) that belong in Attendance Log.
     const monetaryFilter = {
       OR: [
         { amountCents: { gt: 0 } },
@@ -2047,30 +2174,43 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
       ],
     };
 
-    const payments = await prisma.clubPayment.findMany({
-      where: {
-        AND: [
-          monetaryFilter,
-          ...(Object.keys(recordedAtFilter).length > 0 ? [{ recordedAt: recordedAtFilter }] : []),
-          ...(nameFilters.length > 0
-            ? [
-                {
-                  member: {
-                    AND: nameFilters,
-                  },
-                },
-              ]
-            : []),
-        ],
-      },
-      orderBy: { recordedAt: 'desc' },
-      take: 500,
-      include: {
-        member: {
-          select: { id: true, firstName: true, lastName: true },
-        },
-      },
-    });
+    const payments = includePayments
+      ? await prisma.clubPayment.findMany({
+          where: {
+            AND: [
+              monetaryFilter,
+              ...(Object.keys(recordedAtFilter).length > 0 ? [{ recordedAt: recordedAtFilter }] : []),
+              ...(nameFilters.length > 0
+                ? [{ member: { AND: nameFilters } }]
+                : []),
+            ],
+          },
+          orderBy: { recordedAt: 'desc' },
+          take: 500,
+          include: {
+            member: { select: { id: true, firstName: true, lastName: true } },
+          },
+        })
+      : [];
+
+    const credits = includeCredits
+      ? await prisma.clubCredit.findMany({
+          where: {
+            AND: [
+              ...(Object.keys(recordedAtFilter).length > 0 ? [{ createdAt: recordedAtFilter }] : []),
+              ...(nameFilters.length > 0
+                ? [{ member: { AND: nameFilters } }]
+                : []),
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 500,
+          include: {
+            member: { select: { id: true, firstName: true, lastName: true } },
+            issuer: { select: { id: true, firstName: true, lastName: true } },
+          },
+        })
+      : [];
 
     res.json({
       payments: payments.map((p) => {
@@ -2109,6 +2249,7 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
 
         return {
           id: p.id,
+          kind: 'payment' as const,
           memberId: p.memberId,
           memberName: `${p.member.firstName} ${p.member.lastName}`.trim(),
           amountCents: p.amountCents,
@@ -2122,6 +2263,18 @@ router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
           recordedAt: p.recordedAt.toISOString(),
         };
       }),
+      credits: credits.map((c) => ({
+        id: c.id,
+        kind: 'credit' as const,
+        memberId: c.memberId,
+        memberName: `${c.member.firstName} ${c.member.lastName}`.trim(),
+        amountCents: c.amountCents,
+        reason: c.reason,
+        issuerMemberId: c.issuerMemberId,
+        issuerName: c.issuer ? `${c.issuer.firstName} ${c.issuer.lastName}`.trim() : null,
+        externalRef: c.externalRef,
+        recordedAt: c.createdAt.toISOString(),
+      })),
     });
   } catch (error) {
     logger.error('Error listing club payments', {

@@ -82,6 +82,12 @@ model Member {
   onlinePayConsent Boolean @default(false)
 
   /**
+   * When true, self-initiated online checkout emails the pay link.
+   * When false (default), open Checkout in-app (new tab). Admin/recurring always email.
+   */
+  emailPayLink Boolean @default(false)
+
+  /**
    * Admin-assigned online PSP id (e.g. test, stripe-test, stripe).
    * Null = Pay online not available. Must match installMode-offered providers.
    */
@@ -113,6 +119,8 @@ model Member {
   clubVisits       ClubVisit[]
   clubEntitlements ClubEntitlement[]
   clubPayments     ClubPayment[]
+  clubCredits      ClubCredit[]           @relation("CreditRecipient")
+  clubCreditsIssued ClubCredit[]          @relation("CreditIssuer")
 
   // Discount percentage for next plan purchase (0-100)
   clubDiscount     Int @default(0)
@@ -544,6 +552,29 @@ model ClubPayment {
   @@index([externalRef])
   @@index([status, provider])
   @@map("club_payments")
+}
+
+/**
+ * Audit trail for purchase-credit balance changes.
+ * purchaseCreditCents on Member remains the running balance.
+ * issuerMemberId null = system (e.g. Stripe paid after cancel).
+ */
+model ClubCredit {
+  id              Int      @id @default(autoincrement())
+  memberId        Int
+  issuerMemberId  Int?
+  amountCents     Int
+  reason          String   @default("")
+  externalRef     String?
+  createdAt       DateTime @default(now())
+
+  member Member  @relation("CreditRecipient", fields: [memberId], references: [id], onDelete: Cascade)
+  issuer Member? @relation("CreditIssuer", fields: [issuerMemberId], references: [id], onDelete: SetNull)
+
+  @@index([memberId])
+  @@index([createdAt])
+  @@index([externalRef])
+  @@map("club_credits")
 }
 
 // SwissTournamentData: Configuration for SWISS tournaments

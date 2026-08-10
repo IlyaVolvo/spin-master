@@ -15,7 +15,13 @@ jest.mock('../../../src/index', () => ({
 }));
 
 jest.mock('../../../src/utils/logger', () => ({
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    auditInfo: jest.fn(),
+  },
 }));
 
 jest.mock('../../../src/services/socketService', () => ({
@@ -42,6 +48,10 @@ jest.mock('../../../src/payments/confirmPayment', () => ({
   confirmPayment: jest.fn(),
 }));
 
+jest.mock('../../../src/payments/onlinePayLink', () => ({
+  deliverOnlinePayLink: jest.fn(),
+}));
+
 import { prisma } from '../../../src/index';
 import {
   getCashPaymentProvider,
@@ -54,6 +64,7 @@ import {
   refreshCurrentEntitlement,
 } from '../../../src/payments/entitlementQueue';
 import { confirmPayment } from '../../../src/payments/confirmPayment';
+import { deliverOnlinePayLink } from '../../../src/payments/onlinePayLink';
 import { runMemberCheckout } from '../../../src/payments/runCheckout';
 
 const cashProvider = {
@@ -77,6 +88,7 @@ function baseMember(overrides: Record<string, unknown> = {}) {
     purchaseCreditCents: 0,
     onlinePayConsent: false,
     paymentProviderId: null as string | null,
+    emailPayLink: false,
     trialEndsOn: null,
     autoRenewEnabled: false,
     ...overrides,
@@ -416,5 +428,88 @@ describe('runMemberCheckout', () => {
     });
     expect(result.confirmedImmediately).toBe(true);
     expect(confirmPayment).toHaveBeenCalled();
+  });
+
+  it('self online with emailPayLink false returns in_app and does not email', async () => {
+    (prisma.member.findUnique as jest.Mock).mockResolvedValue(
+      baseMember({
+        onlinePayConsent: true,
+        paymentProviderId: 'dummy',
+        emailPayLink: false,
+      }),
+    );
+    onlineProvider.startCheckout.mockResolvedValue({
+      paymentId: 100,
+      externalRef: 'test_100_x',
+      confirmedImmediately: false,
+      checkoutUrl: 'https://checkout.example/session',
+    });
+
+    const result = await runMemberCheckout({
+      memberId: 10,
+      familyKey: 'monthly',
+      method: 'online',
+      initiatedBy: 'MEMBER',
+    });
+
+    expect(result.delivery).toBe('in_app');
+    expect(result.payLinkEmailed).toBe(false);
+    expect(result.checkoutUrl).toBe('https://checkout.example/session');
+    expect(deliverOnlinePayLink).not.toHaveBeenCalled();
+  });
+
+  it('self online with emailPayLink true emails the pay link', async () => {
+    (prisma.member.findUnique as jest.Mock).mockResolvedValue(
+      baseMember({
+        onlinePayConsent: true,
+        paymentProviderId: 'dummy',
+        emailPayLink: true,
+      }),
+    );
+    onlineProvider.startCheckout.mockResolvedValue({
+      paymentId: 100,
+      externalRef: 'test_100_x',
+      confirmedImmediately: false,
+      checkoutUrl: 'https://checkout.example/session',
+    });
+    (deliverOnlinePayLink as jest.Mock).mockResolvedValue({ emailed: true });
+
+    const result = await runMemberCheckout({
+      memberId: 10,
+      familyKey: 'monthly',
+      method: 'online',
+      initiatedBy: 'MEMBER',
+    });
+
+    expect(result.delivery).toBe('email');
+    expect(result.payLinkEmailed).toBe(true);
+    expect(deliverOnlinePayLink).toHaveBeenCalled();
+  });
+
+  it('admin-on-behalf online always emails even when member prefers in-app', async () => {
+    (prisma.member.findUnique as jest.Mock).mockResolvedValue(
+      baseMember({
+        onlinePayConsent: true,
+        paymentProviderId: 'dummy',
+        emailPayLink: false,
+      }),
+    );
+    onlineProvider.startCheckout.mockResolvedValue({
+      paymentId: 100,
+      externalRef: 'test_100_x',
+      confirmedImmediately: false,
+      checkoutUrl: 'https://checkout.example/session',
+    });
+    (deliverOnlinePayLink as jest.Mock).mockResolvedValue({ emailed: true });
+
+    const result = await runMemberCheckout({
+      memberId: 10,
+      familyKey: 'monthly',
+      method: 'online',
+      initiatedBy: 'ADMIN',
+    });
+
+    expect(result.delivery).toBe('email');
+    expect(deliverOnlinePayLink).toHaveBeenCalled();
   });
 });

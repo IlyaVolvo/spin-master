@@ -360,4 +360,40 @@ router.post('/:paymentId/escape-to-cash', authenticate, async (req: AuthRequest,
   }
 });
 
+/**
+ * POST /api/payments/:paymentId/cancel
+ * Wipe PENDING online payment (member self or Admin). R1: already paid → confirm.
+ */
+router.post('/:paymentId/cancel', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const paymentId = Number(req.params.paymentId);
+    if (!Number.isInteger(paymentId) || paymentId < 1) {
+      return res.status(400).json({ error: 'Invalid payment id' });
+    }
+    if (!req.memberId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { cancelPendingOnlinePayment } = await import('../cancelPendingOnlinePayment');
+    const result = await cancelPendingOnlinePayment({
+      paymentId,
+      actorMemberId: req.memberId,
+      asAdmin: isAdmin(req),
+    });
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Cancel failed';
+    logger.error('Cancel pending payment failed', { error: message });
+    const status =
+      message.includes('not found') ||
+      message.includes('Only pending') ||
+      message.includes('Forbidden') ||
+      message.includes('cash payments')
+        ? message.includes('Forbidden')
+          ? 403
+          : 400
+        : 500;
+    res.status(status).json({ error: message });
+  }
+});
+
 export default router;
