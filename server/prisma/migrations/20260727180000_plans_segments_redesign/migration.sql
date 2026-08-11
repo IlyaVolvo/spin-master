@@ -1,16 +1,21 @@
 -- Plans + segments redesign
 
--- Member.paymentCategory → segment
+-- Member.paymentCategory → segment (or ADD segment on clean migrate history where paymentCategory never existed)
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'members' AND column_name = 'paymentCategory'
+    WHERE table_schema = 'public' AND table_name = 'members' AND column_name = 'paymentCategory'
   ) AND NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'members' AND column_name = 'segment'
+    WHERE table_schema = 'public' AND table_name = 'members' AND column_name = 'segment'
   ) THEN
     ALTER TABLE "members" RENAME COLUMN "paymentCategory" TO "segment";
+  ELSIF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'members' AND column_name = 'segment'
+  ) THEN
+    ALTER TABLE "members" ADD COLUMN "segment" TEXT NOT NULL DEFAULT 'Regular';
   END IF;
 END $$;
 
@@ -18,18 +23,24 @@ UPDATE "members" SET "segment" = 'Regular'
 WHERE "segment" IS NULL OR "segment" = '' OR "segment" = 'Normal';
 
 ALTER TABLE "members" ALTER COLUMN "segment" SET DEFAULT 'Regular';
+ALTER TABLE "members" ALTER COLUMN "segment" SET NOT NULL;
 
--- Entitlement planCategory → planSegment
+-- Entitlement planCategory → planSegment (or ADD planSegment if missing)
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'club_entitlements' AND column_name = 'planCategory'
+    WHERE table_schema = 'public' AND table_name = 'club_entitlements' AND column_name = 'planCategory'
   ) AND NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'club_entitlements' AND column_name = 'planSegment'
+    WHERE table_schema = 'public' AND table_name = 'club_entitlements' AND column_name = 'planSegment'
   ) THEN
     ALTER TABLE "club_entitlements" RENAME COLUMN "planCategory" TO "planSegment";
+  ELSIF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'club_entitlements' AND column_name = 'planSegment'
+  ) THEN
+    ALTER TABLE "club_entitlements" ADD COLUMN "planSegment" TEXT;
   END IF;
 END $$;
 

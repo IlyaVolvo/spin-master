@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE "matches" ADD COLUMN "notPlayed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "matches" ADD COLUMN IF NOT EXISTS "notPlayed" BOOLEAN NOT NULL DEFAULT false;

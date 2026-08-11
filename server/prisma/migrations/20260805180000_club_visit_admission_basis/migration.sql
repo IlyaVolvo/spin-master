@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE "club_visits" ADD COLUMN "admissionBasis" TEXT;
+ALTER TABLE "club_visits" ADD COLUMN IF NOT EXISTS "admissionBasis" TEXT;
