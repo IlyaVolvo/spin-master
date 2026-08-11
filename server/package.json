@@ -17,6 +17,7 @@
     "prisma:diff-prod-schema": "tsx scripts/syncProductionSchema.ts diff",
     "prisma:mark-all-applied-prod": "tsx scripts/syncProductionSchema.ts mark-applied",
     "copy-system-config-to-prod": "tsx scripts/copySystemConfigToProduction.ts",
+    "migrate-release-to-checkin": "tsx scripts/migrateReleaseDataToCheckin.ts",
     "test-email": "tsx scripts/testEmail.ts",
     "hash-password": "tsx scripts/generatePasswordHash.ts",
     "seed:random-players": "tsx scripts/seedRandomPlayers.ts",

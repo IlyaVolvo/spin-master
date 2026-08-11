@@ -12,6 +12,7 @@ npx tsx scripts/<script>.ts [args]
 ## Table of Contents
 
 - [Database Setup & Seeding](#database-setup--seeding)
+- [Release → checkin data migrate](#release--checkin-data-migrate)
 - [Tournament Generation](#tournament-generation)
 - [Tournament & Data Cleanup](#tournament--data-cleanup)
 - [User Management](#user-management)
@@ -66,6 +67,33 @@ npm run setup-supabase-initial
 - `SYS_ADMIN_LAST_NAME` (default: `Admin`)
 
 **⚠️ Destructive:** Deletes existing members and operational tournament/match/rating-history data.
+
+---
+
+### migrateReleaseDataToCheckin.ts
+
+Replicas **members + full tournament graph** (participants, registrations, matches including standalone, brackets, swiss/prelim, rating history) from a release/production DB into a checkin-branch staging DB.
+
+```bash
+npm run migrate-release-to-checkin -- \
+  --source <sourceGitBranch> '<SOURCE_DATABASE_URL>' \
+  --dest <destGitBranch> '<DEST_DATABASE_URL>' \
+  [--allow-db-ahead]
+```
+
+**Requirements:**
+- `--source` and `--dest` each take **exactly two** tokens: git branch name + connection URL
+- Each DB’s applied `_prisma_migrations` must match the git branch (schema gate); otherwise abort with no writes
+- `--allow-db-ahead`: allow extra migrations on the DB that are not on the branch; still fail if any branch migration is missing (DB must not be behind)
+- Source is read-only (SELECT only); refuses if source and dest are the same host+database
+
+**Dest behavior:**
+- **Preserves:** `system_config`, `club_plans`, `point_exchange_rules`
+- **Wipes:** members, tournaments, related tournament tables, `rating_history`, club visits/payments/entitlements/credits
+- **Copies** shared columns only (dest-only columns use defaults); preserves source primary keys; resets serial sequences to `MAX(id)`
+- Nulls `tournament_registrations.eventPaymentId` (payments not copied)
+
+Prints a final report (counts, sequences, elapsed) and exits `0`/`1`.
 
 ---
 
