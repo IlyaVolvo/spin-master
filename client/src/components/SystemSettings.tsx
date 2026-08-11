@@ -1079,10 +1079,10 @@ export default function SystemSettings() {
             fontWeight: 700,
             border: 'none',
             borderRadius: '6px',
-            background: dirty ? '#fff' : 'rgba(255,255,255,0.35)',
-            color: dirty ? '#1b5e20' : '#eceff1',
+            background: dirty && !saving ? '#fff' : '#95a5a6',
+            color: dirty && !saving ? '#1b5e20' : '#eceff1',
             cursor: saving || !dirty ? 'not-allowed' : 'pointer',
-            opacity: saving ? 0.7 : 1,
+            opacity: 1,
           }}
         >
           {saving ? 'Saving…' : 'Save'}

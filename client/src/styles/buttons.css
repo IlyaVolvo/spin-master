@@ -23,6 +23,10 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button:disabled:hover {
+  background-color: #95a5a6;
+}
+
 /* Button Variants */
 button.danger {
   background-color: #e74c3c;
@@ -32,12 +36,22 @@ button.danger:hover {
   background-color: #c0392b;
 }
 
+button.danger:disabled,
+button.danger:disabled:hover {
+  background-color: #95a5a6;
+}
+
 button.success {
   background-color: #27ae60;
 }
 
 button.success:hover {
   background-color: #229954;
+}
+
+button.success:disabled,
+button.success:disabled:hover {
+  background-color: #95a5a6;
 }
 
 /* 3D Button Styles - for Action, Player, Tournament, and Match Stats buttons */

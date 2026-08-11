@@ -90,7 +90,11 @@ const PLAN_INDICATOR_TITLE: Record<'active' | 'expiring_soon' | 'none', string> 
 
 const PLAN_INDICATOR_UNKNOWN_TITLE = 'Plan status unknown — open plan';
 
-const ALL_PLAN_STANDINGS = ['active', 'expiring_soon', 'none'] as const;
+const ALL_FILTER_ROLES = ['PLAYER', 'COACH', 'ADMIN', 'ORGANIZER'] as const;
+type FilterRole = (typeof ALL_FILTER_ROLES)[number];
+
+
+const ALL_PLAN_STANDINGS = ['active', 'expiring_soon', 'none', 'trial'] as const;
 type PlanStanding = (typeof ALL_PLAN_STANDINGS)[number];
 
 const PLAN_STANDING_META: Record<PlanStanding, { symbol: string; color: string; label: string; tooltip: string }> = {
@@ -111,6 +115,12 @@ const PLAN_STANDING_META: Record<PlanStanding, { symbol: string; color: string; 
     color: '#c62828',
     label: 'No plan',
     tooltip: 'No plan — member has no current membership plan',
+  },
+  trial: {
+    symbol: 'T',
+    color: '#27ae60',
+    label: 'On trial',
+    tooltip: 'On trial — free trial is active (through the trial end date)',
   },
 };
 
@@ -134,6 +144,22 @@ function planIndicatorButtonStyle(
 
 function planIndicatorOf(member: Member): 'active' | 'expiring_soon' | 'none' | null {
   return member.planIndicator ?? null;
+}
+
+/** True while club-local today is on or before the inclusive trial end day. */
+function memberIsOnTrial(member: Pick<Member, 'trialEndsOn'>): boolean {
+  const end = trialEndsOnToInputValue(member.trialEndsOn);
+  return end !== '' && clubTodayYmd() <= end;
+}
+
+function memberMatchesPlanStandingFilter(
+  member: Member,
+  selected: readonly PlanStanding[],
+): boolean {
+  if (selected.includes('trial') && memberIsOnTrial(member)) return true;
+  const indicator = planIndicatorOf(member);
+  if (indicator == null) return false;
+  return selected.includes(indicator);
 }
 
 /** Roster status mark for online pay (alongside active/inactive symbol). */
@@ -391,7 +417,22 @@ const Players: React.FC = () => {
   const [maxAge, setMaxAge] = useState<string>('');
   const [minGames, setMinGames] = useState<string>('');
   const [maxGames, setMaxGames] = useState<string>('');
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [selectedRoles, setSelectedRoles] = useState<FilterRole[]>(() => {
+    try {
+      const saved = localStorage.getItem('players_selectedRoles');
+      // Empty / missing historically meant "all roles"
+      if (!saved) return [...ALL_FILTER_ROLES];
+      const parsed = JSON.parse(saved) as unknown;
+      if (!Array.isArray(parsed)) return [...ALL_FILTER_ROLES];
+      if (parsed.length === 0) return [...ALL_FILTER_ROLES];
+      const next = parsed.filter((r): r is FilterRole =>
+        (ALL_FILTER_ROLES as readonly string[]).includes(String(r)),
+      );
+      return next.length > 0 ? next : [...ALL_FILTER_ROLES];
+    } catch {
+      return [...ALL_FILTER_ROLES];
+    }
+  });
   const [showRoleFilter, setShowRoleFilter] = useState(false);
   const roleFilterButtonRef = useRef<HTMLButtonElement>(null);
   const ALL_STATUSES = ['active', 'active_no_password', 'waiting', 'inactive'] as const;
@@ -419,7 +460,16 @@ const Players: React.FC = () => {
       const next = parsed.filter((s): s is PlanStanding =>
         (ALL_PLAN_STANDINGS as readonly string[]).includes(String(s)),
       );
-      return next.length > 0 ? next : [...ALL_PLAN_STANDINGS];
+      if (next.length === 0) return [...ALL_PLAN_STANDINGS];
+      // Prior sticky "all $ colors" without Trial → treat as All (include Trial).
+      const hadLegacyAllDollars =
+        next.includes('active') &&
+        next.includes('expiring_soon') &&
+        next.includes('none') &&
+        !next.includes('trial') &&
+        !parsed.includes('trial');
+      if (hadLegacyAllDollars) return [...ALL_PLAN_STANDINGS];
+      return next;
     } catch {
       return [...ALL_PLAN_STANDINGS];
     }
@@ -2247,14 +2297,14 @@ const Players: React.FC = () => {
       });
     }
     
-    // Filter by roles (only if roles are selected and user is Admin)
-    if (selectedRoles.length > 0 && isAdmin()) {
+    // Filter by roles (AND with other filters); All = no role filter
+    if (selectedRoles.length > 0 && selectedRoles.length < ALL_FILTER_ROLES.length && isAdmin()) {
       filtered = filtered.filter(p => {
         // Always include the selected player for history
         if (isSelectingForHistory && p.id === selectedPlayerForHistory) return true;
         // A member should be displayed if they have at least one of the selected roles
         if (!p.roles || p.roles.length === 0) return false;
-        return p.roles.some(role => selectedRoles.includes(role));
+        return p.roles.some(role => selectedRoles.includes(role as FilterRole));
       });
     }
 
@@ -2270,9 +2320,7 @@ const Players: React.FC = () => {
     if (selectedPlanStandings.length > 0 && selectedPlanStandings.length < ALL_PLAN_STANDINGS.length) {
       filtered = filtered.filter((p) => {
         if (isSelectingForHistory && p.id === selectedPlayerForHistory) return true;
-        const indicator = planIndicatorOf(p);
-        if (indicator == null) return false;
-        return selectedPlanStandings.includes(indicator);
+        return memberMatchesPlanStandingFilter(p, selectedPlanStandings);
       });
     }
 
@@ -2992,7 +3040,7 @@ const Players: React.FC = () => {
     setMaxAge('');
     setMinGames('');
     setMaxGames('');
-    setSelectedRoles([]);
+    setSelectedRoles([...ALL_FILTER_ROLES]);
     setSelectedStatuses([...ALL_STATUSES]);
     setSelectedPlanStandings([...ALL_PLAN_STANDINGS]);
     // Clear sticky filters from localStorage
@@ -3009,7 +3057,7 @@ const Players: React.FC = () => {
   };
 
   const hasActiveFilters = () => {
-    return nameFilter.trim() !== '' || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '' || selectedRoles.length > 0 || selectedStatuses.length < ALL_STATUSES.length || selectedPlanStandings.length < ALL_PLAN_STANDINGS.length;
+    return nameFilter.trim() !== '' || minRating !== '' || maxRating !== '9999' || minAge !== '' || maxAge !== '' || minGames !== '' || maxGames !== '' || selectedRoles.length < ALL_FILTER_ROLES.length || selectedStatuses.length < ALL_STATUSES.length || selectedPlanStandings.length < ALL_PLAN_STANDINGS.length;
   };
 
   
@@ -3590,11 +3638,11 @@ const Players: React.FC = () => {
     }
     
     // Filter by roles (only if roles are selected and user is Admin)
-    if (selectedRoles.length > 0 && isAdmin()) {
+    if (selectedRoles.length > 0 && selectedRoles.length < ALL_FILTER_ROLES.length && isAdmin()) {
       filtered = filtered.filter(p => {
         // A member should be displayed if they have at least one of the selected roles
         if (!p.roles || p.roles.length === 0) return false;
-        return p.roles.some(role => selectedRoles.includes(role));
+        return p.roles.some(role => selectedRoles.includes(role as FilterRole));
       });
     }
 
@@ -3604,11 +3652,7 @@ const Players: React.FC = () => {
     }
 
     if (selectedPlanStandings.length > 0 && selectedPlanStandings.length < ALL_PLAN_STANDINGS.length) {
-      filtered = filtered.filter((p) => {
-        const indicator = planIndicatorOf(p);
-        if (indicator == null) return false;
-        return selectedPlanStandings.includes(indicator);
-      });
+      filtered = filtered.filter((p) => memberMatchesPlanStandingFilter(p, selectedPlanStandings));
     }
     
     return filtered;
@@ -5723,7 +5767,11 @@ const Players: React.FC = () => {
                     gap: '6px'
                   }}
                 >
-                  <span>Select Roles</span>
+                  <span>
+                    {selectedRoles.length === ALL_FILTER_ROLES.length
+                      ? 'All'
+                      : selectedRoles.join(', ')}
+                  </span>
                   <span style={{ fontSize: '12px', color: 'white' }}>▼</span>
                 </button>
                 {showRoleFilter && (
@@ -5784,37 +5832,80 @@ const Players: React.FC = () => {
                           ×
                         </button>
                       </div>
-                      <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        gap: '6px'
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '1px'
                       }}>
-                        {['PLAYER', 'COACH', 'ADMIN', 'ORGANIZER'].map(role => (
-                          <label key={role} style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '10px', 
-                            cursor: 'pointer', 
-                            fontSize: '14px',
-                            padding: '8px',
-                            borderRadius: '4px',
-                            backgroundColor: selectedRoles.includes(role) ? '#e8f4f8' : 'transparent'
-                          }}>
-                            <input
-                              type="checkbox"
-                              checked={selectedRoles.includes(role)}
-                              onChange={(e) => {
-                                const newRoles = e.target.checked
-                                  ? [...selectedRoles, role]
-                                  : selectedRoles.filter(r => r !== role);
-                                setSelectedRoles(newRoles);
-                                localStorage.setItem('players_selectedRoles', JSON.stringify(newRoles));
+                        {(() => {
+                          const allSelected = selectedRoles.length === ALL_FILTER_ROLES.length;
+                          return (
+                            <label
+                              title="All roles"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                padding: '3px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: allSelected ? '#e8f4f8' : 'transparent',
+                                fontWeight: 600,
                               }}
-                              style={{ cursor: 'pointer', margin: 0, width: '16px', height: '16px' }}
-                            />
-                            <span>{role}</span>
-                          </label>
-                        ))}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    const next = [...ALL_FILTER_ROLES];
+                                    setSelectedRoles(next);
+                                    localStorage.setItem('players_selectedRoles', JSON.stringify(next));
+                                  }
+                                }}
+                                style={{ cursor: 'pointer', margin: 0, width: '14px', height: '14px' }}
+                              />
+                              <span>All</span>
+                            </label>
+                          );
+                        })()}
+                        <div style={{ borderTop: '1px solid #edf1f5', margin: '4px 0' }} />
+                        {ALL_FILTER_ROLES.map(role => {
+                          const isSelected = selectedRoles.includes(role);
+                          const wouldLeaveNone = isSelected && selectedRoles.length === 1;
+                          return (
+                            <label
+                              key={role}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: wouldLeaveNone ? 'not-allowed' : 'pointer',
+                                fontSize: '13px',
+                                padding: '3px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: isSelected ? '#e8f4f8' : 'transparent',
+                                opacity: wouldLeaveNone ? PLAYERS_DISABLED_OPACITY : 1,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (!e.target.checked && wouldLeaveNone) return;
+                                  const newRoles = e.target.checked
+                                    ? [...selectedRoles, role]
+                                    : selectedRoles.filter(r => r !== role);
+                                  setSelectedRoles(newRoles);
+                                  localStorage.setItem('players_selectedRoles', JSON.stringify(newRoles));
+                                }}
+                                style={{ cursor: wouldLeaveNone ? 'not-allowed' : 'pointer', margin: 0, width: '14px', height: '14px' }}
+                              />
+                              <span>{role}</span>
+                            </label>
+                          );
+                        })}
                       </div>
                     </div>
                   </>
@@ -5852,7 +5943,7 @@ const Players: React.FC = () => {
                       ? 'All'
                       : selectedPlanStandings.map((s) => (
                           <span key={s} style={{ color: PLAN_STANDING_META[s].color, marginLeft: s === selectedPlanStandings[0] ? 0 : 2 }}>
-                            $
+                            {PLAN_STANDING_META[s].symbol}
                           </span>
                         ))}
                   </span>
@@ -6092,7 +6183,7 @@ const Players: React.FC = () => {
                                   fontSize: '13px',
                                 }}
                               >
-                                $
+                                {meta.symbol}
                               </span>
                             </label>
                           );
@@ -6160,7 +6251,7 @@ const Players: React.FC = () => {
               const max = maxGames === '' ? '∞' : maxGames;
               filterDescriptions.push(`Games [${min}-${max}]`);
             }
-            if (selectedRoles.length > 0) {
+            if (selectedRoles.length < ALL_FILTER_ROLES.length) {
               filterDescriptions.push(`Roles: ${selectedRoles.join(', ')}`);
             }
             if (selectedStatuses.length < ALL_STATUSES.length) {
@@ -7014,6 +7105,42 @@ const Players: React.FC = () => {
                         ✏️
                       </button>
                       {!isCheckinKiosk && (() => {
+                        const onTrial = memberIsOnTrial(player);
+                        if (onTrial) {
+                          const trialEnd = trialEndsOnToInputValue(player.trialEndsOn);
+                          const trialTitle = trialEnd
+                            ? `On trial through ${trialEnd} — open plan`
+                            : `${PLAN_STANDING_META.trial.tooltip} — open plan`;
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setPlanScreenMemberId(player.id);
+                              }}
+                              title={trialTitle}
+                              aria-label={trialTitle}
+                              style={{
+                                padding: '2px 5px',
+                                border: 'none',
+                                background: PLAN_STANDING_META.trial.color,
+                                color: '#fff',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                lineHeight: 1.2,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderRadius: '4px',
+                                minWidth: '22px',
+                              }}
+                            >
+                              T
+                            </button>
+                          );
+                        }
                         const indicator = planIndicatorOf(player);
                         const { background, color } = planIndicatorButtonStyle(indicator);
                         const title = indicator
@@ -7905,7 +8032,6 @@ const Players: React.FC = () => {
                   style={{
                     fontSize: '13px',
                     padding: '8px 16px',
-                    opacity: editCanSave && !playerSaveBusy ? 1 : PLAYERS_DISABLED_OPACITY,
                     cursor: editCanSave && !playerSaveBusy ? 'pointer' : 'not-allowed',
                   }}
                 >

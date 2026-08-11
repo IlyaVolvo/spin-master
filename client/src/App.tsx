@@ -1358,26 +1358,6 @@ function Header({
           flex: '0 0 auto',
         }}>
           <div className="app-header-logo-wrap" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
-            <span
-              aria-label={`Build ${changesetId}`}
-              title={changesetId}
-              style={{
-                position: 'absolute',
-                left: '50%',
-                bottom: 'calc(100% + 3px)',
-                transform: 'translateX(-50%)',
-                color: 'rgba(255, 255, 255, 0.45)',
-                fontSize: '9px',
-                fontFamily: 'monospace',
-                letterSpacing: '0.06em',
-                lineHeight: 1,
-                whiteSpace: 'nowrap',
-                pointerEvents: 'none',
-                userSelect: 'none',
-              }}
-            >
-              {changesetId}
-            </span>
             <span className="app-header-paddle">🏓</span>
             <span
               className="app-header-logo-box"
@@ -2022,7 +2002,21 @@ function Header({
                 opacity: 0.92,
               }}
             >
-              Built for day-by-day operations and events — less paperwork, clearer results.
+              Built for day-by-day operations, tournaments, events — less paperwork, more clarity
+            </p>
+            <p
+              aria-label={`Build ${changesetId}`}
+              title={changesetId}
+              style={{
+                margin: '10px 0 0',
+                color: 'rgba(255, 255, 255, 0.55)',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                letterSpacing: '0.06em',
+                lineHeight: 1,
+              }}
+            >
+              {changesetId}
             </p>
           </div>
           <div style={{ padding: '20px 24px 22px' }}>
