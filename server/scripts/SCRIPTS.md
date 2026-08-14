@@ -78,13 +78,15 @@ Replicas **members + full tournament graph** (participants, registrations, match
 npm run migrate-release-to-checkin -- \
   --source <sourceGitBranch> '<SOURCE_DATABASE_URL>' \
   --dest <destGitBranch> '<DEST_DATABASE_URL>' \
-  [--allow-db-ahead]
+  [--allow-db-ahead] \
+  [--trial-ends-on YYYY-MM-DD]
 ```
 
 **Requirements:**
 - `--source` and `--dest` each take **exactly two** tokens: git branch name + connection URL
 - Each DB’s applied `_prisma_migrations` must match the git branch (schema gate); otherwise abort with no writes
 - `--allow-db-ahead`: allow extra migrations on the DB that are not on the branch; still fail if any branch migration is missing (DB must not be behind)
+- `--trial-ends-on YYYY-MM-DD`: set `members.trialEndsOn` (UTC noon) for every copied member and clear `trialExpiryNotifiedAt`. Omit to copy source values (or dest default null)
 - Source is read-only (SELECT only); refuses if source and dest are the same host+database
 
 **Dest behavior:**

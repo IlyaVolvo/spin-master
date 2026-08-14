@@ -13,6 +13,8 @@
  *
  * Optional: --allow-db-ahead — schema gate passes if every branch migration is applied,
  * even when the DB has extra migrations not on that branch (DB must not be behind).
+ * Optional: --trial-ends-on YYYY-MM-DD — set members.trialEndsOn for every copied member
+ * (UTC noon). Omit to copy source values (or dest default null if the column is dest-only).
  *
  * Source is read-only (SELECT only). Default schema gate requires exact migration set match.
  */
@@ -79,6 +81,7 @@ type Report = {
   wipeCounts: Record<string, number>;
   insertCounts: Record<string, { source: number; inserted: number }>;
   sequences: Record<string, number | null>;
+  trialEndsOnYmd: string | null;
   elapsedMs: number;
   error?: string;
 };
@@ -136,10 +139,20 @@ function listBranchMigrations(gitRoot: string, branch: string): string[] {
   return [...names].sort();
 }
 
+/** Inclusive last trial club day, stored as UTC noon (same as memberTrial.parseTrialEndsOnInput). */
+function parseTrialEndsOnYmd(value: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error('--trial-ends-on requires YYYY-MM-DD');
+  }
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+}
+
 function parseArgs(argv: string[]): {
   source: Side;
   dest: Side;
   allowDbAhead: boolean;
+  trialEndsOn: Date | null;
 } {
   const args = argv.slice(2);
   let sourceUrl: string | undefined;
@@ -147,11 +160,21 @@ function parseArgs(argv: string[]): {
   let destUrl: string | undefined;
   let destBranch: string | undefined;
   let allowDbAhead = false;
+  let trialEndsOn: Date | null = null;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--allow-db-ahead') {
       allowDbAhead = true;
+      continue;
+    }
+    if (a === '--trial-ends-on') {
+      const ymd = args[i + 1];
+      if (!ymd || ymd.startsWith('--')) {
+        throw new Error('--trial-ends-on requires exactly one token: YYYY-MM-DD');
+      }
+      trialEndsOn = parseTrialEndsOnYmd(ymd);
+      i += 1;
       continue;
     }
     if (a === '--source') {
@@ -190,6 +213,7 @@ function parseArgs(argv: string[]): {
     source: { url: sourceUrl, branch: sourceBranch, label: 'source' },
     dest: { url: destUrl, branch: destBranch, label: 'dest' },
     allowDbAhead,
+    trialEndsOn,
   };
 }
 
@@ -198,11 +222,13 @@ function printUsage(): void {
   npx tsx scripts/migrateReleaseDataToCheckin.ts \\
     --source <sourceGitBranch> '<SOURCE_DATABASE_URL>' \\
     --dest <destGitBranch> '<DEST_DATABASE_URL>' \\
-    [--allow-db-ahead]
+    [--allow-db-ahead] \\
+    [--trial-ends-on YYYY-MM-DD]
 
 Both --source and --dest require exactly two tokens (branch + URL).
 Default schema gate: DB migrations must exactly match the git branch.
 --allow-db-ahead: allow extra migrations on the DB; still fail if the DB is missing any branch migration.
+--trial-ends-on: set members.trialEndsOn for every copied member (UTC noon). Omit to leave source/default (usually null).
 Source is read-only. Dest member/tournament/club-log data is wiped; system_config, club_plans, and point_exchange_rules are preserved.`);
 }
 
@@ -442,6 +468,9 @@ function printReport(report: Report): void {
   console.log(`Source: ${report.source.urlMasked}  branch=${report.source.branch}`);
   console.log(`Dest:   ${report.dest.urlMasked}  branch=${report.dest.branch}`);
   console.log(`Elapsed: ${report.elapsedMs} ms`);
+  console.log(
+    `Member trialEndsOn: ${report.trialEndsOnYmd ?? '(not overridden; source/default)'}`,
+  );
 
   for (const side of ['source', 'dest'] as const) {
     const g = report.schemaGate[side];
@@ -491,7 +520,7 @@ async function main(): Promise<void> {
   let report: Report | undefined;
 
   try {
-    const { source, dest, allowDbAhead } = parseArgs(process.argv);
+    const { source, dest, allowDbAhead, trialEndsOn } = parseArgs(process.argv);
     const srcId = dbIdentity(source.url);
     const dstId = dbIdentity(dest.url);
     if (
@@ -538,6 +567,7 @@ async function main(): Promise<void> {
       wipeCounts: {},
       insertCounts: {},
       sequences: {},
+      trialEndsOnYmd: trialEndsOn ? trialEndsOn.toISOString().slice(0, 10) : null,
       elapsedMs: 0,
     };
 
@@ -604,6 +634,28 @@ async function main(): Promise<void> {
           sourceRows[table] = await fetchAllRows(sourceClient, table, intersection);
         }
         tablesToCopy.push(table);
+      }
+
+      if (trialEndsOn) {
+        if (!tablesToCopy.includes('members')) {
+          throw new Error('--trial-ends-on set but members were not copied (table missing on source or dest).');
+        }
+        const destMemberCols = Object.keys(copyTypes.members ?? {});
+        if (!destMemberCols.includes('trialEndsOn')) {
+          throw new Error('--trial-ends-on set but dest members has no trialEndsOn column.');
+        }
+        if (!copyCols.members.includes('trialEndsOn')) {
+          copyCols.members = [...copyCols.members, 'trialEndsOn'];
+        }
+        for (const row of sourceRows.members) {
+          row.trialEndsOn = trialEndsOn;
+          if (destMemberCols.includes('trialExpiryNotifiedAt')) {
+            if (!copyCols.members.includes('trialExpiryNotifiedAt')) {
+              copyCols.members = [...copyCols.members, 'trialExpiryNotifiedAt'];
+            }
+            row.trialExpiryNotifiedAt = null;
+          }
+        }
       }
 
       await destClient.$transaction(
