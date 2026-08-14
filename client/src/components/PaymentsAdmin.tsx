@@ -9,7 +9,6 @@ import {
 } from '../utils/systemConfig';
 import { getErrorMessage } from '../utils/errorHandler';
 import ClubPlanManager from './ClubPlanManager';
-import { CourtesyVisitsAdmin } from './CourtesyVisitsAdmin';
 import { PaymentsMemberLookup } from './PaymentsMemberLookup';
 import { BoundedNumericInput } from './BoundedNumericInput';
 import api from '../utils/api';
@@ -659,10 +658,6 @@ export default function PaymentsAdmin() {
 
           <Subsection title="Payment Provider & Courtesy Settings">
             <PaymentsSettingsEditor config={config} updateConfig={updateConfig} />
-          </Subsection>
-
-          <Subsection title="Courtesy Visits">
-            <CourtesyVisitsAdmin />
           </Subsection>
         </>
       ) : (

@@ -1439,37 +1439,6 @@ router.post('/admin/close-club', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** GET /api/club/admin/courtesy-visits — list uncleared courtesy visits */
-router.get('/admin/courtesy-visits', async (req: AuthRequest, res: Response) => {
-  try {
-    if (!isAdminOrOrganizer(req)) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    const visits = await prisma.clubVisit.findMany({
-      where: { isCourtesy: true, courtesyClearedAt: null },
-      include: {
-        member: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            courtesySuspended: true,
-          },
-        },
-      },
-      orderBy: { checkInAt: 'desc' },
-      take: 500,
-    });
-    res.json({ visits });
-  } catch (error) {
-    logger.error('Error listing courtesy visits', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 /** POST /api/club/admin/members/:id/courtesy-suspend — body: { suspended: boolean } */
 router.post('/admin/members/:id/courtesy-suspend', async (req: AuthRequest, res: Response) => {
   try {

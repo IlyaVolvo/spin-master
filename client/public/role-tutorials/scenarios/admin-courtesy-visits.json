@@ -2,10 +2,10 @@
   "slug": "admin-courtesy-visits",
   "role": "admin",
   "title": "Courtesy visits",
-  "description": "Review the Courtesy Visits subsection for members on courtesy check-in.",
+  "description": "Courtesy check-ins appear on the Attendance Log Admission column.",
   "relatedSlugs": [
-    "admin-payment-plans",
-    "admin-enter-checkin-kiosk"
+    "admin-attendance-log",
+    "admin-payment-plans"
   ],
   "viewport": {
     "width": 1600,
@@ -14,8 +14,8 @@
   "steps": [
     {
       "id": "courtesy",
-      "title": "Courtesy Visits",
-      "body": "Suspend or resume courtesy for members who checked in without a paid entitlement under club policy.",
+      "title": "Courtesy on Attendance Log",
+      "body": "Courtesy visits show Admission as Courtesy. Suspend or resume courtesy on the member Plan screen.",
       "image": "assets/admin-courtesy-visits/step-01.png"
     }
   ]

@@ -245,7 +245,7 @@ export const adminScenarios: ScenarioDef[] = [
     role: 'admin',
     title: 'Payment Plans',
     description: 'Configure club plans, segments, and payment provider settings.',
-    relatedSlugs: ['admin-payment-provider', 'admin-courtesy-visits', 'player-open-own-plan'],
+    relatedSlugs: ['admin-payment-provider', 'admin-attendance-log', 'player-open-own-plan'],
     steps: [
       {
         id: 'plans',
@@ -274,7 +274,7 @@ export const adminScenarios: ScenarioDef[] = [
     role: 'admin',
     title: 'Payment provider & courtesy settings',
     description: 'On Payment Plans, review provider configuration, reminders, trial, and courtesy knobs.',
-    relatedSlugs: ['admin-payment-plans', 'admin-courtesy-visits'],
+    relatedSlugs: ['admin-payment-plans', 'admin-attendance-log'],
     steps: [
       {
         id: 'provider',
@@ -299,24 +299,17 @@ export const adminScenarios: ScenarioDef[] = [
     slug: 'admin-courtesy-visits',
     role: 'admin',
     title: 'Courtesy visits',
-    description: 'Review the Courtesy Visits subsection for members on courtesy check-in.',
-    relatedSlugs: ['admin-payment-plans', 'admin-enter-checkin-kiosk'],
+    description: 'Courtesy check-ins appear on the Attendance Log Admission column.',
+    relatedSlugs: ['admin-attendance-log', 'admin-payment-plans'],
     steps: [
       {
         id: 'courtesy',
-        title: 'Courtesy Visits',
-        body: 'Suspend or resume courtesy for members who checked in without a paid entitlement under club policy.',
+        title: 'Courtesy on Attendance Log',
+        body: 'Courtesy visits show Admission as Courtesy. Suspend or resume courtesy on the member Plan screen.',
         capture: async (ctx) => {
           await ctx.loginAs(E);
-          await gotoPath(ctx, '/payments?tab=plans');
+          await gotoPath(ctx, '/attendance-log');
           await ctx.delay(700);
-          await ctx.page.evaluate(() => {
-            const el = [...document.querySelectorAll('h2, h3, button')].find((n) =>
-              (n.textContent || '').includes('Courtesy'),
-            ) as HTMLElement | undefined;
-            el?.scrollIntoView({ block: 'center' });
-          });
-          await ctx.delay(300);
         },
       },
     ],

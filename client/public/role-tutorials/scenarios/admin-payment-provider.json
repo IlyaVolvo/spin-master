@@ -5,7 +5,7 @@
   "description": "On Payment Plans, review provider configuration, reminders, trial, and courtesy knobs.",
   "relatedSlugs": [
     "admin-payment-plans",
-    "admin-courtesy-visits"
+    "admin-attendance-log"
   ],
   "viewport": {
     "width": 1600,

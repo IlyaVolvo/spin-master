@@ -275,7 +275,7 @@ Mark each: Pass / Fail / Skip. Prefer **UI** unless the DB recipe is listed.
 |----|-------|----------|-------------|
 | E1 | Payments member search by name/ID → Open | Plan screen | — |
 | E2 | Set credit on plan screen | Balance updates | Or SQL credit |
-| E3 | Courtesy Visits admin Suspend | Blocks courtesy | — |
+| E3 | Plan screen: uncheck Courtesy check-in enabled | Blocks courtesy | — |
 | E4 | Payments settings save (provider, grace, reminders) | Persists without wiping system settings | — |
 
 ---
