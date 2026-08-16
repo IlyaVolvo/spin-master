@@ -232,7 +232,7 @@ Seed pins at least:
 - Demo users: `tutorial-player@…`, `tutorial-organizer@…`, `tutorial-admin@…` (+ enough roster for tournament scenarios)
 - Deterministic sample tournaments/payments only as required by capture scripts
 
-Reuse ideas from `seedRoleTutorialUsers.ts` and `setupNewDatabase.ts` / Supabase initial setup, but **dedicated** and **destructive reset** on tutorial DB only.
+Reuse ideas from `seedRoleTutorialUsers.ts` and `setupNewDatabase.ts` / `setup-supabase-initial`, but **dedicated** and **destructive reset** on tutorial DB only.
 
 ---
 

@@ -151,11 +151,9 @@ Compound:
 - Tournament optional 1:1 SwissTournamentData
 
 ## Operational notes
-- For fresh Supabase environments, use `server/scripts/setupSupabaseFresh.ts`:
-  - pushes schema via Prisma `db push`
-  - clears operational data and existing members
-  - seeds `point_exchange_rules`
-  - creates exactly one Sys Admin (`ORGANIZER` role only)
+- Production and Neon: `npx prisma migrate deploy` with a **direct** `DATABASE_URL`. See [SETUP.md](./SETUP.md).
+- Local throwaway reset: `setupNewDatabase.ts` (`db push --force-reset`).
+- Factory reset + sys admin: `npm run setup-supabase-initial` (destructive; any Postgres).
 - Application-level validation enforces:
   - US phone format
   - rating bounds (`0..9999`)

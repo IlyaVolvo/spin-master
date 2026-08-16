@@ -1,6 +1,6 @@
 # Stripe test-mode integration runbook
 
-**Status:** Stripe Checkout Session URL is reused for both **email pay link** and **in-app** (new tab). Member `emailPayLink` defaults to `false` (in-app); Admin-on-behalf and auto-renew always email. Assign **`stripe-test`** per member (`Member.paymentProviderId`); webhooks: `/api/payments/webhook/stripe-test` (test) and `/webhook/stripe` (live). See also [`PER_MEMBER_PAYMENT_PROVIDERS.md`](./PER_MEMBER_PAYMENT_PROVIDERS.md).
+**Status:** Implemented. Assign **`stripe-test`** per member (`Member.paymentProviderId`). Webhooks: `/api/payments/webhook/stripe-test` (test) and `/api/payments/webhook/stripe` (live). Design: [`PER_MEMBER_PAYMENT_PROVIDERS.md`](./PER_MEMBER_PAYMENT_PROVIDERS.md). Live cutover: [`PAYMENTS_TEST_TO_PRODUCTION.md`](./PAYMENTS_TEST_TO_PRODUCTION.md).
 
 **Purpose:** Exercise Stripe against this app’s pluggable payment layer (**Checkout Session → email or in-app → pay → webhook → entitlement**) **without live charges**. Prep before live keys / real money.
 
@@ -147,7 +147,7 @@ For staging after local E2E passes, do **not** reuse the CLI `whsec_…` — fol
 
 1. Server running with test Stripe env vars.
 2. `stripe listen` running; webhook secret matches.
-3. System Settings: active online provider = **stripe**.
+3. Admin → member Plan: assign **Stripe (test)** / `stripe-test` (not a global System Settings provider).
 4. Member under test:
    - `isActive`
    - email set
@@ -352,20 +352,13 @@ All must be true:
 
 ---
 
-## 10. After this document (live cutover — out of scope here)
+## 10. After this document (live Stripe)
 
-Separate change control:
-
-1. Complete Stripe business verification / bank payout setup.
-2. Create a **separate** Dashboard webhook endpoint for the **live** API host (Live mode) + `sk_live_` / live `whsec_`.
-3. Flip env only on the intended environment; smoke with a **tiny** real charge and refund.
-4. Do not reuse staging’s test `whsec_…` for live.
-5. Communicate to members: online = card/wallets; Venmo remains cash/manual until PayPal provider.
+Out of scope here. Follow [`PAYMENTS_TEST_TO_PRODUCTION.md`](./PAYMENTS_TEST_TO_PRODUCTION.md): `installMode` is locked after first boot; live keys alone are not enough.
 
 ---
 
-## 11. Decision context (why Stripe first)
+## 11. Why Stripe first
 
-- App today supports **one** active online provider + cash.
-- Stripe matches Checkout URL + webhook + reconcile cleanly.
-- Venmo is popular locally but belongs with a later **PayPal** provider (or manual cash clear), not as a requirement to finish this runbook.
+- Checkout Session URL + webhook + reconcile fit the async pay-link model.
+- Venmo stays cash/manual until a PayPal provider exists.

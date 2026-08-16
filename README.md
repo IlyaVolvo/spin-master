@@ -12,7 +12,7 @@ Table tennis club/tournament management platform with member management, tournam
 ## Tech stack
 - **Client:** React, TypeScript, Vite
 - **Server:** Express, TypeScript, Prisma
-- **Database:** PostgreSQL (Supabase-compatible)
+- **Database:** PostgreSQL (Neon or local; Prisma migrate)
 - **Realtime:** Socket.io
 
 ## Quick start
@@ -32,35 +32,27 @@ Minimum server env values:
 DATABASE_URL="postgresql://..."
 JWT_SECRET="replace-me"
 PORT=3001
+CLIENT_URL="http://localhost:3000"
 ```
 
 ### 3. Initialize DB
 
-#### Standard local setup
-```bash
-npx tsx server/scripts/setupNewDatabase.ts
-```
+On a new or cloud DB, apply migrations (quote the URL):
 
-#### Fresh Supabase baseline (schema + required seed only)
 ```bash
 cd server
-npm run setup-supabase-initial
+DATABASE_URL='postgresql://…' npx prisma migrate deploy
 ```
 
-This creates:
-- latest Prisma schema (no migrations required)
-- `point_exchange_rules` (current USATT table)
-- exactly one Sys Admin member (ORGANIZER role only)
-
-Default Sys Admin email: `sys-admin@fake.local`
+Destructive local reset (db push, throwaway only): `npx tsx server/scripts/setupNewDatabase.ts`
 
 ### 4. Start app
 ```bash
 npm run dev
 ```
 
-Default URLs:
-- Client: `http://localhost:5173`
+Default URLs (`server/env.example`):
+- Client: `http://localhost:3000`
 - API: `http://localhost:3001`
 
 ## Project structure
@@ -70,11 +62,8 @@ server/   Express API + Prisma + scripts
 ```
 
 ## Key docs
-- Setup details: `docs/SETUP.md`
-- Architecture: `docs/ARCHITECTURE.md`
-- Database schema: `docs/DATABASE_SCHEMA.md`
-- UI behavior: `docs/UI.md`
-- API maintenance: `docs/API_MAINTENANCE.md`
+- Index: `docs/README.md`
+- Setup: `docs/SETUP.md`
 
 ## Important behavior notes
 
@@ -101,7 +90,8 @@ npm test --prefix server
 ```
 
 ## Deploy notes
-- Use managed Postgres (Supabase works well).
-- Ensure `DATABASE_URL` includes SSL mode for Supabase.
-- Set strong production `JWT_SECRET`.
+- Managed Postgres (Neon works well). Use the **direct** host for `prisma migrate deploy`, pooled for the app.
+- Include `sslmode=require` on Neon/cloud URLs.
+- Set a strong production `JWT_SECRET`.
+- Payments: `PAYMENTS_INSTALL_MODE` on **first** boot; see `docs/PAYMENTS_TEST_TO_PRODUCTION.md`.
 

@@ -1,10 +1,10 @@
 # Per-member online payment services
 
-**Status:** Design approved. **Steps 1–2 implemented** on branch `feature/payments-member-provider-step1`. Steps 3–4 not yet implemented.
+**Status:** Implemented. Live Stripe cutover: [`PAYMENTS_TEST_TO_PRODUCTION.md`](./PAYMENTS_TEST_TO_PRODUCTION.md).
 
 **Related:**
 - Manual check-in/payment tests: [`MANUAL_PAYMENT_CHECKIN_TESTS.md`](./MANUAL_PAYMENT_CHECKIN_TESTS.md)
-- Stripe runbook (will be updated in step 4 for email-async + per-member assignment): [`STRIPE_TEST_MODE_INTEGRATION.md`](./STRIPE_TEST_MODE_INTEGRATION.md)
+- Stripe **test** runbook: [`STRIPE_TEST_MODE_INTEGRATION.md`](./STRIPE_TEST_MODE_INTEGRATION.md)
 
 ---
 
@@ -12,7 +12,7 @@
 
 Replace the old model of **one global online payment provider per install** with:
 
-1. **Multiple** online payment services registered in code (e.g. `dummy`, `stripe-test`, later `stripe`).
+1. **Multiple** online payment services registered in code (`dummy`, `stripe-test`, `stripe`).
 2. An **immutable install mode** (`test` | `production`) that decides which services Admin may assign.
 3. **Per-member** assignment of at most one online service (Admin only, on Member Plan / payment screen).
 4. Online checkout that is **async**: the app creates a payment intent and emails a pay link; confirmation happens only via provider webhook (or reconcile)—the app does not drive card UI.
@@ -39,6 +39,8 @@ Default if unset: **`test`** (safer for local/staging).
 
 Admin System Config / Payments UI shows the mode as **read-only**. API updates that try to change `installMode` are ignored.
 
+If a database was bootstrapped as `test` and must take live payments, see [`PAYMENTS_TEST_TO_PRODUCTION.md`](./PAYMENTS_TEST_TO_PRODUCTION.md) (SQL + live Stripe env + member re-assignment). Prefer setting `PAYMENTS_INSTALL_MODE=production` on first boot of a dedicated production DB.
+
 **Why:** Same codebase for staging and production. Staging DB stays in `test` (fake + Stripe test). Production DB is initialized with `production` and live Stripe keys—no code fork.
 
 ### 2.2 Payment provider plugins
@@ -58,7 +60,7 @@ Each provider implements `PaymentProvider` (`server/src/payments/types.ts`) and 
 | id | environment | Role |
 |----|-------------|------|
 | `dummy` | testing | Dev fake PSP (delayed confirm); CI / offline |
-| `stripe-test` | testing | Real Stripe API with `sk_test_…` (no live charges) — **step 3** |
+| `stripe-test` | testing | Real Stripe API with `sk_test_…` (no live charges) |
 | `stripe` | production | Real Stripe with `sk_live_…` — same module as stripe-test; usable when live keys + production install |
 
 **Cash** (`cash`): desk PENDING until Admin clears; not assignable as the member’s online service.
@@ -164,7 +166,7 @@ SMTP accept ≠ inbox delivery. Classification for v1 is on **send attempt** onl
 
 Mail failure alone does **not** mean the online payment failed—a Session might still be paid if the link was obtained another way.
 
-### 5.3 Stripe implementation shape (step 3)
+### 5.3 Stripe implementation shape
 
 - One **confined** Stripe module (Checkout, webhook verify, reconcile)—not scattered callers
 - Two registrations: `stripe-test` and `stripe` (thin wrappers)
@@ -195,7 +197,7 @@ Mail failure alone does **not** mean the online payment failed—a Session might
 - **Consent to pay online**: member only (Admin on behalf cannot change)
 - **Auto-renew**: member toggles under Current plan; Admin sees read-only green `+` / red `×` in Admin section
 - Member (or Admin on behalf) may still choose **Cash vs Pay online** when gates allow
-- Online → email pay link (step 3); Cash → existing desk PENDING / immediate confirm rules
+- Online → email pay link or in-app Checkout; Cash → desk PENDING / immediate confirm rules
 
 ---
 
@@ -206,7 +208,7 @@ Mail failure alone does **not** mean the online payment failed—a Session might
 | **1** | `Member.paymentProviderId`; `installMode`; drop global `providerId`; provider `environment`; Admin picker; email-clear keeps provider; Payments Admin read-only mode | **Done** |
 | **2** | Checkout + auto-renew resolve from `member.paymentProviderId`; enforce gates in API/UI | **Done** |
 | **3** | Stripe module (`stripe-test` / `stripe`); email pay link; webhooks; mail-fail + delayed cash escape | **Done** |
-| **4** | Tests polish; update Stripe runbook for email-async + per-member model | Pending |
+| **4** | Stripe runbook + live switch doc | **Done** |
 
 Online checkout and auto-renew resolve the PSP from **`Member.paymentProviderId` only** (no install-wide active provider).
 
@@ -227,7 +229,7 @@ PAYMENTS_MODE=test
 node … --payments-install-mode=production
 ```
 
-### 8.2 Stripe (step 3; not required for step 1)
+### 8.2 Stripe
 
 ```bash
 STRIPE_SECRET_KEY=sk_test_…         # stripe-test (sk_live_… only with STRIPE_ALLOW_LIVE=1)
@@ -282,6 +284,6 @@ See also conversational checklist; summary:
 2. Admin Member Plan: assign / clear online service (email required)  
 3. Clear email → consent + auto-renew off; service id retained  
 4. Non-admin cannot set `paymentProviderId`  
-5. Cash path still works; do not expect Stripe email flow yet  
+5. Cash path still works; Stripe pay link or in-app Checkout per member `emailPayLink`  
 
 Apply migration before testing against a live DB.

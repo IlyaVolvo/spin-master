@@ -103,17 +103,13 @@ Socket.io broadcasts tournament and match changes so clients can refresh state w
 
 ## Deployment model
 
-- Client static hosting (Vite build artifacts)
-- Server Node process (Express)
-- Managed PostgreSQL (Supabase or equivalent)
+- Client static hosting (Vite build) and/or same Render service
+- Server Node process (Express); `0.0.0.0` when `NODE_ENV=production`
+- Managed PostgreSQL (Neon or local)
 
-### Fresh Supabase bootstrap path
-For brand-new environments:
-1. Push latest Prisma schema with `db push` (no migrations required)
-2. Seed rating rules table
-3. Create/update Sys Admin account
+Schema changes go through `prisma/migrations` and `npx prisma migrate deploy` (direct DB URL). `db push --force-reset` is only for throwaway local DBs (`setupNewDatabase.ts`). Destructive reseeds: `npm run setup-supabase-initial` (any Postgres).
 
-Implemented via `server/scripts/setupSupabaseFresh.ts` and `npm run setup-supabase-initial`.
+Tournament type behavior lives in `server/src/plugins/` and client plugin registry — not in base orchestrator routes. See [SETUP.md](./SETUP.md).
 
 ## Known constraints / debt
 

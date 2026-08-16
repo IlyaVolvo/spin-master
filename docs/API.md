@@ -1,8 +1,8 @@
 # API Documentation
 
 ## Base URL
-- **Development**: `http://localhost:3001/api`
-- **Production**: (Configured via environment)
+- **Development**: `http://localhost:<PORT>/api` (`PORT` in `server/.env`, default `3001`)
+- **Production**: API host configured on the deploy (e.g. Render)
 
 ## Authentication
 
