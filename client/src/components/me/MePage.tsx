@@ -1,5 +1,6 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { APP_NAME } from '../../brand';
 import { getMember } from '../../utils/auth';
 import { setPreferFullApp } from '../../utils/meMode';
 import { HeaderSelfCheckinButton } from '../HeaderSelfCheckinButton';
@@ -44,7 +45,7 @@ export function MePage({ clubName, onLogout }: MePageProps) {
     return `${member.firstName || ''} ${member.lastName || ''}`.trim() || member.email || 'Member';
   }, [member]);
 
-  const brandLabel = (clubName && clubName.trim()) || 'Spin Master';
+  const brandLabel = (clubName && clubName.trim()) || APP_NAME;
   const monogram = brandLabel.trim().charAt(0).toUpperCase() || 'S';
 
   const goFullApp = () => {

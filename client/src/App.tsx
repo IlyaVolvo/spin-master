@@ -19,6 +19,8 @@ import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail 
 import { lazyWithReload } from './utils/lazyWithReload';
 import { PlayersKioskEntryButton } from './components/PlayersKioskEntryButton';
 import { HeaderSelfCheckinButton } from './components/HeaderSelfCheckinButton';
+import { SmashWhizzLogo } from './components/SmashWhizzLogo';
+import { APP_NAME_TM } from './brand';
 import {
   clearPreferFullApp,
   defaultAuthenticatedPath,
@@ -1190,7 +1192,7 @@ function Header({
             className="app-header-club"
             onClick={() => setShowAboutModal(true)}
             aria-haspopup="dialog"
-            aria-label="About Spin Master"
+            aria-label={`About ${APP_NAME_TM}`}
             style={{
               display: 'inline-block',
               boxSizing: 'border-box',
@@ -1335,7 +1337,7 @@ function Header({
         justifyContent: 'space-between',
         width: '100%',
         gap: '15px',
-        paddingBottom: '22px',
+        paddingBottom: '0',
       }}>
         <div
           className="app-header-left"
@@ -1357,67 +1359,8 @@ function Header({
           justifyContent: 'flex-start',
           flex: '0 0 auto',
         }}>
-          <div className="app-header-logo-wrap" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'nowrap', flexShrink: 0 }}>
-            <span className="app-header-paddle">🏓</span>
-            <span
-              className="app-header-logo-box"
-              style={{
-              background: 'linear-gradient(to bottom, #4682B4 0%, #5F9EA0 50%, #4682B4 100%)',
-              color: 'white',
-              padding: '17px 8px',
-              borderRadius: '10px',
-              border: '1px solid white',
-              position: 'relative',
-              boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-              overflow: 'hidden',
-              display: 'flex',
-              alignItems: 'center',
-              width: '170px'
-            }}>
-              <div style={{ 
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-                zIndex: 2
-              }}>
-                <span
-                  className="app-header-logo-text"
-                  style={{
-                  fontSize: '22px',
-                  fontWeight: '600',
-                  marginLeft: '15px'
-                }}>Spin</span>
-              </div>
-              <span style={{ 
-                position: 'absolute', 
-                left: '50%', 
-                top: '0',
-                bottom: '0',
-                transform: 'translateX(-50%)',
-                width: '3px',
-                background: 'white',
-                zIndex: 1
-              }}></span>
-              <div style={{ 
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-                zIndex: 2
-              }}>
-                <span
-                  className="app-header-logo-text"
-                  style={{
-                  fontSize: '22px',
-                  fontWeight: '600',
-                  marginLeft: '5px'
-                }}>Master</span>
-              </div>
-            </span>
-            <span className="app-header-paddle">🏓</span>
+          <div className="app-header-logo-wrap">
+            <SmashWhizzLogo />
           </div>
         </h1>
         <div
@@ -1974,25 +1917,25 @@ function Header({
         >
           <div
             style={{
-              background: 'linear-gradient(to bottom, #4682B4 0%, #5F9EA0 50%, #4682B4 100%)',
+              background: '#2c3e50',
               padding: '22px 24px 18px',
               color: 'white',
               textAlign: 'center',
             }}
           >
-            <div style={{ fontSize: '22px', lineHeight: 1, marginBottom: '8px' }} aria-hidden="true">
-              🏓
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
+              <SmashWhizzLogo variant="about" />
             </div>
             <h3
               id="about-modal-title"
               style={{
                 margin: 0,
-                fontSize: '24px',
+                fontSize: '22px',
                 fontWeight: 700,
                 letterSpacing: '0.03em',
               }}
             >
-              Spin Master
+              {APP_NAME_TM}
             </h3>
             <p
               style={{

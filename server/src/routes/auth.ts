@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { normalizeMemberEmail } from '../utils/memberValidation';
 import { getAuthPolicyConfig } from '../services/systemConfigService';
 import type { AuthRequest } from '../middleware/auth';
+import { APP_NAME } from '../brand';
 import {
   defaultKioskKindForRoles,
   getKioskKind,
@@ -142,11 +143,11 @@ async function sendPasswordResetEmail(params: {
 
   await transporter.verify();
 
-  const subject = 'Spin Master Password Reset';
+  const subject = `${APP_NAME} Password Reset`;
   const text = [
     `Hi ${params.firstName},`,
     '',
-    'A password reset was requested for your Spin Master account.',
+    `A password reset was requested for your ${APP_NAME} account.`,
     'Use the link below to reset your password:',
     params.resetLink,
     '',
@@ -156,7 +157,7 @@ async function sendPasswordResetEmail(params: {
 
   const html = `
     <p>Hi ${params.firstName},</p>
-    <p>A password reset was requested for your Spin Master account.</p>
+    <p>A password reset was requested for your ${APP_NAME} account.</p>
     <p><a href="${params.resetLink}">Reset your password</a></p>
     <p>This link expires at <strong>${params.expiresAt.toISOString()}</strong>.</p>
     <p>If you did not request this reset, you can ignore this email.</p>

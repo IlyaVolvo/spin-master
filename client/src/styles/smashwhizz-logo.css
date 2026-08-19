@@ -1,0 +1,112 @@
+.smashwhizz-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.smashwhizz-table {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 3px minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  box-sizing: border-box;
+  height: 84px;
+  width: calc(84px * 9 / 5);
+  aspect-ratio: 9 / 5;
+  padding: 0 5px;
+  border-radius: 6px;
+  border: 1px solid #fff;
+  background: linear-gradient(to bottom, #4682b4 0%, #5f9ea0 50%, #4682b4 100%);
+  color: #fff;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.smashwhizz-left {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 0;
+}
+
+.smashwhizz-h {
+  display: inline-block;
+  margin-left: 0;
+  margin-right: 0;
+  flex-shrink: 0;
+  letter-spacing: 0;
+}
+
+.smashwhizz-net {
+  grid-column: 4;
+  width: 3px;
+  background: #fff;
+  z-index: 1;
+}
+
+.smashwhizz-right {
+  grid-column: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0;
+  position: relative;
+  z-index: 2;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.smashwhizz-paddle {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.smashwhizz-mark--about .smashwhizz-table {
+  height: 100px;
+  width: calc(100px * 9 / 5);
+  padding: 0 6px;
+}
+
+.smashwhizz-mark--about .smashwhizz-left,
+.smashwhizz-mark--about .smashwhizz-right {
+  font-size: 22px;
+  padding: 0;
+}
+
+@media (max-width: 640px) {
+  .smashwhizz-table {
+    height: 64px;
+    width: calc(64px * 9 / 5);
+  }
+
+  .smashwhizz-left,
+  .smashwhizz-right {
+    font-size: 14px;
+  }
+
+  .smashwhizz-paddle {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .smashwhizz-paddle {
+    display: none;
+  }
+}

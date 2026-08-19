@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import multer from 'multer';
 import { MemberRole, RatingChangeReason } from '@prisma/client';
+import { APP_NAME } from '../brand';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
@@ -630,12 +631,12 @@ async function sendPasswordResetEmail(params: {
   }
 
   const isInvite = params.messageVariant === 'invite';
-  const subject = isInvite ? 'You are invited to Spin Master' : 'Spin Master Password Reset';
+  const subject = isInvite ? `You are invited to ${APP_NAME}` : `${APP_NAME} Password Reset`;
   const text = isInvite
     ? [
         `Hi ${params.firstName},`,
         '',
-        'You are invited to Spin Master.',
+        `You are invited to ${APP_NAME}.`,
         'Use the link below to set your password and activate your account:',
         params.resetLink,
         '',
@@ -644,7 +645,7 @@ async function sendPasswordResetEmail(params: {
     : [
         `Hi ${params.firstName},`,
         '',
-        'A password reset was requested for your Spin Master account.',
+        `A password reset was requested for your ${APP_NAME} account.`,
         'Use the link below to reset your password:',
         params.resetLink,
         '',
@@ -655,13 +656,13 @@ async function sendPasswordResetEmail(params: {
   const html = isInvite
     ? `
     <p>Hi ${params.firstName},</p>
-    <p>You are invited to Spin Master.</p>
+    <p>You are invited to ${APP_NAME}.</p>
     <p><a href="${params.resetLink}">Set your password and activate your account</a></p>
     <p>This link expires at <strong>${params.expiresAt.toISOString()}</strong>.</p>
   `
     : `
     <p>Hi ${params.firstName},</p>
-    <p>A password reset was requested for your Spin Master account.</p>
+    <p>A password reset was requested for your ${APP_NAME} account.</p>
     <p><a href="${params.resetLink}">Reset your password</a></p>
     <p>This link expires at <strong>${params.expiresAt.toISOString()}</strong>.</p>
     <p>If you did not request this reset, you can ignore this email.</p>

@@ -5,6 +5,7 @@ import {
   hasAnyPublicAchievementEnabled,
   subscribeToSystemConfig,
 } from '../../utils/systemConfig';
+import { APP_NAME } from '../../brand';
 
 type PublicNavKey = 'latest' | 'list' | 'achievements';
 
@@ -80,7 +81,7 @@ export function PublicResultsShell({
   children: React.ReactNode;
 }) {
   const config = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
-  const clubName = config.branding?.clubName || 'Spin Master';
+  const clubName = config.branding?.clubName || APP_NAME;
   const showAchievements = hasAnyPublicAchievementEnabled(config);
 
   return (

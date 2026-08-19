@@ -111,9 +111,9 @@ async function main() {
   console.log('[ok] SMTP verification passed.');
 
   const now = new Date();
-  const subject = `Spin Master SMTP test (${now.toISOString()})`;
+  const subject = `SmashWhizz SMTP test (${now.toISOString()})`;
   const text = [
-    'SMTP test email from Spin Master.',
+    'SMTP test email from SmashWhizz.',
     '',
     `Timestamp: ${now.toISOString()}`,
     `Host: ${host}`,
@@ -124,7 +124,7 @@ async function main() {
   ].join('\n');
 
   const html = `
-    <h2>Spin Master SMTP Test</h2>
+    <h2>SmashWhizz SMTP Test</h2>
     <p>This is a test email to verify SMTP settings.</p>
     <ul>
       <li><strong>Timestamp:</strong> ${now.toISOString()}</li>
