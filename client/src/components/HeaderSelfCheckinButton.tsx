@@ -18,12 +18,14 @@ type HeaderSelfCheckinButtonProps = {
   onOpenOwnPlan?: () => void;
   /** Large phone-hub tile instead of header icon. */
   variant?: 'header' | 'tile';
+  buttonRef?: React.MutableRefObject<HTMLButtonElement | null>;
 };
 
 export function HeaderSelfCheckinButton({
   controlStyle,
   onOpenOwnPlan,
   variant = 'header',
+  buttonRef,
 }: HeaderSelfCheckinButtonProps) {
   const navigate = useNavigate();
   const [present, setPresent] = useState(false);
@@ -204,6 +206,9 @@ export function HeaderSelfCheckinButton({
     <>
       <button
         type="button"
+        ref={(el) => {
+          if (buttonRef) buttonRef.current = el;
+        }}
         onClick={() => void handleIconClick()}
         disabled={loadingStatus || busy}
         title={title}

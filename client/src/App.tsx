@@ -17,9 +17,8 @@ import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPositio
 import { getErrorMessage } from './utils/errorHandler';
 import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail } from './utils/tournamentNavState';
 import { lazyWithReload } from './utils/lazyWithReload';
-import { PlayersKioskEntryButton } from './components/PlayersKioskEntryButton';
-import { HeaderSelfCheckinButton } from './components/HeaderSelfCheckinButton';
 import { SmashWhizzLogo } from './components/SmashWhizzLogo';
+import { AppHeaderCollapsibleControls } from './components/AppHeaderCollapsibleControls';
 import { APP_NAME_TM } from './brand';
 import {
   clearPreferFullApp,
@@ -1331,6 +1330,7 @@ function Header({
     }}>
       <div
         className="app-header-row"
+        data-collapsible-actions-boundary
         style={{
         display: 'flex',
         alignItems: 'center',
@@ -1339,16 +1339,7 @@ function Header({
         gap: '15px',
         paddingBottom: '0',
       }}>
-        <div
-          className="app-header-left"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            flexShrink: 0,
-            minWidth: 0,
-          }}
-        >
+        <div className="app-header-logo-fixed">
         <h1
           className="app-header-title"
           style={{
@@ -1363,438 +1354,35 @@ function Header({
             <SmashWhizzLogo />
           </div>
         </h1>
-        <div
-          className="app-header-tabs"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: '6px',
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-          {showPlayersTab && (
-          <a 
-            className="app-header-tab"
-            href="/players" 
-            onClick={handlePlayersClick} 
-            style={{ 
-              ...headerIconControlSize,
-              minWidth: 'auto',
-              padding: '10px 18px 12px 18px',
-              color: isPlayersActive ? '#333' : 'rgba(255, 255, 255, 0.8)', 
-              textDecoration: 'none', 
-              background: isPlayersActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
-              borderRadius: '8px',
-              border: isPlayersActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-              transition: 'all 0.2s', 
-              fontWeight: isPlayersActive ? '600' : '500', 
-              cursor: 'pointer',
-              boxShadow: isPlayersActive ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-            }} 
-            onMouseEnter={(e) => {
-              if (!isPlayersActive) {
-                e.currentTarget.style.color = 'white';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isPlayersActive) {
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-              }
-            }}
-          >
-            Players
-          </a>
-          )}
-          {showTournamentsTab && (
-          <a 
-            className="app-header-tab"
-            href="/tournaments" 
-            onClick={handleTournamentsClick} 
-            style={{ 
-              ...headerIconControlSize,
-              minWidth: 'auto',
-              padding: '10px 18px 12px 18px',
-              color: hasPendingPreregistrations ? '#c0392b' : (isTournamentsActive ? '#333' : 'rgba(255, 255, 255, 0.8)'),
-              textDecoration: 'none', 
-              background: hasPendingPreregistrations ? '#fdecea' : (isTournamentsActive ? 'white' : 'rgba(255, 255, 255, 0.15)'),
-              borderRadius: '8px',
-              border: isTournamentsActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-              transition: 'all 0.2s', 
-              fontWeight: isTournamentsActive ? '600' : '500', 
-              cursor: 'pointer',
-              boxShadow: isTournamentsActive ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-            }} 
-            onMouseEnter={(e) => {
-              if (!isTournamentsActive) {
-                e.currentTarget.style.color = hasPendingPreregistrations ? '#c0392b' : 'white';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isTournamentsActive) {
-                e.currentTarget.style.color = hasPendingPreregistrations ? '#c0392b' : 'rgba(255, 255, 255, 0.8)';
-                e.currentTarget.style.background = hasPendingPreregistrations ? '#fdecea' : 'rgba(255, 255, 255, 0.15)';
-              }
-            }}
-          >
-            Tournaments
-            {hasPendingPreregistrations ? (
-              <span style={{ marginLeft: '6px', fontWeight: 700 }}>
-                ({pendingPreregistrationCount})
-              </span>
-            ) : null}
-          </a>
-          )}
-          {isAdminUser ? (
-            <div ref={adminMenuRef} style={{ position: 'relative', marginLeft: '8px' }}>
-              <button
-                type="button"
-                className="app-header-tab"
-                aria-haspopup="menu"
-                aria-expanded={adminMenuOpen}
-                onClick={() => setAdminMenuOpen((open) => !open)}
-                style={{
-                  ...headerIconControlSize,
-                  minWidth: adminMenuWidth,
-                  width: adminMenuWidth,
-                  padding: '10px 12px 12px 12px',
-                  justifyContent: 'space-between',
-                  gap: '6px',
-                  color: isAdminSectionActive ? '#333' : 'rgba(255, 255, 255, 0.8)',
-                  background: isAdminSectionActive ? 'white' : 'rgba(255, 255, 255, 0.15)',
-                  borderRadius: '8px',
-                  border: isAdminSectionActive ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-                  fontWeight: isAdminSectionActive ? '600' : '500',
-                  boxShadow: isAdminSectionActive ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => {
-                  if (!isAdminSectionActive) {
-                    e.currentTarget.style.color = 'white';
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isAdminSectionActive) {
-                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                  }
-                }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{adminMenuLabel}</span>
-                <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>
-                  ▾
-                </span>
-              </button>
-              {adminMenuOpen ? (
-                <div
-                  role="menu"
-                  aria-label="Admin pages"
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    marginTop: '4px',
-                    width: adminMenuWidth,
-                    minWidth: adminMenuWidth,
-                    background: 'white',
-                    border: '1px solid rgba(0, 0, 0, 0.12)',
-                    borderRadius: '8px',
-                    boxShadow: '0 8px 20px rgba(0, 0, 0, 0.18)',
-                    zIndex: 10050,
-                    overflow: 'hidden',
-                    padding: '4px 0',
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  {adminMenuItems.map((item) => {
-                    if (item.id === 'separator') {
-                      return (
-                        <div
-                          key="separator"
-                          role="separator"
-                          style={{
-                            height: '1px',
-                            background: '#d8e8f0',
-                            margin: '6px 10px',
-                          }}
-                        />
-                      );
-                    }
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          if (item.id === 'settings') handleSettingsClick();
-                          else if (item.id === 'attendance-log') handleAttendanceClick();
-                          else if (item.id === 'plans') handlePaymentsClick(undefined, 'plans');
-                          else handlePaymentsClick(undefined, 'payments');
-                        }}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          boxSizing: 'border-box',
-                          textAlign: 'left',
-                          padding: '10px 14px',
-                          border: 'none',
-                          background: item.active ? '#eaf4fb' : 'transparent',
-                          color: item.active ? '#155b78' : '#17324d',
-                          fontWeight: item.active ? 700 : 600,
-                          fontSize: '14px',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!item.active) e.currentTarget.style.background = '#f5f8fb';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = item.active ? '#eaf4fb' : 'transparent';
-                        }}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          </div>
         </div>
-        </div>
-        <div
-          className="app-header-user"
-          style={{
-            position: 'relative',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            marginLeft: 'auto',
-            flexShrink: 0,
-          }}
-        >
-          <div className="app-header-user-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {userName && !kioskMode && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                      {showMeReturn ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            clearAllScrollPositions();
-                            clearAllUIStates();
-                            window.scrollTo(0, 0);
-                            navigate('/me', { replace: false });
-                          }}
-                          title="Simple phone hub"
-                          aria-label="Open simple phone hub"
-                          style={{
-                            ...headerIconControlSize,
-                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontWeight: 700,
-                            fontSize: '12px',
-                            transition: 'background-color 0.2s',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                          }}
-                        >
-                          Me
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const member = getMember();
-                          if (member) {
-                            clearAllScrollPositions();
-                            clearAllUIStates();
-                            window.scrollTo(0, 0);
-                            navigate('/players', {
-                              state: { openOwnPlan: true, memberId: member.id },
-                              replace: false,
-                            });
-                          }
-                        }}
-                        title="View and manage your club plan"
-                        aria-label="View and manage your club plan"
-                        style={{
-                          ...headerIconControlSize,
-                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontWeight: 700,
-                          transition: 'background-color 0.2s',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                        }}
-                      >
-                        $
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const member = getMember();
-                          if (member) {
-                            clearAllScrollPositions();
-                            clearAllUIStates();
-                            window.scrollTo(0, 0);
-                            navigate('/players', {
-                              state: {
-                                editOwnProfile: true,
-                                memberId: member.id,
-                                editProfileKey: Date.now(),
-                              },
-                              replace: false,
-                            });
-                          }
-                        }}
-                        title="Edit your profile"
-                        style={{
-                          ...headerIconControlSize,
-                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          transition: 'background-color 0.2s',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                        }}
-                      >
-                        ⚙️
-                      </button>
-                      <HeaderSelfCheckinButton controlStyle={headerIconControlSize} />
-                    </div>
-              )}
-              {!kioskMode && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  title="Logout"
-                  aria-label="Logout"
-                  style={{
-                    ...headerIconControlSize,
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    transition: 'background-color 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                  }}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                    <polyline points="16 17 21 12 16 7" />
-                    <line x1="21" y1="12" x2="9" y2="12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-            <div
-              className="app-header-user-links"
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 4px)',
-                right: 0,
-                display: 'flex',
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                gap: '6px',
-                minHeight: '18px',
-              }}
-            >
-              {!kioskMode ? <PlayersKioskEntryButton /> : null}
-              {showAchievementsLink ? (
-                <button
-                  type="button"
-                  className="app-header-public-link"
-                  onClick={() => {
-                    window.open('/public', '_blank', 'noopener,noreferrer');
-                  }}
-                  title="Open public pages in a new tab"
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '11px',
-                    fontWeight: isAchievementsActive ? 700 : 500,
-                    lineHeight: 1.2,
-                    color: isAchievementsActive ? '#fff' : 'rgba(255, 255, 255, 0.75)',
-                    background: isAchievementsActive ? 'rgba(255, 255, 255, 0.22)' : 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.35)',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Public
-                </button>
-              ) : null}
-              {!kioskMode ? (
-                <button
-                  type="button"
-                  className="app-header-public-link"
-                  onClick={() => {
-                    window.open('/role-tutorials/index.html', '_blank', 'noopener,noreferrer');
-                  }}
-                  title="Open role tutorials in a new tab"
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    lineHeight: 1.2,
-                    color: 'rgba(255, 255, 255, 0.75)',
-                    background: 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.35)',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Tutorials
-                </button>
-              ) : null}
-            </div>
-        </div>
+        <AppHeaderCollapsibleControls
+          headerIconControlSize={headerIconControlSize}
+          showPlayersTab={showPlayersTab}
+          showTournamentsTab={showTournamentsTab}
+          isAdminUser={isAdminUser}
+          kioskMode={kioskMode}
+          userName={userName}
+          showMeReturn={showMeReturn}
+          showAchievementsLink={showAchievementsLink}
+          isPlayersActive={isPlayersActive}
+          isTournamentsActive={isTournamentsActive}
+          isAdminSectionActive={isAdminSectionActive}
+          isAchievementsActive={isAchievementsActive}
+          hasPendingPreregistrations={hasPendingPreregistrations}
+          pendingPreregistrationCount={pendingPreregistrationCount}
+          adminMenuLabel={adminMenuLabel}
+          adminMenuWidth={adminMenuWidth}
+          adminMenuOpen={adminMenuOpen}
+          setAdminMenuOpen={setAdminMenuOpen}
+          adminMenuRef={adminMenuRef}
+          adminMenuItems={adminMenuItems}
+          onPlayersClick={handlePlayersClick}
+          onTournamentsClick={handleTournamentsClick}
+          onSettingsClick={handleSettingsClick}
+          onPaymentsClick={handlePaymentsClick}
+          onAttendanceClick={handleAttendanceClick}
+          onLogout={onLogout}
+        />
       </div>
       {kioskMode && (
         <div

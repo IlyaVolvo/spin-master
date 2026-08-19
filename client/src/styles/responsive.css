@@ -69,7 +69,21 @@ html {
 }
 
 /* --- App shell header (logo + Tournaments/Admin | Players + user) --- */
+.header {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 .app-header-row {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.app-header-logo-fixed {
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -96,67 +110,31 @@ html {
 }
 
 .app-header-user-row {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
 @media (max-width: 900px) {
-  .app-header-row {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 12px !important;
-  }
-
-  .app-header-left {
-    order: 1;
-    flex-direction: column !important;
-    align-items: center !important;
-    width: 100%;
-    gap: 10px !important;
-  }
-
-  .app-header-tabs {
-    justify-content: center;
-    align-items: center !important;
-    width: 100%;
-    margin-bottom: 0 !important;
-  }
-
-  .app-header-title {
-    align-items: center !important;
+  .app-header-collapsible-visible {
+    align-items: center;
   }
 
   .app-header-user {
-    order: 2;
-    align-items: center !important;
-    position: relative !important;
+    align-items: flex-end !important;
   }
 
   .app-header-user-links {
     position: static !important;
     top: auto !important;
     right: auto !important;
-    justify-content: center !important;
+    justify-content: flex-end !important;
     margin-top: 6px;
-  }
-
-  .app-header-user-row {
-    justify-content: center;
-    width: 100%;
-  }
-
-  .app-header-logo-box {
-    width: min(170px, 72vw) !important;
-    padding: 12px 6px !important;
-  }
-
-  .app-header-logo-text {
-    font-size: clamp(16px, 4.5vw, 22px) !important;
   }
 }
 
 @media (max-width: 480px) {
-  .app-header-tab {
+  .app-header-tab,
+  .collapsible-actions__menu-btn--header {
     padding: 8px 14px 10px !important;
     font-size: 14px !important;
   }
@@ -175,6 +153,23 @@ html {
   .app-header-paddle {
     display: none;
   }
+}
+
+/* --- Players main toolbar (filter + actions) --- */
+.players-toolbar-row {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.players-toolbar-sticky {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* --- Players table: horizontal scroll inside panel --- */

@@ -22,7 +22,11 @@ const headerLinkStyle = (active = false): CSSProperties => ({
 });
 
 /** Header entry beside Public: Admin → check-in, Organizer → browse (chooser if both). */
-export function PlayersKioskEntryButton() {
+export function PlayersKioskEntryButton({
+  buttonRef,
+}: {
+  buttonRef?: React.MutableRefObject<HTMLButtonElement | null>;
+}) {
   const navigate = useNavigate();
   const canCheckin = canEnterCheckinKiosk();
   const canBrowse = canEnterBrowseKiosk();
@@ -60,6 +64,9 @@ export function PlayersKioskEntryButton() {
     <>
       <button
         type="button"
+        ref={(el) => {
+          if (buttonRef) buttonRef.current = el;
+        }}
         className="app-header-public-link"
         onClick={onClick}
         disabled={loading}

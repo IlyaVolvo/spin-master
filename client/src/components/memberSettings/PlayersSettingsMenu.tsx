@@ -35,6 +35,8 @@ export interface PlayersSettingsMenuProps {
   setImportSendEmail: React.Dispatch<React.SetStateAction<boolean>>;
   tournamentNotificationsEnabled?: boolean;
   onTournamentNotificationsChange?: (enabled: boolean) => void | Promise<void>;
+  /** When set, the open panel anchors to this element (e.g. an overflow Actions button). */
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
 /**
@@ -73,6 +75,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
   setImportSendEmail,
   tournamentNotificationsEnabled,
   onTournamentNotificationsChange,
+  anchorRef,
 }) => {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
@@ -83,7 +86,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
     if (!showSettingsMenu) return;
 
     const updatePosition = () => {
-      const rect = buttonRef.current?.getBoundingClientRect();
+      const rect = (anchorRef?.current ?? buttonRef.current)?.getBoundingClientRect();
       if (!rect) return;
       setMenuPosition({
         top: rect.bottom + 5,
@@ -99,7 +102,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [showSettingsMenu]);
+  }, [showSettingsMenu, anchorRef]);
 
   return (
   <div style={{ position: 'relative', display: 'inline-block' }} data-settings-menu>

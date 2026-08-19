@@ -36,6 +36,7 @@ import { SimilarNamesConfirmationModal } from './players/SimilarNamesConfirmatio
 import { calcAllowBirthDateInput, getEditBirthDateFieldError } from './players/playerEditBirthDateRules.ts';
 import { SuspiciousRatingConfirmModal } from './players/SuspiciousRatingConfirmModal.tsx';
 import { PlayersSettingsMenu } from './memberSettings/PlayersSettingsMenu.tsx';
+import { CollapsibleActions, type CollapsibleAction } from './CollapsibleActions';
 import { MemberPlanScreen } from './players/MemberPlanScreen';
 import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
 import { useTournamentCreation } from './hooks/useTournamentCreation';
@@ -401,6 +402,7 @@ const Players: React.FC = () => {
   const [tempGamesCustomEndDate, setTempGamesCustomEndDate] = useState<Date | null>(null);
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const playersActionsMenuBtnRef = useRef<HTMLButtonElement | null>(null);
   const [sortColumn, setSortColumn] = useState<'name' | 'rating' | 'age' | 'id' | 'games' | null>(null);
   const [matches, setMatches] = useState<Array<{
     id: number;
@@ -3688,7 +3690,9 @@ const Players: React.FC = () => {
     <div>
       <div className="card">
         {/* Sticky header section */}
-        <div style={{ 
+        <div
+          className="players-toolbar-sticky"
+          style={{ 
           position: 'sticky', 
           top: 0, 
           backgroundColor: 'white', 
@@ -3700,7 +3704,11 @@ const Players: React.FC = () => {
           borderBottom: '2px solid #ddd',
           boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)'
         }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <div
+          className="players-toolbar-row"
+          data-collapsible-actions-boundary
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px', minWidth: 0 }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto' }}>
             {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && !isCheckinKiosk && (
               <button
@@ -3741,134 +3749,174 @@ const Players: React.FC = () => {
                   </button>
                 )}
           </div>
-          {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && !isRecordingMatch && !isCheckinKiosk && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 auto', justifyContent: 'center' }}>
-              {(() => {
-                const buttonStyle: React.CSSProperties = {
-                  padding: '5px 10px',
-                      fontSize: '13px',
-                  fontWeight: 'bold',
-                  backgroundColor: '#3498db',
-                      color: 'white',
-                      border: 'none',
+          {!isCheckinKiosk && (() => {
+            const buttonStyle: React.CSSProperties = {
+              padding: '5px 10px',
+              fontSize: '13px',
+              fontWeight: 'bold',
+              backgroundColor: '#3498db',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            };
+            const showPrimaryActions =
+              !isCreatingTournament &&
+              !showAddForm &&
+              !isSelectingForStats &&
+              !isSelectingForHistory &&
+              !isRecordingMatch;
+            const hasAdminButton = isAdmin();
+            const hasOrganizerButtons = isUserOrganizer;
+            const hasMatchButton = Boolean(currentMember) && !isKioskMode();
+            const hasButtonsBeforeSeparator = hasAdminButton || hasOrganizerButtons || hasMatchButton;
+            const primaryItems: CollapsibleAction[] = [];
+            if (showPrimaryActions) {
+              if (hasAdminButton) {
+                primaryItems.push({
+                  key: 'add-player',
+                  label: '+ Player',
+                  title: 'Add new player',
+                  className: 'button-3d',
+                  style: buttonStyle,
+                  onClick: () => {
+                    setLastConfirmedAddRating('');
+                    setNewPlayerRoles(['PLAYER']);
+                    setShowAddForm(true);
+                  },
+                });
+              }
+              if (hasOrganizerButtons) {
+                primaryItems.push({
+                  key: 'add-tournament',
+                  label: '+ Tournament',
+                  title: 'Create tournament',
+                  className: 'button-3d',
+                  style: buttonStyle,
+                  onClick: handleStartTournamentCreation,
+                });
+              }
+              if (hasMatchButton) {
+                primaryItems.push({
+                  key: 'add-match',
+                  label: '+ Match',
+                  title: 'Record a match',
+                  className: 'button-3d',
+                  style: buttonStyle,
+                  onClick: handleStartRecordMatch,
+                });
+              }
+              if (hasButtonsBeforeSeparator) {
+                primaryItems.push({ type: 'separator', key: 'primary-sep' });
+              }
+              primaryItems.push({
+                key: 'stats',
+                label: 'Stats',
+                title: 'Show statistics for many players',
+                ariaLabel: 'Show statistics for many players',
+                className: 'button-3d',
+                style: buttonStyle,
+                onClick: handleStartStatsSelection,
+              });
+            }
+            const endMenuItems = [
+              {
+                key: 'settings',
+                label: '⚙️ Settings',
+                title: 'Display and roster settings',
+                onClick: () => setShowSettingsMenu(true),
+                measureClassName: 'button-filter',
+                measureStyle: {
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  borderRadius: '4px',
+                  whiteSpace: 'nowrap',
+                },
+              },
+              ...(showPrimaryActions
+                ? [{
+                    key: 'refresh',
+                    label: '↻ Refresh',
+                    title: 'Refresh all data from server',
+                    onClick: () => { void refreshAllData(); },
+                    measureClassName: 'button-filter',
+                    measureStyle: {
+                      padding: '6px 12px',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
                       borderRadius: '4px',
-                      cursor: 'pointer',
-                };
-                
-                const hasAdminButton = isAdmin();
-                const hasOrganizerButtons = isUserOrganizer;
-                const hasButtonsBeforeSeparator = hasAdminButton || hasOrganizerButtons || !!currentMember;
-                
-                return (
+                      whiteSpace: 'nowrap',
+                    },
+                  }]
+                : []),
+            ];
+            return (
+              <CollapsibleActions
+                menuLabel="Actions"
+                menuButtonRef={playersActionsMenuBtnRef}
+                items={primaryItems}
+                endMenuItems={endMenuItems}
+                endSlot={(
                   <>
-                    {hasAdminButton && (
-                      <button 
-                        onClick={() => {
-                          setLastConfirmedAddRating('');
-                          setNewPlayerRoles(['PLAYER']);
-                          setShowAddForm(true);
+                    <PlayersSettingsMenu
+                      showSettingsMenu={showSettingsMenu}
+                      setShowSettingsMenu={setShowSettingsMenu}
+                      showIdColumn={showIdColumn}
+                      setShowIdColumn={setShowIdColumn}
+                      showAgeColumn={showAgeColumn}
+                      setShowAgeColumn={setShowAgeColumn}
+                      showStatusColumn={showStatusColumn}
+                      setShowStatusColumn={setShowStatusColumn}
+                      showGamesColumn={showGamesColumn}
+                      setShowGamesColumn={setShowGamesColumn}
+                      showAllPlayers={showAllPlayers}
+                      setShowAllPlayers={setShowAllPlayers}
+                      showAllRoles={showAllRoles}
+                      setShowAllRoles={setShowAllRoles}
+                      nameDisplayOrder={nameDisplayOrder}
+                      setNameDisplayOrderState={setNameDisplayOrderState}
+                      fetchMatches={fetchMatches}
+                      fetchMembers={fetchMembers}
+                      isAdminUser={isAdmin()}
+                      isSelectingForStats={isSelectingForStats}
+                      isSelectingForHistory={isSelectingForHistory}
+                      supportsFullSaveDialog={supportsFullSaveDialog}
+                      onExportPlayers={handleExportPlayers}
+                      onImportPlayers={handleImportPlayers}
+                      onExportClubArchive={handleExportClubArchive}
+                      onImportClubArchive={handleImportClubArchive}
+                      importBusy={importBusy}
+                      importSendEmail={importSendEmail}
+                      setImportSendEmail={setImportSendEmail}
+                      tournamentNotificationsEnabled={tournamentNotificationsEnabled}
+                      onTournamentNotificationsChange={currentMember ? handleTournamentNotificationsChange : undefined}
+                      anchorRef={playersActionsMenuBtnRef}
+                    />
+                    {showPrimaryActions ? (
+                      <button
+                        onClick={() => { void refreshAllData(); }}
+                        className="button-filter"
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
                         }}
-                        className="button-3d"
-                        style={buttonStyle}
-                        title="Add new player"
+                        title="Refresh all data from server"
                       >
-                        + Player
-                  </button>
-                )}
-                    {hasOrganizerButtons && (
-                  <button 
-                    onClick={handleStartTournamentCreation}
-                          className="button-3d"
-                          style={buttonStyle}
-                          title="Create tournament"
-                        >
-                          + Tournament
-                  </button>
-                    )}
-                    {currentMember && !isKioskMode() && (
-                      <button 
-                        onClick={handleStartRecordMatch}
-                        className="button-3d"
-                        style={buttonStyle}
-                        title="Record a match"
-                      >
-                        + Match
+                        ↻
                       </button>
-                    )}
-                    {hasButtonsBeforeSeparator && (
-                      <span style={{ color: '#666', fontSize: '16px', margin: '0 4px', fontWeight: 'bold' }}>|</span>
-                    )}
-                    <button 
-                      onClick={handleStartStatsSelection}
-                      className="button-3d"
-                      style={buttonStyle}
-                      title="Show statistics for many players"
-                      aria-label="Show statistics for many players"
-                    >
-                      Stats
-                  </button>
+                    ) : null}
                   </>
-                );
-              })()}
-            </div>
-          )}
+                )}
+              />
+            );
+          })()}
           {isCheckinKiosk && (
             <div style={{ flex: '1 1 auto' }} />
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
-            {!isCheckinKiosk && (
-              <PlayersSettingsMenu
-                showSettingsMenu={showSettingsMenu}
-                setShowSettingsMenu={setShowSettingsMenu}
-                showIdColumn={showIdColumn}
-                setShowIdColumn={setShowIdColumn}
-                showAgeColumn={showAgeColumn}
-                setShowAgeColumn={setShowAgeColumn}
-                showStatusColumn={showStatusColumn}
-                setShowStatusColumn={setShowStatusColumn}
-                showGamesColumn={showGamesColumn}
-                setShowGamesColumn={setShowGamesColumn}
-                showAllPlayers={showAllPlayers}
-                setShowAllPlayers={setShowAllPlayers}
-                showAllRoles={showAllRoles}
-                setShowAllRoles={setShowAllRoles}
-                nameDisplayOrder={nameDisplayOrder}
-                setNameDisplayOrderState={setNameDisplayOrderState}
-                fetchMatches={fetchMatches}
-                fetchMembers={fetchMembers}
-                isAdminUser={isAdmin()}
-                isSelectingForStats={isSelectingForStats}
-                isSelectingForHistory={isSelectingForHistory}
-                supportsFullSaveDialog={supportsFullSaveDialog}
-                onExportPlayers={handleExportPlayers}
-                onImportPlayers={handleImportPlayers}
-                onExportClubArchive={handleExportClubArchive}
-                onImportClubArchive={handleImportClubArchive}
-                importBusy={importBusy}
-                importSendEmail={importSendEmail}
-                setImportSendEmail={setImportSendEmail}
-                tournamentNotificationsEnabled={tournamentNotificationsEnabled}
-                onTournamentNotificationsChange={currentMember ? handleTournamentNotificationsChange : undefined}
-              />
-            )}
-            {!isCreatingTournament && !showAddForm && !isSelectingForStats && !isSelectingForHistory && !isCheckinKiosk && (
-              <button
-                onClick={() => { void refreshAllData(); }}
-                className="button-filter"
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '14px',
-                  fontWeight: 'bold',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-                title="Refresh all data from server"
-              >
-                ↻
-              </button>
-            )}
-          </div>
         </div>
         
         {/* Tournament Information Box */}
