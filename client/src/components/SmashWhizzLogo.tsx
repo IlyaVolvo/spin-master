@@ -11,19 +11,19 @@ export function SmashWhizzLogo({ variant = 'header' }: SmashWhizzLogoProps) {
       role="img"
       aria-label={APP_NAME}
     >
-      <span className="smashwhizz-paddle app-header-paddle" aria-hidden="true">
-        🏓
-      </span>
       <span className="smashwhizz-table">
+        <span className="smashwhizz-net" aria-hidden="true" />
         <span className="smashwhizz-left">
           Smas
           <span className="smashwhizz-h">h</span>
         </span>
-        <span className="smashwhizz-net" aria-hidden="true" />
         <span className="smashwhizz-right">Whizz</span>
-      </span>
-      <span className="smashwhizz-paddle app-header-paddle" aria-hidden="true">
-        🏓
+        <span className="smashwhizz-paddle smashwhizz-paddle--left app-header-paddle" aria-hidden="true">
+          🏓
+        </span>
+        <span className="smashwhizz-paddle smashwhizz-paddle--right app-header-paddle" aria-hidden="true">
+          🏓
+        </span>
       </span>
     </span>
   );

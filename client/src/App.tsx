@@ -1125,9 +1125,13 @@ function Header({
     if (!adminMenuOpen) return;
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (adminMenuRef.current && target && !adminMenuRef.current.contains(target)) {
-        setAdminMenuOpen(false);
+      if (
+        (adminMenuRef.current && target && adminMenuRef.current.contains(target)) ||
+        (target instanceof Element && target.closest('[data-admin-menu]'))
+      ) {
+        return;
       }
+      setAdminMenuOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setAdminMenuOpen(false);
@@ -1168,24 +1172,8 @@ function Header({
   return (
     <>
     {(clubName || userName) ? (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-          padding: '0 16px 10px',
-          maxWidth: '100%',
-        }}
-      >
-        <div
-          style={{
-            flex: '1 1 0',
-            minWidth: 0,
-            display: 'flex',
-            justifyContent: 'flex-start',
-          }}
-        >
+      <div className="app-header-meta">
+        <div className="app-header-meta-about">
           <button
             type="button"
             className="app-header-club"
@@ -1195,7 +1183,6 @@ function Header({
             style={{
               display: 'inline-block',
               boxSizing: 'border-box',
-              maxWidth: '100%',
               padding: '6px 16px',
               backgroundColor: '#2c3e50',
               color: 'white',
@@ -1206,8 +1193,6 @@ function Header({
               letterSpacing: '0.02em',
               lineHeight: 1.25,
               whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
               cursor: 'pointer',
               fontFamily: 'inherit',
             }}
@@ -1215,19 +1200,12 @@ function Header({
             About
           </button>
         </div>
-        <div
-          style={{
-            flex: '0 1 auto',
-            minWidth: 0,
-            display: 'flex',
-            justifyContent: 'center',
-          }}
-        >
+        <div className="app-header-meta-club">
           {clubName ? (
             <span
-              className="app-header-club"
+              className="app-header-club app-header-club-caption"
               style={{
-                display: 'inline-block',
+                display: 'block',
                 boxSizing: 'border-box',
                 maxWidth: '100%',
                 padding: '6px 16px',
@@ -1242,7 +1220,7 @@ function Header({
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
               }}
-              title={todayHours.comment || undefined}
+              title={`${clubName} (${todayHours.label}${todayHours.comment ? ` · ${todayHours.comment}` : ''})`}
             >
               {clubName}
               <span
@@ -1260,21 +1238,13 @@ function Header({
             </span>
           ) : null}
         </div>
-        <div
-          style={{
-            flex: '1 1 0',
-            minWidth: 0,
-            display: 'flex',
-            justifyContent: 'flex-end',
-          }}
-        >
+        <div className="app-header-meta-user">
           {userName ? (
             <span
               className="app-header-club"
               style={{
                 display: 'inline-block',
                 boxSizing: 'border-box',
-                maxWidth: '100%',
                 padding: '6px 16px',
                 backgroundColor: '#2c3e50',
                 color: 'white',
@@ -1284,8 +1254,6 @@ function Header({
                 letterSpacing: '0.02em',
                 lineHeight: 1.25,
                 whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
               }}
               title={userName}
             >

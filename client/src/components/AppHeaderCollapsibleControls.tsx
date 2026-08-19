@@ -1,4 +1,5 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useLayoutEffect, useMemo, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getMember } from '../utils/auth';
 import { clearAllScrollPositions, clearAllUIStates } from '../utils/scrollPosition';
@@ -78,6 +79,26 @@ export function AppHeaderCollapsibleControls({
   onLogout,
 }: AppHeaderCollapsibleControlsProps) {
   const navigate = useNavigate();
+  const [adminMenuPosition, setAdminMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!adminMenuOpen) {
+      setAdminMenuPosition(null);
+      return;
+    }
+    const updatePosition = () => {
+      const rect = adminMenuRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setAdminMenuPosition({ top: rect.bottom + 4, left: rect.left });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [adminMenuOpen, adminMenuRef]);
 
   const tabStyle = (active: boolean, pending = false): CSSProperties => ({
     ...headerIconControlSize,
@@ -275,15 +296,15 @@ export function AppHeaderCollapsibleControls({
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{adminMenuLabel}</span>
                   <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>▾</span>
                 </button>
-                {adminMenuOpen ? (
+                {adminMenuOpen && adminMenuPosition ? createPortal(
                   <div
                     role="menu"
                     aria-label="Admin pages"
+                    data-admin-menu
                     style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: 0,
-                      marginTop: '4px',
+                      position: 'fixed',
+                      top: adminMenuPosition.top,
+                      left: adminMenuPosition.left,
                       width: adminMenuWidth,
                       minWidth: adminMenuWidth,
                       background: 'white',
@@ -336,7 +357,8 @@ export function AppHeaderCollapsibleControls({
                         </button>
                       );
                     })}
-                  </div>
+                  </div>,
+                  document.body,
                 ) : null}
               </div>
             ) : null}
@@ -362,7 +384,7 @@ export function AppHeaderCollapsibleControls({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'flex-end',
-          justifyContent: 'center',
+          justifyContent: 'flex-start',
           marginLeft: 'auto',
           flexShrink: 0,
         }}

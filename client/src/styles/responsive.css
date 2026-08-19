@@ -78,8 +78,10 @@ html {
   min-width: 0;
   width: 100%;
   max-width: 100%;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   box-sizing: border-box;
+  align-items: center;
 }
 
 .app-header-logo-fixed {
@@ -107,6 +109,7 @@ html {
 
 .app-header-user {
   min-width: 0;
+  align-self: center;
 }
 
 .app-header-user-row {
@@ -114,22 +117,41 @@ html {
   justify-content: flex-end;
 }
 
-@media (max-width: 900px) {
-  .app-header-collapsible-visible {
-    align-items: center;
-  }
+.app-header-user-links {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+}
 
-  .app-header-user {
-    align-items: flex-end !important;
-  }
+.app-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 10px;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
 
-  .app-header-user-links {
-    position: static !important;
-    top: auto !important;
-    right: auto !important;
-    justify-content: flex-end !important;
-    margin-top: 6px;
-  }
+.app-header-meta-about {
+  flex: 0 0 auto;
+}
+
+.app-header-meta-club {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.app-header-meta-user {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.app-header-club-caption {
+  min-width: 0;
 }
 
 @media (max-width: 480px) {
@@ -145,13 +167,12 @@ html {
 
   .app-header-club {
     font-size: 15px !important;
-    max-width: 92vw !important;
   }
 }
 
 @media (max-width: 380px) {
   .app-header-paddle {
-    display: none;
+    font-size: 0.7rem;
   }
 }
 
