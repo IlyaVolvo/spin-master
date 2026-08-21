@@ -14,6 +14,8 @@ export type CollapsibleActionButton = {
   /** Included in overflow measurement when endSlot is omitted from the probe row. */
   measureClassName?: string;
   measureStyle?: CSSProperties;
+  /** Highlight as the screen’s current selection in the overflow menu. */
+  active?: boolean;
 };
 
 export type CollapsibleAction =
@@ -314,8 +316,12 @@ export function CollapsibleActions({
               key={item.key}
               type="button"
               role="menuitem"
-              className="collapsible-actions__menu-item"
+              className={[
+                'collapsible-actions__menu-item',
+                item.active ? 'collapsible-actions__menu-item--active' : '',
+              ].filter(Boolean).join(' ')}
               title={item.title}
+              aria-current={item.active ? 'page' : undefined}
               onClick={() => {
                 item.onClick();
                 setMenuOpen(false);

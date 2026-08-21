@@ -105,6 +105,17 @@
   color: #2c3e50;
 }
 
+.collapsible-actions__menu-item--active {
+  background: #eaf4fb;
+  color: #155b78;
+  font-weight: 700;
+}
+
+.collapsible-actions__menu-item--active:hover {
+  background: #dceef8;
+  color: #155b78;
+}
+
 .collapsible-actions__menu-rule {
   height: 1px;
   margin: 4px 8px;

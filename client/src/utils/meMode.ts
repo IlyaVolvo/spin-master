@@ -1,6 +1,11 @@
 import { getMember, type Member } from './auth';
 
 export const ME_COMPACT_MAX_PX = 768;
+/**
+ * Full-app header needs logo + Actions + ~5 icon controls on one row.
+ * Below this width (or in portrait on a compact device) require landscape / wider layout.
+ */
+export const FULL_APP_MIN_WIDTH_PX = 700;
 const PREFER_FULL_APP_KEY = 'pingpong_prefer_full_app';
 
 /** True when the narrower viewport side is phone/compact-sized. */
@@ -9,6 +14,27 @@ export function isCompactViewport(
   height: number = typeof window !== 'undefined' ? window.innerHeight : ME_COMPACT_MAX_PX + 1,
 ): boolean {
   return Math.min(width, height) <= ME_COMPACT_MAX_PX;
+}
+
+export function isPortraitViewport(
+  width: number = typeof window !== 'undefined' ? window.innerWidth : ME_COMPACT_MAX_PX + 1,
+  height: number = typeof window !== 'undefined' ? window.innerHeight : ME_COMPACT_MAX_PX + 1,
+): boolean {
+  return height > width;
+}
+
+/**
+ * Full app (Players / Tournaments / Admin shell) needs a landscape-capable width.
+ * `/me` is exempt. Triggered by portrait on a compact device, or any width too narrow
+ * for the header row (logo, Actions, icon cluster).
+ */
+export function requiresLandscapeForFullApp(
+  width: number = typeof window !== 'undefined' ? window.innerWidth : FULL_APP_MIN_WIDTH_PX + 1,
+  height: number = typeof window !== 'undefined' ? window.innerHeight : FULL_APP_MIN_WIDTH_PX + 1,
+): boolean {
+  if (width < FULL_APP_MIN_WIDTH_PX) return true;
+  if (isCompactViewport(width, height) && isPortraitViewport(width, height)) return true;
+  return false;
 }
 
 export function memberHasPlayerRole(member: Member | null | undefined): boolean {

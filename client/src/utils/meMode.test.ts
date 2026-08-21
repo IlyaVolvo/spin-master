@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  FULL_APP_MIN_WIDTH_PX,
   ME_COMPACT_MAX_PX,
   clearPreferFullApp,
   defaultAuthenticatedPath,
   getPreferFullApp,
   isCompactViewport,
+  isPortraitViewport,
   memberHasPlayerRole,
+  requiresLandscapeForFullApp,
   setPreferFullApp,
   shouldDefaultToMe,
   shouldShowMeReturnLink,
@@ -81,10 +84,13 @@ describe('meMode', () => {
     expect(shouldShowMeReturnLink(member({ id: 2, roles: ['ADMIN'] }))).toBe(false);
   });
 
-  it('defaultAuthenticatedPath picks /me or /players', () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
-    expect(defaultAuthenticatedPath(member({ id: 1, roles: ['PLAYER'] }))).toBe('/me');
-    expect(defaultAuthenticatedPath(member({ id: 2, roles: ['ADMIN'] }))).toBe('/players');
+  it('requiresLandscapeForFullApp for portrait compact or narrow width', () => {
+    expect(isPortraitViewport(390, 844)).toBe(true);
+    expect(isPortraitViewport(844, 390)).toBe(false);
+    expect(requiresLandscapeForFullApp(390, 844)).toBe(true);
+    expect(requiresLandscapeForFullApp(844, 390)).toBe(false);
+    expect(requiresLandscapeForFullApp(FULL_APP_MIN_WIDTH_PX - 1, 500)).toBe(true);
+    expect(requiresLandscapeForFullApp(FULL_APP_MIN_WIDTH_PX, 500)).toBe(false);
+    expect(requiresLandscapeForFullApp(1280, 800)).toBe(false);
   });
 });

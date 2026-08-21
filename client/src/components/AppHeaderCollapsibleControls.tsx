@@ -155,6 +155,7 @@ export function AppHeaderCollapsibleControls({
       menu.push({
         key: 'nav-players',
         label: 'Players',
+        active: isPlayersActive,
         onClick: () => {
           clearAllScrollPositions();
           clearAllUIStates();
@@ -169,6 +170,7 @@ export function AppHeaderCollapsibleControls({
         label: hasPendingPreregistrations
           ? `Tournaments (${pendingPreregistrationCount})`
           : 'Tournaments',
+        active: isTournamentsActive,
         onClick: () => {
           clearAllScrollPositions();
           clearAllUIStates();
@@ -183,6 +185,7 @@ export function AppHeaderCollapsibleControls({
         menu.push({
           key: `admin-${item.id}`,
           label: item.label,
+          active: item.active,
           onClick: () => {
             if (item.id === 'settings') onSettingsClick();
             else if (item.id === 'attendance-log') onAttendanceClick();
@@ -200,11 +203,25 @@ export function AppHeaderCollapsibleControls({
     adminMenuItems,
     hasPendingPreregistrations,
     pendingPreregistrationCount,
+    isPlayersActive,
+    isTournamentsActive,
     navigate,
     onSettingsClick,
     onAttendanceClick,
     onPaymentsClick,
   ]);
+
+  const headerActionsLabel = isPlayersActive
+    ? 'Players'
+    : isTournamentsActive
+      ? (hasPendingPreregistrations
+        ? `Tournaments (${pendingPreregistrationCount})`
+        : 'Tournaments')
+      : isAdminSectionActive
+        ? adminMenuLabel
+        : isAchievementsActive
+          ? 'Achievements'
+          : 'Actions';
 
   const measureSlot = useMemo(() => (
     <div className="collapsible-actions__row app-header-measure-row">
@@ -372,7 +389,7 @@ export function AppHeaderCollapsibleControls({
     <>
       <CollapsibleActions
         variant="header"
-        menuLabel="Actions"
+        menuLabel={headerActionsLabel}
         visibleSlot={visibleSlot}
         measureSlot={measureSlot}
         allMenuItems={allMenuItems}

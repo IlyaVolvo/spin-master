@@ -12,7 +12,8 @@
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
     "sourceMap": true,
-    "inlineSourceMap": false
+    "inlineSourceMap": false,
+    "types": ["node"]
   },
   "include": ["src/**/*", "src/types/**/*"],
   "exclude": ["node_modules", "dist"]

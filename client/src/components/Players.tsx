@@ -3852,7 +3852,19 @@ const Players: React.FC = () => {
             ];
             return (
               <CollapsibleActions
-                menuLabel="Actions"
+                menuLabel={
+                  isCreatingTournament
+                    ? 'Tournament'
+                    : showAddForm
+                      ? 'Player'
+                      : isSelectingForStats
+                        ? 'Stats'
+                        : isSelectingForHistory
+                          ? 'History'
+                          : isRecordingMatch
+                            ? 'Match'
+                            : 'Actions'
+                }
                 menuButtonRef={playersActionsMenuBtnRef}
                 items={primaryItems}
                 endMenuItems={endMenuItems}

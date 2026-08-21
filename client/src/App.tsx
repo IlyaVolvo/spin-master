@@ -19,6 +19,7 @@ import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail 
 import { lazyWithReload } from './utils/lazyWithReload';
 import { SmashWhizzLogo } from './components/SmashWhizzLogo';
 import { AppHeaderCollapsibleControls } from './components/AppHeaderCollapsibleControls';
+import { LandscapeRequiredOverlay } from './components/LandscapeRequiredOverlay';
 import { APP_NAME_TM } from './brand';
 import {
   clearPreferFullApp,
@@ -526,6 +527,7 @@ function AppRoutes({
           ) : (
             <>
               <AuthRedirect />
+              <LandscapeRequiredOverlay />
               <div className="container">
                 <Header onLogout={handleLogout} clubName={clubName}>
                   <ErrorBoundary>
