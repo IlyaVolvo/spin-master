@@ -6461,10 +6461,10 @@ const Players: React.FC = () => {
                 </th>
               )}
               <th 
-                style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'left', backgroundColor: '#f8f9fa' }}
+                style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'center', backgroundColor: '#f8f9fa' }}
                 onClick={() => handleSort('name')}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                   {!isCreatingTournament && !isSelectingForStats && !isSelectingForHistory && (
                     <>
                       <span style={{ width: '14px', display: 'inline-block' }}></span>
@@ -6767,9 +6767,9 @@ const Players: React.FC = () => {
                     padding: '12px', 
                     backgroundColor: '#e8f5e9', 
                     borderBottom: '2px solid #4caf50',
-                    textAlign: 'left'
+                    textAlign: 'center'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ color: '#1b5e20', fontWeight: 'bold' }}>
                           {formatPlayerName(selectedPlayer.firstName, selectedPlayer.lastName, nameDisplayOrder)}
@@ -6978,10 +6978,13 @@ const Players: React.FC = () => {
                   <td style={{ fontWeight: 'bold', color: '#666' }}>{player.id}</td>
                 )}
                 <td 
-                  style={isSelectingForHistory ? { cursor: 'pointer' } : {}}
+                  style={{
+                    textAlign: 'center',
+                    ...(isSelectingForHistory ? { cursor: 'pointer' } : {}),
+                  }}
                   onClick={isSelectingForHistory ? () => handleSelectPlayerForHistory(player.id) : undefined}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
                     {!isCheckinKiosk && !isCreatingTournament && !isSelectingForStats && !isSelectingForHistory && (
                       <>
                         <button
