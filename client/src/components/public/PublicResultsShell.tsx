@@ -5,11 +5,15 @@ import {
   hasAnyPublicAchievementEnabled,
   subscribeToSystemConfig,
 } from '../../utils/systemConfig';
+import { isAuthenticated } from '../../utils/auth';
 import { APP_NAME } from '../../brand';
 
-type PublicNavKey = 'latest' | 'list' | 'achievements';
+type PublicNavKey = 'latest' | 'list' | 'achievements' | 'join';
 
 function resolvePublicNavKey(pathname: string): PublicNavKey | null {
+  if (pathname.startsWith('/public/join')) {
+    return 'join';
+  }
   if (pathname.startsWith('/public/achievements') || pathname === '/public' || pathname === '/public/') {
     return 'achievements';
   }
@@ -34,6 +38,7 @@ function PublicFilterNav({ showAchievements }: { showAchievements: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const active = resolvePublicNavKey(location.pathname);
+  const showBecomeMember = !isAuthenticated();
 
   const items: Array<{ key: PublicNavKey; to: string; label: string }> = [
     { key: 'latest', to: '/public/results/latest', label: 'Latest' },
@@ -54,6 +59,7 @@ function PublicFilterNav({ showAchievements }: { showAchievements: boolean }) {
           display: 'flex',
           flexWrap: 'wrap',
           gap: '12px',
+          alignItems: 'center',
         }}
       >
         {items.map((item) => {
@@ -70,6 +76,17 @@ function PublicFilterNav({ showAchievements }: { showAchievements: boolean }) {
             </button>
           );
         })}
+        {showBecomeMember ? (
+          <button
+            type="button"
+            className="button-cta-member"
+            style={{ marginLeft: 'auto' }}
+            aria-current={active === 'join' ? 'page' : undefined}
+            onClick={() => navigate('/public/join')}
+          >
+            Become a Member
+          </button>
+        ) : null}
       </nav>
     </div>
   );

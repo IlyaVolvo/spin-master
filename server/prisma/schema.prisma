@@ -132,6 +132,41 @@ model Member {
   @@map("members")
 }
 
+enum MemberLifecycleAction {
+  APPLY
+  APPLY_RESEND
+  ACTIVATE
+  DEACTIVATE
+  DENY
+  DELETE
+}
+
+enum MemberLifecycleActorType {
+  PUBLIC
+  ADMIN
+  SYSTEM
+}
+
+/**
+ * Append-only membership lifecycle history (Admin Membership Log).
+ * No FK to Member so rows survive hard-delete; memberId + details keep identity.
+ */
+model MemberLifecycleEvent {
+  id            Int                      @id @default(autoincrement())
+  memberId      Int
+  occurredAt    DateTime                 @default(now())
+  action        MemberLifecycleAction
+  actorType     MemberLifecycleActorType
+  actorMemberId Int?
+  summary       String
+  details       Json?
+
+  @@index([occurredAt])
+  @@index([memberId])
+  @@index([action])
+  @@map("member_lifecycle_events")
+}
+
 model RatingHistory {
   id           Int                @id @default(autoincrement())
   memberId     Int

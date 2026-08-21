@@ -2097,6 +2097,155 @@ router.get('/admin/visits', async (req: AuthRequest, res: Response) => {
   }
 });
 
+const MEMBERSHIP_LIFECYCLE_ACTIONS = [
+  'APPLY',
+  'APPLY_RESEND',
+  'ACTIVATE',
+  'DEACTIVATE',
+  'DENY',
+  'DELETE',
+] as const;
+
+type MembershipLifecycleAction = (typeof MEMBERSHIP_LIFECYCLE_ACTIONS)[number];
+
+function parseMembershipLifecycleAction(raw: unknown): MembershipLifecycleAction | null {
+  if (typeof raw !== 'string') return null;
+  const t = raw.trim().toUpperCase();
+  return (MEMBERSHIP_LIFECYCLE_ACTIONS as readonly string[]).includes(t)
+    ? (t as MembershipLifecycleAction)
+    : null;
+}
+
+function lifecycleDetailsIdentity(details: unknown): {
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+} {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) {
+    return { firstName: null, lastName: null, email: null };
+  }
+  const d = details as Record<string, unknown>;
+  const asStr = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  return {
+    firstName: asStr(d.firstName),
+    lastName: asStr(d.lastName),
+    email: asStr(d.email),
+  };
+}
+
+/** GET /api/club/admin/membership-events — membership lifecycle log, newest first; optional `q`, `from`, `to`, `action` */
+router.get('/admin/membership-events', async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const parseYmd = (raw: unknown): string | null => {
+      if (typeof raw !== 'string') return null;
+      const t = raw.trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+    };
+    const dateFrom = parseYmd(req.query.from);
+    const dateTo = parseYmd(req.query.to);
+    const actionFilter = parseMembershipLifecycleAction(req.query.action);
+
+    const occurredAtFilter =
+      dateFrom || dateTo
+        ? {
+            ...(dateFrom ? { gte: new Date(`${dateFrom}T00:00:00.000Z`) } : {}),
+            ...(dateTo ? { lte: new Date(`${dateTo}T23:59:59.999Z`) } : {}),
+          }
+        : undefined;
+
+    let memberIdFilter: number[] | null = null;
+    if (q) {
+      const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
+      const nameFilters = tokens.map((token) => ({
+        OR: [
+          { firstName: { contains: token, mode: 'insensitive' as const } },
+          { lastName: { contains: token, mode: 'insensitive' as const } },
+          { email: { contains: token, mode: 'insensitive' as const } },
+        ],
+      }));
+      const matched = await prisma.member.findMany({
+        where: { AND: nameFilters },
+        select: { id: true },
+        take: 500,
+      });
+      memberIdFilter = matched.map((m) => m.id);
+    }
+
+    const events = await prisma.memberLifecycleEvent.findMany({
+      where: {
+        ...(actionFilter ? { action: actionFilter } : {}),
+        ...(occurredAtFilter ? { occurredAt: occurredAtFilter } : {}),
+        ...(q
+          ? {
+              OR: [
+                ...(memberIdFilter && memberIdFilter.length > 0
+                  ? [{ memberId: { in: memberIdFilter } }]
+                  : []),
+                { summary: { contains: q, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: 500,
+    });
+
+    const memberIds = [...new Set(events.map((e) => e.memberId))];
+    const actorIds = [
+      ...new Set(events.map((e) => e.actorMemberId).filter((id): id is number => id != null)),
+    ];
+    const people = await prisma.member.findMany({
+      where: { id: { in: [...new Set([...memberIds, ...actorIds])] } },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    });
+    const byId = new Map(people.map((p) => [p.id, p]));
+
+    res.json({
+      events: events.map((e) => {
+        const live = byId.get(e.memberId);
+        const fromDetails = lifecycleDetailsIdentity(e.details);
+        const memberName = live
+          ? `${live.firstName} ${live.lastName}`.trim() || live.email || null
+          : [fromDetails.firstName, fromDetails.lastName].filter(Boolean).join(' ').trim() ||
+            fromDetails.email ||
+            null;
+        const actor = e.actorMemberId != null ? byId.get(e.actorMemberId) : null;
+        const actorName =
+          e.actorType === 'PUBLIC'
+            ? 'Public'
+            : e.actorType === 'SYSTEM'
+              ? 'System'
+              : actor
+                ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email || 'Admin'
+                : e.actorMemberId != null
+                  ? `Admin #${e.actorMemberId}`
+                  : 'Admin';
+        return {
+          id: e.id,
+          occurredAt: e.occurredAt.toISOString(),
+          action: e.action,
+          summary: e.summary,
+          memberId: e.memberId,
+          memberName,
+          actorType: e.actorType,
+          actorName,
+          details: e.details,
+        };
+      }),
+    });
+  } catch (error) {
+    logger.error('Error listing membership lifecycle events', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 /** GET /api/club/admin/payments — payments and/or credits; optional `q`, `from`, `to`, `payments`, `credits` */
 router.get('/admin/payments', async (req: AuthRequest, res: Response) => {
   try {

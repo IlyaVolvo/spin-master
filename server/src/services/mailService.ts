@@ -26,6 +26,24 @@ export function buildTournamentRegistrationDeclineLink(code: string): string {
   return `${getClientBaseUrl()}/tournament-registration/${encodeURIComponent(code)}?action=decline`;
 }
 
+export const MEMBERSHIP_APPLICATION_TOKEN_TTL_DAYS = 7;
+
+export function buildMembershipAcceptLink(token: string): string {
+  return `${getClientBaseUrl()}/public/join/setup?token=${encodeURIComponent(token)}`;
+}
+
+export function buildMembershipDenyLink(token: string): string {
+  return `${getClientBaseUrl()}/public/join/deny?token=${encodeURIComponent(token)}`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export function createSmtpTransporter(): nodemailer.Transporter {
   const host = process.env.SMTP_HOST?.trim();
   const port = parseSmtpPort(process.env.SMTP_PORT, 587);
@@ -61,7 +79,7 @@ export async function sendMail(params: {
   text: string;
   html: string;
   transporter?: nodemailer.Transporter;
-}): Promise<void> {
+}): Promise<{ messageId?: string; response?: string }> {
   const user = process.env.SMTP_USER?.trim();
   const from = process.env.SMTP_FROM?.trim() || user;
   if (!from) {
@@ -70,13 +88,17 @@ export async function sendMail(params: {
 
   const transporter = params.transporter ?? createSmtpTransporter();
   await transporter.verify();
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from,
     to: params.to,
     subject: params.subject,
     text: params.text,
     html: params.html,
   });
+  return {
+    messageId: typeof info.messageId === 'string' ? info.messageId : undefined,
+    response: typeof info.response === 'string' ? info.response : undefined,
+  };
 }
 
 function formatDate(date: Date | string | null | undefined): string {
@@ -183,4 +205,42 @@ export async function sendTournamentRegistrationClosedEmail(params: {
 
   await sendMail({ to: params.toEmail, subject, text, html, transporter: params.transporter });
 }
+
+export async function sendMembershipApplicationEmail(params: {
+  toEmail: string;
+  firstName: string;
+  clubName: string;
+  acceptLink: string;
+  denyLink: string;
+  expiresAt: Date;
+  transporter?: nodemailer.Transporter;
+}): Promise<{ messageId?: string; response?: string }> {
+  const clubName = params.clubName.trim() || 'the club';
+  const subject = `Confirm your ${clubName} membership`;
+  const expiresLabel = params.expiresAt.toLocaleString([], {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const text = [
+    `Hi ${params.firstName},`,
+    '',
+    `You requested to become a member of ${clubName}.`,
+    'Use the Accept link to set your password and PIN and activate your membership:',
+    params.acceptLink,
+    '',
+    'If you did not request this, use the Deny link to cancel the application:',
+    params.denyLink,
+    '',
+    `These links expire on ${expiresLabel}.`,
+  ].join('\n');
+  const html = `
+    <p>Hi ${escapeHtml(params.firstName)},</p>
+    <p>You requested to become a member of <strong>${escapeHtml(clubName)}</strong>.</p>
+    <p><a href="${params.acceptLink}">Accept — set your password and PIN</a></p>
+    <p><a href="${params.denyLink}">Deny — cancel this application</a></p>
+    <p>These links expire on <strong>${escapeHtml(expiresLabel)}</strong>.</p>
+  `;
+  return sendMail({ to: params.toEmail, subject, text, html, transporter: params.transporter });
+}
+
 

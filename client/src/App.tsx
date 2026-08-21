@@ -37,6 +37,7 @@ const TournamentRegistrationLink = lazyWithReload(() => import('./components/Tou
 const SystemSettings = lazyWithReload(() => import('./components/SystemSettings'));
 const PaymentsAdmin = lazyWithReload(() => import('./components/PaymentsAdmin'));
 const AttendanceLogAdmin = lazyWithReload(() => import('./components/AttendanceLogAdmin'));
+const MembershipLogAdmin = lazyWithReload(() => import('./components/MembershipLogAdmin'));
 const PaymentReturnPage = lazyWithReload(() => import('./components/PaymentReturnPage'));
 const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
 const PublicResultsLatestPage = lazyWithReload(() =>
@@ -46,6 +47,15 @@ const PublicResultsDetailPage = lazyWithReload(() =>
   import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsDetailPage })),
 );
 const PublicAchievementsPage = lazyWithReload(() => import('./components/public/PublicAchievementsPage'));
+const PublicJoinPage = lazyWithReload(() =>
+  import('./components/public/PublicJoinPages').then((m) => ({ default: m.PublicJoinPage })),
+);
+const PublicJoinSetupPage = lazyWithReload(() =>
+  import('./components/public/PublicJoinPages').then((m) => ({ default: m.PublicJoinSetupPage })),
+);
+const PublicJoinDenyPage = lazyWithReload(() =>
+  import('./components/public/PublicJoinPages').then((m) => ({ default: m.PublicJoinDenyPage })),
+);
 const MePage = lazyWithReload(() => import('./components/me/MePage'));
 
 function isUnauthenticatedPublicPath(pathname: string): boolean {
@@ -116,6 +126,7 @@ function AuthRedirect() {
       '/system-settings',
       '/payments',
       '/attendance-log',
+      '/membership-log',
     ];
     const isTournamentDetail = /^\/tournaments\/\d+$/.test(location.pathname);
     if (location.pathname.startsWith('/tournaments/') && !isTournamentDetail) {
@@ -461,6 +472,36 @@ function AppRoutes({
         }
       />
       <Route
+        path="/public/join/setup"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PublicJoinSetupPage />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/public/join/deny"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PublicJoinDenyPage />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/public/join"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PublicJoinPage />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
         path="/public/achievements"
         element={
           <ErrorBoundary>
@@ -559,6 +600,7 @@ function AppRoutes({
                         <Route path="/system-settings" element={<SystemSettings />} />
                         <Route path="/payments" element={<PaymentsAdmin />} />
                         <Route path="/attendance-log" element={<AttendanceLogAdmin />} />
+                        <Route path="/membership-log" element={<MembershipLogAdmin />} />
                       </Routes>
                     </Suspense>
                   </ErrorBoundary>
@@ -773,19 +815,23 @@ function Header({
   const isSettingsActive = location.pathname === '/system-settings';
   const isPaymentsActive = location.pathname === '/payments';
   const isAttendanceActive = location.pathname === '/attendance-log';
+  const isMembershipLogActive = location.pathname === '/membership-log';
   const paymentsTab = new URLSearchParams(location.search).get('tab');
   const isPlansActive = isPaymentsActive && paymentsTab === 'plans';
   const isPaymentsListActive = isPaymentsActive && !isPlansActive;
-  const isAdminSectionActive = isSettingsActive || isPaymentsActive || isAttendanceActive;
+  const isAdminSectionActive =
+    isSettingsActive || isPaymentsActive || isAttendanceActive || isMembershipLogActive;
   const adminMenuLabel = isSettingsActive
     ? 'System Configuration'
     : isPlansActive
       ? 'Payment Plans'
-      : isAttendanceActive
-        ? 'Attendance Log'
-        : isPaymentsListActive
-          ? 'Payment Log'
-          : 'Admin';
+      : isMembershipLogActive
+        ? 'Membership Log'
+        : isAttendanceActive
+          ? 'Attendance Log'
+          : isPaymentsListActive
+            ? 'Payment Log'
+            : 'Admin';
   const isAchievementsActive =
     location.pathname === '/public' ||
     location.pathname === '/public/' ||
@@ -1123,6 +1169,15 @@ function Header({
     navigate('/attendance-log', { replace: true });
   };
 
+  const handleMembershipLogClick = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    setAdminMenuOpen(false);
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/membership-log', { replace: true });
+  };
+
   useEffect(() => {
     if (!adminMenuOpen) return;
     const onPointerDown = (event: MouseEvent) => {
@@ -1149,6 +1204,7 @@ function Header({
   const adminMenuItems = [
     { id: 'payment-log' as const, label: 'Payment Log', active: isPaymentsListActive },
     { id: 'attendance-log' as const, label: 'Attendance Log', active: isAttendanceActive },
+    { id: 'membership-log' as const, label: 'Membership Log', active: isMembershipLogActive },
     { id: 'separator' as const, label: '', active: false },
     { id: 'plans' as const, label: 'Payment Plans', active: isPlansActive },
     { id: 'settings' as const, label: 'System Configuration', active: isSettingsActive },
@@ -1351,6 +1407,7 @@ function Header({
           onSettingsClick={handleSettingsClick}
           onPaymentsClick={handlePaymentsClick}
           onAttendanceClick={handleAttendanceClick}
+          onMembershipLogClick={handleMembershipLogClick}
           onLogout={onLogout}
         />
       </div>

@@ -20,6 +20,7 @@ import {
   normalizeOptionalCsvEmailCell,
   parseBirthDateFromCsvValue,
 } from '../utils/memberValidation';
+import { checkMemberDuplicates } from '../utils/memberDuplicates';
 import { looksLikePlayersCsvHeaderRow, playersCsvCanonicalHeadersForParse } from '../utils/playersCsvLayout';
 import { stripSensitiveMemberFields, memberAuditLogFields, memberChangedFieldsAudit } from '../utils/memberSerialization';
 import { generateScorePin, normalizeScorePin, validateScorePinFormat } from '../utils/scorePin';
@@ -30,6 +31,11 @@ import { getPaymentsConfig } from '../services/systemConfigService';
 import { computePlanIndicator, type PlanIndicator } from '../payments/planIndicator';
 import { resolveNewMemberTrialEndsOn } from '../payments/memberTrial';
 import { invalidateMemberCheckInStub } from '../payments/checkInStateCache';
+import {
+  memberDisplayName,
+  memberLifecycleIdentityDetails,
+  recordMemberLifecycleEvent,
+} from '../services/memberLifecycleLog';
 
 const router = express.Router();
 const importUpload = multer({ storage: multer.memoryStorage() });
@@ -677,110 +683,6 @@ async function sendPasswordResetEmail(params: {
   });
 }
 
-// Calculate Levenshtein distance between two strings
-function levenshteinDistance(str1: string, str2: string): number {
-  const s1 = str1.toLowerCase();
-  const s2 = str2.toLowerCase();
-  const len1 = s1.length;
-  const len2 = s2.length;
-  const matrix: number[][] = [];
-
-  if (len1 === 0) return len2;
-  if (len2 === 0) return len1;
-
-  // Initialize matrix
-  for (let i = 0; i <= len1; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= len2; j++) {
-    matrix[0][j] = j;
-  }
-
-  // Fill matrix
-  for (let i = 1; i <= len1; i++) {
-    for (let j = 1; j <= len2; j++) {
-      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1,      // deletion
-        matrix[i][j - 1] + 1,      // insertion
-        matrix[i - 1][j - 1] + cost // substitution
-      );
-    }
-  }
-
-  return matrix[len1][len2];
-}
-
-// Calculate similarity percentage (0-100)
-function calculateSimilarity(str1: string, str2: string): number {
-  const distance = levenshteinDistance(str1, str2);
-  const maxLength = Math.max(str1.length, str2.length);
-  if (maxLength === 0) return 100;
-  return ((maxLength - distance) / maxLength) * 100;
-}
-
-type MemberDuplicateCheck = {
-  duplicateName: boolean;
-  duplicateEmail: boolean;
-  similarNames: Array<{ name: string; similarity: number }>;
-};
-
-async function checkMemberDuplicates(params: {
-  firstName?: string;
-  lastName?: string;
-  email?: string | null;
-  excludeMemberId?: number;
-}): Promise<MemberDuplicateCheck> {
-  const firstName = typeof params.firstName === 'string' ? params.firstName.trim() : '';
-  const lastName = typeof params.lastName === 'string' ? params.lastName.trim() : '';
-  const email = typeof params.email === 'string' ? normalizeMemberEmail(params.email) : '';
-  const fullName = `${firstName} ${lastName}`.trim();
-
-  const members = await prisma.member.findMany({
-    where: params.excludeMemberId ? { id: { not: params.excludeMemberId } } : undefined,
-    select: { firstName: true, lastName: true, email: true },
-  });
-
-  const duplicateName = !!(
-    firstName &&
-    lastName &&
-    members.find(
-      (p) =>
-        p.firstName.toLowerCase() === firstName.toLowerCase() &&
-        p.lastName.toLowerCase() === lastName.toLowerCase()
-    )
-  );
-
-  const duplicateEmail = !!(
-    email &&
-    members.find((p) => p.email && normalizeMemberEmail(p.email) === email)
-  );
-
-  const similarNames =
-    firstName && lastName
-      ? members
-          .map((p: { firstName: string; lastName: string }) => {
-            const existingFullName = `${p.firstName} ${p.lastName}`;
-            return {
-              name: existingFullName,
-              similarity: calculateSimilarity(fullName, existingFullName),
-              distance: levenshteinDistance(fullName, existingFullName),
-            };
-          })
-          .filter((p: { name: string; similarity: number; distance: number }) => {
-            if (p.name.toLowerCase() === fullName.toLowerCase()) return false;
-            return p.similarity >= 80 || p.distance <= 2;
-          })
-          .sort((a: { similarity: number }, b: { similarity: number }) => b.similarity - a.similarity)
-          .map((p: { name: string; similarity: number }) => ({
-            name: p.name,
-            similarity: Math.round(p.similarity),
-          }))
-      : [];
-
-  return { duplicateName, duplicateEmail, similarNames };
-}
-
 function generateQrTokenHash(): string {
   return createHash('sha256')
     .update(`${randomBytes(32).toString('hex')}:${Date.now()}:${Math.random()}`)
@@ -980,7 +882,7 @@ router.get('/duplicate-check', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Invalid exclude member ID' });
     }
 
-    const result = await checkMemberDuplicates({
+    const result = await checkMemberDuplicates(prisma, {
       firstName: typeof req.query.firstName === 'string' ? req.query.firstName : '',
       lastName: typeof req.query.lastName === 'string' ? req.query.lastName : '',
       email: typeof req.query.email === 'string' ? req.query.email : '',
@@ -1130,7 +1032,7 @@ router.post('/', [
       return res.status(400).json({ errors: validationErrors.map(msg => ({ msg, param: 'validation' })) });
     }
 
-    const duplicateCheck = await checkMemberDuplicates({
+    const duplicateCheck = await checkMemberDuplicates(prisma, {
       firstName: trimmedFirstName,
       lastName: trimmedLastName,
       email: hasEmail ? trimmedEmailInput : '',
@@ -1455,6 +1357,15 @@ router.patch('/:id/deactivate', async (req: AuthRequest, res) => {
     });
     invalidateMemberCheckInStub(memberId);
 
+    await recordMemberLifecycleEvent({
+      memberId: member.id,
+      action: 'DEACTIVATE',
+      actorType: 'ADMIN',
+      actorMemberId: req.memberId ?? req.session?.member?.id ?? null,
+      summary: `${memberDisplayName(member)} deactivated`,
+      details: memberLifecycleIdentityDetails(member),
+    });
+
     const memberWithoutPassword = stripSensitiveMemberFields(member);
     
     // Emit socket notification for player update
@@ -1534,6 +1445,15 @@ router.delete('/:id', async (req: AuthRequest, res) => {
     }
 
     // Delete the member (rating history will cascade automatically)
+    await recordMemberLifecycleEvent({
+      memberId,
+      action: 'DELETE',
+      actorType: 'ADMIN',
+      actorMemberId: req.memberId ?? req.session?.member?.id ?? null,
+      summary: `${memberDisplayName(member)} deleted`,
+      details: memberLifecycleIdentityDetails(member),
+    });
+
     await prisma.member.delete({
       where: { id: memberId },
     });
@@ -1630,6 +1550,15 @@ router.patch('/:id/activate', async (req: AuthRequest, res) => {
       data: { isActive: true },
     });
     invalidateMemberCheckInStub(memberId);
+
+    await recordMemberLifecycleEvent({
+      memberId: member.id,
+      action: 'ACTIVATE',
+      actorType: 'ADMIN',
+      actorMemberId: req.memberId ?? req.session?.member?.id ?? null,
+      summary: `${memberDisplayName(member)} activated`,
+      details: memberLifecycleIdentityDetails(member),
+    });
 
     const memberWithoutPassword = stripSensitiveMemberFields(member);
     

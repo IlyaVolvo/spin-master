@@ -110,3 +110,31 @@ button.success:disabled:hover {
   box-shadow: none !important;
 }
 
+/* Public-page membership CTA — distinct from tab 3D/filter buttons */
+.button-cta-member {
+  background-color: #d35400 !important;
+  color: #fff !important;
+  border: 2px solid #f5cba7 !important;
+  box-shadow: 0 2px 8px rgba(211, 84, 0, 0.35) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em;
+  transform: none !important;
+}
+
+.button-cta-member:hover {
+  background-color: #e67e22 !important;
+  box-shadow: 0 3px 10px rgba(211, 84, 0, 0.45) !important;
+  transform: none !important;
+}
+
+.button-cta-member:active {
+  background-color: #ba4a00 !important;
+  transform: none !important;
+  box-shadow: 0 1px 4px rgba(211, 84, 0, 0.3) !important;
+}
+
+.button-cta-member[aria-current='page'] {
+  background-color: #a04000 !important;
+  border-color: #fdebd0 !important;
+}
+
