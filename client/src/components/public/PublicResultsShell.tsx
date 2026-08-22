@@ -5,7 +5,7 @@ import {
   hasAnyPublicAchievementEnabled,
   subscribeToSystemConfig,
 } from '../../utils/systemConfig';
-import { isAuthenticated } from '../../utils/auth';
+import { getAuthStateSnapshot, subscribeAuthState } from '../../utils/auth';
 import { APP_NAME } from '../../brand';
 
 type PublicNavKey = 'latest' | 'list' | 'achievements' | 'join';
@@ -38,7 +38,8 @@ function PublicFilterNav({ showAchievements }: { showAchievements: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const active = resolvePublicNavKey(location.pathname);
-  const showBecomeMember = !isAuthenticated();
+  const authenticated = useSyncExternalStore(subscribeAuthState, getAuthStateSnapshot, () => false);
+  const showBecomeMember = !authenticated;
 
   const items: Array<{ key: PublicNavKey; to: string; label: string }> = [
     { key: 'latest', to: '/public/results/latest', label: 'Latest' },

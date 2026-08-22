@@ -34,7 +34,30 @@ export interface Member {
 type AuthExpiredListener = (message: string) => void;
 
 const authExpiredListeners = new Set<AuthExpiredListener>();
+const authStateListeners = new Set<() => void>();
 let authExpiryHandling = false;
+
+function notifyAuthStateChanged(): void {
+  authStateListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      // Ignore listener errors so one bad subscriber cannot block others
+    }
+  });
+}
+
+/** Subscribe to local auth storage changes (login, logout, session expiry). */
+export function subscribeAuthState(listener: () => void): () => void {
+  authStateListeners.add(listener);
+  return () => {
+    authStateListeners.delete(listener);
+  };
+}
+
+export function getAuthStateSnapshot(): boolean {
+  return isAuthenticated();
+}
 
 // Token-based auth (for backward compatibility with User login)
 export const getToken = (): string | null => {
@@ -43,10 +66,12 @@ export const getToken = (): string | null => {
 
 export const setToken = (token: string): void => {
   localStorage.setItem(TOKEN_KEY, token);
+  notifyAuthStateChanged();
 };
 
 export const removeToken = (): void => {
   localStorage.removeItem(TOKEN_KEY);
+  notifyAuthStateChanged();
 };
 
 // Session-based auth (for Member login)
@@ -57,10 +82,12 @@ export const getMember = (): Member | null => {
 
 export const setMember = (member: Member): void => {
   localStorage.setItem(MEMBER_KEY, JSON.stringify(member));
+  notifyAuthStateChanged();
 };
 
 export const removeMember = (): void => {
   localStorage.removeItem(MEMBER_KEY);
+  notifyAuthStateChanged();
 };
 
 export const isAuthenticated = (): boolean => {
