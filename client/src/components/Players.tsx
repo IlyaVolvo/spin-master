@@ -6461,10 +6461,10 @@ const Players: React.FC = () => {
                 </th>
               )}
               <th 
-                style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'center', backgroundColor: '#f8f9fa' }}
+                style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'left', backgroundColor: '#f8f9fa' }}
                 onClick={() => handleSort('name')}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px' }}>
                   {!isCreatingTournament && !isSelectingForStats && !isSelectingForHistory && (
                     <>
                       <span style={{ width: '14px', display: 'inline-block' }}></span>
@@ -6481,12 +6481,12 @@ const Players: React.FC = () => {
                 </div>
               </th>
               {showStatusColumn && (
-                <th style={{ backgroundColor: '#f8f9fa', textAlign: 'center' }}>
+                <th style={{ backgroundColor: '#f8f9fa', textAlign: 'left' }}>
                   Status
                 </th>
               )}
               {showAllRoles && isAdmin() && (
-                <th style={{ backgroundColor: '#f8f9fa', textAlign: 'center' }}>
+                <th style={{ backgroundColor: '#f8f9fa', textAlign: 'left' }}>
                   Roles
                 </th>
               )}
@@ -6519,7 +6519,7 @@ const Players: React.FC = () => {
                   style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', backgroundColor: '#f8f9fa' }}
                   onClick={() => handleSort('games')}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                       <span>Games</span>
                       {sortColumn === 'games' && (
@@ -6528,7 +6528,7 @@ const Players: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', width: '100%' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', width: '100%' }}>
                       <select
                         value={gamesTimePeriod}
                         onChange={(e) => {
@@ -6563,7 +6563,7 @@ const Players: React.FC = () => {
                           backgroundColor: 'white',
                           minWidth: '100px',
                           width: 'auto',
-                          textAlign: 'center',
+                          textAlign: 'left',
                         }}
                       >
                         <option value="today">Today</option>
@@ -6580,7 +6580,7 @@ const Players: React.FC = () => {
                             cursor: 'pointer',
                             textDecoration: gamesCustomStartDate && gamesCustomEndDate ? 'underline' : 'none',
                             fontStyle: gamesCustomStartDate && gamesCustomEndDate ? 'normal' : 'italic',
-                            textAlign: 'center',
+                            textAlign: 'left',
                             width: '100%',
                           }}
                           onClick={(e) => {
@@ -6705,12 +6705,12 @@ const Players: React.FC = () => {
                 </th>
               )}
               {isAdmin() && (
-                <th style={{ textAlign: 'center', backgroundColor: '#f8f9fa', padding: '12px' }}>
+                <th style={{ textAlign: 'left', backgroundColor: '#f8f9fa', padding: '12px' }}>
                   Edit
                 </th>
               )}
               {isCheckinKiosk && (
-                <th style={{ textAlign: 'center', backgroundColor: '#f8f9fa', padding: '12px' }}>
+                <th style={{ textAlign: 'left', backgroundColor: '#f8f9fa', padding: '12px' }}>
                   Check-in
                 </th>
               )}
@@ -6738,7 +6738,7 @@ const Players: React.FC = () => {
                       padding: '12px',
                       backgroundColor: '#e8f5e9',
                       borderBottom: '2px solid #4caf50',
-                      textAlign: 'center'
+                      textAlign: 'left'
                     }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'center' }}>
                         <input
@@ -6767,7 +6767,7 @@ const Players: React.FC = () => {
                     padding: '12px', 
                     backgroundColor: '#e8f5e9', 
                     borderBottom: '2px solid #4caf50',
-                    textAlign: 'center'
+                    textAlign: 'left'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -6806,7 +6806,7 @@ const Players: React.FC = () => {
                   </th>
                   {showAgeColumn && (
                     <th style={{ 
-                      textAlign: 'center', 
+                      textAlign: 'left', 
                       padding: '12px', 
                       backgroundColor: '#e8f5e9', 
                       borderBottom: '2px solid #4caf50'
@@ -6815,7 +6815,7 @@ const Players: React.FC = () => {
                     </th>
                   )}
                   <th style={{ 
-                    textAlign: 'center', 
+                    textAlign: 'left', 
                     fontWeight: 'bold', 
                     color: selectedPlayer.rating !== null ? '#2c3e50' : PLAYERS_MUTED,
                     padding: '12px',
@@ -6826,7 +6826,7 @@ const Players: React.FC = () => {
                   </th>
                   {showGamesColumn && (
                   <th style={{ 
-                    textAlign: 'center', 
+                    textAlign: 'left', 
                     fontWeight: 'bold', 
                     padding: '12px',
                     backgroundColor: '#e8f5e9',
@@ -6837,7 +6837,7 @@ const Players: React.FC = () => {
                   )}
                   {isAdmin() && (
                     <th style={{ 
-                      textAlign: 'center', 
+                      textAlign: 'left', 
                       padding: '12px', 
                       backgroundColor: '#e8f5e9', 
                       borderBottom: '2px solid #4caf50'
@@ -6845,7 +6845,7 @@ const Players: React.FC = () => {
                     </th>
                   )}
                   <th style={{ 
-                    textAlign: 'right', 
+                    textAlign: 'left', 
                     paddingRight: '10px', 
                     padding: '12px', 
                     backgroundColor: '#e8f5e9', 
@@ -6881,7 +6881,7 @@ const Players: React.FC = () => {
                 onClick={isSelectingForHistory ? () => handleSelectPlayerForHistory(player.id) : undefined}
               >
                 {isSelectingForHistory ? (
-                  <td style={{ textAlign: 'center' }}>
+                  <td style={{ textAlign: 'left' }}>
                     {selectedPlayerForHistory === player.id ? (
                       // Selected player: show radio button
                       <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'center' }}>
@@ -6930,7 +6930,7 @@ const Players: React.FC = () => {
                     )}
                   </td>
                 ) : (isCreatingTournament || isSelectingForStats || isRecordingMatch) && (
-                  <td style={{ textAlign: 'center' }}>
+                  <td style={{ textAlign: 'left' }}>
                     <input
                       type="checkbox"
                       checked={
@@ -6979,7 +6979,7 @@ const Players: React.FC = () => {
                 )}
                 <td 
                   style={{
-                    textAlign: 'center',
+                    textAlign: 'left',
                     ...(isSelectingForHistory ? { cursor: 'pointer' } : {}),
                   }}
                   onClick={isSelectingForHistory ? () => handleSelectPlayerForHistory(player.id) : undefined}
@@ -7065,7 +7065,7 @@ const Players: React.FC = () => {
                   </div>
                 </td>
                 {showStatusColumn && (
-                  <td style={{ textAlign: 'center', fontWeight: 'bold', verticalAlign: 'middle' }}>
+                  <td style={{ textAlign: 'left', fontWeight: 'bold', verticalAlign: 'middle' }}>
                     <span
                       style={{
                         display: 'inline-grid',
@@ -7123,28 +7123,28 @@ const Players: React.FC = () => {
                   </td>
                 )}
                 {showAllRoles && isAdmin() && (
-                  <td style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold' }}>
+                  <td style={{ textAlign: 'left', fontSize: '12px', fontWeight: 'bold' }}>
                     {player.roles && player.roles.length > 0 
                       ? player.roles.map(role => role.charAt(0)).join(', ')
                       : '-'}
                   </td>
                 )}
                 {showAgeColumn && (
-                  <td style={{ textAlign: 'center' }}>
+                  <td style={{ textAlign: 'left' }}>
                     {calculateAge(player.birthDate) !== null ? calculateAge(player.birthDate) : '-'}
                   </td>
                 )}
-                <td style={{ textAlign: 'center', fontWeight: 'bold', color: player.rating !== null ? '#2c3e50' : PLAYERS_MUTED }}>
+                <td style={{ textAlign: 'left', fontWeight: 'bold', color: player.rating !== null ? '#2c3e50' : PLAYERS_MUTED }}>
                   {player.rating !== null ? player.rating : '-'}
                 </td>
                   {showGamesColumn && (
-                    <td style={{ textAlign: 'center', fontWeight: 'bold' }}>
+                    <td style={{ textAlign: 'left', fontWeight: 'bold' }}>
                       {playerMatchCounts.get(player.id) || 0}
                     </td>
                   )}
                 {isAdmin() && (
-                  <td style={{ textAlign: 'center', padding: '5px 8px' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <td style={{ textAlign: 'left', padding: '5px 8px' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'flex-start', gap: '4px' }}>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -7243,7 +7243,7 @@ const Players: React.FC = () => {
                   </td>
                 )}
                 {isCheckinKiosk && (
-                  <td style={{ textAlign: 'center', padding: '5px 8px' }}>
+                  <td style={{ textAlign: 'left', padding: '5px 8px' }}>
                     <CheckinRowButton
                       present={checkinStatusByMember[player.id]?.present === true}
                       visitedToday={checkinStatusByMember[player.id]?.visitedToday === true}
