@@ -6431,7 +6431,7 @@ const Players: React.FC = () => {
                   {isSelectingForHistory ? (
                     selectedPlayerForHistory ? 'Opponent' : 'Select'
                   ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-start' }}>
                       {isCreatingTournament && (
                       <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '12px' }}>
                         <input
@@ -6449,7 +6449,7 @@ const Players: React.FC = () => {
               )}
               {showIdColumn && (
                 <th 
-                  style={{ backgroundColor: '#f8f9fa', cursor: 'pointer', userSelect: 'none' }}
+                  style={{ backgroundColor: '#f8f9fa', cursor: 'pointer', userSelect: 'none', textAlign: 'left' }}
                   onClick={() => handleSort('id')}
                 >
                   ID
@@ -6492,7 +6492,7 @@ const Players: React.FC = () => {
               )}
               {showAgeColumn && (
                 <th 
-                  style={{ cursor: 'pointer', userSelect: 'none', backgroundColor: '#f8f9fa' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', backgroundColor: '#f8f9fa', textAlign: 'left' }}
                   onClick={() => handleSort('age')}
                 >
                   Age
@@ -6504,7 +6504,7 @@ const Players: React.FC = () => {
                 </th>
               )}
               <th 
-                style={{ cursor: 'pointer', userSelect: 'none', backgroundColor: '#f8f9fa' }}
+                style={{ cursor: 'pointer', userSelect: 'none', backgroundColor: '#f8f9fa', textAlign: 'left' }}
                 onClick={() => handleSort('rating')}
               >
                 Rating
@@ -6516,7 +6516,7 @@ const Players: React.FC = () => {
               </th>
               {showGamesColumn && (
                 <th 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', backgroundColor: '#f8f9fa' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', backgroundColor: '#f8f9fa', textAlign: 'left' }}
                   onClick={() => handleSort('games')}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
@@ -6740,7 +6740,7 @@ const Players: React.FC = () => {
                       borderBottom: '2px solid #4caf50',
                       textAlign: 'left'
                     }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'center' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'flex-start' }}>
                         <input
                           type="radio"
                           name="historyPlayer"
@@ -6769,7 +6769,7 @@ const Players: React.FC = () => {
                     borderBottom: '2px solid #4caf50',
                     textAlign: 'left'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-start' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ color: '#1b5e20', fontWeight: 'bold' }}>
                           {formatPlayerName(selectedPlayer.firstName, selectedPlayer.lastName, nameDisplayOrder)}
@@ -6884,7 +6884,7 @@ const Players: React.FC = () => {
                   <td style={{ textAlign: 'left' }}>
                     {selectedPlayerForHistory === player.id ? (
                       // Selected player: show radio button
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'center' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'flex-start' }}>
                         <input
                           type="radio"
                           name="historyPlayer"
@@ -6896,7 +6896,7 @@ const Players: React.FC = () => {
                       </label>
                     ) : selectedPlayerForHistory === null ? (
                       // No player selected yet: show radio button for all players
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'center' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'flex-start' }}>
                         <input
                           type="radio"
                           name="historyPlayer"
@@ -6909,7 +6909,7 @@ const Players: React.FC = () => {
                     ) : (
                       // Other players: show only opponent checkbox
                       <label 
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'center' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', justifyContent: 'flex-start' }}
                         onClick={(e) => e.stopPropagation()} // Prevent row click from triggering
                       >
                         <input
@@ -6984,7 +6984,7 @@ const Players: React.FC = () => {
                   }}
                   onClick={isSelectingForHistory ? () => handleSelectPlayerForHistory(player.id) : undefined}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '2px' }}>
                     {!isCheckinKiosk && !isCreatingTournament && !isSelectingForStats && !isSelectingForHistory && (
                       <>
                         <button
@@ -7072,7 +7072,7 @@ const Players: React.FC = () => {
                         gridTemplateColumns: '1.25em 1.25em 0.75em',
                         columnGap: '2px',
                         alignItems: 'center',
-                        justifyItems: 'center',
+                        justifyItems: 'start',
                       }}
                     >
                       <span

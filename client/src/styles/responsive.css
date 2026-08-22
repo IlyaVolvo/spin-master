@@ -208,6 +208,11 @@ html {
   text-align: left;
 }
 
+.players-table-scroll th > div,
+.players-table-scroll td > div {
+  justify-content: flex-start;
+}
+
 .players-table-scroll tbody tr:nth-child(even) {
   background-color: #f3f5f7;
 }
