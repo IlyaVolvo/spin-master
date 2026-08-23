@@ -207,4 +207,39 @@ describe('GET /api/club/admin/membership-events', () => {
     expect(res.body.events[0].actorName).toBe('Public');
     expect(res.body.events[1].id).toBe(1);
   });
+
+  it('returns UPDATE events with change details', async () => {
+    prismaMock.memberLifecycleEvent.findMany.mockResolvedValue([
+      {
+        id: 3,
+        memberId: 9,
+        occurredAt: new Date('2026-08-22T12:00:00.000Z'),
+        action: 'UPDATE',
+        actorType: 'ADMIN',
+        actorMemberId: 1,
+        summary: 'Ada Lovelace profile updated',
+        details: {
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          email: 'ada@example.com',
+          changes: [
+            { field: 'rating', from: 1500, to: 1600 },
+            { field: 'password', from: '********', to: '********', secret: true },
+          ],
+        },
+      },
+    ]);
+    prismaMock.member.findMany.mockResolvedValue([
+      { id: 9, firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com' },
+      { id: 1, firstName: 'Admin', lastName: 'User', email: 'admin@example.com' },
+    ]);
+
+    const res = await request(createApp())
+      .get('/api/club/admin/membership-events')
+      .set('x-test-roles', 'ADMIN');
+
+    expect(res.status).toBe(200);
+    expect(res.body.events[0].action).toBe('UPDATE');
+    expect(res.body.events[0].details.changes).toHaveLength(2);
+  });
 });

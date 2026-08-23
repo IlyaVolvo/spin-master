@@ -30,6 +30,12 @@ import {
 import { memberHasPaymentLogin } from '../utils/paymentLoginEligibility';
 import { invalidateMemberCheckInStub } from '../payments/checkInStateCache';
 import { broadcastMembersUpdated } from '../services/playerSocketBroadcast';
+import {
+  memberDisplayName,
+  memberLifecycleUpdateDetails,
+  recordMemberLifecycleEvent,
+} from '../services/memberLifecycleLog';
+import { memberLifecycleSecretChange } from '../utils/memberSerialization';
 
 const router = express.Router();
 
@@ -896,6 +902,17 @@ router.post('/member/change-password', [
     invalidateMemberCheckInStub(memberId);
     await broadcastMembersUpdated(prisma, [memberId]);
 
+    await recordMemberLifecycleEvent({
+      memberId,
+      action: 'UPDATE',
+      actorType: 'ADMIN',
+      actorMemberId: memberId,
+      summary: `${memberDisplayName(member)} password changed`,
+      details: memberLifecycleUpdateDetails(member, [
+        memberLifecycleSecretChange('password', member.password, newPassword),
+      ]),
+    });
+
     logger.auditInfo('Password change attempt', {
       outcome: 'success',
       memberId,
@@ -986,7 +1003,7 @@ router.post('/member/:id/reset-password', [
 
     const member = await prisma.member.findUnique({
       where: { id: memberId },
-      select: { id: true, email: true, firstName: true },
+      select: { id: true, email: true, firstName: true, lastName: true, password: true },
     });
 
     if (!member) {
@@ -1015,6 +1032,17 @@ router.post('/member/:id/reset-password', [
         },
       });
       invalidateMemberCheckInStub(memberId);
+
+      await recordMemberLifecycleEvent({
+        memberId,
+        action: 'UPDATE',
+        actorType: 'ADMIN',
+        actorMemberId: adminMemberId ?? null,
+        summary: `${memberDisplayName(member)} password reset by admin`,
+        details: memberLifecycleUpdateDetails(member, [
+          memberLifecycleSecretChange('password', member.password, newPassword),
+        ]),
+      });
 
       logger.auditInfo('Admin password reset attempt', {
         outcome: 'success',
@@ -1053,6 +1081,17 @@ router.post('/member/:id/reset-password', [
         },
       });
       invalidateMemberCheckInStub(memberId);
+
+      await recordMemberLifecycleEvent({
+        memberId,
+        action: 'UPDATE',
+        actorType: 'ADMIN',
+        actorMemberId: adminMemberId ?? null,
+        summary: `${memberDisplayName(member)} password cleared for reset link`,
+        details: memberLifecycleUpdateDetails(member, [
+          memberLifecycleSecretChange('password', member.password, ''),
+        ]),
+      });
 
       try {
         await sendPasswordResetEmail({

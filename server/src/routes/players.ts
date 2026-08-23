@@ -22,7 +22,7 @@ import {
 } from '../utils/memberValidation';
 import { checkMemberDuplicates } from '../utils/memberDuplicates';
 import { looksLikePlayersCsvHeaderRow, playersCsvCanonicalHeadersForParse } from '../utils/playersCsvLayout';
-import { stripSensitiveMemberFields, memberAuditLogFields, memberChangedFieldsAudit } from '../utils/memberSerialization';
+import { stripSensitiveMemberFields, memberAuditLogFields, memberChangedFieldsAudit, memberLifecycleChangesFromAudit, memberLifecycleSecretChange } from '../utils/memberSerialization';
 import { generateScorePin, normalizeScorePin, validateScorePinFormat } from '../utils/scorePin';
 import { isKioskMode } from '../utils/kioskMode';
 import { isAdmin as sharedIsAdmin } from '../utils/adminAccess';
@@ -34,6 +34,7 @@ import { invalidateMemberCheckInStub } from '../payments/checkInStateCache';
 import {
   memberDisplayName,
   memberLifecycleIdentityDetails,
+  memberLifecycleUpdateDetails,
   recordMemberLifecycleEvent,
 } from '../services/memberLifecycleLog';
 
@@ -1298,12 +1299,28 @@ router.post('/:id/regenerate-score-pin', async (req: AuthRequest, res: Response)
       return res.status(403).json({ error: 'Only the member or an administrator can regenerate this PIN.' });
     }
     const newPin = generateScorePin();
+    const existing = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, lastName: true, email: true, scorePin: true },
+    });
     const member = await prisma.member.update({
       where: { id: memberId },
       data: { scorePin: newPin },
-      select: { id: true, scorePin: true },
+      select: { id: true, scorePin: true, firstName: true, lastName: true, email: true },
     });
     invalidateMemberCheckInStub(memberId);
+    if (existing) {
+      await recordMemberLifecycleEvent({
+        memberId: member.id,
+        action: 'UPDATE',
+        actorType: 'ADMIN',
+        actorMemberId: req.memberId ?? req.session?.member?.id ?? null,
+        summary: `${memberDisplayName(member)} score PIN regenerated`,
+        details: memberLifecycleUpdateDetails(member, [
+          memberLifecycleSecretChange('scorePin', existing.scorePin, member.scorePin),
+        ]),
+      });
+    }
     return res.json({ memberId: member.id, scorePin: member.scorePin });
   } catch (error) {
     logger.error('Error regenerating score PIN', { error: error instanceof Error ? error.message : String(error) });
@@ -1331,12 +1348,28 @@ router.post('/:id/set-score-pin', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: formatError });
     }
     const newPin = normalizeScorePin(req.body.scorePin);
+    const existing = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, lastName: true, email: true, scorePin: true },
+    });
     const member = await prisma.member.update({
       where: { id: memberId },
       data: { scorePin: newPin },
-      select: { id: true, scorePin: true },
+      select: { id: true, scorePin: true, firstName: true, lastName: true, email: true },
     });
     invalidateMemberCheckInStub(memberId);
+    if (existing) {
+      await recordMemberLifecycleEvent({
+        memberId: member.id,
+        action: 'UPDATE',
+        actorType: 'ADMIN',
+        actorMemberId: req.memberId ?? req.session?.member?.id ?? null,
+        summary: `${memberDisplayName(member)} score PIN updated`,
+        details: memberLifecycleUpdateDetails(member, [
+          memberLifecycleSecretChange('scorePin', existing.scorePin, member.scorePin),
+        ]),
+      });
+    }
     return res.json({ memberId: member.id, scorePin: member.scorePin });
   } catch (error) {
     logger.error('Error updating score PIN', { error: error instanceof Error ? error.message : String(error) });
@@ -1634,6 +1667,8 @@ router.patch('/:id', [
         autoRenewEnabled: true,
         onlinePayConsent: true,
         paymentProviderId: true,
+        segment: true,
+        trialEndsOn: true,
       },
     });
 
@@ -1999,6 +2034,22 @@ router.patch('/:id', [
     }
 
     const memberWithoutPassword = stripSensitiveMemberFields(updatedMember);
+
+    const lifecycleChanges = memberLifecycleChangesFromAudit(
+      updateData,
+      existingMember as Record<string, unknown>,
+      updatedMember as Record<string, unknown>,
+    );
+    if (lifecycleChanges.length > 0) {
+      await recordMemberLifecycleEvent({
+        memberId: updatedMember.id,
+        action: 'UPDATE',
+        actorType: 'ADMIN',
+        actorMemberId: req.memberId ?? req.session?.member?.id ?? null,
+        summary: `${memberDisplayName(updatedMember)} profile updated`,
+        details: memberLifecycleUpdateDetails(updatedMember, lifecycleChanges),
+      });
+    }
 
     logger.info('Member updated', {
       memberId,

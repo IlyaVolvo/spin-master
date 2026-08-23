@@ -2104,6 +2104,7 @@ const MEMBERSHIP_LIFECYCLE_ACTIONS = [
   'DEACTIVATE',
   'DENY',
   'DELETE',
+  'UPDATE',
 ] as const;
 
 type MembershipLifecycleAction = (typeof MEMBERSHIP_LIFECYCLE_ACTIONS)[number];

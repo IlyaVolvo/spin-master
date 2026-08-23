@@ -1,6 +1,7 @@
 import type { MemberLifecycleAction, MemberLifecycleActorType, Prisma } from '@prisma/client';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
+import type { MemberLifecycleChangeEntry } from '../utils/memberSerialization';
 
 export type RecordMemberLifecycleEventParams = {
   memberId: number;
@@ -47,6 +48,22 @@ export function memberLifecycleIdentityDetails(member: {
     firstName: member.firstName ?? null,
     lastName: member.lastName ?? null,
     email: member.email ?? null,
+  };
+}
+
+export function memberLifecycleUpdateDetails(
+  member: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  },
+  changes: MemberLifecycleChangeEntry[],
+): Prisma.InputJsonValue {
+  return {
+    firstName: member.firstName ?? null,
+    lastName: member.lastName ?? null,
+    email: member.email ?? null,
+    changes,
   };
 }
 

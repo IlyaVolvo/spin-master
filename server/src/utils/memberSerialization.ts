@@ -17,6 +17,60 @@ function auditFieldValue(field: string, value: unknown): unknown {
   return value ?? null;
 }
 
+export type MemberLifecycleChangeEntry = {
+  field: string;
+  from: unknown;
+  to: unknown;
+  secret?: boolean;
+};
+
+const LIFECYCLE_SECRET_FIELDS = new Set(['password', 'scorePin']);
+
+/** Mask secret credential values for membership lifecycle logs. */
+export function maskLifecycleSecretValue(
+  field: 'password' | 'scorePin',
+  value: unknown,
+): string {
+  if (field === 'password') {
+    if (typeof value === 'string' && value.length > 0) {
+      return '*'.repeat(8);
+    }
+    return '(none)';
+  }
+  if (typeof value === 'string' && value.length > 0) {
+    return '*'.repeat(value.length);
+  }
+  return '(none)';
+}
+
+export function memberLifecycleSecretChange(
+  field: 'password' | 'scorePin',
+  beforeValue: unknown,
+  afterValue: unknown,
+): MemberLifecycleChangeEntry {
+  return {
+    field,
+    from: maskLifecycleSecretValue(field, beforeValue),
+    to: maskLifecycleSecretValue(field, afterValue),
+    secret: true,
+  };
+}
+
+/** Convert profile PATCH audit map to lifecycle change rows. */
+export function memberLifecycleChangesFromAudit(
+  updateData: Record<string, unknown>,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): MemberLifecycleChangeEntry[] {
+  const audit = memberChangedFieldsAudit(updateData, before, after);
+  return Object.entries(audit).map(([field, { from, to }]) => ({
+    field,
+    from,
+    to,
+    secret: LIFECYCLE_SECRET_FIELDS.has(field),
+  }));
+}
+
 /** Non-sensitive before/after map for fields present in updateData. */
 export function memberChangedFieldsAudit(
   updateData: Record<string, unknown>,

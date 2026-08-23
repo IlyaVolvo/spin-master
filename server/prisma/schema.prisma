@@ -139,6 +139,7 @@ enum MemberLifecycleAction {
   DEACTIVATE
   DENY
   DELETE
+  UPDATE
 }
 
 enum MemberLifecycleActorType {

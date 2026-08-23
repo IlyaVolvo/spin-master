@@ -10,7 +10,93 @@ type LifecycleAction =
   | 'ACTIVATE'
   | 'DEACTIVATE'
   | 'DENY'
-  | 'DELETE';
+  | 'DELETE'
+  | 'UPDATE';
+
+type LifecycleChange = {
+  field: string;
+  from: unknown;
+  to: unknown;
+  secret?: boolean;
+};
+
+const ALL_ACTIONS: LifecycleAction[] = [
+  'APPLY',
+  'APPLY_RESEND',
+  'ACTIVATE',
+  'DEACTIVATE',
+  'DENY',
+  'DELETE',
+  'UPDATE',
+];
+
+const ACTION_LABELS: Record<LifecycleAction, string> = {
+  APPLY: 'Apply',
+  APPLY_RESEND: 'Resend',
+  ACTIVATE: 'Activate',
+  DEACTIVATE: 'Deactivate',
+  DENY: 'Deny',
+  DELETE: 'Delete',
+  UPDATE: 'Update',
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  firstName: 'First name',
+  lastName: 'Last name',
+  email: 'Email',
+  rating: 'Rating',
+  isActive: 'Active',
+  gender: 'Gender',
+  phone: 'Phone',
+  address: 'Address',
+  hasPicture: 'Photo',
+  picture: 'Photo',
+  roles: 'Roles',
+  tournamentNotificationsEnabled: 'Tournament notifications',
+  segment: 'Segment',
+  autoRelinquishPrivileges: 'Auto relinquish',
+  trialEndsOn: 'Trial end',
+  onlinePayConsent: 'Online pay consent',
+  paymentProviderId: 'Payment service',
+  birthDate: 'Birth date',
+  autoRenewEnabled: 'Auto-renew',
+  password: 'Password',
+  scorePin: 'Score PIN',
+};
+
+function parseLifecycleChanges(details: unknown): LifecycleChange[] {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return [];
+  const raw = (details as { changes?: unknown }).changes;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is LifecycleChange => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+    const row = item as LifecycleChange;
+    return typeof row.field === 'string';
+  });
+}
+
+function formatChangeValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function MembershipEventChanges({ details }: { details: unknown }) {
+  const changes = parseLifecycleChanges(details);
+  if (changes.length === 0) return null;
+  return (
+    <ul style={{ margin: '4px 0 0', paddingLeft: '16px', fontSize: '11px', color: '#546e7a' }}>
+      {changes.map((change) => (
+        <li key={change.field}>
+          <strong>{FIELD_LABELS[change.field] || change.field}</strong>: {formatChangeValue(change.from)} →{' '}
+          {formatChangeValue(change.to)}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 type MembershipEventRow = {
   id: number;
@@ -22,24 +108,6 @@ type MembershipEventRow = {
   actorType: 'PUBLIC' | 'ADMIN' | 'SYSTEM';
   actorName: string | null;
   details?: unknown;
-};
-
-const ALL_ACTIONS: LifecycleAction[] = [
-  'APPLY',
-  'APPLY_RESEND',
-  'ACTIVATE',
-  'DEACTIVATE',
-  'DENY',
-  'DELETE',
-];
-
-const ACTION_LABELS: Record<LifecycleAction, string> = {
-  APPLY: 'Apply',
-  APPLY_RESEND: 'Resend',
-  ACTIVATE: 'Activate',
-  DEACTIVATE: 'Deactivate',
-  DENY: 'Deny',
-  DELETE: 'Delete',
 };
 
 const MEMBERSHIP_ACTION_FILTER_KEY = 'membershipLog_actions';
@@ -54,7 +122,11 @@ function loadStickyActions(): Set<LifecycleAction> {
       ALL_ACTIONS.includes(s as LifecycleAction),
     );
     if (valid.length === 0) return new Set(ALL_ACTIONS);
-    return new Set(valid);
+    const result = new Set(valid);
+    for (const action of ALL_ACTIONS) {
+      if (!result.has(action)) result.add(action);
+    }
+    return result;
   } catch {
     return new Set(ALL_ACTIONS);
   }
@@ -196,7 +268,7 @@ export default function MembershipLogAdmin() {
       <div style={{ marginBottom: '16px' }}>
         <h2
           style={{ margin: 0, display: 'inline-block', cursor: 'help' }}
-          title="Membership lifecycle history (apply, activate, deny, deactivate, delete). Newest first."
+          title="Membership lifecycle history (apply, activate, deny, deactivate, delete, profile updates). Newest first."
         >
           Membership Log
         </h2>
@@ -367,6 +439,7 @@ export default function MembershipLogAdmin() {
                   <td style={tdStyle}>{row.actorName || row.actorType}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: '360px' }}>
                     {row.summary}
+                    <MembershipEventChanges details={row.details} />
                   </td>
                 </tr>
               ))
