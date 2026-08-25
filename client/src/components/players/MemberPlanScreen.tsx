@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../utils/api';
-import { clubTodayYmd, formatClubDate, formatClubDateTime } from '../../utils/clubDateTime';
+import { clubTodayYmd, formatClubDate, formatClubDateTime, formatYmd } from '../../utils/clubDateTime';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { isAdmin, getMember } from '../../utils/auth';
 import { getSystemConfig, subscribeToSystemConfig } from '../../utils/systemConfig';
@@ -404,8 +404,8 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
   const inTrial = summary?.inTrial === true;
   const canPurchase = summary?.canPurchase === true;
   const blockReason = summary ? purchaseBlockReason(summary) : null;
-  const trialStartsOn = summary?.trialPlanStartsOn || null;
-  const trialEndsOnLabel = summary?.trialEndsOn || null;
+  const trialStartsOn = formatYmd(summary?.trialPlanStartsOn) || summary?.trialPlanStartsOn || null;
+  const trialEndsOnLabel = formatYmd(summary?.trialEndsOn) || summary?.trialEndsOn || null;
   /** Cash: available to everyone who can purchase. Online: not when admin acts on behalf. */
   const canPayCash = canPurchase;
   const canPayOnline =
@@ -987,7 +987,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
 
   const currentTone = planRowTone({
     slot: 'current',
-    hasPlan: Boolean(summary?.current),
+    hasPlan: Boolean(summary?.current) || inTrial,
     statusTarget,
     purchaseLineState,
     pendingPayment: Boolean(summary?.pendingPayment),
@@ -1416,34 +1416,6 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
             <p style={{ margin: '12px 0 0', fontSize: '13px', color: '#555' }}>
               Pricing segment: <strong>{summary.member.segment || 'Regular'}</strong>
             </p>
-            {inTrial && (
-              <div
-                style={{
-                  marginTop: '12px',
-                  padding: '10px 12px',
-                  borderRadius: '6px',
-                  background: '#eaf2f8',
-                  border: '1px solid #a9cce3',
-                  color: '#1a5276',
-                  fontSize: '13px',
-                  lineHeight: 1.45,
-                }}
-              >
-                <strong style={{ display: 'block', marginBottom: '4px' }}>Trial in effect</strong>
-                Free trial
-                {trialEndsOnLabel ? ` through ${trialEndsOnLabel}` : ''}. Any plan you buy now is queued
-                as a <strong>future plan</strong> and will only take effect
-                {trialStartsOn ? (
-                  <>
-                    {' '}
-                    starting <strong>{trialStartsOn}</strong> (the day after trial ends)
-                  </>
-                ) : (
-                  ' after the trial period ends'
-                )}
-                . It does not start while the trial is still active.
-              </div>
-            )}
 
             {hasEmail && !adminActingOnBehalf && (
               <div
@@ -1509,7 +1481,7 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
             )}
 
             <section style={{ marginTop: '14px' }}>
-              <h4 style={planSlotLabelStyle(Boolean(summary.current))}>Current plan</h4>
+              <h4 style={planSlotLabelStyle(Boolean(summary.current) || inTrial)}>Current plan</h4>
               {summary.current ? (
                 <div
                   style={{
@@ -1602,6 +1574,23 @@ export function MemberPlanScreen({ memberId, onClose }: MemberPlanScreenProps) {
                     </label>
                   )}
                   <EntitlementLine entitlement={summary.current} tone={currentTone} />
+                </div>
+              ) : inTrial ? (
+                <div
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    ...statusPanelStyle(currentTone),
+                  }}
+                >
+                  <span style={{ color: '#1b5e20', fontSize: '14px' }}>
+                    <strong style={{ fontWeight: 700 }}>Trial</strong>
+                    <span style={{ fontWeight: 400 }}>
+                      {' — '}
+                      {trialEndsOnLabel ? `through ${trialEndsOnLabel}` : 'in effect'}
+                    </span>
+                  </span>
                 </div>
               ) : showPurchasePicker && idlePurchaseSlot === 'current' ? (
                 renderPurchasePanel()
