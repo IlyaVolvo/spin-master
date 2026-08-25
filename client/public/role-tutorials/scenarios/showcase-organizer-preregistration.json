@@ -1,0 +1,61 @@
+{
+  "slug": "showcase-organizer-preregistration",
+  "role": "organizer",
+  "title": "Organizer runs pre-registration",
+  "description": "Open the Preregistration stage, inspect a collecting event, and use Finalize when the field is ready.",
+  "relatedSlugs": [
+    "showcase-organizer-create-event",
+    "showcase-organizer-cancel-prereg"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "prereg-tab",
+      "title": "Preregistration stage",
+      "body": "The Preregistration tab lists events still collecting sign-ups.",
+      "image": "assets/showcase-organizer-preregistration/step-01.png",
+      "kind": "action",
+      "actionHint": "Open Preregistration",
+      "hotspot": {
+        "x": 15,
+        "y": 19.7,
+        "w": 9.8,
+        "h": 4.2
+      }
+    },
+    {
+      "id": "list",
+      "title": "Collecting events",
+      "body": "Tutorial Pre-Registration Event and Tutorial Event Night sit here until you Finalize or Cancel.",
+      "image": "assets/showcase-organizer-preregistration/step-02.png",
+      "kind": "result",
+      "resultNote": "Preregistration list is visible."
+    },
+    {
+      "id": "detail",
+      "title": "Event detail",
+      "body": "Open an event to see seats, registrations, Finalize, and Cancel. Finalize builds the tournament from registered players.",
+      "image": "assets/showcase-organizer-preregistration/step-03.png",
+      "kind": "result",
+      "resultNote": "Pre-registration detail with organizer Finalize."
+    },
+    {
+      "id": "finalize",
+      "title": "Finalize",
+      "body": "Finalize creates the live tournament from the current registrations. This capture does not submit it.",
+      "image": "assets/showcase-organizer-preregistration/step-04.png",
+      "kind": "action",
+      "actionHint": "Find Finalize",
+      "hotspot": {
+        "x": 74.4,
+        "y": 27.2,
+        "w": 4.7,
+        "h": 3.2
+      }
+    }
+  ],
+  "showcase": true
+}

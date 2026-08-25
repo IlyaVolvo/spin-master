@@ -1,0 +1,46 @@
+{
+  "slug": "showcase-player-score-pin",
+  "role": "player",
+  "title": "Player changes their score PIN",
+  "description": "From your profile, show, change, or regenerate the PIN used at score kiosks.",
+  "relatedSlugs": [
+    "showcase-player-edit-profile",
+    "showcase-player-score-kiosk"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "pin-section",
+      "title": "Score PIN",
+      "body": "The Score PIN block is on your profile. Show PIN reveals it; Change PIN sets a new one; Regenerate PIN makes a random PIN.",
+      "image": "assets/showcase-player-score-pin/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "change-pin",
+      "title": "Change PIN",
+      "body": "Open the change form. Enter the new PIN twice and save — this capture does not submit a change.",
+      "image": "assets/showcase-player-score-pin/step-02.png",
+      "kind": "action",
+      "actionHint": "Click Change PIN",
+      "hotspot": {
+        "x": 35.8,
+        "y": 70.4,
+        "w": 5.9,
+        "h": 2.7
+      }
+    },
+    {
+      "id": "pin-form",
+      "title": "New PIN fields",
+      "body": "Type the PIN and confirmation, then save. Keep this PIN for kiosk score entry.",
+      "image": "assets/showcase-player-score-pin/step-03.png",
+      "kind": "result",
+      "resultNote": "Change PIN form is expanded."
+    }
+  ],
+  "showcase": true
+}

@@ -1,0 +1,89 @@
+{
+  "slug": "showcase-public-achievements",
+  "role": "public",
+  "title": "Public achievements",
+  "description": "Open club achievements without signing in, switch Period vs Tournament, pick a board to print, and print the selection.",
+  "relatedSlugs": [
+    "showcase-public-results-latest",
+    "showcase-public-results-list",
+    "showcase-public-join-apply"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "achievements-home",
+      "title": "Achievements",
+      "body": "Anyone can open the club’s public achievements. No login is required. Period is the default scope.",
+      "image": "assets/showcase-public-achievements/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "period-scope",
+      "title": "Period is selected",
+      "body": "Period shows boards for a rolling window (week, month, year, or all time). Tournament limits boards to one completed event.",
+      "image": "assets/showcase-public-achievements/step-02.png",
+      "kind": "action",
+      "actionHint": "Notice Period is the active scope",
+      "hotspot": {
+        "x": 22.6,
+        "y": 22,
+        "w": 5,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "tournament-scope",
+      "title": "Switch to Tournament",
+      "body": "Choose Tournament to score boards from a single completed event instead of a date window.",
+      "image": "assets/showcase-public-achievements/step-03.png",
+      "kind": "action",
+      "actionHint": "Click Tournament",
+      "hotspot": {
+        "x": 28.3,
+        "y": 22,
+        "w": 7.2,
+        "h": 3.8
+      }
+    },
+    {
+      "id": "tournament-picked",
+      "title": "Boards for one event",
+      "body": "Pick the completed Round Robin. Boards refresh for that event only.",
+      "image": "assets/showcase-public-achievements/step-04.png",
+      "kind": "result",
+      "resultNote": "Tournament scope is active and an event is selected."
+    },
+    {
+      "id": "mark-print",
+      "title": "Mark a board to print",
+      "body": "Check Print next to a board so it is included when you print selected achievements.",
+      "image": "assets/showcase-public-achievements/step-05.png",
+      "kind": "action",
+      "actionHint": "Check Print on a board",
+      "hotspot": {
+        "x": 22.4,
+        "y": 41.9,
+        "w": 0.9,
+        "h": 1.5
+      }
+    },
+    {
+      "id": "print-selected",
+      "title": "Print selected",
+      "body": "Print selected opens the browser print dialog for the boards you checked.",
+      "image": "assets/showcase-public-achievements/step-06.png",
+      "kind": "action",
+      "actionHint": "Click Print selected",
+      "hotspot": {
+        "x": 68.4,
+        "y": 36.5,
+        "w": 9.1,
+        "h": 3.6
+      }
+    }
+  ],
+  "showcase": true
+}

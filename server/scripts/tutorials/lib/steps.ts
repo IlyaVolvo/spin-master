@@ -2,6 +2,7 @@ import type { Page } from 'puppeteer-core';
 import type { CaptureContext } from './browser';
 import { goToLoginForm } from './browser';
 import {
+  TUTORIAL_ACTIVE_RR_NAME,
   TUTORIAL_COMPLETED_RR_NAME,
   TUTORIAL_MONTHLY_PLAN_NAME,
   TUTORIAL_PASSWORD,
@@ -331,7 +332,7 @@ export async function openPaymentLog(ctx: CaptureContext, adminEmail: string): P
   await ctx.page.waitForFunction(
     () =>
       /Payment Log/i.test(document.body.innerText || '') &&
-      Boolean(document.querySelector('input[aria-label="Show pending payments"]')),
+      Boolean(document.querySelector('#payments-status-filter')),
     { timeout: 20000 },
   );
 }
@@ -360,49 +361,93 @@ export async function hotspotForAdminMenuItem(
   return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
 }
 
-/** Pending-only: Paid off, Pending on. */
-export async function setPaymentLogPendingOnly(ctx: CaptureContext): Promise<void> {
-  await ctx.page.evaluate(() => {
-    const paid = document.querySelector(
-      'input[aria-label="Show paid payments"]',
-    ) as HTMLInputElement | null;
-    const pending = document.querySelector(
-      'input[aria-label="Show pending payments"]',
-    ) as HTMLInputElement | null;
-    if (!paid || !pending) throw new Error('Payment status filters missing');
-    if (!pending.checked) {
-      pending.click();
-    }
-    if (paid.checked) {
-      paid.click();
-    }
+async function openPaymentStatusDropdown(ctx: CaptureContext): Promise<void> {
+  const expanded = await ctx.page.evaluate(() => {
+    const btn = document.querySelector('#payments-status-filter') as HTMLButtonElement | null;
+    if (!btn) return false;
+    if (btn.getAttribute('aria-expanded') === 'true') return true;
+    btn.click();
+    return true;
   });
+  if (!expanded) throw new Error('Payment Status filter not found');
+  await ctx.delay(250);
+  await ctx.page.waitForSelector('[role="listbox"][aria-label="Status"]', { timeout: 8000 });
+}
+
+async function clickPaymentStatusOption(ctx: CaptureContext, optionLabel: string): Promise<void> {
+  await openPaymentStatusDropdown(ctx);
+  const clicked = await ctx.page.evaluate((label) => {
+    const box = document.querySelector('[role="listbox"][aria-label="Status"]');
+    if (!box) return false;
+    const row = [...box.querySelectorAll('label')].find((l) => {
+      const t = (l.textContent || '').replace(/\s+/g, ' ').trim();
+      return t === label || t.endsWith(label);
+    }) as HTMLElement | undefined;
+    if (!row) return false;
+    row.click();
+    return true;
+  }, optionLabel);
+  if (!clicked) throw new Error(`Status option "${optionLabel}" not found`);
   await ctx.delay(300);
 }
 
+async function isolatePaymentStatus(ctx: CaptureContext, optionLabel: string): Promise<void> {
+  await openPaymentStatusDropdown(ctx);
+  const allOn = await ctx.page.evaluate(() => {
+    const box = document.querySelector('[role="listbox"][aria-label="Status"]');
+    const all = [...(box?.querySelectorAll('label') || [])].find(
+      (l) => (l.textContent || '').replace(/\s+/g, ' ').trim() === 'All',
+    );
+    return (all?.querySelector('input') as HTMLInputElement | undefined)?.checked === true;
+  });
+  if (!allOn) {
+    const clickedAll = await ctx.page.evaluate(() => {
+      const box = document.querySelector('[role="listbox"][aria-label="Status"]');
+      const all = [...(box?.querySelectorAll('label') || [])].find(
+        (l) => (l.textContent || '').replace(/\s+/g, ' ').trim() === 'All',
+      ) as HTMLElement | undefined;
+      if (!all) return false;
+      all.click();
+      return true;
+    });
+    if (!clickedAll) throw new Error('Status All option not found');
+    await ctx.delay(250);
+  }
+  await clickPaymentStatusOption(ctx, optionLabel);
+}
+
+/** Pending-only: isolate Pending in the Status dropdown. */
+export async function setPaymentLogPendingOnly(ctx: CaptureContext): Promise<void> {
+  await isolatePaymentStatus(ctx, 'Pending');
+}
+
 export async function hotspotForPaymentLogPaidFilter(ctx: CaptureContext): Promise<HotspotPct> {
+  await openPaymentStatusDropdown(ctx);
   await ctx.page.evaluate(() => {
-    document
-      .querySelector('input[aria-label="Show paid payments"]')
-      ?.scrollIntoView({ block: 'center' });
+    const box = document.querySelector('[role="listbox"][aria-label="Status"]');
+    const row = [...(box?.querySelectorAll('label') || [])].find((l) =>
+      (l.textContent || '').includes('Paid'),
+    ) as HTMLElement | undefined;
+    row?.scrollIntoView({ block: 'center' });
   });
   await ctx.delay(150);
-  const handle = await ctx.page.evaluateHandle(
-    () => document.querySelector('input[aria-label="Show paid payments"]') || null,
-  );
+  const handle = await ctx.page.evaluateHandle(() => {
+    const box = document.querySelector('[role="listbox"][aria-label="Status"]');
+    return (
+      [...(box?.querySelectorAll('label') || [])].find((l) =>
+        (l.textContent || '').includes('Paid'),
+      ) || null
+    );
+  });
   const el = handle.asElement();
   if (!el) {
     await handle.dispose();
-    throw new Error('Show paid payments checkbox not found');
+    throw new Error('Paid status option not found');
   }
   const box = await el.boundingBox();
   await handle.dispose();
-  if (!box) throw new Error('Show paid payments has no bounding box');
-  return boxToPct(
-    { x: box.x - 4, y: box.y - 4, width: Math.max(box.width + 48, 70), height: box.height + 8 },
-    VIEWPORT.width,
-    VIEWPORT.height,
-  );
+  if (!box) throw new Error('Paid status option has no bounding box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
 }
 
 export async function hotspotForFirstPaymentClear(ctx: CaptureContext): Promise<HotspotPct> {
@@ -847,11 +892,38 @@ export async function openAdminMenu(ctx: CaptureContext): Promise<void> {
   await ctx.delay(400);
 }
 
+export async function clickPlayersToolbarItem(ctx: CaptureContext, text: string): Promise<boolean> {
+  await gotoPath(ctx, '/players');
+  if (await ctx.clickButtonContaining(text)) return true;
+  const openedMenu = await ctx.page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button[aria-haspopup="menu"]')].find((b) => {
+      if (b.closest('.collapsible-actions__measure')) return false;
+      const r = b.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+      return /Actions|Tournament|Stats|Match|Player|History/i.test((b.textContent || '').trim());
+    }) as HTMLButtonElement | undefined;
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  if (!openedMenu) return false;
+  await ctx.delay(300);
+  return ctx.page.evaluate((t) => {
+    const item = [...document.querySelectorAll('[data-collapsible-actions-menu] [role="menuitem"]')].find(
+      (x) => (x.textContent || '').includes(t),
+    ) as HTMLElement | undefined;
+    if (!item) return false;
+    item.click();
+    return true;
+  }, text);
+}
+
 export async function openTournamentWizard(ctx: CaptureContext): Promise<void> {
   await gotoPath(ctx, '/players');
-  const opened = await ctx.clickButtonContaining('+ Tournament');
+  const opened = await clickPlayersToolbarItem(ctx, '+ Tournament');
   if (!opened) throw new Error('+ Tournament not found');
   await ctx.delay(800);
+  await ctx.page.waitForSelector('input[name="tournamentType"]', { timeout: 15000 });
 }
 
 export async function selectTournamentType(ctx: CaptureContext, value: string): Promise<void> {
@@ -1168,7 +1240,7 @@ export async function startStatsSelection(ctx: CaptureContext): Promise<void> {
     ),
   );
   if (already) return;
-  const opened = await ctx.clickButtonContaining('Stats');
+  const opened = await clickPlayersToolbarItem(ctx, 'Stats');
   if (!opened) throw new Error('Stats button not found');
   await ctx.delay(500);
   await ctx.page.waitForFunction(
@@ -1421,6 +1493,28 @@ export async function hotspotForMemberCheckinButton(
   return hotspotForMemberAttendanceButton(ctx, firstName, lastName, 'Check-in');
 }
 
+/** If the kiosk row shows Check-out, complete checkout so Check-in is available. */
+export async function ensureKioskMemberCanCheckIn(
+  ctx: CaptureContext,
+  firstName: string,
+  lastName: string,
+): Promise<void> {
+  const name = memberNameNeedle(firstName, lastName);
+  const present = await ctx.page.evaluate((needle) => {
+    const row = [...document.querySelectorAll('tr')].find((r) =>
+      (r.textContent || '').includes(needle),
+    );
+    return [...(row?.querySelectorAll('button') || [])].some(
+      (b) => (b.textContent || '').trim() === 'Check-out',
+    );
+  }, name);
+  if (!present) return;
+  await openMemberAttendancePinModal(ctx, firstName, lastName, 'Check-out');
+  await fillCheckinPin(ctx);
+  await submitAttendancePinModal(ctx, 'Check-out');
+  await ctx.delay(400);
+}
+
 /** Open the PIN modal for a member’s Check-in / Check-out row button. */
 export async function openMemberAttendancePinModal(
   ctx: CaptureContext,
@@ -1556,15 +1650,21 @@ export async function openOwnPlanScreen(ctx: CaptureContext): Promise<void> {
   });
   await ctx.delay(1100);
   await ctx.page.waitForFunction(
-    () => [...document.querySelectorAll('label')].some((l) => (l.textContent || '').trim() === 'Plan'),
+    () =>
+      [...document.querySelectorAll('label, h4')].some((l) => {
+        const t = (l.textContent || '').trim();
+        return t === 'Plan' || t === 'Select plan' || t === 'Current plan';
+      }),
     { timeout: 15000 },
   );
 }
 
 async function planSelectElement(ctx: CaptureContext) {
   const label = await ctx.page.evaluateHandle(() =>
-    [...document.querySelectorAll('label')].find((l) => (l.textContent || '').trim() === 'Plan') ||
-      null,
+    [...document.querySelectorAll('label')].find((l) => {
+      const t = (l.textContent || '').trim();
+      return t === 'Plan' || t === 'Select plan' || t.startsWith('Select plan');
+    }) || null,
   );
   const labelEl = label.asElement();
   if (!labelEl) {
@@ -2029,22 +2129,73 @@ export async function openMultiRrFinalConfirm(
   );
 }
 
-/** Open the seeded active Round Robin detail (created first → id 1 after reset-seed). */
-export async function openSeededActiveRoundRobin(ctx: CaptureContext): Promise<void> {
-  await gotoPath(ctx, '/tournaments/1');
-  await ctx.delay(900);
+export async function openTournamentsStage(
+  ctx: CaptureContext,
+  stage: 'Active' | 'Preregistration' | 'Completed',
+): Promise<void> {
+  await gotoPath(ctx, '/tournaments');
+  await ctx.delay(400);
+  const aliases =
+    stage === 'Preregistration'
+      ? ['Preregistration', 'Pre-Registration', 'Pre-registration']
+      : [stage];
+  let onTab = false;
+  for (const label of aliases) {
+    if (await ctx.clickButtonContaining(label)) {
+      onTab = true;
+      break;
+    }
+  }
+  if (!onTab) throw new Error(`${stage} stage tab not found`);
+  await ctx.delay(700);
+}
+
+/** Open a tournament from the stage list by visible name (stable across seed id shifts). */
+export async function openTournamentNamed(
+  ctx: CaptureContext,
+  name: string,
+  stage: 'Active' | 'Preregistration' | 'Completed',
+): Promise<void> {
+  await openTournamentsStage(ctx, stage);
   await ctx.page.waitForFunction(
-    () =>
-      [...document.querySelectorAll('button[title="Enter score"]')].length > 0 ||
-      /Tutorial Active Round Robin/i.test(document.body.innerText || ''),
+    (n) => (document.body.innerText || '').includes(n),
     { timeout: 20000 },
+    name,
+  );
+  const opened = await ctx.page.evaluate((n) => {
+    const btn = [...document.querySelectorAll('button[title="Open tournament"]')].find((el) =>
+      (el.getAttribute('aria-label') || el.textContent || '').includes(n),
+    ) as HTMLButtonElement | undefined;
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, name);
+  if (!opened) throw new Error(`Tournament "${name}" not found under ${stage}`);
+  await ctx.delay(1000);
+  await ctx.page.waitForFunction(
+    (n) => (document.body.innerText || '').includes(n),
+    { timeout: 20000 },
+    name,
   );
 }
 
-/** Open the seeded completed Round Robin (id 3 after reset-seed: active, prereg, completed). */
+/** Open the seeded active Round Robin detail. */
+export async function openSeededActiveRoundRobin(ctx: CaptureContext): Promise<void> {
+  await openTournamentNamed(ctx, TUTORIAL_ACTIVE_RR_NAME, 'Active');
+  await ctx.delay(400);
+  await ctx.page.waitForFunction(
+    (n) =>
+      [...document.querySelectorAll('button[title="Enter score"]')].length > 0 ||
+      new RegExp(n, 'i').test(document.body.innerText || ''),
+    { timeout: 20000 },
+    TUTORIAL_ACTIVE_RR_NAME,
+  );
+}
+
+/** Open the seeded completed Round Robin from the Completed stage. */
 export async function openSeededCompletedRoundRobin(ctx: CaptureContext): Promise<void> {
-  await gotoPath(ctx, '/tournaments/3');
-  await ctx.delay(900);
+  await openTournamentNamed(ctx, TUTORIAL_COMPLETED_RR_NAME, 'Completed');
+  await ctx.delay(400);
   await ctx.page.waitForFunction(
     (name) => new RegExp(name, 'i').test(document.body.innerText || ''),
     { timeout: 20000 },
@@ -2389,45 +2540,38 @@ export async function enterTournamentScoreKiosk(
   await ctx.delay(400);
 }
 
-/** Payment Log: Paid on, Pending off. */
+/** Payment Log: isolate Paid in the Status dropdown. */
 export async function setPaymentLogPaidOnly(ctx: CaptureContext): Promise<void> {
-  await ctx.page.evaluate(() => {
-    const paid = document.querySelector(
-      'input[aria-label="Show paid payments"]',
-    ) as HTMLInputElement | null;
-    const pending = document.querySelector(
-      'input[aria-label="Show pending payments"]',
-    ) as HTMLInputElement | null;
-    if (!paid || !pending) throw new Error('Payment status filters missing');
-    if (!paid.checked) paid.click();
-    if (pending.checked) pending.click();
-  });
-  await ctx.delay(300);
+  await isolatePaymentStatus(ctx, 'Paid');
 }
 
 export async function hotspotForPaymentLogPendingFilter(ctx: CaptureContext): Promise<HotspotPct> {
+  await openPaymentStatusDropdown(ctx);
   await ctx.page.evaluate(() => {
-    document
-      .querySelector('input[aria-label="Show pending payments"]')
-      ?.scrollIntoView({ block: 'center' });
+    const box = document.querySelector('[role="listbox"][aria-label="Status"]');
+    const row = [...(box?.querySelectorAll('label') || [])].find((l) =>
+      (l.textContent || '').includes('Pending'),
+    ) as HTMLElement | undefined;
+    row?.scrollIntoView({ block: 'center' });
   });
   await ctx.delay(150);
-  const handle = await ctx.page.evaluateHandle(
-    () => document.querySelector('input[aria-label="Show pending payments"]') || null,
-  );
+  const handle = await ctx.page.evaluateHandle(() => {
+    const box = document.querySelector('[role="listbox"][aria-label="Status"]');
+    return (
+      [...(box?.querySelectorAll('label') || [])].find((l) =>
+        (l.textContent || '').includes('Pending'),
+      ) || null
+    );
+  });
   const el = handle.asElement();
   if (!el) {
     await handle.dispose();
-    throw new Error('Show pending payments checkbox not found');
+    throw new Error('Pending status option not found');
   }
   const box = await el.boundingBox();
   await handle.dispose();
-  if (!box) throw new Error('Show pending payments has no bounding box');
-  return boxToPct(
-    { x: box.x - 4, y: box.y - 4, width: Math.max(box.width + 56, 80), height: box.height + 8 },
-    VIEWPORT.width,
-    VIEWPORT.height,
-  );
+  if (!box) throw new Error('Pending status option has no bounding box');
+  return boxToPct(box, VIEWPORT.width, VIEWPORT.height);
 }
 
 export async function hotspotForPaymentLogDateFilters(ctx: CaptureContext): Promise<HotspotPct> {

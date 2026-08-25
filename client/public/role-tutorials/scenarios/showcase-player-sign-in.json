@@ -1,0 +1,54 @@
+{
+  "slug": "showcase-player-sign-in",
+  "role": "player",
+  "title": "Player signs in and resets a password",
+  "description": "Open the login form, use Forgot Password, and see the first-time invite prompt that requires a new password.",
+  "relatedSlugs": [
+    "showcase-player-me-hub",
+    "showcase-public-join-accept"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "login-form",
+      "title": "Login screen",
+      "body": "Members sign in with email and password. Use Forgot Password if you cannot get in, or set a new password the first time you accept an invite.",
+      "image": "assets/showcase-player-sign-in/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "forgot-password",
+      "title": "Forgot Password",
+      "body": "Request a reset when you cannot sign in. The club emails a link (this capture stops on the request form).",
+      "image": "assets/showcase-player-sign-in/step-02.png",
+      "kind": "action",
+      "actionHint": "Click Forgot Password?",
+      "hotspot": {
+        "x": 46.4,
+        "y": 39.8,
+        "w": 7.1,
+        "h": 1.6
+      }
+    },
+    {
+      "id": "forgot-modal",
+      "title": "Reset request",
+      "body": "Enter the account email. If the address exists, the club generates a reset token you can use to choose a new password.",
+      "image": "assets/showcase-player-sign-in/step-03.png",
+      "kind": "result",
+      "resultNote": "Forgot Password modal is open; the form is not submitted."
+    },
+    {
+      "id": "invite-password",
+      "title": "First-time invite password",
+      "body": "Invited members who still have a temporary password must set a new one before using the app.",
+      "image": "assets/showcase-player-sign-in/step-04.png",
+      "kind": "result",
+      "resultNote": "Password Reset Required after signing in with the invite account."
+    }
+  ],
+  "showcase": true
+}

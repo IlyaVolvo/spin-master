@@ -1,0 +1,40 @@
+{
+  "slug": "showcase-player-me-hub",
+  "role": "player",
+  "title": "Player opens the phone hub",
+  "description": "The /me hub is the compact personal home: check in or out, Settings, Payment, Logout, and Full app.",
+  "relatedSlugs": [
+    "showcase-player-sign-in",
+    "showcase-player-edit-profile"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "players-home",
+      "title": "Players home",
+      "body": "On a wide screen you land on the roster. The phone hub is always at /me, and Full app returns here.",
+      "image": "assets/showcase-player-me-hub/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "open-me",
+      "title": "Open /me",
+      "body": "On a compact phone the Me control returns to this hub. This walkthrough opens /me directly so the tiles are visible at tutorial size.",
+      "image": "assets/showcase-player-me-hub/step-02.png",
+      "kind": "action",
+      "actionHint": "Open the phone hub"
+    },
+    {
+      "id": "me-hub",
+      "title": "Phone hub",
+      "body": "Check in or out from the large tile, then use Settings, Payment, Logout, or Full app.",
+      "image": "assets/showcase-player-me-hub/step-03.png",
+      "kind": "result",
+      "resultNote": "/me shows the compact personal controls."
+    }
+  ],
+  "showcase": true
+}

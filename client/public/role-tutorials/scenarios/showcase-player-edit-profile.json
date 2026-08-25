@@ -1,0 +1,39 @@
+{
+  "slug": "showcase-player-edit-profile",
+  "role": "player",
+  "title": "Player edits their profile",
+  "description": "Open the header profile control and change your own contact fields.",
+  "relatedSlugs": [
+    "showcase-player-score-pin",
+    "showcase-player-me-hub"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "profile-control",
+      "title": "Edit your profile",
+      "body": "The gear next to $ opens your own member editor — not another player’s row.",
+      "image": "assets/showcase-player-edit-profile/step-01.png",
+      "kind": "action",
+      "actionHint": "Click Edit your profile",
+      "hotspot": {
+        "x": 75.8,
+        "y": 9.3,
+        "w": 2.8,
+        "h": 4.4
+      }
+    },
+    {
+      "id": "editor",
+      "title": "Your profile",
+      "body": "Update email, phone, and notifications, then save. Score PIN lives in the same editor.",
+      "image": "assets/showcase-player-edit-profile/step-02.png",
+      "kind": "result",
+      "resultNote": "Self profile editor is open."
+    }
+  ],
+  "showcase": true
+}

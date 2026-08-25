@@ -1,0 +1,33 @@
+{
+  "slug": "showcase-admin-courtesy",
+  "role": "admin",
+  "title": "Admin sets courtesy visit policy",
+  "description": "Courtesy grace days and extra visits live on Payment Plans. Courtesy check-ins appear on the Attendance Log Admission column.",
+  "relatedSlugs": [
+    "showcase-admin-attendance-log",
+    "showcase-admin-payment-log"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "courtesy-settings",
+      "title": "Courtesy settings",
+      "body": "On Payment Plans, Payment Provider & Courtesy Settings controls grace days, extra visits, and admin notify-on-courtesy.",
+      "image": "assets/showcase-admin-courtesy/step-01.png",
+      "kind": "result",
+      "resultNote": "Courtesy grace days are visible on Payment Plans."
+    },
+    {
+      "id": "attendance",
+      "title": "Courtesy on Attendance Log",
+      "body": "A courtesy visit shows Admission as Courtesy. Suspend courtesy on a member’s Plan screen if they should not use grace.",
+      "image": "assets/showcase-admin-courtesy/step-02.png",
+      "kind": "result",
+      "resultNote": "Attendance Log includes a courtesy visit from the tutorial seed."
+    }
+  ],
+  "showcase": true
+}

@@ -28,7 +28,7 @@
       "actionHint": "Type in the name search field",
       "hotspot": {
         "x": 15,
-        "y": 37.2,
+        "y": 35.2,
         "w": 30.4,
         "h": 3.3
       }
@@ -49,8 +49,8 @@
       "kind": "action",
       "actionHint": "Click Check-out on your row",
       "hotspot": {
-        "x": 66.4,
-        "y": 47.2,
+        "x": 58.7,
+        "y": 45.2,
         "w": 5.2,
         "h": 2.7
       }

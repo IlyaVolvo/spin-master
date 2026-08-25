@@ -1,0 +1,39 @@
+{
+  "slug": "showcase-organizer-cancel-prereg",
+  "role": "organizer",
+  "title": "Organizer cancels pre-registration with a reason",
+  "description": "Cancel a collecting event and pick a preset reason (and optional details) for the email to invited and registered players.",
+  "relatedSlugs": [
+    "showcase-organizer-preregistration",
+    "showcase-organizer-create-event"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "cancel",
+      "title": "Cancel",
+      "body": "Cancel removes the pre-registration and emails players who have an address. This capture does not confirm it.",
+      "image": "assets/showcase-organizer-cancel-prereg/step-01.png",
+      "kind": "action",
+      "actionHint": "Click Cancel",
+      "hotspot": {
+        "x": 79.6,
+        "y": 27.2,
+        "w": 4.4,
+        "h": 3.2
+      }
+    },
+    {
+      "id": "reason",
+      "title": "Preset reason",
+      "body": "Choose a club preset such as Tournament cancelled by organizer or Not enough registered players, add details if needed, then Confirm Cancel — or Keep Registration.",
+      "image": "assets/showcase-organizer-cancel-prereg/step-02.png",
+      "kind": "result",
+      "resultNote": "Cancel Tournament Registration dialog with reason presets."
+    }
+  ],
+  "showcase": true
+}

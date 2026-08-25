@@ -1,0 +1,47 @@
+{
+  "slug": "showcase-player-browse-tournaments",
+  "role": "player",
+  "title": "Player browses tournaments",
+  "description": "Open Tournaments as a player, switch stages, and open an event you are in.",
+  "relatedSlugs": [
+    "showcase-player-sign-in",
+    "showcase-organizer-create-rr"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "nav-tournaments",
+      "title": "Tournaments tab",
+      "body": "Header Tournaments opens the club event list. Players typically cannot create tournaments.",
+      "image": "assets/showcase-player-browse-tournaments/step-01.png",
+      "kind": "action",
+      "actionHint": "Open Tournaments",
+      "hotspot": {
+        "x": 29.1,
+        "y": 9.3,
+        "w": 10.3,
+        "h": 4.4
+      }
+    },
+    {
+      "id": "list",
+      "title": "Active list",
+      "body": "Active, Preregistration, and Completed stages list club events. Open a row to follow results and registration.",
+      "image": "assets/showcase-player-browse-tournaments/step-02.png",
+      "kind": "result",
+      "resultNote": "Active stage shows Tutorial Active Round Robin."
+    },
+    {
+      "id": "open-event",
+      "title": "Tournament page",
+      "body": "The event page shows participants and scores. Players follow along; organizers use extra day-of tools here.",
+      "image": "assets/showcase-player-browse-tournaments/step-03.png",
+      "kind": "result",
+      "resultNote": "Opened Tutorial Active Round Robin as a player."
+    }
+  ],
+  "showcase": true
+}

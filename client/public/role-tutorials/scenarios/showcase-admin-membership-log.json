@@ -1,0 +1,39 @@
+{
+  "slug": "showcase-admin-membership-log",
+  "role": "admin",
+  "title": "Admin reviews the Membership Log",
+  "description": "Open Membership Log to see apply, activate, update, deny, and delete history for members.",
+  "relatedSlugs": [
+    "showcase-public-join-apply",
+    "showcase-admin-attendance-log"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "menu",
+      "title": "Membership Log",
+      "body": "Membership Log is under Admin, next to Payment Log and Attendance Log.",
+      "image": "assets/showcase-admin-membership-log/step-01.png",
+      "kind": "action",
+      "actionHint": "Open Membership Log",
+      "hotspot": {
+        "x": 40.1,
+        "y": 21.8,
+        "w": 15.2,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "log",
+      "title": "Lifecycle history",
+      "body": "Filter by action and date. Rows survive member deletion so you can still see who applied or was denied.",
+      "image": "assets/showcase-admin-membership-log/step-02.png",
+      "kind": "result",
+      "resultNote": "Membership Log lists APPLY, ACTIVATE, and UPDATE rows from the tutorial seed."
+    }
+  ],
+  "showcase": true
+}

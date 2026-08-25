@@ -21,6 +21,11 @@ export async function hotspotForButtonText(page: Page, text: string): Promise<Ho
   const box = await page.evaluate((t) => {
     const buttons = [...document.querySelectorAll('button')] as HTMLButtonElement[];
     const b = buttons.find((x) => {
+      if (x.closest('.collapsible-actions__measure')) return false;
+      const r = x.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+      const style = window.getComputedStyle(x);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
       const label = (x.getAttribute('aria-label') || '').trim();
       const title = (x.getAttribute('title') || '').trim();
       const body = (x.textContent || '').trim();

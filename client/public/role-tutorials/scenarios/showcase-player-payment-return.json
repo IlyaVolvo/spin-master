@@ -1,0 +1,33 @@
+{
+  "slug": "showcase-player-payment-return",
+  "role": "player",
+  "title": "Player returns from online payment",
+  "description": "After Stripe Checkout, the browser lands on /payment-return with success or cancel copy. Close the tab and return to the club app.",
+  "relatedSlugs": [
+    "showcase-player-plan",
+    "showcase-admin-payment-log"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "success",
+      "title": "Payment submitted",
+      "body": "A successful Checkout return shows Payment submitted. The club plan updates shortly; you can close the page.",
+      "image": "assets/showcase-player-payment-return/step-01.png",
+      "kind": "result",
+      "resultNote": "/payment-return?status=success"
+    },
+    {
+      "id": "cancel",
+      "title": "Payment cancelled",
+      "body": "If you leave Checkout without paying, this page confirms nothing was charged. Try again from the club app when you are ready.",
+      "image": "assets/showcase-player-payment-return/step-02.png",
+      "kind": "result",
+      "resultNote": "/payment-return?status=cancel"
+    }
+  ],
+  "showcase": true
+}

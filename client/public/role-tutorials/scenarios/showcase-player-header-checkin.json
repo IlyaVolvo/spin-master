@@ -1,0 +1,39 @@
+{
+  "slug": "showcase-player-header-checkin",
+  "role": "player",
+  "title": "Player checks in from the header",
+  "description": "Use the header location control to check yourself in or out without the kiosk. The /me hub has the same control as a large tile.",
+  "relatedSlugs": [
+    "showcase-player-checkin",
+    "showcase-player-me-hub"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "header-control",
+      "title": "Header check-in",
+      "body": "The pin control is next to your profile. Gray means you are out; green means you are present. This capture does not submit a check-in.",
+      "image": "assets/showcase-player-header-checkin/step-01.png",
+      "kind": "action",
+      "actionHint": "Find the check-in control",
+      "hotspot": {
+        "x": 78.9,
+        "y": 9.3,
+        "w": 2.8,
+        "h": 4.4
+      }
+    },
+    {
+      "id": "me-tile",
+      "title": "Same control on /me",
+      "body": "On the phone hub the tile is labeled Check in or Check out. Payment may be required before a club-day check-in succeeds.",
+      "image": "assets/showcase-player-header-checkin/step-02.png",
+      "kind": "result",
+      "resultNote": "/me check-in tile is visible."
+    }
+  ],
+  "showcase": true
+}

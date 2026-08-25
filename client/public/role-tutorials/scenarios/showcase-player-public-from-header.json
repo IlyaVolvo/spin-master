@@ -1,0 +1,39 @@
+{
+  "slug": "showcase-player-public-from-header",
+  "role": "player",
+  "title": "Player opens public achievements",
+  "description": "From a signed-in session, open the Public header link to the club achievements board.",
+  "relatedSlugs": [
+    "showcase-public-achievements",
+    "showcase-player-sign-in"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "public-link",
+      "title": "Public in the header",
+      "body": "Public opens the club pages (latest results, all results, achievements, join) in a new tab. This capture stays in the same window.",
+      "image": "assets/showcase-player-public-from-header/step-01.png",
+      "kind": "action",
+      "actionHint": "Click Public",
+      "hotspot": {
+        "x": 77.9,
+        "y": 14.1,
+        "w": 3,
+        "h": 1.9
+      }
+    },
+    {
+      "id": "achievements",
+      "title": "Public achievements",
+      "body": "The same achievements board visitors see without signing in. Switch Period vs Tournament, then print a board if you need a copy.",
+      "image": "assets/showcase-player-public-from-header/step-02.png",
+      "kind": "result",
+      "resultNote": "Signed-in member viewing /public/achievements."
+    }
+  ],
+  "showcase": true
+}

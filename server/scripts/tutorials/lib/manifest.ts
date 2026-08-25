@@ -4,21 +4,27 @@ import { ASSETS_DIR, CATALOG_PATH, SCENARIOS_JSON_DIR, VIEWPORT } from './consta
 import type { PublishedScenario, ScenarioDef, StepKind } from './types';
 import type { HotspotPct } from './hotspot';
 
-const ROLE_ORDER = ['player', 'organizer', 'admin'] as const;
+const ROLE_ORDER = ['public', 'player', 'organizer', 'admin'] as const;
 
 const ROLE_META: Record<(typeof ROLE_ORDER)[number], { label: string; blurb: string }> = {
+  public: {
+    label: 'Public',
+    blurb:
+      'No login — club achievements, latest and past results, print, and become a member.',
+  },
   player: {
     label: 'Player',
-    blurb: 'Member walkthroughs — plan, kiosk, event check-in, history, stats, and multi-player compare.',
+    blurb:
+      'Member walkthroughs — sign-in, phone hub, plan, kiosk, check-in, history, stats, and public pages.',
   },
   organizer: {
     label: 'Organizer',
     blurb:
-      'Tournament walkthroughs — create Round Robin, Playoff, Multi RR, pre-registration, and correct completed scores.',
+      'Tournament walkthroughs — create formats, pre-registration, scoring, forfeit, early completion, and repeat.',
   },
   admin: {
     label: 'Administrator',
-    blurb: 'Front desk, event fees, plans, system settings, kiosk, and tournament scores.',
+    blurb: 'Front desk, CSV and archive, membership log, payments, hours, courtesy, and scores.',
   },
 };
 
@@ -86,11 +92,27 @@ export function writeScenarioJson(
 
 /** Preferred catalog order within a role (unknown slugs keep relative order at the end). */
 const SHOWCASE_ORDER_WITHIN_ROLE: Partial<Record<(typeof ROLE_ORDER)[number], string[]>> = {
+  public: [
+    'showcase-public-achievements',
+    'showcase-public-results-latest',
+    'showcase-public-results-list',
+    'showcase-public-results-detail',
+    'showcase-public-join-apply',
+    'showcase-public-join-accept',
+  ],
   player: [
+    'showcase-player-sign-in',
+    'showcase-player-me-hub',
+    'showcase-player-edit-profile',
+    'showcase-player-score-pin',
     'showcase-player-checkin',
     'showcase-player-event-checkin',
     'showcase-player-checkout',
+    'showcase-player-header-checkin',
     'showcase-player-plan',
+    'showcase-player-payment-return',
+    'showcase-player-browse-tournaments',
+    'showcase-player-public-from-header',
     'showcase-player-score-kiosk',
     'showcase-player-rating-history',
     'showcase-player-view-stats',
@@ -99,14 +121,28 @@ const SHOWCASE_ORDER_WITHIN_ROLE: Partial<Record<(typeof ROLE_ORDER)[number], st
   organizer: [
     'showcase-organizer-create-rr',
     'showcase-organizer-create-playoff',
+    'showcase-organizer-create-prelim-playoff',
     'showcase-organizer-create-multi-rr',
+    'showcase-organizer-player-selection',
     'showcase-organizer-create-event',
+    'showcase-organizer-preregistration',
+    'showcase-organizer-event-admissions',
+    'showcase-organizer-cancel-prereg',
+    'showcase-organizer-forfeit-bye',
+    'showcase-organizer-early-completion',
     'showcase-organizer-correct-completed-score',
+    'showcase-organizer-repeat',
   ],
   admin: [
+    'showcase-admin-csv',
+    'showcase-admin-membership-log',
     'showcase-admin-event-fee-ledger',
     'showcase-admin-payment-log',
+    'showcase-admin-write-off',
     'showcase-admin-attendance-log',
+    'showcase-admin-courtesy',
+    'showcase-admin-hours-close-club',
+    'showcase-admin-club-archive',
     'showcase-admin-create-junior-plan',
     'showcase-admin-system-config',
     'showcase-admin-enter-score',

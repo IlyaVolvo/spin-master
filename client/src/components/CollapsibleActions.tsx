@@ -285,6 +285,8 @@ export function CollapsibleActions({
           </div>
         )
       ) : (
+        <>
+        {endSlot ? <div style={{ display: 'none' }}>{endSlot}</div> : null}
         <button
           ref={(el) => {
             menuBtnRef.current = el;
@@ -298,6 +300,7 @@ export function CollapsibleActions({
           {menuLabel}
           <span aria-hidden="true">{menuOpen ? '▲' : '▼'}</span>
         </button>
+        </>
       )}
       {collapsed && menuOpen && menuPosition && createPortal(
         <div

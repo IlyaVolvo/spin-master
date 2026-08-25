@@ -27,8 +27,8 @@
       "kind": "action",
       "actionHint": "Click Payment Log",
       "hotspot": {
-        "x": 48.6,
-        "y": 14.5,
+        "x": 40.1,
+        "y": 14.6,
         "w": 15.2,
         "h": 3.6
       }
@@ -42,8 +42,8 @@
       "actionHint": "Type the member name",
       "hotspot": {
         "x": 13.8,
-        "y": 27.6,
-        "w": 26.3,
+        "y": 25.3,
+        "w": 16.7,
         "h": 3.5
       }
     },
@@ -63,8 +63,8 @@
       "kind": "action",
       "actionHint": "Click the member name",
       "hotspot": {
-        "x": 27.4,
-        "y": 37.4,
+        "x": 27.8,
+        "y": 45,
         "w": 4.8,
         "h": 1.6
       }

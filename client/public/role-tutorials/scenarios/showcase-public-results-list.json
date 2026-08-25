@@ -1,0 +1,74 @@
+{
+  "slug": "showcase-public-results-list",
+  "role": "public",
+  "title": "All public results",
+  "description": "Browse completed tournaments, optionally filter by date, and open one event.",
+  "relatedSlugs": [
+    "showcase-public-results-latest",
+    "showcase-public-results-detail"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "list-home",
+      "title": "All results",
+      "body": "All results lists completed club tournaments. Date filters are optional.",
+      "image": "assets/showcase-public-results-list/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "date-from",
+      "title": "Filter from date",
+      "body": "Set From to limit the list to events on or after that club date.",
+      "image": "assets/showcase-public-results-list/step-02.png",
+      "kind": "action",
+      "actionHint": "Use the From date",
+      "hotspot": {
+        "x": 22.6,
+        "y": 27,
+        "w": 11.3,
+        "h": 4
+      }
+    },
+    {
+      "id": "apply-filter",
+      "title": "Apply the filter",
+      "body": "Filter reloads the list. Clear removes the dates.",
+      "image": "assets/showcase-public-results-list/step-03.png",
+      "kind": "action",
+      "actionHint": "Click Filter",
+      "hotspot": {
+        "x": 47.1,
+        "y": 27,
+        "w": 4.4,
+        "h": 4
+      }
+    },
+    {
+      "id": "filtered-list",
+      "title": "Matching events",
+      "body": "The list shows completed tournaments in the range, including Tutorial Completed Round Robin.",
+      "image": "assets/showcase-public-results-list/step-04.png",
+      "kind": "result",
+      "resultNote": "The completed Round Robin remains in the filtered list."
+    },
+    {
+      "id": "open-event",
+      "title": "Open an event",
+      "body": "View results opens the public detail page for that tournament.",
+      "image": "assets/showcase-public-results-list/step-05.png",
+      "kind": "action",
+      "actionHint": "Click View results",
+      "hotspot": {
+        "x": 22.5,
+        "y": 37.9,
+        "w": 15.3,
+        "h": 1.8
+      }
+    }
+  ],
+  "showcase": true
+}

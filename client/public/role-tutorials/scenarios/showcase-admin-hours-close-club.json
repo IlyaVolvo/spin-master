@@ -1,0 +1,47 @@
+{
+  "slug": "showcase-admin-hours-close-club",
+  "role": "admin",
+  "title": "Admin sets club hours and closes the club",
+  "description": "Set weekly open/close hours in System Settings, then use Close club on the Attendance Log. Auto checkout appears as Club close (AUTO) on visit rows.",
+  "relatedSlugs": [
+    "showcase-admin-attendance-log",
+    "showcase-admin-system-config"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "hours",
+      "title": "Open / Close hours",
+      "body": "Expand Open / Close hours for weekday times, closed days, and date overrides in the club timezone.",
+      "image": "assets/showcase-admin-hours-close-club/step-01.png",
+      "kind": "result",
+      "resultNote": "Hours section is expanded."
+    },
+    {
+      "id": "close-club",
+      "title": "Close club",
+      "body": "Close club checks out everyone still present for the club-local day. Confirm with your password. Optional checkout time is shown next to the control.",
+      "image": "assets/showcase-admin-hours-close-club/step-02.png",
+      "kind": "action",
+      "actionHint": "Find Close club",
+      "hotspot": {
+        "x": 54.9,
+        "y": 18.8,
+        "w": 5.4,
+        "h": 2.8
+      }
+    },
+    {
+      "id": "auto-checkout",
+      "title": "Auto checkout",
+      "body": "Visits closed by club close show Club close (AUTO) on the Attendance Log. Manual check-out uses a different closed-by label.",
+      "image": "assets/showcase-admin-hours-close-club/step-03.png",
+      "kind": "result",
+      "resultNote": "Attendance Log includes an AUTO checkout row."
+    }
+  ],
+  "showcase": true
+}

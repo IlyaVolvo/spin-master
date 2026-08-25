@@ -1,0 +1,46 @@
+{
+  "slug": "showcase-public-results-latest",
+  "role": "public",
+  "title": "Latest public results",
+  "description": "Open Latest to see the club’s most recently completed tournament. No login required.",
+  "relatedSlugs": [
+    "showcase-public-results-list",
+    "showcase-public-results-detail"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "open-latest",
+      "title": "Latest results",
+      "body": "Latest always shows the newest completed top-level tournament. The page may redirect to that event’s detail URL.",
+      "image": "assets/showcase-public-results-latest/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "latest-nav",
+      "title": "Latest is the current tab",
+      "body": "The public bar highlights Latest. Use All results to browse older events, or Achievements for leaderboards.",
+      "image": "assets/showcase-public-results-latest/step-02.png",
+      "kind": "action",
+      "actionHint": "Latest is the active public tab",
+      "hotspot": {
+        "x": 22.6,
+        "y": 12.4,
+        "w": 4.9,
+        "h": 3.6
+      }
+    },
+    {
+      "id": "latest-standings",
+      "title": "Completed standings",
+      "body": "The same completed Round Robin the club just finished is shown with standings (and print, covered in the detail walkthrough).",
+      "image": "assets/showcase-public-results-latest/step-03.png",
+      "kind": "result",
+      "resultNote": "Newest completed tournament is on screen."
+    }
+  ],
+  "showcase": true
+}

@@ -1,11 +1,59 @@
 {
   "roles": [
     {
-      "id": "player",
-      "label": "Player",
-      "blurb": "Member walkthroughs — plan, kiosk, event check-in, history, stats, and multi-player compare.",
+      "id": "public",
+      "label": "Public",
+      "blurb": "No login — club achievements, latest and past results, print, and become a member.",
       "collapsed": false,
       "scenarios": [
+        {
+          "slug": "showcase-public-achievements",
+          "title": "Public achievements"
+        },
+        {
+          "slug": "showcase-public-results-latest",
+          "title": "Latest public results"
+        },
+        {
+          "slug": "showcase-public-results-list",
+          "title": "All public results"
+        },
+        {
+          "slug": "showcase-public-results-detail",
+          "title": "Public result detail and print"
+        },
+        {
+          "slug": "showcase-public-join-apply",
+          "title": "Become a member — apply"
+        },
+        {
+          "slug": "showcase-public-join-accept",
+          "title": "Become a member — accept"
+        }
+      ]
+    },
+    {
+      "id": "player",
+      "label": "Player",
+      "blurb": "Member walkthroughs — sign-in, phone hub, plan, kiosk, check-in, history, stats, and public pages.",
+      "collapsed": false,
+      "scenarios": [
+        {
+          "slug": "showcase-player-sign-in",
+          "title": "Player signs in and resets a password"
+        },
+        {
+          "slug": "showcase-player-me-hub",
+          "title": "Player opens the phone hub"
+        },
+        {
+          "slug": "showcase-player-edit-profile",
+          "title": "Player edits their profile"
+        },
+        {
+          "slug": "showcase-player-score-pin",
+          "title": "Player changes their score PIN"
+        },
         {
           "slug": "showcase-player-checkin",
           "title": "Player checks in at the kiosk"
@@ -19,8 +67,24 @@
           "title": "Player checks out at the kiosk"
         },
         {
+          "slug": "showcase-player-header-checkin",
+          "title": "Player checks in from the header"
+        },
+        {
           "slug": "showcase-player-plan",
           "title": "Player buys / reviews a plan"
+        },
+        {
+          "slug": "showcase-player-payment-return",
+          "title": "Player returns from online payment"
+        },
+        {
+          "slug": "showcase-player-browse-tournaments",
+          "title": "Player browses tournaments"
+        },
+        {
+          "slug": "showcase-player-public-from-header",
+          "title": "Player opens public achievements"
         },
         {
           "slug": "showcase-player-score-kiosk",
@@ -43,7 +107,7 @@
     {
       "id": "organizer",
       "label": "Organizer",
-      "blurb": "Tournament walkthroughs — create Round Robin, Playoff, Multi RR, pre-registration, and correct completed scores.",
+      "blurb": "Tournament walkthroughs — create formats, pre-registration, scoring, forfeit, early completion, and repeat.",
       "collapsed": false,
       "scenarios": [
         {
@@ -55,25 +119,65 @@
           "title": "Organizer creates a Playoff"
         },
         {
+          "slug": "showcase-organizer-create-prelim-playoff",
+          "title": "Organizer creates Preliminary + Playoff Final"
+        },
+        {
           "slug": "showcase-organizer-create-multi-rr",
           "title": "Organizer creates a Multi Round Robin"
+        },
+        {
+          "slug": "showcase-organizer-player-selection",
+          "title": "Organizer selects and seeds players"
         },
         {
           "slug": "showcase-organizer-create-event",
           "title": "Organizer creates an Event"
         },
         {
+          "slug": "showcase-organizer-preregistration",
+          "title": "Organizer runs pre-registration"
+        },
+        {
+          "slug": "showcase-organizer-event-admissions",
+          "title": "Organizer handles event admissions and unpaid fees"
+        },
+        {
+          "slug": "showcase-organizer-cancel-prereg",
+          "title": "Organizer cancels pre-registration with a reason"
+        },
+        {
+          "slug": "showcase-organizer-forfeit-bye",
+          "title": "Organizer records a forfeit (and sees BYEs)"
+        },
+        {
+          "slug": "showcase-organizer-early-completion",
+          "title": "Organizer uses Early Completion"
+        },
+        {
           "slug": "showcase-organizer-correct-completed-score",
           "title": "Organizer corrects a completed tournament score"
+        },
+        {
+          "slug": "showcase-organizer-repeat",
+          "title": "Organizer repeats a completed tournament"
         }
       ]
     },
     {
       "id": "admin",
       "label": "Administrator",
-      "blurb": "Front desk, event fees, plans, system settings, kiosk, and tournament scores.",
+      "blurb": "Front desk, CSV and archive, membership log, payments, hours, courtesy, and scores.",
       "collapsed": false,
       "scenarios": [
+        {
+          "slug": "showcase-admin-csv",
+          "title": "Admin imports and exports players as CSV"
+        },
+        {
+          "slug": "showcase-admin-membership-log",
+          "title": "Admin reviews the Membership Log"
+        },
         {
           "slug": "showcase-admin-event-fee-ledger",
           "title": "Admin reviews a pending event fee"
@@ -83,8 +187,24 @@
           "title": "Admin clears a cash payment"
         },
         {
+          "slug": "showcase-admin-write-off",
+          "title": "Admin writes off a pending payment"
+        },
+        {
           "slug": "showcase-admin-attendance-log",
           "title": "Admin reviews Attendance Log"
+        },
+        {
+          "slug": "showcase-admin-courtesy",
+          "title": "Admin sets courtesy visit policy"
+        },
+        {
+          "slug": "showcase-admin-hours-close-club",
+          "title": "Admin sets club hours and closes the club"
+        },
+        {
+          "slug": "showcase-admin-club-archive",
+          "title": "Admin exports and imports a club archive"
         },
         {
           "slug": "showcase-admin-create-junior-plan",

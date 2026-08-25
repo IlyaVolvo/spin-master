@@ -58,8 +58,29 @@ export const TUTORIAL_STATS_MEMBERS = [
   { firstName: 'Blair', lastName: 'Chen' },
 ] as const;
 
-/** Seeded completed Round Robin used for score-correction showcase (id 3 after reset-seed). */
+/** Seeded active Round Robin used for scoring / early-completion showcases. */
+export const TUTORIAL_ACTIVE_RR_NAME = 'Tutorial Active Round Robin';
+
+/** Seeded unpaid preregistration (non-event) used for prereg ops + cancel-reason showcases. */
+export const TUTORIAL_PREREG_NAME = 'Tutorial Pre-Registration Event';
+
+/** Seeded completed Round Robin used for score-correction / Repeat showcases. */
 export const TUTORIAL_COMPLETED_RR_NAME = 'Tutorial Completed Round Robin';
+
+/** First-time invite account — mustResetPassword until they set a password. */
+export const TUTORIAL_INVITE_MEMBER = {
+  firstName: 'Casey',
+  lastName: 'Invitee',
+  email: 'tutorial-invite@spin-master.local',
+} as const;
+
+/** Pending public join application — Accept membership walkthrough. */
+export const TUTORIAL_JOIN_TOKEN = 'tutorialpublicjoinaccepttoken0001tutorialpublicjoinaccepttoken0001';
+export const TUTORIAL_JOIN_APPLICANT = {
+  firstName: 'Riley',
+  lastName: 'Guest',
+  email: 'tutorial-join@spin-master.local',
+} as const;
 
 /** Seeded Monthly plan family used when adding a Junior segment price. */
 export const TUTORIAL_MONTHLY_PLAN_NAME = 'Monthly membership';

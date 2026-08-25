@@ -77,6 +77,7 @@ import {
   fillMatchEntryScoreField,
   hotspotForMemberAttendanceButton,
   hotspotForMemberCheckinButton,
+  ensureKioskMemberCanCheckIn,
   hotspotForPinModalAttendance,
   hotspotForPinModalCheckin,
   hotspotForPlayersNameFilter,
@@ -303,13 +304,13 @@ export const showcaseScenarios: ScenarioDef[] = [
       {
         id: 'next-plan-buying',
         kind: 'result',
-        title: 'No next plan — buy one',
-        body: 'Next plan is also None. Use the Purchase section below to buy a new plan.',
-        resultNote: 'Next plan empty; Purchase section is available.',
+        title: 'No future plan — buy one',
+        body: 'Future plan is also empty. Use the purchase picker below to buy a new plan.',
+        resultNote: 'Future plan empty; purchase picker is available.',
         capture: async (ctx) => {
           await ensureLoggedIn(ctx, TUTORIAL_EMAILS.player);
           await openOwnPlanScreen(ctx);
-          await scrollPlanHeading(ctx, 'Next plan');
+          await scrollPlanHeading(ctx, 'Future plan');
           await ctx.delay(200);
           await scrollPlanHeading(ctx, 'Purchase');
         },
@@ -626,6 +627,11 @@ export const showcaseScenarios: ScenarioDef[] = [
         capture: async (ctx) => {
           await enterCheckinKiosk(ctx, TUTORIAL_EMAILS.admin);
           await setPlayersNameFilter(ctx, TUTORIAL_CHECKIN_MEMBER.firstName);
+          await ensureKioskMemberCanCheckIn(
+            ctx,
+            TUTORIAL_CHECKIN_MEMBER.firstName,
+            TUTORIAL_CHECKIN_MEMBER.lastName,
+          );
           return {
             hotspot: await hotspotForMemberCheckinButton(
               ctx,

@@ -1,7 +1,7 @@
 import type { CaptureContext } from './browser';
 import type { HotspotPct } from './hotspot';
 
-export type ScenarioRole = 'player' | 'organizer' | 'admin';
+export type ScenarioRole = 'public' | 'player' | 'organizer' | 'admin';
 
 /**
  * context = orient; action = click hotspot; result = outcome of prior action;

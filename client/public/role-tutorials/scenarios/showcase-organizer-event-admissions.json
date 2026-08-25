@@ -1,0 +1,39 @@
+{
+  "slug": "showcase-organizer-event-admissions",
+  "role": "organizer",
+  "title": "Organizer handles event admissions and unpaid fees",
+  "description": "On a paid Event, read the check-in window and handle pending or unpaid event fees (Record cash / Clear unpaid).",
+  "relatedSlugs": [
+    "showcase-organizer-create-event",
+    "showcase-admin-event-fee-ledger"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "event-detail",
+      "title": "Event check-in window",
+      "body": "Check-in time is when event admissions open. Players who check in inside that window use the event fee instead of a separate club-day charge.",
+      "image": "assets/showcase-organizer-event-admissions/step-01.png",
+      "kind": "result",
+      "resultNote": "Tutorial Event Night shows Time and Check-in time."
+    },
+    {
+      "id": "unpaid",
+      "title": "Unpaid event fee",
+      "body": "Finley Ortiz still has a pending event fee. Record cash at the desk or Clear unpaid if they will not pay.",
+      "image": "assets/showcase-organizer-event-admissions/step-02.png",
+      "kind": "action",
+      "actionHint": "Find Record cash or Clear unpaid",
+      "hotspot": {
+        "x": 24.7,
+        "y": 58.1,
+        "w": 5.2,
+        "h": 2.2
+      }
+    }
+  ],
+  "showcase": true
+}

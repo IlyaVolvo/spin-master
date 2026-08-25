@@ -28,8 +28,8 @@
       "kind": "action",
       "actionHint": "Click Payment Log",
       "hotspot": {
-        "x": 48.6,
-        "y": 14.5,
+        "x": 40.1,
+        "y": 14.6,
         "w": 15.2,
         "h": 3.6
       }
@@ -50,10 +50,10 @@
       "kind": "action",
       "actionHint": "Uncheck Pending",
       "hotspot": {
-        "x": 66,
-        "y": 28.2,
-        "w": 5,
-        "h": 2.1
+        "x": 53.1,
+        "y": 33.5,
+        "w": 9.9,
+        "h": 2.8
       }
     },
     {
@@ -72,8 +72,8 @@
       "kind": "action",
       "actionHint": "Look at From, To, and Member",
       "hotspot": {
-        "x": 41.5,
-        "y": 27.4,
+        "x": 32,
+        "y": 25.3,
         "w": 19.5,
         "h": 3.7
       }
@@ -86,10 +86,10 @@
       "kind": "action",
       "actionHint": "Uncheck Paid",
       "hotspot": {
-        "x": 62.3,
-        "y": 28.2,
-        "w": 4.4,
-        "h": 2.1
+        "x": 53.1,
+        "y": 36.3,
+        "w": 9.9,
+        "h": 2.8
       }
     },
     {
@@ -108,8 +108,8 @@
       "kind": "action",
       "actionHint": "Click Clear",
       "hotspot": {
-        "x": 78.2,
-        "y": 37.4,
+        "x": 77.5,
+        "y": 45,
         "w": 3.4,
         "h": 2.4
       }

@@ -1,0 +1,46 @@
+{
+  "slug": "showcase-public-join-accept",
+  "role": "public",
+  "title": "Become a member — accept",
+  "description": "Open the Accept link from email, set a password and score PIN, and activate membership.",
+  "relatedSlugs": [
+    "showcase-public-join-apply"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "accept-link",
+      "title": "Accept membership",
+      "body": "The Accept link in email opens this setup page. It is valid for 7 days.",
+      "image": "assets/showcase-public-join-accept/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "set-password",
+      "title": "Set password and PIN",
+      "body": "Choose a password (club minimum length) and a 4-digit score PIN used at the kiosk.",
+      "image": "assets/showcase-public-join-accept/step-02.png",
+      "kind": "action",
+      "actionHint": "Fill password and PIN, then Activate",
+      "hotspot": {
+        "x": 22.5,
+        "y": 50.8,
+        "w": 11.4,
+        "h": 4
+      }
+    },
+    {
+      "id": "ready-activate",
+      "title": "Ready to activate",
+      "body": "Activate and sign in creates the account and signs you in. After that you can add phone, photo, and notification preferences.",
+      "image": "assets/showcase-public-join-accept/step-03.png",
+      "kind": "result",
+      "resultNote": "Password and PIN are filled; Activate is ready. (This walkthrough does not submit, so the demo token stays valid.)"
+    }
+  ],
+  "showcase": true,
+  "hideNextShowcase": true
+}

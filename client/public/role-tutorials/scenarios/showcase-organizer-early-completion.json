@@ -1,0 +1,53 @@
+{
+  "slug": "showcase-organizer-early-completion",
+  "role": "organizer",
+  "title": "Organizer uses Early Completion",
+  "description": "On an active tournament, open Stop Tournament. Early Completion finishes remaining matches as NP when enough matches are played.",
+  "relatedSlugs": [
+    "showcase-organizer-correct-completed-score",
+    "showcase-admin-enter-score"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "stop-control",
+      "title": "Stop tournament",
+      "body": "The red X opens a destructive dialog. Abandon cancels the event; Early Completion can complete it early when the percentage rule is met.",
+      "image": "assets/showcase-organizer-early-completion/step-01.png",
+      "kind": "action",
+      "actionHint": "Click Cancel tournament",
+      "hotspot": {
+        "x": 81.8,
+        "y": 27.8,
+        "w": 2.3,
+        "h": 2.8
+      }
+    },
+    {
+      "id": "dialog",
+      "title": "Early Completion",
+      "body": "Enter your password to Abandon. Early Completion uses the club min-played % (you can override it in this dialog). Remaining matches become NP.",
+      "image": "assets/showcase-organizer-early-completion/step-02.png",
+      "kind": "result",
+      "resultNote": "Stop Tournament dialog with Early Completion."
+    },
+    {
+      "id": "early-button",
+      "title": "Early Completion control",
+      "body": "Use Early Completion only when you intend to finish the event. This capture does not submit it.",
+      "image": "assets/showcase-organizer-early-completion/step-03.png",
+      "kind": "action",
+      "actionHint": "Find Early Completion",
+      "hotspot": {
+        "x": 54.1,
+        "y": 63.5,
+        "w": 9.7,
+        "h": 3.6
+      }
+    }
+  ],
+  "showcase": true
+}

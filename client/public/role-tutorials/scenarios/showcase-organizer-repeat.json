@@ -1,0 +1,46 @@
+{
+  "slug": "showcase-organizer-repeat",
+  "role": "organizer",
+  "title": "Organizer repeats a completed tournament",
+  "description": "From a completed event, Repeat opens the wizard with the same type and players so you can run it again or modify the field.",
+  "relatedSlugs": [
+    "showcase-organizer-create-rr",
+    "showcase-organizer-correct-completed-score"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "completed",
+      "title": "Completed event",
+      "body": "Open a finished tournament. Repeat copies its setup; you can change the name and roster before creating.",
+      "image": "assets/showcase-organizer-repeat/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "repeat",
+      "title": "Repeat",
+      "body": "Repeat starts a new tournament with the same format and participants.",
+      "image": "assets/showcase-organizer-repeat/step-02.png",
+      "kind": "action",
+      "actionHint": "Click Repeat",
+      "hotspot": {
+        "x": 66,
+        "y": 27.2,
+        "w": 5.6,
+        "h": 3.5
+      }
+    },
+    {
+      "id": "wizard",
+      "title": "Wizard prefilled",
+      "body": "You land in the create flow with the prior type and players. Adjust, then create — or back out if you only wanted to inspect.",
+      "image": "assets/showcase-organizer-repeat/step-03.png",
+      "kind": "result",
+      "resultNote": "Repeat opened the tournament wizard from the completed event."
+    }
+  ],
+  "showcase": true
+}

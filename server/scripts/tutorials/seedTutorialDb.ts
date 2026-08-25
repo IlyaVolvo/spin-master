@@ -8,12 +8,18 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { assertTutorialDatabaseUrl, redactDatabaseUrl } from './lib/safety';
 import {
+  TUTORIAL_ACTIVE_RR_NAME,
   TUTORIAL_CHECKIN_MEMBER,
   TUTORIAL_CLUB_NAME,
+  TUTORIAL_COMPLETED_RR_NAME,
   TUTORIAL_EMAILS,
   TUTORIAL_EVENT_FEE_MEMBER,
   TUTORIAL_EVENT_NIGHT_NAME,
+  TUTORIAL_INVITE_MEMBER,
+  TUTORIAL_JOIN_APPLICANT,
+  TUTORIAL_JOIN_TOKEN,
   TUTORIAL_PASSWORD,
+  TUTORIAL_PREREG_NAME,
   TUTORIAL_SCORE_PIN,
 } from './lib/constants';
 import { eventPurpose } from '../../src/payments/eventPayment';
@@ -145,7 +151,15 @@ async function main() {
             Junior: { basePricePerVisitCents: 600, exponent: 0.08 },
           },
         }),
-        publicAccess: toJson({ achievements: {} }),
+        publicAccess: toJson({
+          achievements: {
+            biggest_upset: 5,
+            most_wins: 5,
+            most_active: 5,
+            underdog_champion: 5,
+            club_ladder_movers: 5,
+          },
+        }),
         payments: toJson({
           installMode: 'test',
           defaultOnlinePayConsent: true,
@@ -252,9 +266,28 @@ async function main() {
     });
     const activeParticipants = [player.id, organizer.id, ...rosterIds.slice(0, 4)];
 
+    await prisma.member.create({
+      data: {
+        firstName: TUTORIAL_INVITE_MEMBER.firstName,
+        lastName: TUTORIAL_INVITE_MEMBER.lastName,
+        email: TUTORIAL_INVITE_MEMBER.email,
+        gender: 'NOT_SPECIFIED',
+        password: passwordHash,
+        roles: ['PLAYER'],
+        rating: 1200,
+        isActive: true,
+        emailConfirmedAt: new Date(),
+        mustResetPassword: true,
+        qrTokenHash: qrHash('invitee'),
+        scorePin: TUTORIAL_SCORE_PIN,
+        tournamentNotificationsEnabled: false,
+      },
+    });
+    console.log('  invite password account:', TUTORIAL_INVITE_MEMBER.email);
+
     const active = await prisma.tournament.create({
       data: {
-        name: 'Tutorial Active Round Robin',
+        name: TUTORIAL_ACTIVE_RR_NAME,
         type: 'ROUND_ROBIN',
         status: 'ACTIVE',
         participants: {
@@ -266,13 +299,28 @@ async function main() {
       },
     });
 
+    // One scored match so Early Completion appears in the stop-tournament dialog
+    // (matchCount > 0) while empty cells remain for score-entry showcases.
+    await prisma.match.create({
+      data: {
+        tournamentId: active.id,
+        member1Id: activeParticipants[0],
+        member2Id: activeParticipants[1],
+        player1Sets: 3,
+        player2Sets: 1,
+        player1Forfeit: false,
+        player2Forfeit: false,
+        notPlayed: false,
+      },
+    });
+
     const future = new Date();
     future.setDate(future.getDate() + 7);
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + 5);
     await prisma.tournament.create({
       data: {
-        name: 'Tutorial Pre-Registration Event',
+        name: TUTORIAL_PREREG_NAME,
         type: 'ROUND_ROBIN',
         status: 'PRE_REGISTRATION',
         tournamentDate: future,
@@ -304,7 +352,7 @@ async function main() {
     const completedParticipants = [player.id, ...rosterIds.slice(0, 3)];
     const completed = await prisma.tournament.create({
       data: {
-        name: 'Tutorial Completed Round Robin',
+        name: TUTORIAL_COMPLETED_RR_NAME,
         type: 'ROUND_ROBIN',
         status: 'ACTIVE',
         participants: {
@@ -353,8 +401,54 @@ async function main() {
     const { recalculateRankings } = await import('../../src/services/rankingService');
     await recalculateRankings(completed.id);
 
+    const joinApplicant = await prisma.member.create({
+      data: {
+        firstName: TUTORIAL_JOIN_APPLICANT.firstName,
+        lastName: TUTORIAL_JOIN_APPLICANT.lastName,
+        email: TUTORIAL_JOIN_APPLICANT.email,
+        gender: 'NOT_SPECIFIED',
+        password: passwordHash,
+        roles: ['PLAYER'],
+        rating: 1000,
+        isActive: false,
+        emailConfirmedAt: null,
+        mustResetPassword: true,
+        passwordResetToken: TUTORIAL_JOIN_TOKEN,
+        passwordResetTokenExpiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        qrTokenHash: qrHash('join-applicant'),
+        scorePin: TUTORIAL_SCORE_PIN,
+        tournamentNotificationsEnabled: false,
+      },
+    });
+    console.log('  pending join applicant:', TUTORIAL_JOIN_APPLICANT.email);
+
     const admin = await prisma.member.findUniqueOrThrow({
       where: { email: TUTORIAL_EMAILS.admin },
+    });
+
+    await prisma.memberLifecycleEvent.createMany({
+      data: [
+        {
+          memberId: joinApplicant.id,
+          action: 'APPLY',
+          actorType: 'PUBLIC',
+          summary: `${TUTORIAL_JOIN_APPLICANT.firstName} ${TUTORIAL_JOIN_APPLICANT.lastName} applied for membership`,
+        },
+        {
+          memberId: player.id,
+          action: 'ACTIVATE',
+          actorType: 'ADMIN',
+          actorMemberId: admin.id,
+          summary: 'Tutorial PlayerOnly account activated',
+        },
+        {
+          memberId: player.id,
+          action: 'UPDATE',
+          actorType: 'ADMIN',
+          actorMemberId: admin.id,
+          summary: 'Tutorial PlayerOnly profile updated',
+        },
+      ],
     });
     const clubDate = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Los_Angeles',
@@ -742,6 +836,16 @@ async function main() {
         dailyPaymentApplied: true,
       },
     });
+    await prisma.clubVisit.create({
+      data: {
+        memberId: rosterIds[3] ?? rosterIds[0],
+        clubDate,
+        checkInAt: visitHoursAgo(0.2),
+        dailyPaymentApplied: false,
+        isCourtesy: true,
+      },
+    });
+
     await prisma.clubVisit.create({
       data: {
         memberId: player.id,

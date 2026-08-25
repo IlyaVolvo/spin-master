@@ -1,0 +1,68 @@
+{
+  "slug": "showcase-public-join-apply",
+  "role": "public",
+  "title": "Become a member — apply",
+  "description": "From the public bar, open Become a Member, enter name and email, and submit. The club emails Accept and Deny links (7 days).",
+  "relatedSlugs": [
+    "showcase-public-join-accept",
+    "showcase-public-achievements"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "public-bar",
+      "title": "Public club pages",
+      "body": "Become a Member stays on the public bar for visitors who are not signed in.",
+      "image": "assets/showcase-public-join-apply/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "become-member",
+      "title": "Become a Member",
+      "body": "Open the application form. You do not need an account yet.",
+      "image": "assets/showcase-public-join-apply/step-02.png",
+      "kind": "action",
+      "actionHint": "Click Become a Member",
+      "hotspot": {
+        "x": 66.7,
+        "y": 12.2,
+        "w": 10.7,
+        "h": 4
+      }
+    },
+    {
+      "id": "join-form",
+      "title": "Application form",
+      "body": "Enter first name, last name, and email. The club sends confirmation links; nothing is activated until you Accept.",
+      "image": "assets/showcase-public-join-apply/step-03.png",
+      "kind": "result",
+      "resultNote": "Become a Member form is on screen."
+    },
+    {
+      "id": "fill-submit",
+      "title": "Submit the application",
+      "body": "After the fields are filled, Submit sends the confirmation email with Accept and Deny links that expire in 7 days.",
+      "image": "assets/showcase-public-join-apply/step-04.png",
+      "kind": "action",
+      "actionHint": "Click Submit",
+      "hotspot": {
+        "x": 22.5,
+        "y": 50.8,
+        "w": 5.8,
+        "h": 4
+      }
+    },
+    {
+      "id": "check-email",
+      "title": "Check your email",
+      "body": "The page asks you to check email for Accept and Deny. Those links expire in 7 days.",
+      "image": "assets/showcase-public-join-apply/step-05.png",
+      "kind": "result",
+      "resultNote": "Confirmation message replaces the form."
+    }
+  ],
+  "showcase": true
+}

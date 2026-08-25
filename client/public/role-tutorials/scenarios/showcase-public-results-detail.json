@@ -1,0 +1,46 @@
+{
+  "slug": "showcase-public-results-detail",
+  "role": "public",
+  "title": "Public result detail and print",
+  "description": "Read completed standings on the public detail page and print Standard, Detailed, or Abbreviated results.",
+  "relatedSlugs": [
+    "showcase-public-results-latest",
+    "showcase-public-results-list"
+  ],
+  "viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "steps": [
+    {
+      "id": "detail-home",
+      "title": "Event results",
+      "body": "The public detail page shows the completed table (or bracket / Swiss) without editing controls.",
+      "image": "assets/showcase-public-results-detail/step-01.png",
+      "kind": "context"
+    },
+    {
+      "id": "print-menu",
+      "title": "Print formats",
+      "body": "When extra print modes exist, Print opens Standard, Detailed, and Abbreviated. Round Robin supports Abbreviated.",
+      "image": "assets/showcase-public-results-detail/step-02.png",
+      "kind": "action",
+      "actionHint": "Open Print",
+      "hotspot": {
+        "x": 71.1,
+        "y": 23.7,
+        "w": 6.4,
+        "h": 2.9
+      }
+    },
+    {
+      "id": "print-open",
+      "title": "Choose a format",
+      "body": "Standard is the default table. Abbreviated is a compact Round Robin print. Detailed is used when the format offers extra columns.",
+      "image": "assets/showcase-public-results-detail/step-03.png",
+      "kind": "result",
+      "resultNote": "Print options are visible."
+    }
+  ],
+  "showcase": true
+}
