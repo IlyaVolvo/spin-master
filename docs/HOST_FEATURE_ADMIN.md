@@ -10,10 +10,10 @@ Hosting is a scheduled duty. It does **not** replace regular admission. Host Per
 |------|--------|
 | Schedule and assign hosts | Admin menu → **Hosts** |
 | Host Perks amounts | Admin menu → **Payment Plans** → edit a plan → **Host perks** |
-| Extra minutes after a short slot | **Payment Plans** → **Hosts** → **Host grace period** |
+| Claim grace + host emails | Admin menu → **System Configuration** → **Hosts** (between Payments and Core Settings) |
 | Today’s hosts (everyone) | Header strip, and the **Me** page |
 
-Only Admins can edit the slot catalog, grace minutes, plan perks, and assignments. The assignee list is **active members**.
+Only Admins can edit the slot catalog, grace minutes, plan perks, host emails, and assignments. The assignee list is **active members**.
 
 ## Slot catalog
 
@@ -66,6 +66,52 @@ During the window, if they are the assigned host and have not already claimed th
 
 PIN kiosk can claim with the member’s score PIN (`pin-host-claim`).
 
+## Host emails (reminders and no-show)
+
+Configured under **System Configuration** → **Hosts**. SMTP must be working (`SMTP_HOST`, `SMTP_FROM` / `SMTP_USER`, etc.). The server checks about once a minute while it is running. External cron can also call `POST /api/club/cron/host-emails` (same `x-club-cron-secret` as other club crons when `CLUB_CRON_SECRET` is set). Set `HOST_EMAIL_SCHEDULER=0` to disable the in-process minute tick.
+
+Each shift is emailed at most once for each kind of message. Reassigning the cell clears those markers so the new host can be reminded and a new no-show can fire if needed.
+
+### Settings
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| Host reminder emails | on | Send a reminder to the assigned host |
+| Minutes before slot start to email the host | 60 | Reminder window opens this many minutes before start; closes at slot start. **0** ≈ one minute before start |
+| Host no-show emails to Admins | on | Notify Admins if the host has not arrived |
+| Minutes after slot start to treat as no-show | 15 | No-show fires at start + this many minutes. **0** means at slot start |
+
+### Host reminder
+
+If enabled, the assigned host is emailed once in the window from (start − minutes) until **slot start**.
+
+- They must have a usable email on their member record.
+- After slot start the reminder is **not** sent (even if it was never sent).
+- No assignee → no reminder.
+- Subject example: `Host reminder: 18:00–21:00 at {club name}`.
+
+### No-show to Admins
+
+If enabled, every **active member with the Admin role** and an email address is notified when the assigned host has **not arrived** by slot start + no-show minutes.
+
+**Arrival** means any of:
+
+- They claimed Host for that shift, or
+- They have a successful (non-rejected) visit that club day and were still present at slot start (checked in earlier, not checked out before start), or
+- They checked in at or after slot start.
+
+Empty (unassigned) cells do not send this email. If no Admin has an email, the no-show is skipped until one does.
+
+Subject example: `Host did not arrive: {name} (18:00–21:00)`.
+
+### Typical email workflows
+
+**Remind hosts before duty.** Leave reminder emails on; set minutes before start (e.g. 60). Ensure hosts have emails.
+
+**Alert Admins when someone does not show.** Leave no-show emails on; set minutes after start (e.g. 15). Ensure at least one Admin has an email. Have the host check in (or claim) before that cutoff to avoid the alert.
+
+**Turn one off.** Uncheck the matching box under System Configuration → Hosts and Save.
+
 ## Host Perks
 
 Each **Club Payment Plan** has a perk amount:
@@ -105,8 +151,12 @@ The header strip lists today’s catalog and custom slots (including empty). **M
 
 **Set up weekly coverage.** Add catalog slots. Assign members on the week grid. Use Repeat weeks to fill empty future weeks.
 
-**Someone hosted but did not claim in time.** After grace, assign them on that past cell. Perks apply or bank as pending. Do not expect check-in as host to appear.
+**Someone hosted but did not claim in time.** After the claim window closes, assign them on that past cell. Perks apply or bank as pending. Do not expect check-in as host to appear.
 
 **Change perk size.** Edit the payment plan Host perks field. Already-applied grants keep the amounts recorded at apply time. New applies use the plan as it is then.
 
-**Widen the claim window for short slots.** Increase Host grace minutes and save payments settings. Duty-length slots already stay open until they end.
+**Widen the claim window for short slots.** Increase Host grace minutes in System Configuration → Hosts and save. Duty-length slots already stay open until they end.
+
+## Related
+
+- Manual end-to-end checklist: [HOST_FEATURE_USER_TEST_PLAN.md](./HOST_FEATURE_USER_TEST_PLAN.md)

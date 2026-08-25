@@ -351,13 +351,16 @@ export default function SystemSettings() {
     setError('');
     setMessage('');
     try {
-      // Payment provider/plans settings live on /payments; only sync the Payments section
-      // fields edited here so we do not clobber the rest of payments config.
       const { payments: _payments, clubPlans: _clubPlans, ...systemPatch } = config;
       const saved = await saveAdminSystemConfig({
         ...systemPatch,
         payments: {
           largeCreditConfirmCents: config.payments.largeCreditConfirmCents ?? 10000,
+          hostGraceMinutes: config.payments.hostGraceMinutes ?? 30,
+          hostReminderEmailEnabled: config.payments.hostReminderEmailEnabled !== false,
+          hostReminderMinutesBeforeStart: config.payments.hostReminderMinutesBeforeStart ?? 60,
+          hostNoShowEmailEnabled: config.payments.hostNoShowEmailEnabled !== false,
+          hostNoShowMinutesAfterStart: config.payments.hostNoShowMinutesAfterStart ?? 15,
         },
       });
       setConfig(saved);
@@ -705,7 +708,6 @@ export default function SystemSettings() {
         ) : null}
       </div>
 
-
       <Section
         title="Tournament Rules"
         tooltip="Limits and defaults for each tournament type (player counts, group sizes, match scores)."
@@ -971,6 +973,78 @@ export default function SystemSettings() {
           onChange={(value) =>
             updateConfig((draft) => {
               draft.payments.largeCreditConfirmCents = Math.max(0, Math.floor(value) * 100);
+            })
+          }
+        />
+      </Section>
+
+      <Section
+        title="Hosts"
+        tooltip="Claim window grace and host reminder / no-show emails. Schedule hosts under Admin → Hosts."
+        sectionId="hosts"
+        open={openSectionId === 'hosts'}
+        onToggle={toggleSection}
+      >
+        <NumericInput
+          label="Host grace period (minutes after slot start)"
+          tooltip="Check in as host stays available until the slot ends. Grace only extends short slots past their end time."
+          min={0}
+          value={config.payments.hostGraceMinutes ?? 30}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.payments.hostGraceMinutes = value;
+            })
+          }
+        />
+        <FieldRow
+          label="Host reminder emails"
+          tooltip="Email the assigned host before the slot starts. Requires an email address on the member."
+        >
+          <input
+            type="checkbox"
+            checked={config.payments.hostReminderEmailEnabled !== false}
+            onChange={(event) =>
+              updateConfig((draft) => {
+                draft.payments.hostReminderEmailEnabled = event.target.checked;
+              })
+            }
+            style={{ transform: 'scale(1.15)', accentColor: '#2d6f8f' }}
+          />
+        </FieldRow>
+        <NumericInput
+          label="Minutes before slot start to email the host"
+          tooltip="0 means about one minute before start."
+          min={0}
+          value={config.payments.hostReminderMinutesBeforeStart ?? 60}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.payments.hostReminderMinutesBeforeStart = value;
+            })
+          }
+        />
+        <FieldRow
+          label="Host no-show emails to Admins"
+          tooltip="Email every active registered Admin if the assigned host has not checked in or claimed by the no-show time."
+        >
+          <input
+            type="checkbox"
+            checked={config.payments.hostNoShowEmailEnabled !== false}
+            onChange={(event) =>
+              updateConfig((draft) => {
+                draft.payments.hostNoShowEmailEnabled = event.target.checked;
+              })
+            }
+            style={{ transform: 'scale(1.15)', accentColor: '#2d6f8f' }}
+          />
+        </FieldRow>
+        <NumericInput
+          label="Minutes after slot start to treat as no-show"
+          tooltip="0 means at slot start."
+          min={0}
+          value={config.payments.hostNoShowMinutesAfterStart ?? 15}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.payments.hostNoShowMinutesAfterStart = value;
             })
           }
         />

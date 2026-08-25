@@ -176,6 +176,12 @@ export type PaymentsConfig = {
   largeCreditConfirmCents: number;
   /** Extra minutes after slot start; claim stays open until the later of this cutoff and slot end. */
   hostGraceMinutes: number;
+  /** Email the assigned host this many minutes before slot start. */
+  hostReminderEmailEnabled: boolean;
+  hostReminderMinutesBeforeStart: number;
+  /** Email registered Admins if the assigned host has not arrived by slot start + these minutes. */
+  hostNoShowEmailEnabled: boolean;
+  hostNoShowMinutesAfterStart: number;
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */
   providers: {
@@ -368,6 +374,10 @@ export function getDefaultSystemConfig(): SystemConfig {
       mailFailCashEscapeDelayMinutes: 15,
       largeCreditConfirmCents: 10000,
       hostGraceMinutes: 30,
+      hostReminderEmailEnabled: true,
+      hostReminderMinutesBeforeStart: 60,
+      hostNoShowEmailEnabled: true,
+      hostNoShowMinutesAfterStart: 15,
       reminders: {
         checkInBannerEnabled: true,
         emailEnabled: true,
@@ -823,6 +833,18 @@ function validatePayments(value: unknown): PaymentsConfig {
   config.hostGraceMinutes = (() => {
     const raw = Number(config.hostGraceMinutes);
     if (!Number.isFinite(raw)) return 30;
+    return Math.max(0, Math.floor(raw));
+  })();
+  config.hostReminderEmailEnabled = Boolean(config.hostReminderEmailEnabled);
+  config.hostReminderMinutesBeforeStart = (() => {
+    const raw = Number(config.hostReminderMinutesBeforeStart);
+    if (!Number.isFinite(raw)) return 60;
+    return Math.max(0, Math.floor(raw));
+  })();
+  config.hostNoShowEmailEnabled = Boolean(config.hostNoShowEmailEnabled);
+  config.hostNoShowMinutesAfterStart = (() => {
+    const raw = Number(config.hostNoShowMinutesAfterStart);
+    if (!Number.isFinite(raw)) return 15;
     return Math.max(0, Math.floor(raw));
   })();
   config.reminders.checkInBannerEnabled = Boolean(config.reminders.checkInBannerEnabled);

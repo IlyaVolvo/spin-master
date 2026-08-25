@@ -251,6 +251,13 @@ if (require.main === module) {
       // Only use console.log if logging is completely disabled, so users know the server started
       console.log(`Server running on ${host}:${PORT}`);
     }
+    void import('./payments/hostEmails')
+      .then(({ startHostEmailScheduler }) => startHostEmailScheduler())
+      .catch((error) => {
+        logger.warn('Host email scheduler failed to start', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   });
 }
 

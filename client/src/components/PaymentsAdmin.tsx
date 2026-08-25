@@ -122,7 +122,7 @@ function CollapsibleBlock({
 
 const PLANS_SECTIONS_STORAGE_KEY = 'paymentsPlansSectionsOpen';
 
-type PlansSectionKey = 'clubPlans' | 'provider' | 'courtesy' | 'hosts' | 'reminders';
+type PlansSectionKey = 'clubPlans' | 'provider' | 'courtesy' | 'reminders';
 
 type PlansSectionsOpen = Record<PlansSectionKey, boolean>;
 
@@ -130,7 +130,6 @@ const DEFAULT_PLANS_SECTIONS_OPEN: PlansSectionsOpen = {
   clubPlans: false,
   provider: false,
   courtesy: false,
-  hosts: false,
   reminders: false,
 };
 
@@ -538,23 +537,6 @@ function PaymentsSettingsEditor({
       </FieldRow>
       </CollapsibleBlock>
 
-      <CollapsibleBlock title="Hosts" open={sectionOpen.hosts} onToggle={() => onToggleSection('hosts')}>
-        <NumericInput
-          label="Host grace period (minutes after slot start)"
-          min={0}
-          value={payments.hostGraceMinutes ?? 30}
-          onChange={(value) =>
-            updateConfig((draft) => {
-              draft.payments.hostGraceMinutes = value;
-            })
-          }
-        />
-        <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#666' }}>
-          Check in as host stays available until the slot ends. Grace only extends short slots past
-          their end time (start + these minutes).
-        </p>
-      </CollapsibleBlock>
-
       <CollapsibleBlock
         title="Reminders"
         open={sectionOpen.reminders}
@@ -682,8 +664,16 @@ export default function PaymentsAdmin() {
     setError('');
     setMessage('');
     try {
+      const {
+        hostGraceMinutes: _hostGraceMinutes,
+        hostReminderEmailEnabled: _hostReminderEmailEnabled,
+        hostReminderMinutesBeforeStart: _hostReminderMinutesBeforeStart,
+        hostNoShowEmailEnabled: _hostNoShowEmailEnabled,
+        hostNoShowMinutesAfterStart: _hostNoShowMinutesAfterStart,
+        ...paymentsRest
+      } = config.payments;
       const saved = await saveAdminSystemConfig({
-        payments: config.payments,
+        payments: paymentsRest,
         clubPlans: config.clubPlans,
       });
       setConfig(saved);

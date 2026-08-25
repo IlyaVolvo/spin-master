@@ -655,6 +655,10 @@ model HostShift {
   memberId       Int?
   claimedAt      DateTime?
   claimedVisitId Int?
+  /** Set when the pre-slot reminder was sent (or skipped because the host has no email). */
+  reminderEmailedAt DateTime?
+  /** Set when registered Admins were notified that this host had not arrived. */
+  noShowEmailedAt   DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

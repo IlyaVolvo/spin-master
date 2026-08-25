@@ -50,6 +50,14 @@ const mockConfig = {
     socketReconnectionAttempts: 5,
     apiRequestTimeoutMs: 300000,
   },
+  payments: {
+    largeCreditConfirmCents: 10000,
+    hostGraceMinutes: 30,
+    hostReminderEmailEnabled: true,
+    hostReminderMinutesBeforeStart: 60,
+    hostNoShowEmailEnabled: true,
+    hostNoShowMinutesAfterStart: 15,
+  },
 };
 
 const loadAdminSystemConfig = vi.fn();

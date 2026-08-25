@@ -125,6 +125,10 @@ export type SystemConfig = {
     largeCreditConfirmCents: number;
     /** Minutes after host slot start during which the assigned host may still claim. */
     hostGraceMinutes: number;
+    hostReminderEmailEnabled: boolean;
+    hostReminderMinutesBeforeStart: number;
+    hostNoShowEmailEnabled: boolean;
+    hostNoShowMinutesAfterStart: number;
     reminders: {
       checkInBannerEnabled: boolean;
       emailEnabled: boolean;
@@ -256,6 +260,10 @@ const defaultSystemConfig: SystemConfig = {
     mailFailCashEscapeDelayMinutes: 15,
     largeCreditConfirmCents: 10000,
     hostGraceMinutes: 30,
+    hostReminderEmailEnabled: true,
+    hostReminderMinutesBeforeStart: 60,
+    hostNoShowEmailEnabled: true,
+    hostNoShowMinutesAfterStart: 15,
     reminders: {
       checkInBannerEnabled: true,
       emailEnabled: true,

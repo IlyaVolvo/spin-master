@@ -102,7 +102,7 @@ export async function assignCatalogShift(args: {
         startTime: template.startTime,
         endTime: template.endTime,
         ...(memberChanged
-          ? { claimedAt: null, claimedVisitId: null }
+          ? { claimedAt: null, claimedVisitId: null, reminderEmailedAt: null, noShowEmailedAt: null }
           : {}),
       },
     });
@@ -130,7 +130,9 @@ export async function assignExistingShift(args: {
     where: { id: existing.id },
     data: {
       memberId: args.memberId,
-      ...(memberChanged ? { claimedAt: null, claimedVisitId: null } : {}),
+      ...(memberChanged
+        ? { claimedAt: null, claimedVisitId: null, reminderEmailedAt: null, noShowEmailedAt: null }
+        : {}),
     },
   });
   await maybeAutoGrant(shift, now);
@@ -192,6 +194,8 @@ export async function createCustomShift(args: {
           memberId: args.memberId ?? null,
           claimedAt: null,
           claimedVisitId: null,
+          reminderEmailedAt: null,
+          noShowEmailedAt: null,
         },
       });
       await maybeAutoGrant(shift, now);
