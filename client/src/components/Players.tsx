@@ -2475,6 +2475,9 @@ const Players: React.FC = () => {
         await api.patch(`/players/${pendingActiveToggle.playerId}/${endpoint}`);
         const activatedWithOverride = !pendingActiveToggle.isActive && !pendingActiveToggle.emailConfirmedAt;
         setSuccess(activatedWithOverride ? 'Player activated before email confirmation' : `Player ${pendingActiveToggle.isActive ? 'deactivated' : 'reactivated'} successfully`);
+        if (editingPlayerId === pendingActiveToggle.playerId) {
+          setEditIsActive(!pendingActiveToggle.isActive);
+        }
         fetchMembers();
       } catch (err: any) {
         setError(err.response?.data?.error || 'Failed to update player');
@@ -8038,7 +8041,9 @@ const Players: React.FC = () => {
                 {/* Delete Member — admins editing another member; button only when API allows (no matches) */}
                 {isAdminUser && !isEditingSelf && memberDeleteEligibility && (
                   <div style={{ marginTop: '16px', padding: '12px', background: '#ffebee', borderRadius: '4px', border: '1px solid #f44336' }}>
-                    <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold', color: '#d32f2f' }}>Delete Member</h5>
+                    <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold', color: '#d32f2f' }}>
+                      {memberDeleteEligibility.canDelete ? 'Delete Member' : playerForEdit.isActive ? 'Deactivate Member' : 'Activate Member'}
+                    </h5>
                     {memberDeleteEligibility.canDelete ? (
                       <>
                         <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#666' }}>
@@ -8070,7 +8075,29 @@ const Players: React.FC = () => {
                             would be removed automatically if deletion were allowed.
                           </p>
                         )}
-                        <p style={{ margin: 0, color: '#666' }}>Deactivate the member or adjust match history if you need to remove them from the roster.</p>
+                        <p style={{ margin: '0 0 12px 0', color: '#666' }}>
+                          Deactivate them to hide them from the active roster, or adjust match history if you still need to delete.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleToggleActiveClick(
+                              playerForEdit.id,
+                              playerForEdit.isActive,
+                              playerForEdit.emailConfirmedAt,
+                              formatPlayerName(playerForEdit.firstName, playerForEdit.lastName, nameDisplayOrder),
+                            )
+                          }
+                          className={playerForEdit.isActive ? 'button-3d danger' : 'button-3d success'}
+                          style={{
+                            fontSize: '13px',
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {playerForEdit.isActive ? 'Deactivate Member' : 'Activate Member'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -8234,7 +8261,7 @@ const Players: React.FC = () => {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 10001,
+          zIndex: 10002,
         }}>
           <div className="card" style={{ maxWidth: '400px', width: '90%', position: 'relative' }}>
             <h3 style={{ marginBottom: '15px', color: pendingActiveToggle.isActive ? '#e67e22' : '#27ae60' }}>
