@@ -11,6 +11,7 @@ import { memberCanPayOnline } from './getActivePaymentProvider';
 import { notifyCompletedTrials } from './memberTrial';
 import { getClubDate } from '../utils/clubDate';
 import { invalidateCurrentEntitlement } from './checkInStateCache';
+import { applyPendingHostPerksForMember } from './hostPerkService';
 
 function addClubDays(clubDate: string, deltaDays: number): string {
   // Interpret clubDate as noon UTC then shift — good enough for YYYY-MM-DD arithmetic
@@ -100,6 +101,7 @@ export async function runClubMidnightJobs(options?: {
     });
     invalidateCurrentEntitlement(future.memberId);
     promoted += 1;
+    await applyPendingHostPerksForMember(future.memberId);
   }
 
   // 3) Auto-renew: members with flag, expired previous club day, no current, no future

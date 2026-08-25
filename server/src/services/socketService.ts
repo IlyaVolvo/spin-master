@@ -222,3 +222,11 @@ export function emitClubVisitUpdated(payload: {
   });
 }
 
+/** Notify clients that the host board changed for a club date. */
+export function emitHostBoardUpdated(payload: { clubDate?: string | null }) {
+  emitToAll('club:hostBoardUpdated', {
+    clubDate: payload.clubDate ?? null,
+    timestamp: Date.now(),
+  });
+}
+

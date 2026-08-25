@@ -127,6 +127,23 @@ export function HeaderSelfCheckinButton({
         await startEventOnlineRegister(intent.tournamentId);
         return;
       }
+      if (intent.type === 'host') {
+        try {
+          await api.post('/club/host/claim', { shiftId: intent.shiftId });
+        } catch (claimErr: unknown) {
+          const claimData = (claimErr as { response?: { data?: { error?: string } } })?.response?.data;
+          if (claimData?.error && /check in first/i.test(claimData.error)) {
+            const res = await api.post('/club/self/toggle', {});
+            const action = res.data?.action as string | undefined;
+            if (action === 'CHECK_IN') setPresent(true);
+            await api.post('/club/host/claim', { shiftId: intent.shiftId });
+          } else {
+            throw claimErr;
+          }
+        }
+        setMenuOptions(null);
+        return;
+      }
 
       const body: { eventTournamentId?: number; eventMode?: string } = {};
       if (intent.type === 'event_check_in') {

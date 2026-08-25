@@ -9,6 +9,8 @@ jest.mock('../../../src/index', () => ({
     clubVisit: { findFirst: jest.fn() },
     clubPayment: { findFirst: jest.fn() },
     clubEntitlement: { findFirst: jest.fn() },
+    hostSlotTemplate: { findMany: jest.fn() },
+    hostShift: { findMany: jest.fn() },
   },
 }));
 
@@ -17,6 +19,7 @@ jest.mock('../../../src/services/systemConfigService', () => ({
     eventCheckInLeadMinutes: 60,
     eventCheckInCloseMinutesBeforeStart: 0,
   })),
+  getPaymentsConfig: jest.fn(() => ({ hostGraceMinutes: 30 })),
 }));
 
 jest.mock('../../../src/utils/clubDate', () => ({
@@ -78,6 +81,8 @@ describe('listCheckInOptions', () => {
     (prisma.clubPayment.findFirst as jest.Mock).mockResolvedValue(null);
     (getCurrentEntitlement as jest.Mock).mockResolvedValue(null);
     (prisma.tournament.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.hostSlotTemplate.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.hostShift.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.tournamentRegistration.findMany as jest.Mock).mockResolvedValue([]);
   });
 

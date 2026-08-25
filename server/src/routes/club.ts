@@ -41,6 +41,9 @@ import {
 } from '../payments/checkInStateCache';
 import { getPresenceBoardVersion } from '../payments/presenceBoardVersion';
 import { memberCanPayOnline } from '../payments/getActivePaymentProvider';
+import { applyPendingHostPerksForMember } from '../payments/hostPerkService';
+import { claimHostShift, HostClaimError } from '../payments/hostClaim';
+import hostRoutes from './host';
 
 const router = express.Router();
 
@@ -459,9 +462,75 @@ router.post('/cron/midnight', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/club/pin-host-claim — score-PIN host claim (no session).
+ * Body: { memberId, scorePin, shiftId }
+ */
+router.post('/pin-host-claim', async (req: Request, res: Response) => {
+  try {
+    const memberId = Number(req.body?.memberId);
+    const scorePin = req.body?.scorePin;
+    const shiftId = Number(req.body?.shiftId);
+    if (!Number.isInteger(memberId) || memberId < 1) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+    if (typeof scorePin !== 'string' || !scorePin.trim()) {
+      return res.status(400).json({ error: 'scorePin is required' });
+    }
+    if (!Number.isInteger(shiftId) || shiftId < 1) {
+      return res.status(400).json({ error: 'shiftId is required' });
+    }
+
+    let member: MemberCheckInStub | undefined = getCachedMemberCheckInStub(memberId);
+    if (!member) {
+      const loaded = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          isActive: true,
+          scorePin: true,
+          email: true,
+          password: true,
+          trialEndsOn: true,
+        },
+      });
+      if (!loaded) {
+        return res.status(401).json({ error: 'Invalid PIN' });
+      }
+      member = loaded;
+      setCachedMemberCheckInStub(member);
+    }
+    if (!scorePinsEqual(scorePin, member.scorePin)) {
+      return res.status(401).json({ error: 'Invalid PIN' });
+    }
+    if (!member.isActive) {
+      return res.status(403).json({ error: 'Member account is inactive' });
+    }
+
+    const result = await claimHostShift({ memberId, shiftId });
+    res.json({
+      ok: true,
+      grant: result.grant,
+      shift: { id: result.shift.id, claimedAt: result.shift.claimedAt },
+      member: { firstName: member.firstName, lastName: member.lastName },
+    });
+  } catch (error) {
+    if (error instanceof HostClaimError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    logger.error('Error claiming host via PIN', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── Authenticated Endpoints ─────────────────────────────────────────────────
 
 router.use(authenticate);
+router.use(hostRoutes);
 
 /** POST /api/club/self/toggle — logged-in member self check-in/out */
 router.post('/self/toggle', async (req: AuthRequest, res: Response) => {
@@ -878,6 +947,9 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
       }
 
       invalidateCurrentEntitlement(Number(memberId));
+      if (status === 'CURRENT') {
+        await applyPendingHostPerksForMember(Number(memberId));
+      }
       return res.status(201).json(entitlement);
     }
 
@@ -938,6 +1010,9 @@ router.post('/admin/entitlements', async (req: AuthRequest, res: Response) => {
     }
 
     invalidateCurrentEntitlement(Number(memberId));
+    if (status === 'CURRENT') {
+      await applyPendingHostPerksForMember(Number(memberId));
+    }
     res.status(201).json(entitlement);
   } catch (error) {
     logger.error('Error creating entitlement', { error: error instanceof Error ? error.message : String(error) });
@@ -1040,6 +1115,8 @@ router.post('/admin/plans', async (req: AuthRequest, res: Response) => {
       durationValue,
       visitCount,
       sortOrder,
+      hostPerkDays,
+      hostPerkVisits,
     } = req.body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -1102,6 +1179,8 @@ router.post('/admin/plans', async (req: AuthRequest, res: Response) => {
         durationValue: kind === 'TIME' ? durationValue : null,
         visitCount: kind === 'VISIT' ? visitCount : null,
         sortOrder: Number.isInteger(sortOrder) ? sortOrder : 0,
+        hostPerkDays: isAdmin(req) && kind === 'TIME' ? Math.max(0, Math.floor(Number(hostPerkDays) || 0)) : 0,
+        hostPerkVisits: isAdmin(req) && kind === 'VISIT' ? Math.max(0, Math.floor(Number(hostPerkVisits) || 0)) : 0,
       },
     });
 
@@ -1166,6 +1245,19 @@ router.put('/admin/plans/:id', async (req: AuthRequest, res: Response) => {
         return res.status(400).json({ error: 'kind must be TIME or VISIT' });
       }
       data.kind = req.body.kind;
+    }
+
+    if (req.body.hostPerkDays !== undefined) {
+      if (!isAdmin(req)) {
+        return res.status(403).json({ error: 'Admin access required to change host perks' });
+      }
+      data.hostPerkDays = Math.max(0, Math.floor(Number(req.body.hostPerkDays) || 0));
+    }
+    if (req.body.hostPerkVisits !== undefined) {
+      if (!isAdmin(req)) {
+        return res.status(403).json({ error: 'Admin access required to change host perks' });
+      }
+      data.hostPerkVisits = Math.max(0, Math.floor(Number(req.body.hostPerkVisits) || 0));
     }
 
     const nextKind = (data.kind as string) || existing.kind;

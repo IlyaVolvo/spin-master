@@ -12,6 +12,7 @@ import { resolvePlanLabelForProduct, sendPaymentProcessedEmail } from './payment
 import type { ConfirmEvent, CheckoutProduct, PaymentMetadata } from './types';
 import { applyEventPaymentSuccess } from './eventPayment';
 import { creditPaidAfterCancel } from './creditLedger';
+import { applyPendingHostPerksForMember } from './hostPerkService';
 
 function asMetadata(value: unknown): PaymentMetadata {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -178,6 +179,9 @@ async function createEntitlementFromProduct(
   }
 
   invalidateCurrentEntitlement(memberId);
+  if (status === 'CURRENT') {
+    await applyPendingHostPerksForMember(memberId);
+  }
 }
 
 /**

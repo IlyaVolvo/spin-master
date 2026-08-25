@@ -174,6 +174,8 @@ export type PaymentsConfig = {
    * member's full name to confirm. Default $100 = 10000.
    */
   largeCreditConfirmCents: number;
+  /** Minutes after slot start during which a designated host may still claim Host. */
+  hostGraceMinutes: number;
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */
   providers: {
@@ -365,6 +367,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       newMemberTrialDays: 7,
       mailFailCashEscapeDelayMinutes: 15,
       largeCreditConfirmCents: 10000,
+      hostGraceMinutes: 30,
       reminders: {
         checkInBannerEnabled: true,
         emailEnabled: true,
@@ -815,6 +818,11 @@ function validatePayments(value: unknown): PaymentsConfig {
   config.largeCreditConfirmCents = (() => {
     const raw = Number(config.largeCreditConfirmCents);
     if (!Number.isFinite(raw)) return 10000;
+    return Math.max(0, Math.floor(raw));
+  })();
+  config.hostGraceMinutes = (() => {
+    const raw = Number(config.hostGraceMinutes);
+    if (!Number.isFinite(raw)) return 30;
     return Math.max(0, Math.floor(raw));
   })();
   config.reminders.checkInBannerEnabled = Boolean(config.reminders.checkInBannerEnabled);

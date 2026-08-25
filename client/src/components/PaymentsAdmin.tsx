@@ -73,33 +73,84 @@ function FieldRow({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Subsection({ title, children }: { title: string; children: ReactNode }) {
+function CollapsibleBlock({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
   return (
-    <div style={{
-      marginTop: '14px',
-      border: '1px solid #e1ebf2',
-      borderRadius: '8px',
-      overflow: 'hidden',
-      backgroundColor: '#ffffff',
-    }}>
-      <h4 style={{
-        margin: 0,
-        padding: '10px 14px',
-        backgroundColor: '#f2f8fb',
-        color: '#3c7890',
-        fontSize: '14px',
-        fontWeight: 800,
-        textTransform: 'uppercase',
-        letterSpacing: '0.04em',
-        borderBottom: '1px solid #e1ebf2',
-      }}>
-        {title}
-      </h4>
-      <div style={{ padding: '0 14px' }}>
-        {children}
-      </div>
+    <div style={{ margin: '12px 0 4px' }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        style={{
+          width: 'auto',
+          margin: 0,
+          padding: '10px 4px',
+          backgroundColor: 'transparent',
+          color: '#111111',
+          border: 'none',
+          borderBottom: '1px solid #e1ebf2',
+          fontSize: '15px',
+          fontWeight: 700,
+          textTransform: 'none',
+          letterSpacing: '0',
+          textAlign: 'left',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          gap: '8px',
+        }}
+      >
+        <span>{title}</span>
+        <span style={{ fontSize: '12px', color: '#111111', fontWeight: 700 }} aria-hidden>
+          {open ? '▼' : '▶'}
+        </span>
+      </button>
+      {open ? <div>{children}</div> : null}
     </div>
   );
+}
+
+const PLANS_SECTIONS_STORAGE_KEY = 'paymentsPlansSectionsOpen';
+
+type PlansSectionKey = 'clubPlans' | 'provider' | 'courtesy' | 'hosts' | 'reminders';
+
+type PlansSectionsOpen = Record<PlansSectionKey, boolean>;
+
+const DEFAULT_PLANS_SECTIONS_OPEN: PlansSectionsOpen = {
+  clubPlans: false,
+  provider: false,
+  courtesy: false,
+  hosts: false,
+  reminders: false,
+};
+
+function loadPlansSectionsOpen(): PlansSectionsOpen {
+  try {
+    const raw = localStorage.getItem(PLANS_SECTIONS_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_PLANS_SECTIONS_OPEN };
+    const parsed = JSON.parse(raw) as Partial<PlansSectionsOpen>;
+    return { ...DEFAULT_PLANS_SECTIONS_OPEN, ...parsed };
+  } catch {
+    return { ...DEFAULT_PLANS_SECTIONS_OPEN };
+  }
+}
+
+function savePlansSectionsOpen(next: PlansSectionsOpen) {
+  try {
+    localStorage.setItem(PLANS_SECTIONS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // localStorage may be unavailable
+  }
 }
 
 const PREDEFINED_SEGMENTS = [
@@ -223,9 +274,13 @@ function SegmentEditor({
 function PaymentsSettingsEditor({
   config,
   updateConfig,
+  sectionOpen,
+  onToggleSection,
 }: {
   config: SystemConfig;
   updateConfig: (updater: (draft: SystemConfig) => void) => void;
+  sectionOpen: PlansSectionsOpen;
+  onToggleSection: (key: PlansSectionKey) => void;
 }) {
   const payments = config.payments;
   const [providers, setProviders] = useState<
@@ -360,6 +415,11 @@ function PaymentsSettingsEditor({
 
   return (
     <div>
+      <CollapsibleBlock
+        title="Payment Provider"
+        open={sectionOpen.provider}
+        onToggle={() => onToggleSection('provider')}
+      >
       <p style={{ margin: '0 0 12px', color: '#666', fontSize: '13px' }}>
         Online payment services are assigned per member in Player Settings. Cash remains a separate
         desk path. Which services Admin may assign is fixed by this install&apos;s payments mode.
@@ -408,7 +468,13 @@ function PaymentsSettingsEditor({
           ))}
         </div>
       )}
+      </CollapsibleBlock>
 
+      <CollapsibleBlock
+        title="Trial & Courtesy"
+        open={sectionOpen.courtesy}
+        onToggle={() => onToggleSection('courtesy')}
+      >
       <NumericInput
         label="New member trial days (0 = no trial)"
         min={0}
@@ -470,8 +536,40 @@ function PaymentsSettingsEditor({
           placeholder="admin@club.example"
         />
       </FieldRow>
+      </CollapsibleBlock>
 
-      <h4 style={{ margin: '16px 0 8px' }}>Reminders</h4>
+      <CollapsibleBlock title="Hosts" open={sectionOpen.hosts} onToggle={() => onToggleSection('hosts')}>
+        <NumericInput
+          label="Host grace period (minutes after slot start)"
+          min={0}
+          value={payments.hostGraceMinutes ?? 30}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.payments.hostGraceMinutes = value;
+            })
+          }
+        />
+      </CollapsibleBlock>
+
+      <CollapsibleBlock
+        title="Reminders"
+        open={sectionOpen.reminders}
+        onToggle={() => onToggleSection('reminders')}
+      >
+      <NumericInput
+        label="Large credit confirmation threshold ($)"
+        min={0}
+        value={Math.round((payments.largeCreditConfirmCents ?? 10000) / 100)}
+        onChange={(dollars) =>
+          updateConfig((draft) => {
+            draft.payments.largeCreditConfirmCents = Math.max(0, Math.floor(dollars) * 100);
+          })
+        }
+      />
+      <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#666' }}>
+        Adding credit above this amount requires typing the member&apos;s full name to confirm.
+        Default is $100.
+      </p>
       <FieldRow label="Check-in banner reminders">
         <input
           type="checkbox"
@@ -514,6 +612,7 @@ function PaymentsSettingsEditor({
           })
         }
       />
+      </CollapsibleBlock>
     </div>
   );
 }
@@ -528,6 +627,15 @@ export default function PaymentsAdmin() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [sectionOpen, setSectionOpen] = useState<PlansSectionsOpen>(loadPlansSectionsOpen);
+
+  const toggleSection = (key: PlansSectionKey) => {
+    setSectionOpen((current) => {
+      const next = { ...current, [key]: !current[key] };
+      savePlansSectionsOpen(next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -604,7 +712,7 @@ export default function PaymentsAdmin() {
         <div style={{ marginBottom: '16px' }}>
           <h2 style={{ margin: 0 }}>Payment Plans</h2>
           <p style={{ margin: '6px 0 0', color: '#666' }}>
-            Configure segments, club plans, courtesy settings, and related payment options.
+            Configure segments, club plans, payment provider, and related options.
           </p>
         </div>
       ) : (
@@ -625,24 +733,11 @@ export default function PaymentsAdmin() {
 
       {tab === 'plans' ? (
         <>
-          <Subsection title="Payments">
-            <NumericInput
-              label="Large credit confirmation threshold ($)"
-              min={0}
-              value={Math.round((config.payments.largeCreditConfirmCents ?? 10000) / 100)}
-              onChange={(dollars) =>
-                updateConfig((draft) => {
-                  draft.payments.largeCreditConfirmCents = Math.max(0, Math.floor(dollars) * 100);
-                })
-              }
-            />
-            <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#666' }}>
-              Adding credit above this amount requires typing the member&apos;s full name to confirm.
-              Default is $100.
-            </p>
-          </Subsection>
-
-          <Subsection title="Segments">
+          <CollapsibleBlock
+            title="Club Payment Plans"
+            open={sectionOpen.clubPlans}
+            onToggle={() => toggleSection('clubPlans')}
+          >
             <p style={{ margin: '8px 0', color: '#666', fontSize: '13px' }}>
               Segments assigned to members that determine which plan price is charged. &quot;Regular&quot; is always required and used as the default fallback.
             </p>
@@ -650,15 +745,15 @@ export default function PaymentsAdmin() {
               segments={config.clubPlans?.segments ?? ['Regular']}
               onChange={(segs) => updateConfig(draft => { draft.clubPlans.segments = segs; })}
             />
-          </Subsection>
-
-          <Subsection title="Club Payment Plans">
             <ClubPlanManager />
-          </Subsection>
+          </CollapsibleBlock>
 
-          <Subsection title="Payment Provider & Courtesy Settings">
-            <PaymentsSettingsEditor config={config} updateConfig={updateConfig} />
-          </Subsection>
+          <PaymentsSettingsEditor
+            config={config}
+            updateConfig={updateConfig}
+            sectionOpen={sectionOpen}
+            onToggleSection={toggleSection}
+          />
         </>
       ) : (
         <PaymentsMemberLookup />

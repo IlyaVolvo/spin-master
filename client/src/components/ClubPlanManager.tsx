@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../utils/api';
 import { getErrorMessage } from '../utils/errorHandler';
 import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig';
@@ -15,6 +15,8 @@ interface ClubPlan {
   durationUnit?: 'DAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'YEAR' | null;
   durationValue?: number | null;
   visitCount?: number | null;
+  hostPerkDays?: number;
+  hostPerkVisits?: number;
   isActive: boolean;
   sortOrder: number;
 }
@@ -29,6 +31,8 @@ type PlanFormData = {
   durationUnit: 'DAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'YEAR';
   durationValue: number;
   visitCount: number;
+  hostPerkDays: number;
+  hostPerkVisits: number;
   sortOrder: number;
 };
 
@@ -71,6 +75,8 @@ function getEmptyForm(defaultSegment = 'Regular'): PlanFormData {
     durationUnit: 'MONTH',
     durationValue: 1,
     visitCount: 10,
+    hostPerkDays: 0,
+    hostPerkVisits: 0,
     sortOrder: 0,
   };
 }
@@ -83,26 +89,30 @@ function planToForm(plan: ClubPlan): PlanFormData {
     segment: plan.segment,
     priceCents: plan.priceCents,
     durationUnit: plan.durationUnit || 'MONTH',
-    durationValue: plan.durationValue || 1,
+    durationValue: plan.durationValue && plan.durationValue >= 1 ? plan.durationValue : 1,
     visitCount: plan.visitCount || 10,
+    hostPerkDays: plan.hostPerkDays || 0,
+    hostPerkVisits: plan.hostPerkVisits || 0,
     sortOrder: plan.sortOrder,
   };
 }
 
-function formToPayload(form: PlanFormData) {
+function formToPayload(form: PlanFormData, includeSortOrder: boolean) {
   const payload: Record<string, unknown> = {
     familyKey: form.familyKey.trim() || undefined,
     name: form.name.trim(),
     kind: form.kind,
     segment: form.segment,
     priceCents: form.priceCents,
-    sortOrder: form.sortOrder,
   };
+  if (includeSortOrder) payload.sortOrder = form.sortOrder;
   if (form.kind === 'TIME') {
     payload.durationUnit = form.durationUnit;
-    payload.durationValue = form.durationValue;
+    payload.durationValue = Math.max(1, Math.floor(form.durationValue) || 1);
+    payload.hostPerkDays = form.hostPerkDays;
   } else {
     payload.visitCount = form.visitCount;
+    payload.hostPerkVisits = form.hostPerkVisits;
   }
   return payload;
 }
@@ -133,6 +143,15 @@ function describePrice(plan: ClubPlan): string {
     return `${formatCents(plan.priceCents)}/visit · total ${formatCents(planTotalCents(plan))} (${visits})`;
   }
   return formatCents(plan.priceCents);
+}
+
+function describeHostPerk(plan: ClubPlan): string {
+  if (plan.kind === 'TIME') {
+    const n = plan.hostPerkDays || 0;
+    return n === 1 ? 'Host perk: +1 day' : `Host perk: +${n} days`;
+  }
+  const n = plan.hostPerkVisits || 0;
+  return n === 1 ? 'Host perk: +1 visit' : `Host perk: +${n} visits`;
 }
 
 /** Dollar amount input: defaults to 0.00; focus selects all so typing overwrites. */
@@ -189,6 +208,51 @@ function MoneyInput({
   );
 }
 
+/** Integer ≥ 1. Focus selects the current value so the next key overwrites it. */
+function MinOneNumberInput({
+  value,
+  onChange,
+  disabled,
+  style,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  disabled?: boolean;
+  style?: React.CSSProperties;
+}) {
+  const shown = Math.max(1, Math.floor(value) || 1);
+  const [text, setText] = useState(String(shown));
+
+  useEffect(() => {
+    setText(String(Math.max(1, Math.floor(value) || 1)));
+  }, [value]);
+
+  const commit = (raw: string) => {
+    const n = Math.max(1, Math.floor(Number(raw)) || 1);
+    setText(String(n));
+    onChange(n);
+  };
+
+  return (
+    <input
+      type="number"
+      min={1}
+      inputMode="numeric"
+      style={style}
+      value={text}
+      disabled={disabled}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setText(raw);
+        const n = Number(raw);
+        if (Number.isInteger(n) && n >= 1) onChange(n);
+      }}
+      onBlur={() => commit(text)}
+    />
+  );
+}
+
 export default function ClubPlanManager() {
   const [plans, setPlans] = useState<ClubPlan[]>([]);
   const [segments, setSegments] = useState<string[]>(() => getSystemConfig().clubPlans.segments);
@@ -204,6 +268,10 @@ export default function ClubPlanManager() {
   const { busy: toggleBusy, runBusy: runToggleBusy } = useBusyAction();
   const [showInactive, setShowInactive] = useState(false);
   const [priceFieldKey, setPriceFieldKey] = useState(0);
+  const [draggingFamily, setDraggingFamily] = useState<string | null>(null);
+  const [dragOverFamily, setDragOverFamily] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
+  const draggingFamilyRef = useRef<string | null>(null);
 
   const fetchPlans = async () => {
     try {
@@ -232,7 +300,10 @@ export default function ClubPlanManager() {
   const openCreate = (preset?: Partial<PlanFormData>) => {
     setEditingPlanId(null);
     setFormMode(preset?.familyKey ? 'add-segment' : 'create');
-    setForm({ ...getEmptyForm('Regular'), ...preset });
+    const nextOrder =
+      preset?.sortOrder ??
+      (plans.length === 0 ? 0 : Math.max(...plans.map((p) => p.sortOrder)) + 1);
+    setForm({ ...getEmptyForm('Regular'), ...preset, sortOrder: nextOrder });
     setPriceFieldKey((k) => k + 1);
     setShowForm(true);
     setError('');
@@ -254,6 +325,10 @@ export default function ClubPlanManager() {
       setError('Price must be greater than $0.00');
       return;
     }
+    if (form.kind === 'TIME' && (!Number.isInteger(form.durationValue) || form.durationValue < 1)) {
+      setError('Duration must be at least 1');
+      return;
+    }
     if (form.segment !== 'Regular') {
       const familyKey = form.familyKey.trim() || form.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const hasRegular = plans.some(
@@ -271,7 +346,7 @@ export default function ClubPlanManager() {
     setSaving(true);
     setError('');
     try {
-      const payload = formToPayload(form);
+      const payload = formToPayload(form, editingPlanId === null);
       if (editingPlanId !== null) {
         await api.put(`/club/admin/plans/${editingPlanId}`, payload);
         flash('Plan updated');
@@ -305,7 +380,58 @@ export default function ClubPlanManager() {
     });
   };
 
-  const visiblePlans = showInactive ? plans : plans.filter((p) => p.isActive);
+  const persistFamilyOrder = async (orderedKeys: string[]) => {
+    const previous = plans;
+    setPlans((current) =>
+      current
+        .map((p) => {
+          const idx = orderedKeys.indexOf(p.familyKey);
+          return idx >= 0 ? { ...p, sortOrder: idx } : p;
+        })
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.familyKey.localeCompare(b.familyKey) || a.segment.localeCompare(b.segment)),
+    );
+    setReordering(true);
+    setError('');
+    try {
+      const updates: Promise<unknown>[] = [];
+      orderedKeys.forEach((familyKey, idx) => {
+        const familyPlans = previous.filter((p) => p.familyKey === familyKey);
+        const regular = familyPlans.find((p) => p.segment === 'Regular');
+        if (regular) {
+          updates.push(api.put(`/club/admin/plans/${regular.id}`, { sortOrder: idx }));
+        } else {
+          familyPlans.forEach((p) => {
+            updates.push(api.put(`/club/admin/plans/${p.id}`, { sortOrder: idx }));
+          });
+        }
+      });
+      await Promise.all(updates);
+      await fetchPlans();
+    } catch (err) {
+      setPlans(previous);
+      setError(getErrorMessage(err, 'Failed to reorder plans'));
+    } finally {
+      setReordering(false);
+    }
+  };
+
+  const applyDrop = (fromKey: string, toKey: string) => {
+    if (!fromKey || !toKey || fromKey === toKey) return;
+    const keys = families.map(([k]) => k);
+    const from = keys.indexOf(fromKey);
+    const to = keys.indexOf(toKey);
+    if (from < 0 || to < 0) return;
+    const next = [...keys];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    void persistFamilyOrder(next);
+  };
+
+  const canDrag = !showForm && !reordering;
+
+  const visiblePlans = (showInactive ? plans : plans.filter((p) => p.isActive))
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.familyKey.localeCompare(b.familyKey) || a.segment.localeCompare(b.segment));
 
   const families = Array.from(
     visiblePlans.reduce((map, plan) => {
@@ -424,12 +550,10 @@ export default function ClubPlanManager() {
               </div>
               <div>
                 <label style={labelStyle}>Duration value</label>
-                <input
-                  type="number"
-                  min={1}
+                <MinOneNumberInput
                   style={inputStyle}
                   value={form.durationValue}
-                  onChange={(e) => setForm({ ...form, durationValue: Number(e.target.value) })}
+                  onChange={(durationValue) => setForm({ ...form, durationValue })}
                   disabled={formMode === 'add-segment'}
                 />
               </div>
@@ -476,15 +600,44 @@ export default function ClubPlanManager() {
             </div>
           )}
 
-          <div style={{ marginBottom: '12px' }}>
-            <label style={labelStyle}>Sort order</label>
-            <input
-              type="number"
-              style={{ ...inputStyle, maxWidth: '120px' }}
-              value={form.sortOrder}
-              onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })}
-              disabled={formMode === 'add-segment'}
-            />
+          <div
+            style={{
+              marginBottom: '12px',
+              padding: '10px 12px',
+              border: '1px solid #d5e6ef',
+              borderRadius: '6px',
+              background: '#f4fafc',
+            }}
+          >
+            <label
+              style={{ ...labelStyle, cursor: 'help' }}
+              title={
+                form.kind === 'TIME'
+                  ? 'Number of days added to the plan. 1 covers the day of duty.'
+                  : 'Number of visits added to the plan. 1 covers the day of duty.'
+              }
+            >
+              Host perks
+            </label>
+            {form.kind === 'TIME' ? (
+              <input
+                type="number"
+                min={0}
+                style={{ ...inputStyle, maxWidth: '120px' }}
+                value={form.hostPerkDays}
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => setForm({ ...form, hostPerkDays: Math.max(0, Number(e.target.value) || 0) })}
+              />
+            ) : (
+              <input
+                type="number"
+                min={0}
+                style={{ ...inputStyle, maxWidth: '120px' }}
+                value={form.hostPerkVisits}
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => setForm({ ...form, hostPerkVisits: Math.max(0, Number(e.target.value) || 0) })}
+              />
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '1px solid #eee', paddingTop: '12px' }}>
@@ -512,14 +665,79 @@ export default function ClubPlanManager() {
           {plans.length === 0 ? 'No plans created yet.' : 'No active plans. Toggle "Show inactive" to see deactivated plans.'}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div
+          style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+          onDragOver={(e) => {
+            if (!canDrag || !draggingFamilyRef.current) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+          }}
+        >
           {families.map(([familyKey, familyPlans]) => {
             const head = familyPlans[0];
             const hasRegular = familyPlans.some((p) => p.segment === 'Regular');
+            const isDragging = draggingFamily === familyKey;
+            const isDropTarget = dragOverFamily === familyKey && draggingFamily != null && draggingFamily !== familyKey;
             return (
-              <div key={familyKey} className="card" style={{ padding: '12px 16px' }}>
+              <div
+                key={familyKey}
+                className="card"
+                onDragOver={(e) => {
+                  if (!canDrag || !draggingFamilyRef.current) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dragOverFamily !== familyKey) setDragOverFamily(familyKey);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const fromKey = e.dataTransfer.getData('text/plain') || draggingFamilyRef.current || '';
+                  draggingFamilyRef.current = null;
+                  setDraggingFamily(null);
+                  setDragOverFamily(null);
+                  if (!canDrag) return;
+                  applyDrop(fromKey, familyKey);
+                }}
+                style={{
+                  padding: '12px 16px',
+                  opacity: isDragging ? 0.55 : 1,
+                  outline: isDropTarget ? '2px solid #3498db' : undefined,
+                  background: isDropTarget ? '#eef7fb' : undefined,
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', minWidth: 0 }}>
+                    <span
+                      draggable={canDrag}
+                      onDragStart={(e) => {
+                        if (!canDrag) {
+                          e.preventDefault();
+                          return;
+                        }
+                        draggingFamilyRef.current = familyKey;
+                        setDraggingFamily(familyKey);
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', familyKey);
+                      }}
+                      onDragEnd={() => {
+                        draggingFamilyRef.current = null;
+                        setDraggingFamily(null);
+                        setDragOverFamily(null);
+                      }}
+                      title={showForm ? 'Reorder is disabled while a plan is being edited' : 'Drag to reorder'}
+                      style={{
+                        fontSize: '16px',
+                        color: canDrag ? '#999' : '#d0d5db',
+                        cursor: canDrag ? 'grab' : 'not-allowed',
+                        userSelect: 'none',
+                        lineHeight: '20px',
+                        paddingTop: '2px',
+                      }}
+                    >
+                      ⋮⋮
+                    </span>
+                    <div>
                     <div style={{ fontWeight: 700, fontSize: '15px', color: '#2c3e50' }}>
                       {head.name}
                       <span style={{ marginLeft: '8px', fontSize: '12px', color: '#888', fontWeight: 500 }}>
@@ -531,6 +749,7 @@ export default function ClubPlanManager() {
                         Missing Regular segment — add one before selling this family
                       </div>
                     )}
+                    </div>
                   </div>
                   {!showForm && (
                     <button
@@ -568,6 +787,7 @@ export default function ClubPlanManager() {
                       <div style={{ fontSize: '14px' }}>
                         <strong>{plan.segment}</strong>
                         <span style={{ marginLeft: '10px', color: '#555' }}>{describePrice(plan)}</span>
+                        <span style={{ marginLeft: '10px', color: '#2d6f8f' }}>{describeHostPerk(plan)}</span>
                         {!plan.isActive && (
                           <span style={{ marginLeft: '8px', fontSize: '11px', color: '#e74c3c', fontWeight: 700 }}>INACTIVE</span>
                         )}

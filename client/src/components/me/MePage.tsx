@@ -4,6 +4,7 @@ import { APP_NAME } from '../../brand';
 import { getMember } from '../../utils/auth';
 import { setPreferFullApp } from '../../utils/meMode';
 import { HeaderSelfCheckinButton } from '../HeaderSelfCheckinButton';
+import { HostTodayBoard } from '../HostTodayBoard';
 import { MemberPlanScreen } from '../players/MemberPlanScreen';
 import { MeSettingsOverlay } from './MeSettingsOverlay';
 
@@ -153,6 +154,8 @@ export function MePage({ clubName, onLogout }: MePageProps) {
           controlStyle={tileBase}
           onOpenOwnPlan={() => setShowPlan(true)}
         />
+
+        <HostTodayBoard variant="full" />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <button type="button" style={tileBase} onClick={() => setShowSettings(true)}>

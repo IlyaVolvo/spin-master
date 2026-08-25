@@ -11,7 +11,7 @@ import { canEnterBrowseKiosk, canEnterCheckinKiosk } from '../utils/auth';
 type AdminMenuItem =
   | { id: 'separator'; label: string; active: false }
   | {
-      id: 'payment-log' | 'attendance-log' | 'membership-log' | 'plans' | 'settings';
+      id: 'payment-log' | 'attendance-log' | 'hosts' | 'membership-log' | 'plans' | 'settings';
       label: string;
       active: boolean;
     };
@@ -42,6 +42,7 @@ export type AppHeaderCollapsibleControlsProps = {
   onSettingsClick: (e?: React.MouseEvent) => void;
   onPaymentsClick: (e?: React.MouseEvent, tab?: 'payments' | 'plans') => void;
   onAttendanceClick: (e?: React.MouseEvent) => void;
+  onHostsClick: (e?: React.MouseEvent) => void;
   onMembershipLogClick: (e?: React.MouseEvent) => void;
   onLogout: () => void;
 };
@@ -81,6 +82,7 @@ export function AppHeaderCollapsibleControls({
   onSettingsClick,
   onPaymentsClick,
   onAttendanceClick,
+  onHostsClick,
   onMembershipLogClick,
   onLogout,
 }: AppHeaderCollapsibleControlsProps) {
@@ -195,6 +197,7 @@ export function AppHeaderCollapsibleControls({
           onClick: () => {
             if (item.id === 'settings') onSettingsClick();
             else if (item.id === 'attendance-log') onAttendanceClick();
+            else if (item.id === 'hosts') onHostsClick();
             else if (item.id === 'membership-log') onMembershipLogClick();
             else if (item.id === 'plans') onPaymentsClick(undefined, 'plans');
             else onPaymentsClick(undefined, 'payments');
@@ -215,6 +218,7 @@ export function AppHeaderCollapsibleControls({
     navigate,
     onSettingsClick,
     onAttendanceClick,
+    onHostsClick,
     onMembershipLogClick,
     onPaymentsClick,
   ]);
@@ -360,6 +364,7 @@ export function AppHeaderCollapsibleControls({
                           onClick={() => {
                             if (item.id === 'settings') onSettingsClick();
                             else if (item.id === 'attendance-log') onAttendanceClick();
+                            else if (item.id === 'hosts') onHostsClick();
                             else if (item.id === 'membership-log') onMembershipLogClick();
                             else if (item.id === 'plans') onPaymentsClick(undefined, 'plans');
                             else onPaymentsClick(undefined, 'payments');

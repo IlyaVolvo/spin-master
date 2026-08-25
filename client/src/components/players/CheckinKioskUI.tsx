@@ -500,6 +500,39 @@ export function CheckinPinModal({
         return;
       }
 
+      if (intent?.type === 'host') {
+        try {
+          await api.post('/club/pin-host-claim', {
+            memberId,
+            scorePin: scorePin.trim(),
+            shiftId: intent.shiftId,
+          });
+          finish('Checked in as host.');
+        } catch (claimErr: unknown) {
+          const claimData = (claimErr as { response?: { data?: { error?: string } } })?.response?.data;
+          if (claimData?.error && /check in first/i.test(claimData.error)) {
+            const res = await api.post('/club/pin-toggle', {
+              memberId,
+              scorePin: scorePin.trim(),
+            });
+            const data = res.data as PinToggleResponse;
+            if (data.action === 'PAYMENT_REQUIRED') {
+              enterPaymentRequired(formatPinToggleMessage(data), data.paymentLoginAvailable === true);
+              return;
+            }
+            await api.post('/club/pin-host-claim', {
+              memberId,
+              scorePin: scorePin.trim(),
+              shiftId: intent.shiftId,
+            });
+            finish(formatPinToggleMessage(data) || 'Checked in as host.');
+          } else {
+            throw claimErr;
+          }
+        }
+        return;
+      }
+
       const body: {
         memberId: number;
         scorePin: string;

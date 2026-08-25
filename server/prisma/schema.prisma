@@ -121,6 +121,8 @@ model Member {
   clubPayments     ClubPayment[]
   clubCredits      ClubCredit[]           @relation("CreditRecipient")
   clubCreditsIssued ClubCredit[]          @relation("CreditIssuer")
+  hostShifts       HostShift[]
+  hostPerkGrants   HostPerkGrant[]
 
   // Discount percentage for next plan purchase (0-100)
   clubDiscount     Int @default(0)
@@ -457,6 +459,8 @@ model ClubPlan {
   durationUnit  ClubPlanDurationUnit? // TIME only
   durationValue Int?                  // TIME only
   visitCount    Int?                  // VISIT only
+  hostPerkDays  Int                   @default(0) // TIME: days added when hosting
+  hostPerkVisits Int                  @default(0) // VISIT: visits added when hosting
   isActive      Boolean               @default(true)
   sortOrder     Int                   @default(0)
   createdAt     DateTime              @default(now())
@@ -524,6 +528,7 @@ model ClubVisit {
   member             Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
   obligationPayment  ClubPayment? @relation("VisitObligationPayment", fields: [obligationPaymentId], references: [id], onDelete: SetNull)
   eventTournament    Tournament?  @relation(fields: [eventTournamentId], references: [id], onDelete: SetNull)
+  hostClaims         HostShift[]  @relation("HostShiftClaimedVisit")
 
   @@index([memberId])
   @@index([clubDate])
@@ -558,6 +563,7 @@ model ClubEntitlement {
 
   member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
   plan     ClubPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
+  hostPerkGrants HostPerkGrant[]
 
   @@index([memberId])
   @@index([memberId, status])
@@ -611,6 +617,80 @@ model ClubCredit {
   @@index([createdAt])
   @@index([externalRef])
   @@map("club_credits")
+}
+
+enum HostPerkGrantStatus {
+  PENDING
+  APPLIED
+}
+
+/** Club-wide reusable host time ranges (e.g. 10:00–14:00). */
+model HostSlotTemplate {
+  id        Int      @id @default(autoincrement())
+  startTime String
+  endTime   String
+  sortOrder Int      @default(0)
+  label     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shifts HostShift[]
+
+  @@index([isActive, sortOrder])
+  @@map("host_slot_templates")
+}
+
+/**
+ * One assigned (or custom) host period on a club-local calendar day.
+ * Catalog cells with no assignee have no row. Unique on (clubDate, templateId)
+ * for catalog slots; custom rows use templateId null (multiple allowed).
+ */
+model HostShift {
+  id             Int       @id @default(autoincrement())
+  clubDate       String
+  startTime      String
+  endTime        String
+  templateId     Int?
+  memberId       Int?
+  claimedAt      DateTime?
+  claimedVisitId Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  template     HostSlotTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  member       Member?           @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  claimedVisit ClubVisit?        @relation("HostShiftClaimedVisit", fields: [claimedVisitId], references: [id], onDelete: SetNull)
+  perkGrants   HostPerkGrant[]
+
+  @@unique([clubDate, templateId])
+  @@index([clubDate])
+  @@index([memberId])
+  @@index([claimedVisitId])
+  @@map("host_shifts")
+}
+
+/** Auditable Host Perks. Reassignment never deletes or reverses prior grants. */
+model HostPerkGrant {
+  id            Int                 @id @default(autoincrement())
+  shiftId       Int
+  memberId      Int
+  status        HostPerkGrantStatus @default(PENDING)
+  daysAdded     Int                 @default(0)
+  visitsAdded   Int                 @default(0)
+  entitlementId Int?
+  appliedAt     DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  shift       HostShift        @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  member      Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  entitlement ClubEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
+
+  @@unique([shiftId, memberId])
+  @@index([memberId, status])
+  @@index([entitlementId])
+  @@map("host_perk_grants")
 }
 
 // SwissTournamentData: Configuration for SWISS tournaments

@@ -123,6 +123,8 @@ export type SystemConfig = {
     mailFailCashEscapeDelayMinutes: number;
     /** Credits above this amount (cents) require typing the member name to confirm. */
     largeCreditConfirmCents: number;
+    /** Minutes after host slot start during which the assigned host may still claim. */
+    hostGraceMinutes: number;
     reminders: {
       checkInBannerEnabled: boolean;
       emailEnabled: boolean;
@@ -253,6 +255,7 @@ const defaultSystemConfig: SystemConfig = {
     newMemberTrialDays: 7,
     mailFailCashEscapeDelayMinutes: 15,
     largeCreditConfirmCents: 10000,
+    hostGraceMinutes: 30,
     reminders: {
       checkInBannerEnabled: true,
       emailEnabled: true,

@@ -4,7 +4,8 @@ export type CheckInOptionKind =
   | 'regular'
   | 'event_check_in'
   | 'register_and_pay'
-  | 'buy_plan';
+  | 'buy_plan'
+  | 'host';
 
 export type CheckInOption = {
   id: string;
@@ -20,6 +21,7 @@ export type CheckInOption = {
   clubChargeWarning?: string | null;
   opensAt?: string | null;
   disabledReason?: 'window_not_open' | 'uncovered' | null;
+  shiftId?: number | null;
 };
 
 /** Format opening time as local "at hh:mm" (browser locale 12/24h). */
@@ -63,12 +65,16 @@ export type CheckInExecuteIntent =
   | { type: 'regular' }
   | { type: 'event_check_in'; tournamentId: number }
   | { type: 'register_and_pay'; tournamentId: number }
-  | { type: 'buy_plan' };
+  | { type: 'buy_plan' }
+  | { type: 'host'; shiftId: number };
 
 export function checkInExecuteIntent(option: CheckInOption | null | undefined): CheckInExecuteIntent | null {
   if (!option || !option.actionable) return null;
   if (option.kind === 'regular') return { type: 'regular' };
   if (option.kind === 'buy_plan') return { type: 'buy_plan' };
+  if (option.kind === 'host' && option.shiftId != null) {
+    return { type: 'host', shiftId: option.shiftId };
+  }
   if (option.kind === 'event_check_in' && option.tournamentId != null) {
     return { type: 'event_check_in', tournamentId: option.tournamentId };
   }

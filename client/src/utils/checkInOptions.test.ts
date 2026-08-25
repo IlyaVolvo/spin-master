@@ -100,5 +100,14 @@ describe('checkInOptions helpers', () => {
         }),
       ),
     ).toBeNull();
+    expect(
+      checkInExecuteIntent(
+        option({
+          id: 'host:12',
+          kind: 'host',
+          shiftId: 12,
+        }),
+      ),
+    ).toEqual({ type: 'host', shiftId: 12 });
   });
 });

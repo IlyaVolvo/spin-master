@@ -20,6 +20,7 @@ import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail 
 import { lazyWithReload } from './utils/lazyWithReload';
 import { SmashWhizzLogo } from './components/SmashWhizzLogo';
 import { AppHeaderCollapsibleControls } from './components/AppHeaderCollapsibleControls';
+import { HostTodayBoard } from './components/HostTodayBoard';
 import { LandscapeRequiredOverlay } from './components/LandscapeRequiredOverlay';
 import { APP_NAME_TM } from './brand';
 import {
@@ -39,6 +40,7 @@ const SystemSettings = lazyWithReload(() => import('./components/SystemSettings'
 const PaymentsAdmin = lazyWithReload(() => import('./components/PaymentsAdmin'));
 const AttendanceLogAdmin = lazyWithReload(() => import('./components/AttendanceLogAdmin'));
 const MembershipLogAdmin = lazyWithReload(() => import('./components/MembershipLogAdmin'));
+const HostsAdmin = lazyWithReload(() => import('./components/HostsAdmin'));
 const PaymentReturnPage = lazyWithReload(() => import('./components/PaymentReturnPage'));
 const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
 const PublicResultsLatestPage = lazyWithReload(() =>
@@ -128,6 +130,7 @@ function AuthRedirect() {
       '/payments',
       '/attendance-log',
       '/membership-log',
+      '/hosts',
     ];
     const isTournamentDetail = /^\/tournaments\/\d+$/.test(location.pathname);
     if (location.pathname.startsWith('/tournaments/') && !isTournamentDetail) {
@@ -606,6 +609,7 @@ function AppRoutes({
                         <Route path="/payments" element={<PaymentsAdmin />} />
                         <Route path="/attendance-log" element={<AttendanceLogAdmin />} />
                         <Route path="/membership-log" element={<MembershipLogAdmin />} />
+                        <Route path="/hosts" element={<HostsAdmin />} />
                       </Routes>
                     </Suspense>
                   </ErrorBoundary>
@@ -821,17 +825,20 @@ function Header({
   const isPaymentsActive = location.pathname === '/payments';
   const isAttendanceActive = location.pathname === '/attendance-log';
   const isMembershipLogActive = location.pathname === '/membership-log';
+  const isHostsActive = location.pathname === '/hosts';
   const paymentsTab = new URLSearchParams(location.search).get('tab');
   const isPlansActive = isPaymentsActive && paymentsTab === 'plans';
   const isPaymentsListActive = isPaymentsActive && !isPlansActive;
   const isAdminSectionActive =
-    isSettingsActive || isPaymentsActive || isAttendanceActive || isMembershipLogActive;
+    isSettingsActive || isPaymentsActive || isAttendanceActive || isMembershipLogActive || isHostsActive;
   const adminMenuLabel = isSettingsActive
     ? 'System Configuration'
     : isPlansActive
       ? 'Payment Plans'
       : isMembershipLogActive
         ? 'Membership Log'
+        : isHostsActive
+          ? 'Hosts'
         : isAttendanceActive
           ? 'Attendance Log'
           : isPaymentsListActive
@@ -1183,6 +1190,15 @@ function Header({
     navigate('/membership-log', { replace: true });
   };
 
+  const handleHostsClick = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    setAdminMenuOpen(false);
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/hosts', { replace: true });
+  };
+
   useEffect(() => {
     if (!adminMenuOpen) return;
     const onPointerDown = (event: MouseEvent) => {
@@ -1211,6 +1227,7 @@ function Header({
     { id: 'attendance-log' as const, label: 'Attendance Log', active: isAttendanceActive },
     { id: 'membership-log' as const, label: 'Membership Log', active: isMembershipLogActive },
     { id: 'separator' as const, label: '', active: false },
+    { id: 'hosts' as const, label: 'Hosts', active: isHostsActive },
     { id: 'plans' as const, label: 'Payment Plans', active: isPlansActive },
     { id: 'settings' as const, label: 'System Configuration', active: isSettingsActive },
   ] as const;
@@ -1300,6 +1317,7 @@ function Header({
               </span>
             </span>
           ) : null}
+          {clubName || userName ? <HostTodayBoard variant="header" /> : null}
         </div>
         <div className="app-header-meta-user">
           {userName ? (
@@ -1412,6 +1430,7 @@ function Header({
           onSettingsClick={handleSettingsClick}
           onPaymentsClick={handlePaymentsClick}
           onAttendanceClick={handleAttendanceClick}
+          onHostsClick={handleHostsClick}
           onMembershipLogClick={handleMembershipLogClick}
           onLogout={onLogout}
         />

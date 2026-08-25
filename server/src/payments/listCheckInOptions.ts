@@ -7,12 +7,14 @@ import {
   isEventCheckInWindowOpen,
 } from './eventCheckInWindow';
 import { countHeldRegistrations } from './eventPayment';
+import { buildHostBoardForDate, slotLabel } from './hostBoard';
 
 export type CheckInOptionKind =
   | 'regular'
   | 'event_check_in'
   | 'register_and_pay'
-  | 'buy_plan';
+  | 'buy_plan'
+  | 'host';
 
 export type CheckInOptionDto = {
   id: string;
@@ -31,6 +33,7 @@ export type CheckInOptionDto = {
   /** ISO instant when the event check-in window opens (for disabled upcoming rows). */
   opensAt?: string | null;
   disabledReason?: 'window_not_open' | 'uncovered' | null;
+  shiftId?: number | null;
 };
 
 function tournamentSatisfiesRating(
@@ -49,17 +52,18 @@ function isSameClubDay(date: Date | null | undefined, clubDateYmd: string): bool
 }
 
 function sortPriority(option: CheckInOptionDto): number {
-  if (option.kind === 'event_check_in' && option.actionable && option.prepaid) return 0;
-  if (option.kind === 'regular' && option.actionable) return 1;
-  if (option.kind === 'register_and_pay' && option.actionable) return 2;
+  if (option.kind === 'host' && option.actionable) return 0;
+  if (option.kind === 'event_check_in' && option.actionable && option.prepaid) return 1;
+  if (option.kind === 'regular' && option.actionable) return 2;
+  if (option.kind === 'register_and_pay' && option.actionable) return 3;
   if (
     (option.kind === 'event_check_in' || option.kind === 'register_and_pay') &&
     !option.actionable
   ) {
-    return 3;
+    return 4;
   }
-  if (option.kind === 'buy_plan' || (option.kind === 'regular' && !option.actionable)) return 4;
-  return 5;
+  if (option.kind === 'buy_plan' || (option.kind === 'regular' && !option.actionable)) return 5;
+  return 6;
 }
 
 function sortOptions(options: CheckInOptionDto[]): CheckInOptionDto[] {
@@ -168,6 +172,20 @@ export async function listCheckInOptions(
 
   const clubDate = getClubDate(now);
   const options: CheckInOptionDto[] = [];
+
+  const hostSlots = await buildHostBoardForDate(clubDate, memberId, now);
+  for (const slot of hostSlots) {
+    if (!slot.claimable || slot.shiftId == null) continue;
+    options.push({
+      id: `host:${slot.shiftId}`,
+      kind: 'host',
+      label: `Check in as host (${slotLabel(slot.startTime, slot.endTime, slot.label)})`,
+      actionable: true,
+      prepaid: false,
+      shiftId: slot.shiftId,
+      disabledReason: null,
+    });
+  }
 
   const regularCovered = await previewRegularCheckInCovered(memberId, now);
 
