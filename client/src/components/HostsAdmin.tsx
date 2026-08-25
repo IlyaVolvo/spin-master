@@ -164,7 +164,7 @@ export default function HostsAdmin() {
       const [boardRes, peopleRes, tplRes] = await Promise.all([
         api.get('/club/admin/host/board', { params: { from: weekStart, to: weekEnd } }),
         api.get('/club/admin/host/assignees'),
-        api.get('/club/admin/host/templates', { params: { includeInactive: 1 } }),
+        api.get('/club/admin/host/templates'),
       ]);
       setDays(boardRes.data?.days || []);
       setTemplates(tplRes.data?.templates || []);
@@ -196,7 +196,7 @@ export default function HostsAdmin() {
         startTime: tplStart,
         endTime: tplEnd,
         label: tplLabel || null,
-        sortOrder: templates.length,
+        sortOrder: activeTemplates.length,
       });
       setTplLabel('');
       flash('Slot added');
@@ -206,12 +206,13 @@ export default function HostsAdmin() {
     }
   };
 
-  const toggleTemplate = async (template: Template) => {
+  const removeTemplate = async (template: Template) => {
     try {
-      await api.put(`/club/admin/host/templates/${template.id}`, { isActive: !template.isActive });
+      await api.put(`/club/admin/host/templates/${template.id}`, { isActive: false });
+      flash('Slot removed');
       await load();
     } catch (err) {
-      setError(getErrorMessage(err, 'Could not update slot'));
+      setError(getErrorMessage(err, 'Could not remove slot'));
     }
   };
 
@@ -280,16 +281,16 @@ export default function HostsAdmin() {
           <button type="button" onClick={() => void saveTemplate()}>Add slot</button>
         </div>
         <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px' }}>
-          {templates.map((t) => (
-            <li key={t.id} style={{ marginBottom: '4px', opacity: t.isActive ? 1 : 0.5 }}>
+          {activeTemplates.map((t) => (
+            <li key={t.id} style={{ marginBottom: '4px' }}>
               {t.label ? `${t.label} ` : ''}{t.startTime}–{t.endTime}
               {' '}
-              <button type="button" onClick={() => void toggleTemplate(t)} style={{ fontSize: '12px' }}>
-                {t.isActive ? 'Deactivate' : 'Reactivate'}
+              <button type="button" onClick={() => void removeTemplate(t)} style={{ fontSize: '12px' }}>
+                Remove
               </button>
             </li>
           ))}
-          {templates.length === 0 ? <li>No catalog slots yet.</li> : null}
+          {activeTemplates.length === 0 ? <li>No catalog slots yet.</li> : null}
         </ul>
       </section>
 

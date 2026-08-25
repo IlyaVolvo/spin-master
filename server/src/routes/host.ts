@@ -13,6 +13,7 @@ import {
   HostAssignError,
 } from '../payments/hostAssign';
 import { claimHostShift, HostClaimError } from '../payments/hostClaim';
+import { emitHostBoardUpdated } from '../services/socketService';
 import { hostClaimWindowState } from '../payments/hostWindow';
 
 const router = express.Router();
@@ -164,6 +165,9 @@ router.put('/admin/host/templates/:id', async (req: AuthRequest, res: Response) 
     if (req.body?.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
 
     const template = await prisma.hostSlotTemplate.update({ where: { id }, data });
+    if (req.body?.isActive === false) {
+      emitHostBoardUpdated({ clubDate: getClubDate() });
+    }
     res.json({ template });
   } catch (error) {
     logger.error('Error updating host template', { error: error instanceof Error ? error.message : String(error) });
