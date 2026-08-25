@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 import { getClubDate, addDaysToYmd } from '../utils/clubDate';
 import { parseHm, parseYmd, parseNonNegInt, isValidTimeRange } from '../payments/hostTime';
 import { buildHostBoardForDate } from '../payments/hostBoard';
+import { loadPublicHostDuty } from '../payments/publicHostDuty';
 import {
   assignCatalogShift,
   assignExistingShift,
@@ -28,6 +29,23 @@ function ymdOr400(value: unknown, res: Response): string | null {
   }
   return ymd;
 }
+
+/** GET /api/club/host/on-duty — active host slots with arrival status (compact) */
+router.get('/host/on-duty', async (_req: AuthRequest, res: Response) => {
+  try {
+    const clubDate = getClubDate();
+    const hosts = await loadPublicHostDuty();
+    res.json({
+      clubDate,
+      hosts: hosts.map(({ memberId: _memberId, ...host }) => host),
+    });
+  } catch (error) {
+    logger.error('Error loading host on-duty', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 /** GET /api/club/host/today — public-to-members today board */
 router.get('/host/today', async (req: AuthRequest, res: Response) => {

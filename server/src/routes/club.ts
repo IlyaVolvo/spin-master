@@ -725,54 +725,29 @@ router.get('/kiosk/today-status', async (req: AuthRequest, res: Response) => {
 router.get('/kiosk/present', async (req: AuthRequest, res: Response) => {
   try {
     const clubDate = getClubDate();
+    const { loadPresentMembers } = await import('../payments/presentMembers');
+    const snapshot = await loadPresentMembers();
+
     const visits = await prisma.clubVisit.findMany({
       where: {
         rejectedAt: null,
-        OR: [{ clubDate }, { checkOutAt: null }],
+        clubDate,
       },
-      select: {
-        memberId: true,
-        clubDate: true,
-        checkInAt: true,
-        checkOutAt: true,
-        member: { select: { id: true, firstName: true, lastName: true, rating: true } },
-      },
-      orderBy: { checkInAt: 'desc' },
+      select: { memberId: true },
     });
+    const visitedTodayIds = Array.from(new Set(visits.map((v) => v.memberId)));
 
-    const visitedTodayIds = Array.from(
-      new Set(visits.filter((v) => v.clubDate === clubDate).map((v) => v.memberId)),
-    );
-    const openByMember = new Map<
-      number,
-      {
-        memberId: number;
-        firstName: string;
-        lastName: string;
-        rating: number | null;
-        lastCheckInAt: string;
-      }
-    >();
-
-    for (const visit of visits) {
-      if (visit.checkOutAt != null) continue;
-      if (openByMember.has(visit.memberId)) continue;
-      openByMember.set(visit.memberId, {
-        memberId: visit.member.id,
-        firstName: visit.member.firstName,
-        lastName: visit.member.lastName,
-        rating: visit.member.rating ?? null,
-        lastCheckInAt: visit.checkInAt.toISOString(),
-      });
-    }
-
-    const present = Array.from(openByMember.values()).sort((a, b) =>
-      a.lastCheckInAt < b.lastCheckInAt ? 1 : a.lastCheckInAt > b.lastCheckInAt ? -1 : 0,
-    );
+    const present = snapshot.members.map((row) => ({
+      memberId: row.memberId,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      rating: row.rating,
+      lastCheckInAt: row.checkInAt,
+    }));
 
     res.json({
       clubDate,
-      presentCount: present.length,
+      presentCount: snapshot.presentCount,
       present,
       visitedTodayIds,
     });

@@ -72,6 +72,14 @@ describe('publicAccess achievements config', () => {
     expect(config.publicAccess.achievements.most_wins).toBe(5);
     expect(config.publicAccess.achievements.biggest_upset).toBe(10);
     expect(config.publicAccess.achievements.most_active).toBe(0);
+    expect(config.publicAccess.presentBoardEnabled).toBe(false);
+  });
+
+  it('accepts presentBoardEnabled toggle', () => {
+    const config = validateSystemConfig({
+      publicAccess: { presentBoardEnabled: true },
+    });
+    expect(config.publicAccess.presentBoardEnabled).toBe(true);
   });
 });
 

@@ -20,7 +20,7 @@ import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail 
 import { lazyWithReload } from './utils/lazyWithReload';
 import { SmashWhizzLogo } from './components/SmashWhizzLogo';
 import { AppHeaderCollapsibleControls } from './components/AppHeaderCollapsibleControls';
-import { HostTodayBoard } from './components/HostTodayBoard';
+import { AppHeaderHostOnDuty } from './components/AppHeaderHostOnDuty';
 import { LandscapeRequiredOverlay } from './components/LandscapeRequiredOverlay';
 import { APP_NAME_TM } from './brand';
 import {
@@ -50,6 +50,7 @@ const PublicResultsDetailPage = lazyWithReload(() =>
   import('./components/public/PublicResultsPages').then((m) => ({ default: m.PublicResultsDetailPage })),
 );
 const PublicAchievementsPage = lazyWithReload(() => import('./components/public/PublicAchievementsPage'));
+const PublicPresentPage = lazyWithReload(() => import('./components/public/PublicPresentPage'));
 const PublicJoinPage = lazyWithReload(() =>
   import('./components/public/PublicJoinPages').then((m) => ({ default: m.PublicJoinPage })),
 );
@@ -505,6 +506,16 @@ function AppRoutes({
           <ErrorBoundary>
             <Suspense fallback={<div>Loading...</div>}>
               <PublicJoinPage />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/public/present"
+        element={
+          <ErrorBoundary>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PublicPresentPage />
             </Suspense>
           </ErrorBoundary>
         }
@@ -1285,7 +1296,7 @@ function Header({
             <span
               className="app-header-club app-header-club-caption"
               style={{
-                display: 'block',
+                display: 'inline-block',
                 boxSizing: 'border-box',
                 maxWidth: '100%',
                 padding: '6px 16px',
@@ -1317,7 +1328,7 @@ function Header({
               </span>
             </span>
           ) : null}
-          {clubName || userName ? <HostTodayBoard variant="header" /> : null}
+          <AppHeaderHostOnDuty />
         </div>
         <div className="app-header-meta-user">
           {userName ? (

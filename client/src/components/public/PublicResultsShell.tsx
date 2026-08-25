@@ -3,16 +3,20 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   getSystemConfig,
   hasAnyPublicAchievementEnabled,
+  isPublicPresentBoardEnabled,
   subscribeToSystemConfig,
 } from '../../utils/systemConfig';
 import { getAuthStateSnapshot, subscribeAuthState } from '../../utils/auth';
 import { APP_NAME } from '../../brand';
 
-type PublicNavKey = 'latest' | 'list' | 'achievements' | 'join';
+type PublicNavKey = 'latest' | 'list' | 'achievements' | 'present' | 'join';
 
 function resolvePublicNavKey(pathname: string): PublicNavKey | null {
   if (pathname.startsWith('/public/join')) {
     return 'join';
+  }
+  if (pathname.startsWith('/public/present')) {
+    return 'present';
   }
   if (pathname.startsWith('/public/achievements') || pathname === '/public' || pathname === '/public/') {
     return 'achievements';
@@ -34,7 +38,13 @@ function resolvePublicNavKey(pathname: string): PublicNavKey | null {
   return null;
 }
 
-function PublicFilterNav({ showAchievements }: { showAchievements: boolean }) {
+function PublicFilterNav({
+  showAchievements,
+  showPresentBoard,
+}: {
+  showAchievements: boolean;
+  showPresentBoard: boolean;
+}) {
   const location = useLocation();
   const navigate = useNavigate();
   const active = resolvePublicNavKey(location.pathname);
@@ -47,6 +57,9 @@ function PublicFilterNav({ showAchievements }: { showAchievements: boolean }) {
   ];
   if (showAchievements) {
     items.push({ key: 'achievements', to: '/public/achievements', label: 'Achievements' });
+  }
+  if (showPresentBoard) {
+    items.push({ key: 'present', to: '/public/present', label: 'Present' });
   }
 
   return (
@@ -101,11 +114,12 @@ export function PublicResultsShell({
   const config = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
   const clubName = config.branding?.clubName || APP_NAME;
   const showAchievements = hasAnyPublicAchievementEnabled(config);
+  const showPresentBoard = isPublicPresentBoardEnabled(config);
 
   return (
     <div className="container" style={{ maxWidth: '960px', marginTop: '32px', marginBottom: '48px' }}>
       <div style={{ fontSize: '28px', fontWeight: 600, color: '#2c3e50', marginBottom: '16px', textAlign: 'center' }}>{clubName}</div>
-      <PublicFilterNav showAchievements={showAchievements} />
+      <PublicFilterNav showAchievements={showAchievements} showPresentBoard={showPresentBoard} />
       {children}
     </div>
   );
@@ -135,6 +149,21 @@ export function PublicAchievementsNotAvailable() {
       <div className="card">
         <p style={{ margin: 0 }}>
           Public achievements are not enabled for this club.
+        </p>
+        <p style={{ marginTop: '16px' }}>
+          <Link to="/public/results/list">Browse tournament results</Link>
+        </p>
+      </div>
+    </PublicResultsShell>
+  );
+}
+
+export function PublicPresentNotAvailable() {
+  return (
+    <PublicResultsShell>
+      <div className="card">
+        <p style={{ margin: 0 }}>
+          The public present board is not enabled for this club.
         </p>
         <p style={{ marginTop: '16px' }}>
           <Link to="/public/results/list">Browse tournament results</Link>

@@ -4,8 +4,8 @@ import { APP_NAME } from '../../brand';
 import { getMember } from '../../utils/auth';
 import { setPreferFullApp } from '../../utils/meMode';
 import { HeaderSelfCheckinButton } from '../HeaderSelfCheckinButton';
-import { HostTodayBoard } from '../HostTodayBoard';
 import { MemberPlanScreen } from '../players/MemberPlanScreen';
+import { MeHostOnDutyLabel } from './MeHostOnDutyLabel';
 import { MeSettingsOverlay } from './MeSettingsOverlay';
 
 type MePageProps = {
@@ -155,8 +155,6 @@ export function MePage({ clubName, onLogout }: MePageProps) {
           onOpenOwnPlan={() => setShowPlan(true)}
         />
 
-        <HostTodayBoard variant="full" />
-
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <button type="button" style={tileBase} onClick={() => setShowSettings(true)}>
             <span style={{ fontSize: '22px', lineHeight: 1 }} aria-hidden="true">
@@ -200,7 +198,23 @@ export function MePage({ clubName, onLogout }: MePageProps) {
         </button>
       </div>
 
-      <div style={{ marginTop: '16px', textAlign: 'center' }}>
+      <div
+        style={{
+          marginTop: 'auto',
+          paddingTop: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          gap: '8px 20px',
+          width: '100%',
+          maxWidth: '420px',
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          textAlign: 'center',
+        }}
+      >
+        <MeHostOnDutyLabel />
         <button
           type="button"
           onClick={goFullApp}
@@ -211,7 +225,7 @@ export function MePage({ clubName, onLogout }: MePageProps) {
             fontSize: '14px',
             fontWeight: 600,
             cursor: 'pointer',
-            padding: '8px 12px',
+            padding: '8px 0',
             textDecoration: 'underline',
           }}
         >

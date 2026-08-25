@@ -194,6 +194,8 @@ export type AchievementsPublicAccessConfig = Record<AchievementCategoryId, numbe
 
 export type PublicAccessConfig = {
   achievements: AchievementsPublicAccessConfig;
+  /** When true, /public/present lists checked-in members and arrival times. */
+  presentBoardEnabled: boolean;
 };
 
 export type SystemConfig = {
@@ -362,6 +364,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       achievements: Object.fromEntries(
         ACHIEVEMENT_CATEGORY_IDS.map((id) => [id, 0]),
       ) as AchievementsPublicAccessConfig,
+      presentBoardEnabled: false,
     },
     payments: {
       installMode: resolvePaymentsInstallModeFromProcess(),
@@ -794,7 +797,13 @@ function validatePublicAccess(value: unknown): PublicAccessConfig {
       `publicAccess.achievements.${id}`,
     );
   }
-  return { achievements };
+  return {
+    achievements,
+    presentBoardEnabled: requireBoolean(
+      config.presentBoardEnabled ?? false,
+      'publicAccess.presentBoardEnabled',
+    ),
+  };
 }
 
 function validatePayments(value: unknown): PaymentsConfig {
@@ -1023,6 +1032,10 @@ export function getPublicAccessConfig(): PublicAccessConfig {
 export function hasAnyAchievementEnabled(): boolean {
   const achievements = getSystemConfig().publicAccess.achievements;
   return ACHIEVEMENT_CATEGORY_IDS.some((id) => achievements[id] > 0);
+}
+
+export function isPresentBoardEnabled(): boolean {
+  return getSystemConfig().publicAccess.presentBoardEnabled === true;
 }
 
 export function getAchievementDisplayLimit(id: AchievementCategoryId): number {

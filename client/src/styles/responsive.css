@@ -142,6 +142,9 @@ html {
   min-width: 0;
   display: flex;
   justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .app-header-meta-user {

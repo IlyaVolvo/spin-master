@@ -110,6 +110,7 @@ export type SystemConfig = {
   };
   publicAccess: {
     achievements: Record<AchievementCategoryId, number>;
+    presentBoardEnabled: boolean;
   };
   payments: {
     installMode: 'test' | 'production';
@@ -248,6 +249,7 @@ const defaultSystemConfig: SystemConfig = {
     achievements: Object.fromEntries(
       ACHIEVEMENT_CATEGORY_IDS.map((id) => [id, 0]),
     ) as Record<AchievementCategoryId, number>,
+    presentBoardEnabled: false,
   },
   payments: {
     installMode: 'test',
@@ -337,6 +339,10 @@ export function getSystemConfig(): SystemConfig {
 
 export function hasAnyPublicAchievementEnabled(config: SystemConfig = cachedSystemConfig): boolean {
   return ACHIEVEMENT_CATEGORY_IDS.some((id) => (config.publicAccess?.achievements?.[id] ?? 0) > 0);
+}
+
+export function isPublicPresentBoardEnabled(config: SystemConfig = cachedSystemConfig): boolean {
+  return config.publicAccess?.presentBoardEnabled === true;
 }
 
 export function subscribeToSystemConfig(listener: (config: SystemConfig) => void): () => void {

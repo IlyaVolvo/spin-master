@@ -17,7 +17,7 @@ export function SmashWhizzLogo({ variant = 'header' }: SmashWhizzLogoProps) {
           Smas
           <span className="smashwhizz-h">h</span>
         </span>
-        <span className="smashwhizz-right">Whizz</span>
+        <span className="smashwhizz-right">Dash</span>
         <span className="smashwhizz-paddle smashwhizz-paddle--left app-header-paddle" aria-hidden="true">
           🏓
         </span>

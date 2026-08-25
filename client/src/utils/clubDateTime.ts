@@ -20,6 +20,14 @@ function formatInClubZone(d: Date, options: Intl.DateTimeFormatOptions): string 
   }
 }
 
+/** Format an instant as club-local time only (e.g. for today's arrival list). */
+export function formatClubTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return formatInClubZone(d, { hour: 'numeric', minute: '2-digit' });
+}
+
 /**
  * Format an instant in the club's configured timezone (not UTC/GMT unless the club is set to UTC).
  */

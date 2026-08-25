@@ -1,3 +1,15 @@
+/** True when clubDate is today and now is within the slot start–end window. */
+export function isHostSlotActive(args: {
+  clubDate: string;
+  todayYmd: string;
+  startAtMs: number;
+  endAtMs: number;
+  nowMs: number;
+}): boolean {
+  if (args.clubDate !== args.todayYmd) return false;
+  return args.nowMs >= args.startAtMs && args.nowMs <= args.endAtMs;
+}
+
 /** Close at the later of (start + grace) and slot end, so duty hours stay claimable. */
 export function hostClaimClosesAtMs(
   startAtMs: number,

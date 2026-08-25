@@ -900,12 +900,32 @@ export default function SystemSettings() {
       </Section>
 
       <Section
-        title="Public Achievements"
-        tooltip="How many results to show for each board on the public achievements page. Use 0 to hide a board. Positive values include the board and cap the list length."
+        title="Public Pages"
+        tooltip="Public-facing pages. Achievement counts control the achievements board (0 hides a board). Enable the present board to show checked-in members and arrival times at /public/present."
         sectionId="public-achievements"
         open={openSectionId === 'public-achievements'}
         onToggle={toggleSection}
       >
+        <FieldRow label="Present board">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={config.publicAccess?.presentBoardEnabled === true}
+              onChange={(event) => updateConfig((draft) => {
+                if (!draft.publicAccess) {
+                  draft.publicAccess = {
+                    achievements: Object.fromEntries(
+                      ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
+                    ) as SystemConfig['publicAccess']['achievements'],
+                    presentBoardEnabled: false,
+                  };
+                }
+                draft.publicAccess.presentBoardEnabled = event.target.checked;
+              })}
+            />
+            Show checked-in members and arrival times on the public present page
+          </label>
+        </FieldRow>
         <FieldRow label="Set all to">
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
             <BoundedNumericInput
@@ -926,6 +946,7 @@ export default function SystemSettings() {
                     achievements: Object.fromEntries(
                       ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
                     ) as SystemConfig['publicAccess']['achievements'],
+                    presentBoardEnabled: false,
                   };
                 }
                 for (const id of ACHIEVEMENT_CATEGORY_IDS) {
@@ -950,6 +971,7 @@ export default function SystemSettings() {
                   achievements: Object.fromEntries(
                     ACHIEVEMENT_CATEGORY_IDS.map((cid) => [cid, 0]),
                   ) as SystemConfig['publicAccess']['achievements'],
+                  presentBoardEnabled: false,
                 };
               }
               draft.publicAccess.achievements[id] = value;

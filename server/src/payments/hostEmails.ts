@@ -7,8 +7,8 @@ import { slotLabel } from './hostBoard';
 import {
   isHostNoShowDue,
   isHostReminderDue,
-  visitCountsAsHostArrival,
 } from './hostEmailMath';
+import { hostHasArrivedForSlot } from './hostArrival';
 
 const HOST_EMAIL_TICK_MS = 60 * 1000;
 
@@ -48,24 +48,6 @@ type ShiftVisit = {
   checkInAt: Date;
   checkOutAt: Date | null;
 };
-
-function hostArrived(
-  shift: { claimedAt: Date | null; memberId: number | null; clubDate: string; startAtMs: number },
-  visits: ShiftVisit[],
-): boolean {
-  if (shift.claimedAt) return true;
-  if (shift.memberId == null) return false;
-  return visits.some(
-    (visit) =>
-      visit.memberId === shift.memberId &&
-      visit.clubDate === shift.clubDate &&
-      visitCountsAsHostArrival({
-        checkInAtMs: visit.checkInAt.getTime(),
-        checkOutAtMs: visit.checkOutAt ? visit.checkOutAt.getTime() : null,
-        slotStartMs: shift.startAtMs,
-      }),
-  );
-}
 
 async function listRegisteredAdminEmails(): Promise<string[]> {
   const admins = await prisma.member.findMany({
@@ -174,7 +156,7 @@ export async function processHostEmails(now: Date = new Date()): Promise<{
       }
     }
 
-    const arrived = hostArrived(
+    const arrived = hostHasArrivedForSlot(
       { claimedAt: shift.claimedAt, memberId: shift.memberId, clubDate: shift.clubDate, startAtMs },
       visits,
     );

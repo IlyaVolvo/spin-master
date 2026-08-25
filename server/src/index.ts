@@ -19,6 +19,7 @@ import tournamentRoutes from './routes/tournaments';
 import clubRoutes from './routes/club';
 import publicResultsRoutes from './routes/publicResults';
 import publicAchievementsRoutes from './routes/publicAchievements';
+import publicPresenceRoutes from './routes/publicPresence';
 import publicMembershipRoutes from './routes/publicMembership';
 import paymentCheckoutRoutes from './payments/routes/checkout';
 import paymentWebhookRoutes from './payments/routes/webhook';
@@ -159,6 +160,7 @@ app.use('/api/payments', paymentCheckoutRoutes);
 app.use('/api/payments', paymentWebhookRoutes);
 app.use('/api/public/results', publicResultsRoutes);
 app.use('/api/public/achievements', publicAchievementsRoutes);
+app.use('/api/public/present', publicPresenceRoutes);
 app.use('/api/public/membership', publicMembershipRoutes);
 
 // Health check
