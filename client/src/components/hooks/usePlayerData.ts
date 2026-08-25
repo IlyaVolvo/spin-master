@@ -1,41 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
 import { isAdmin } from '../../utils/auth';
-import { connectSocket } from '../../utils/socket';
+import type { Member } from '../../types/member';
+import {
+  membersCache,
+  setMembersRoster,
+  subscribeMembersRoster,
+} from '../../utils/membersRosterCache';
 
-interface Member {
-  id: number;
-  firstName: string;
-  lastName: string;
-  birthDate: string | null;
-  isActive: boolean;
-  emailConfirmedAt?: string | null;
-  rating: number | null;
-  email: string | null;
-  gender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
-  roles: string[];
-  picture?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  segment?: string | null;
-  trialEndsOn?: string | null;
-  onlinePayConsent?: boolean;
-  paymentProviderId?: string | null;
-  autoRenewEnabled?: boolean;
-  tournamentNotificationsEnabled?: boolean;
-  /** null = inherit club default. */
-  autoRelinquishPrivileges?: boolean | null;
-  planIndicator?: 'active' | 'expiring_soon' | 'none';
-}
-
-// Module-level cache to persist across component mounts/unmounts
-export const membersCache: {
-  data: Member[] | null;
-  lastFetch: number;
-} = {
-  data: null,
-  lastFetch: 0,
-};
+export { membersCache };
 
 interface UsePlayerDataParams {
   setError: (msg: string) => void;
@@ -44,6 +17,8 @@ interface UsePlayerDataParams {
 export function usePlayerData({ setError }: UsePlayerDataParams) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  const setErrorRef = useRef(setError);
+  setErrorRef.current = setError;
 
   const fetchMembers = async () => {
     try {
@@ -51,16 +26,18 @@ export function usePlayerData({ setError }: UsePlayerDataParams) {
       // For admins, always fetch all members; for others, fetch only players (members with PLAYER role)
       const endpoint = isAdmin() ? '/players/all-members' : '/players';
       const response = await api.get(endpoint);
-      setMembers(response.data);
-      // Update cache
-      membersCache.data = response.data;
-      membersCache.lastFetch = Date.now();
+      const rows = Array.isArray(response.data) ? response.data : [];
+      setMembersRoster(rows);
+      setMembers(rows);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to fetch members');
+      setErrorRef.current(err.response?.data?.error || 'Failed to fetch members');
     } finally {
       setLoading(false);
     }
   };
+
+  const fetchMembersRef = useRef(fetchMembers);
+  fetchMembersRef.current = fetchMembers;
 
   // Initial fetch or use cache. Admins need planIndicator on every row — refetch if cache is stale.
   useEffect(() => {
@@ -73,67 +50,20 @@ export function usePlayerData({ setError }: UsePlayerDataParams) {
       setMembers(membersCache.data);
       setLoading(false);
     } else {
-      fetchMembers();
+      void fetchMembersRef.current();
     }
   }, []);
 
-  // Set up Socket.io connection for real-time player updates
+  // Socket events are applied to membersCache in App while authenticated; keep local state in sync.
   useEffect(() => {
-    const socket = connectSocket();
-
-    // Listen for player creation
-    socket?.on('player:created', (data: { player: Member; timestamp: number }) => {
-      // Update cache with new player
+    return subscribeMembersRoster(() => {
       if (membersCache.data) {
-        membersCache.data = [...membersCache.data, data.player];
-        membersCache.lastFetch = Date.now();
-        // Update state if component is mounted
         setMembers([...membersCache.data]);
-      } else {
-        // Cache not initialized, fetch fresh data
-        fetchMembers();
+        setLoading(false);
+        return;
       }
+      void fetchMembersRef.current();
     });
-
-    // Listen for player updates
-    socket?.on('player:updated', (data: { player: Member; timestamp: number }) => {
-      // Update cache with updated player
-      if (membersCache.data) {
-        const index = membersCache.data.findIndex(p => p.id === data.player.id);
-        if (index !== -1) {
-          const prev = membersCache.data[index];
-          membersCache.data[index] = {
-            ...data.player,
-            // Socket payloads omit planIndicator; keep last known roster status
-            planIndicator: data.player.planIndicator ?? prev.planIndicator,
-          };
-        } else {
-          // Player not in cache, add it
-          membersCache.data.push(data.player);
-        }
-        membersCache.lastFetch = Date.now();
-        // Update state if component is mounted
-        setMembers([...membersCache.data]);
-      } else {
-        // Cache not initialized, fetch fresh data
-        fetchMembers();
-      }
-    });
-
-    // Listen for player imports (refresh entire list)
-    socket?.on('players:imported', () => {
-      // Invalidate cache and fetch fresh data
-      membersCache.data = null;
-      membersCache.lastFetch = 0;
-      fetchMembers();
-    });
-
-    return () => {
-      // Clean up socket listeners
-      socket?.off('player:created');
-      socket?.off('player:updated');
-      socket?.off('players:imported');
-    };
   }, []);
 
   return {

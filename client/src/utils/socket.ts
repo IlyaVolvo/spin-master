@@ -8,8 +8,11 @@ let socket: Socket | null = null;
  * Connect to Socket.io server
  */
 export function connectSocket(): Socket | null {
-  // If already connected, return existing socket
-  if (socket?.connected) {
+  // Reuse the shared instance even while connecting so listeners stay on one socket.
+  if (socket) {
+    if (!socket.connected) {
+      socket.connect();
+    }
     return socket;
   }
 

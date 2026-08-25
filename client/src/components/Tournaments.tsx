@@ -22,7 +22,7 @@ import {
   saveCancelledFilterMode,
   type CancelledFilterMode,
 } from '../utils/cancelledFilterMode';
-import { connectSocket, disconnectSocket, getSocket } from '../utils/socket';
+import { connectSocket, getSocket } from '../utils/socket';
 import {
   loadLastStage,
   saveLastStage,
@@ -251,7 +251,6 @@ const Tournaments: React.FC = () => {
       socket?.off('tournament:deleted', silentRefresh);
       socket?.off('match:created', silentRefresh);
       socket?.off('match:updated', silentRefresh);
-      disconnectSocket();
     };
   }, [refresh, stage]);
 

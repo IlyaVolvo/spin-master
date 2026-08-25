@@ -11,6 +11,7 @@ import {
   clearTournamentNameListCache,
   ensureTournamentNameListLoaded,
 } from './utils/tournamentNameListCache';
+import { bindPlayerRosterSocket, clearMembersRosterCache } from './utils/membersRosterCache';
 import { getSystemConfig, loadPublicSystemConfig, subscribeToSystemConfig, hasAnyPublicAchievementEnabled } from './utils/systemConfig';
 import { todayHoursHeaderLabel } from './utils/clubHoursDisplay';
 import { clearAllScrollPositions, clearAllUIStates } from './utils/scrollPosition';
@@ -197,6 +198,7 @@ function App() {
   useEffect(() => {
     if (!isAuth) {
       clearTournamentNameListCache();
+      clearMembersRosterCache();
       return;
     }
     void ensureTournamentNameListLoaded().catch((err) => {
@@ -211,11 +213,13 @@ function App() {
     socket?.on('tournament:updated', onUpdated);
     socket?.on('tournament:stateChanged', onStateChanged);
     socket?.on('tournament:deleted', onDeleted);
+    const unbindPlayerRoster = bindPlayerRosterSocket(socket);
     return () => {
       socket?.off('tournament:created', onCreated);
       socket?.off('tournament:updated', onUpdated);
       socket?.off('tournament:stateChanged', onStateChanged);
       socket?.off('tournament:deleted', onDeleted);
+      unbindPlayerRoster();
     };
   }, [isAuth]);
 
@@ -360,6 +364,7 @@ function App() {
     }
     clearPreferFullApp();
     clearTournamentNameListCache();
+    clearMembersRosterCache();
     removeToken();
     removeMember();
     setIsAuth(false);

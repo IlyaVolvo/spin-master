@@ -5,6 +5,7 @@ import { requireAdmin } from '../utils/adminAccess';
 import { prisma } from '../index';
 import { logger } from '../utils/logger';
 import { buildClubArchive, importClubArchive, parseClubArchive } from '../services/clubArchiveService';
+import { emitToAll } from '../services/socketService';
 
 const router = express.Router();
 const upload = multer({
@@ -63,6 +64,10 @@ router.post('/import', upload.single('file'), async (req: AuthRequest & { file?:
     }
 
     const result = await importClubArchive(prisma, archive);
+    emitToAll('players:imported', {
+      ...result,
+      timestamp: Date.now(),
+    });
     logger.info('Club archive imported', {
       memberId: req.memberId,
       ...result,

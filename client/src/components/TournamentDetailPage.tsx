@@ -26,7 +26,7 @@ import { addDaysToYmd, clubTodayYmd } from '../utils/clubDateTime';
 import { formatActiveTournamentRating } from '../utils/ratingFormatter';
 import { PlayoffBracket } from './tournaments/plugins/PlayoffBracket';
 import { MatchEntryPopup } from './MatchEntryPopup';
-import { connectSocket, disconnectSocket, getSocket } from '../utils/socket';
+import { connectSocket } from '../utils/socket';
 import { EmptyState } from './EmptyState';
 import { EmptyActiveIcon, EmptyCalendarIcon, EmptyCompletedIcon, EmptySearchIcon } from './emptyStateIcons';
 import { ExpandCollapseButton } from './ExpandCollapseButton';
@@ -971,42 +971,43 @@ const TournamentDetailPage: React.FC = () => {
       }, SOCKET_REFRESH_DEBOUNCE_MS);
     };
 
-    socket?.on('cache:invalidate', (data: { tournamentId?: number; timestamp: number }) => {
+    const onCacheInvalidate = (data: { tournamentId?: number; timestamp: number }) => {
       scheduleSocketRefresh('Cache invalidated', data);
-    });
-
-    socket?.on('tournament:updated', (data: { id: number; name: string; status: string; type: string; timestamp: number }) => {
+    };
+    const onTournamentUpdated = (data: { id: number; name: string; status: string; type: string; timestamp: number }) => {
       scheduleSocketRefresh('Tournament updated', data);
-    });
-
-    socket?.on('tournament:created', (data: { id: number; name: string; status: string; type: string; timestamp: number }) => {
+    };
+    const onTournamentCreated = (data: { id: number; name: string; status: string; type: string; timestamp: number }) => {
       scheduleSocketRefresh('Tournament created', data);
-    });
-
-    socket?.on('tournament:deleted', (data: { id: number; timestamp: number }) => {
+    };
+    const onTournamentDeleted = (data: { id: number; timestamp: number }) => {
       scheduleSocketRefresh('Tournament deleted', data);
-    });
-
-    socket?.on('tournament:stateChanged', (data: { id: number; previousStatus?: string | null; status: string; timestamp: number }) => {
+    };
+    const onTournamentStateChanged = (data: { id: number; previousStatus?: string | null; status: string; timestamp: number }) => {
       scheduleSocketRefresh('Tournament state changed', data);
-    });
-
-    socket?.on('match:updated', (data: { id: number; tournamentId: number; member1Id: number; member2Id: number; timestamp: number }) => {
+    };
+    const onMatchUpdated = (data: { id: number; tournamentId: number; member1Id: number; member2Id: number; timestamp: number }) => {
       scheduleSocketRefresh('Match updated', data);
-    });
+    };
+
+    socket?.on('cache:invalidate', onCacheInvalidate);
+    socket?.on('tournament:updated', onTournamentUpdated);
+    socket?.on('tournament:created', onTournamentCreated);
+    socket?.on('tournament:deleted', onTournamentDeleted);
+    socket?.on('tournament:stateChanged', onTournamentStateChanged);
+    socket?.on('match:updated', onMatchUpdated);
 
     // Cleanup on unmount
     return () => {
       if (refreshTimeout !== null) {
         window.clearTimeout(refreshTimeout);
       }
-      socket?.off('cache:invalidate');
-      socket?.off('tournament:updated');
-      socket?.off('tournament:created');
-      socket?.off('tournament:deleted');
-      socket?.off('tournament:stateChanged');
-      socket?.off('match:updated');
-      // Don't disconnect socket - it's shared across components
+      socket?.off('cache:invalidate', onCacheInvalidate);
+      socket?.off('tournament:updated', onTournamentUpdated);
+      socket?.off('tournament:created', onTournamentCreated);
+      socket?.off('tournament:deleted', onTournamentDeleted);
+      socket?.off('tournament:stateChanged', onTournamentStateChanged);
+      socket?.off('match:updated', onMatchUpdated);
     };
   }, [fetchData, tournamentId]);
 

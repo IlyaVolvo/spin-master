@@ -41,7 +41,7 @@ import { MemberPlanScreen } from './players/MemberPlanScreen';
 import { tournamentTypeMenu, getMenuTypes, isMenuGroup, TournamentMenuItem } from '../config/tournamentTypeMenu';
 import { useTournamentCreation } from './hooks/useTournamentCreation';
 import { useShiftRangeAnchor } from './hooks/useShiftRangeAnchor';
-import { usePlayerData, membersCache } from './hooks/usePlayerData';
+import { usePlayerData } from './hooks/usePlayerData';
 import { extractCreatedTournamentId } from '../utils/extractCreatedTournamentId';
 import {
   getShiftRangeSlice,
@@ -73,7 +73,6 @@ import { getSystemConfig, subscribeToSystemConfig } from '../utils/systemConfig'
 import { useBusyAction } from '../hooks/useBusyAction';
 import './tournaments/plugins';
 
-// membersCache is imported from ./hooks/usePlayerData
 // matchesCache, matchCountsCache, updateMatchCountsCache, removeMatchFromCache
 // are imported from ./utils/matchCacheUtils
 
@@ -1893,6 +1892,10 @@ const Players: React.FC = () => {
         setAddFieldTouched({});
         setAddDuplicateCheck(null);
         setShowAddForm(false);
+        if (response.data?.isActive === false) {
+          setShowAllPlayers(true);
+          localStorage.setItem('players_showAllPlayers', 'true');
+        }
         fetchMembers();
       } catch (err: any) {
         const fieldErrors = err.response?.data?.fieldErrors;
@@ -2168,6 +2171,10 @@ const Players: React.FC = () => {
         setShowConfirmation(false);
         setSimilarNames([]);
         setPendingPlayerData(null);
+        if (confirmRes.data?.isActive === false) {
+          setShowAllPlayers(true);
+          localStorage.setItem('players_showAllPlayers', 'true');
+        }
         fetchMembers();
       } catch (err: any) {
         const fieldErrors = err.response?.data?.fieldErrors;
@@ -3667,14 +3674,10 @@ const Players: React.FC = () => {
   };
 
   const refreshAllData = async () => {
-    // Clear all caches
-    membersCache.data = null;
-    membersCache.lastFetch = 0;
     matchesCache.data = null;
     matchesCache.lastFetch = 0;
     matchCountsCache.clear();
 
-    // Refetch everything
     await fetchMembers();
     await fetchMatches();
     if (showAllRoles && isAdmin()) {

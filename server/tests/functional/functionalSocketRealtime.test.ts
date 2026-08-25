@@ -21,7 +21,7 @@ import request from 'supertest';
 import { app, httpServer, prisma } from '../../src/index';
 import { authHeader, postRrMatch } from './httpHelpers';
 import { useFunctionalDbLifecycle } from './lifecycle';
-import { seedOrganizer, seedPlayers } from './helpers';
+import { seedAdmin, seedOrganizer, seedPlayers } from './helpers';
 
 jest.setTimeout(180000);
 
@@ -108,6 +108,89 @@ describe('Functional: Socket.io (realtime)', () => {
 
     const payload = await eventPromise;
     expect(payload.tournamentId).toBe(tid);
+
+    socket.close();
+  });
+
+  it('client receives player:created and player:deleted when members are added and removed', async () => {
+    const { token } = await seedAdmin(prisma);
+
+    const socket = ioClient(`http://127.0.0.1:${port}`, {
+      transports: ['websocket', 'polling'],
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('socket connect timeout')), 15000);
+      socket.once('connect', () => {
+        clearTimeout(t);
+        resolve();
+      });
+      socket.once('connect_error', (e) => {
+        clearTimeout(t);
+        reject(e);
+      });
+    });
+
+    const createdPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('player:created timeout')), 15000);
+      socket.once('player:created', (payload: Record<string, unknown>) => {
+        clearTimeout(t);
+        resolve(payload);
+      });
+    });
+
+    const created = await request(app)
+      .post('/api/players')
+      .set(authHeader(token))
+      .send({
+        firstName: 'Sock',
+        lastName: 'Newbie',
+        gender: 'NOT_SPECIFIED',
+        roles: ['PLAYER'],
+        skipSimilarityCheck: true,
+      })
+      .expect(201);
+
+    const createdPayload = await createdPromise;
+    const player = createdPayload.player as { id: number; firstName: string; lastName: string };
+    expect(player.id).toBe(created.body.id);
+    expect(player.firstName).toBe('Sock');
+    expect(player.lastName).toBe('Newbie');
+
+    const updatedPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('player:updated timeout')), 15000);
+      socket.once('player:updated', (payload: Record<string, unknown>) => {
+        clearTimeout(t);
+        resolve(payload);
+      });
+    });
+
+    await request(app)
+      .patch(`/api/players/${created.body.id}`)
+      .set(authHeader(token))
+      .send({ firstName: 'Socket' })
+      .expect(200);
+
+    const updatedPayload = await updatedPromise;
+    const updatedPlayer = updatedPayload.player as { id: number; firstName: string };
+    expect(updatedPlayer.id).toBe(created.body.id);
+    expect(updatedPlayer.firstName).toBe('Socket');
+
+    const deletedPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('player:deleted timeout')), 15000);
+      socket.once('player:deleted', (payload: Record<string, unknown>) => {
+        clearTimeout(t);
+        resolve(payload);
+      });
+    });
+
+    await request(app)
+      .delete(`/api/players/${created.body.id}`)
+      .set(authHeader(token))
+      .expect(200);
+
+    const deletedPayload = await deletedPromise;
+    expect(deletedPayload.playerId).toBe(created.body.id);
 
     socket.close();
   });
