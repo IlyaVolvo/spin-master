@@ -27,7 +27,7 @@ export async function claimHostShift(args: {
     throw new HostClaimError(403, 'You are not assigned as host for this slot');
   }
 
-  const window = hostClaimWindowState(shift.clubDate, shift.startTime, now);
+  const window = hostClaimWindowState(shift.clubDate, shift.startTime, shift.endTime, now);
   if (!window.open) {
     throw new HostClaimError(400, 'Host claim window is closed for this slot');
   }

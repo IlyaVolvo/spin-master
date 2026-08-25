@@ -27,10 +27,11 @@ async function maybeAutoGrant(shift: {
   id: number;
   clubDate: string;
   startTime: string;
+  endTime: string;
   memberId: number | null;
 }, now: Date) {
   if (memberIdMissing(shift.memberId)) return;
-  const window = hostClaimWindowState(shift.clubDate, shift.startTime, now);
+  const window = hostClaimWindowState(shift.clubDate, shift.startTime, shift.endTime, now);
   if (window.past) {
     await ensureHostPerkGrant(shift.id, shift.memberId as number);
   }

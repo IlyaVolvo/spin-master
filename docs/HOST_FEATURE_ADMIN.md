@@ -10,7 +10,7 @@ Hosting is a scheduled duty. It does **not** replace regular admission. Host Per
 |------|--------|
 | Schedule and assign hosts | Admin menu → **Hosts** |
 | Host Perks amounts | Admin menu → **Payment Plans** → edit a plan → **Host perks** |
-| Claim window length | **Payment Plans** → **Hosts** → **Host grace period (minutes after slot start)** |
+| Extra minutes after a short slot | **Payment Plans** → **Hosts** → **Host grace period** |
 | Today’s hosts (everyone) | Header strip, and the **Me** page |
 
 Only Admins can edit the slot catalog, grace minutes, plan perks, and assignments. The assignee list is **active members**.
@@ -49,9 +49,9 @@ Use **Custom time range** for a one-off window that is not in the catalog (it ma
 
 Claim is **explicit**. Admin assignment is not a claim.
 
-The window is **that club day**, from midnight, until **slot start + host grace minutes** (default 30). It is **not** the full duty range.
+The window is **that club day**, from midnight, until the later of **slot end** and **slot start + host grace minutes** (default 30). Hosts can claim while they are on duty.
 
-Example: duty 10:00–14:00, grace 30 → claim is offered until **10:30** that club day. At 10:49 the check-in option is gone.
+Example: duty 10:00–14:00, grace 30 → claim is offered until **14:00**. A short 10:00–10:10 slot stays open until **10:30**.
 
 A morning visit that day can still be used to claim an evening slot, as long as the claim window for that slot is still open.
 
@@ -59,7 +59,7 @@ After the window closes, only an Admin can attach a host (retrospective assign).
 
 ### Where members claim
 
-During the window, if they are the assigned host and have not already received this shift’s perk grant:
+During the window, if they are the assigned host and have not already claimed this shift:
 
 1. **Check-in** (self or kiosk): **Check in as host (…)**. When it is offered, it is the **first** choice. They still need a successful visit that club day (check in first, then claim, or claim as part of check-in depending on the flow).
 2. After they have checked out: **I hosted** / **Claim** on the today board (header or Me), while the window is still open.
@@ -109,4 +109,4 @@ The header strip lists today’s catalog and custom slots (including empty). **M
 
 **Change perk size.** Edit the payment plan Host perks field. Already-applied grants keep the amounts recorded at apply time. New applies use the plan as it is then.
 
-**Widen the claim window.** Increase Host grace minutes and save payments settings. That only affects the cutoff after slot start; it does not keep the option open until slot end.
+**Widen the claim window for short slots.** Increase Host grace minutes and save payments settings. Duty-length slots already stay open until they end.

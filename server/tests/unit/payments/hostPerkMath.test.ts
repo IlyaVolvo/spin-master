@@ -93,47 +93,73 @@ describe('hostPerkMath', () => {
 });
 
 describe('hostWindow', () => {
-  const startAtMs = Date.parse('2026-08-24T18:00:00.000Z');
+  const startAtMs = Date.parse('2026-08-24T10:00:00.000Z');
+  const endAtMs = Date.parse('2026-08-24T14:00:00.000Z');
   const graceMinutes = 30;
+  const openArgs = {
+    clubDate: '2026-08-24',
+    todayYmd: '2026-08-24',
+    startAtMs,
+    endAtMs,
+    graceMinutes,
+  };
 
-  it('is open all that club day until start + grace', () => {
+  it('is open all that club day until the later of start + grace and slot end', () => {
     expect(
       isHostClaimWindowOpen({
-        clubDate: '2026-08-24',
-        todayYmd: '2026-08-24',
-        startAtMs,
-        graceMinutes,
-        nowMs: Date.parse('2026-08-24T10:00:00.000Z'),
+        ...openArgs,
+        nowMs: Date.parse('2026-08-24T08:00:00.000Z'),
       }),
     ).toBe(true);
     expect(
       isHostClaimWindowOpen({
-        clubDate: '2026-08-24',
-        todayYmd: '2026-08-24',
-        startAtMs,
-        graceMinutes,
-        nowMs: Date.parse('2026-08-24T18:30:00.000Z'),
+        ...openArgs,
+        nowMs: Date.parse('2026-08-24T12:57:00.000Z'),
+      }),
+    ).toBe(true);
+    expect(
+      isHostClaimWindowOpen({
+        ...openArgs,
+        nowMs: Date.parse('2026-08-24T14:00:00.000Z'),
       }),
     ).toBe(true);
   });
 
-  it('closes after grace and is not open on another day', () => {
+  it('stays open until start + grace when that is after slot end', () => {
     expect(
       isHostClaimWindowOpen({
         clubDate: '2026-08-24',
         todayYmd: '2026-08-24',
-        startAtMs,
+        startAtMs: Date.parse('2026-08-24T18:00:00.000Z'),
+        endAtMs: Date.parse('2026-08-24T18:10:00.000Z'),
+        graceMinutes,
+        nowMs: Date.parse('2026-08-24T18:30:00.000Z'),
+      }),
+    ).toBe(true);
+    expect(
+      isHostClaimWindowOpen({
+        clubDate: '2026-08-24',
+        todayYmd: '2026-08-24',
+        startAtMs: Date.parse('2026-08-24T18:00:00.000Z'),
+        endAtMs: Date.parse('2026-08-24T18:10:00.000Z'),
         graceMinutes,
         nowMs: Date.parse('2026-08-24T18:30:01.000Z'),
       }),
     ).toBe(false);
+  });
+
+  it('closes after slot end (when later than start + grace) and is not open on another day', () => {
     expect(
       isHostClaimWindowOpen({
-        clubDate: '2026-08-24',
+        ...openArgs,
+        nowMs: Date.parse('2026-08-24T14:00:01.000Z'),
+      }),
+    ).toBe(false);
+    expect(
+      isHostClaimWindowOpen({
+        ...openArgs,
         todayYmd: '2026-08-23',
-        startAtMs,
-        graceMinutes,
-        nowMs: Date.parse('2026-08-23T20:00:00.000Z'),
+        nowMs: Date.parse('2026-08-23T12:00:00.000Z'),
       }),
     ).toBe(false);
   });
@@ -144,6 +170,7 @@ describe('hostWindow', () => {
         clubDate: '2026-08-23',
         todayYmd: '2026-08-24',
         startAtMs: Date.parse('2026-08-23T18:00:00.000Z'),
+        endAtMs: Date.parse('2026-08-23T22:00:00.000Z'),
         graceMinutes,
         nowMs: Date.parse('2026-08-24T10:00:00.000Z'),
       }),
@@ -153,6 +180,7 @@ describe('hostWindow', () => {
         clubDate: '2026-08-25',
         todayYmd: '2026-08-24',
         startAtMs: Date.parse('2026-08-25T18:00:00.000Z'),
+        endAtMs: Date.parse('2026-08-25T22:00:00.000Z'),
         graceMinutes,
         nowMs: Date.parse('2026-08-24T10:00:00.000Z'),
       }),

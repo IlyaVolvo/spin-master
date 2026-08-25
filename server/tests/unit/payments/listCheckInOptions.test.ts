@@ -28,6 +28,10 @@ jest.mock('../../../src/utils/clubDate', () => ({
     gte: new Date('2026-08-05T07:00:00.000Z'),
     lt: new Date('2026-08-06T07:00:00.000Z'),
   })),
+  clubLocalDateTimeUtc: jest.fn((ymd: string, hm: string) => {
+    const [hour, minute] = hm.split(':');
+    return new Date(`${ymd}T${hour}:${minute}:00.000Z`);
+  }),
 }));
 
 jest.mock('../../../src/payments/entitlementQueue', () => ({
@@ -218,5 +222,81 @@ describe('listCheckInOptions', () => {
     expect(options).toEqual([
       expect.objectContaining({ kind: 'regular', actionable: true }),
     ]);
+  });
+
+  it('offers check in as host during the duty range even after start + grace', async () => {
+    (getCurrentEntitlement as jest.Mock).mockResolvedValue({
+      id: 1,
+      type: 'MONTHLY',
+      visitsRemaining: null,
+      validTo: new Date('2027-01-01'),
+    });
+    (prisma.hostSlotTemplate.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 1,
+        startTime: '10:00',
+        endTime: '14:00',
+        label: 'Morning',
+        sortOrder: 0,
+        isActive: true,
+      },
+    ]);
+    (prisma.hostShift.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 88,
+        templateId: 1,
+        startTime: '10:00',
+        endTime: '14:00',
+        claimedAt: null,
+        member: { id: 170, firstName: 'Polly', lastName: 'Wordlot' },
+        perkGrants: [{ memberId: 170, status: 'PENDING', daysAdded: 0, visitsAdded: 0 }],
+      },
+    ]);
+
+    const duringDuty = new Date('2026-08-05T12:57:00.000Z');
+    const options = await listCheckInOptions(170, duringDuty);
+    expect(options[0]).toEqual(
+      expect.objectContaining({
+        id: 'host:88',
+        kind: 'host',
+        label: 'Check in as host (Morning 10:00–14:00)',
+        actionable: true,
+        shiftId: 88,
+      }),
+    );
+  });
+
+  it('omits host check-in after the slot has ended and been claimed', async () => {
+    (getCurrentEntitlement as jest.Mock).mockResolvedValue({
+      id: 1,
+      type: 'MONTHLY',
+      visitsRemaining: null,
+      validTo: new Date('2027-01-01'),
+    });
+    (prisma.hostSlotTemplate.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 1,
+        startTime: '10:00',
+        endTime: '14:00',
+        label: null,
+        sortOrder: 0,
+        isActive: true,
+      },
+    ]);
+    (prisma.hostShift.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 88,
+        templateId: 1,
+        startTime: '10:00',
+        endTime: '14:00',
+        claimedAt: new Date('2026-08-05T11:00:00.000Z'),
+        member: { id: 170, firstName: 'Polly', lastName: 'Wordlot' },
+        perkGrants: [],
+      },
+    ]);
+
+    const afterEnd = new Date('2026-08-05T14:01:00.000Z');
+    const options = await listCheckInOptions(170, afterEnd);
+    expect(options.every((o) => o.kind !== 'host')).toBe(true);
   });
 });

@@ -200,7 +200,10 @@ router.post('/admin/host/assign', async (req: AuthRequest, res: Response) => {
         return res.status(400).json({ error: 'shiftId is invalid' });
       }
       const shift = await assignExistingShift({ shiftId, memberId });
-      return res.json({ shift, window: hostClaimWindowState(shift.clubDate, shift.startTime) });
+      return res.json({
+        shift,
+        window: hostClaimWindowState(shift.clubDate, shift.startTime, shift.endTime),
+      });
     }
 
     const clubDate = ymdOr400(req.body?.clubDate, res);

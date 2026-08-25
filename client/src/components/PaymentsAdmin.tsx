@@ -549,6 +549,10 @@ function PaymentsSettingsEditor({
             })
           }
         />
+        <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#666' }}>
+          Check in as host stays available until the slot ends. Grace only extends short slots past
+          their end time (start + these minutes).
+        </p>
       </CollapsibleBlock>
 
       <CollapsibleBlock

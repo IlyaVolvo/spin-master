@@ -174,7 +174,7 @@ export type PaymentsConfig = {
    * member's full name to confirm. Default $100 = 10000.
    */
   largeCreditConfirmCents: number;
-  /** Minutes after slot start during which a designated host may still claim Host. */
+  /** Extra minutes after slot start; claim stays open until the later of this cutoff and slot end. */
   hostGraceMinutes: number;
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */

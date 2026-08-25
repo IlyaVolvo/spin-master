@@ -52,12 +52,15 @@ function serializeSlot(args: {
   now: Date;
   graceMinutes: number;
 }): HostBoardSlot {
-  const window = hostClaimWindowState(args.clubDate, args.startTime, args.now, args.graceMinutes);
+  const window = hostClaimWindowState(
+    args.clubDate,
+    args.startTime,
+    args.endTime,
+    args.now,
+    args.graceMinutes,
+  );
   const assignedToViewer =
     args.viewerId != null && args.member != null && args.member.id === args.viewerId;
-  const alreadyGranted =
-    args.viewerId != null &&
-    args.perkGrants.some((g) => g.memberId === args.viewerId);
   return {
     shiftId: args.shiftId,
     templateId: args.templateId,
@@ -70,7 +73,7 @@ function serializeSlot(args: {
     perkGrants: args.perkGrants,
     windowOpen: window.open,
     windowPast: window.past,
-    claimable: Boolean(assignedToViewer && args.shiftId && window.open && !alreadyGranted),
+    claimable: Boolean(assignedToViewer && args.shiftId && window.open && !args.claimedAt),
   };
 }
 
