@@ -670,6 +670,7 @@ export default function PaymentsAdmin() {
         hostReminderMinutesBeforeStart: _hostReminderMinutesBeforeStart,
         hostNoShowEmailEnabled: _hostNoShowEmailEnabled,
         hostNoShowMinutesAfterStart: _hostNoShowMinutesAfterStart,
+        hostNoShowNotifyAdminIds: _hostNoShowNotifyAdminIds,
         hostNoShowNotifyEmails: _hostNoShowNotifyEmails,
         ...paymentsRest
       } = config.payments;

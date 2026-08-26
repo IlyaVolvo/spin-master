@@ -27,7 +27,7 @@ Confirm the **Hosts** section sits **between Payments and Core Settings**, then 
 | Host grace period | 30 (or leave default) |
 | Host reminder emails | on |
 | Minutes before slot start | short for live waits (e.g. **2**) or use DB/cron shortcuts below |
-| No-show notify emails | one or more inboxes you can read (empty = no no-show mail) |
+| No-show notify Admins | select one or more Admins with email (none = no no-show mail) |
 | Minutes after slot start | short (e.g. **1** or **2**) |
 
 Save System Configuration. Confirm Payment Plans no longer has a Hosts settings block (Host **perks** still live on each plan).
@@ -89,14 +89,15 @@ Save System Configuration. Confirm Payment Plans no longer has a Hosts settings 
 
 | # | Steps | Expect |
 |---|--------|--------|
-| E1 | Notify list has emails; assigned host does **not** check in or claim; wait until start + no-show minutes | Each listed address gets one no-show message |
+| E1 | Notify Admins selected; assigned host does **not** check in or claim; wait until start + no-show minutes | Each selected Admin with email gets one no-show message |
 | E2 | Host checks in before the no-show cutoff (or claims) | No no-show email |
 | E3 | Host checked in earlier that club day and is still present at start | Counts as arrived; no no-show |
 | E4 | Host checked out before slot start and never returns | No-show still fires |
 | E5 | Empty cell | No no-show email |
-| E6 | Notify list empty (or no valid addresses) | Skipped; no crash; nobody emailed |
-| E7 | Notify list cleared | No no-show mail |
+| E6 | No Admins selected | Skipped; no crash; nobody emailed |
+| E7 | Selection cleared | No no-show mail |
 | E8 | After no-show sent, same shift | No duplicate |
+| E9 | Deactivate/delete an Admin who is on the notify list | Removed from list; other active Admins emailed about the removal |
 
 **Shortcut:** assign a past-due start on today’s club date (or wait), ensure `claimedAt` null and no qualifying visit, then run the cron or wait for the minute tick.
 
@@ -121,7 +122,7 @@ Save System Configuration. Confirm Payment Plans no longer has a Hosts settings 
 | `host_shifts.noShowEmailedAt` | Set/clear to retest no-show once |
 | `host_shifts.claimedAt` / `claimedVisitId` | Clear to reopen claim; set to simulate claim |
 | `club_visits` for host `memberId` + `clubDate` | Control “arrived” for no-show |
-| `system_config.payments` JSON | `hostGraceMinutes`, `hostReminderEmailEnabled`, `hostReminderMinutesBeforeStart`, `hostNoShowMinutesAfterStart`, `hostNoShowNotifyEmails` |
+| `system_config.payments` JSON | `hostGraceMinutes`, `hostReminderEmailEnabled`, `hostReminderMinutesBeforeStart`, `hostNoShowMinutesAfterStart`, `hostNoShowNotifyAdminIds` |
 
 ```bash
 # Backup cron trigger

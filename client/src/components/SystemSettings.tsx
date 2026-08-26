@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { isAdmin } from '../utils/auth';
+import api from '../utils/api';
 import {
   ACHIEVEMENT_CATEGORY_IDS,
   ACHIEVEMENT_CATEGORY_LABELS,
@@ -12,6 +13,13 @@ import {
 } from '../utils/systemConfig';
 import { getErrorMessage } from '../utils/errorHandler';
 import { BoundedNumericInput } from './BoundedNumericInput';
+
+type AdminOption = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+};
 
 const WEEKDAY_ROWS: { key: ClubWeekday; label: string }[] = [
   { key: 'mon', label: 'Monday' },
@@ -135,6 +143,139 @@ const valueInputStyle = {
   color: '#17324d',
   fontWeight: 600,
 } as const;
+
+function adminShortName(admin: AdminOption): string {
+  return `${admin.lastName}, ${admin.firstName}`;
+}
+
+function AdminMultiSelectDropdown({
+  options,
+  selectedIds,
+  onChange,
+}: {
+  options: AdminOption[];
+  selectedIds: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selected = options.filter((a) => selectedIds.includes(a.id));
+  const summary =
+    selected.length === 0
+      ? 'None'
+      : selected.map(adminShortName).join('; ');
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} style={{ width: '100%', maxWidth: 480, position: 'relative' }}>
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="No-show notify Admins"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          ...valueInputStyle,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+        title={summary}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {summary}
+        </span>
+        <span aria-hidden style={{ color: '#5a7a90', fontSize: 11, flexShrink: 0 }}>
+          {open ? '▲' : '▼'}
+        </span>
+      </button>
+      {open ? (
+        <div
+          role="listbox"
+          aria-multiselectable
+          aria-label="No-show notify Admins"
+          style={{
+            position: 'absolute',
+            zIndex: 30,
+            top: 'calc(100% + 2px)',
+            left: 0,
+            right: 0,
+            maxHeight: 240,
+            overflowY: 'auto',
+            padding: '6px 0',
+            border: '1px solid #b9c7d8',
+            borderRadius: 6,
+            backgroundColor: '#fff',
+            boxShadow: '0 6px 18px rgba(23, 50, 77, 0.12)',
+          }}
+        >
+          {options.length === 0 ? (
+            <div style={{ padding: '8px 12px', fontSize: 13, color: '#667788' }}>No active Admins found.</div>
+          ) : (
+            options.map((admin) => {
+              const checked = selectedIds.includes(admin.id);
+              const label = `${adminShortName(admin)}${admin.email ? ` (${admin.email})` : ' (no email)'}`;
+              return (
+                <label
+                  key={admin.id}
+                  role="option"
+                  aria-selected={checked}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 12px',
+                    fontSize: 13,
+                    color: '#17324d',
+                    cursor: admin.email ? 'pointer' : 'not-allowed',
+                    userSelect: 'none',
+                    opacity: admin.email ? 1 : 0.55,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={!admin.email}
+                    onChange={(event) => {
+                      onChange(
+                        event.target.checked
+                          ? [...new Set([...selectedIds, admin.id])]
+                          : selectedIds.filter((id) => id !== admin.id),
+                      );
+                    }}
+                    style={{ accentColor: '#2d6f8f' }}
+                  />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {label}
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function FieldRow({ label, tooltip, children }: { label: string; tooltip?: string; children: ReactNode }) {
   return (
@@ -285,6 +426,7 @@ export default function SystemSettings() {
     return saved || null;
   });
   const [hoursOpen, setHoursOpen] = useState(() => readSessionBool(SESSION_HOURS_OPEN, false));
+  const [adminOptions, setAdminOptions] = useState<AdminOption[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -304,6 +446,30 @@ export default function SystemSettings() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    api
+      .get('/players/all-members')
+      .then((res) => {
+        if (cancelled) return;
+        const rows = Array.isArray(res.data) ? res.data : [];
+        const admins = rows
+          .filter(
+            (m: { isActive?: boolean; roles?: string[] }) =>
+              m?.isActive !== false && Array.isArray(m.roles) && m.roles.includes('ADMIN'),
+          )
+          .map((m: { id: number; firstName: string; lastName: string; email?: string | null }) => ({
+            id: m.id,
+            firstName: m.firstName,
+            lastName: m.lastName,
+            email: m.email ?? null,
+          }))
+          .sort((a: AdminOption, b: AdminOption) =>
+            `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`),
+          );
+        setAdminOptions(admins);
+      })
+      .catch(() => {
+        if (!cancelled) setAdminOptions([]);
       });
     return () => {
       cancelled = true;
@@ -360,8 +526,8 @@ export default function SystemSettings() {
           hostReminderEmailEnabled: config.payments.hostReminderEmailEnabled !== false,
           hostReminderMinutesBeforeStart: config.payments.hostReminderMinutesBeforeStart ?? 60,
           hostNoShowMinutesAfterStart: config.payments.hostNoShowMinutesAfterStart ?? 15,
-          hostNoShowNotifyEmails: Array.isArray(config.payments.hostNoShowNotifyEmails)
-            ? config.payments.hostNoShowNotifyEmails
+          hostNoShowNotifyAdminIds: Array.isArray(config.payments.hostNoShowNotifyAdminIds)
+            ? config.payments.hostNoShowNotifyAdminIds
             : [],
         },
       });
@@ -1047,27 +1213,22 @@ export default function SystemSettings() {
           }
         />
         <FieldRow
-          label="No-show notify emails (space or comma separated)"
-          tooltip="Who receives host no-show alerts. Leave empty to notify nobody."
+          label="No-show notify Admins"
+          tooltip="Select zero or more Admins. Empty selection means nobody is emailed for host no-shows."
         >
-          <input
-            type="text"
-            value={(config.payments.hostNoShowNotifyEmails ?? []).join(' ')}
-            onChange={(event) =>
+          <AdminMultiSelectDropdown
+            options={adminOptions}
+            selectedIds={config.payments.hostNoShowNotifyAdminIds ?? []}
+            onChange={(ids) =>
               updateConfig((draft) => {
-                draft.payments.hostNoShowNotifyEmails = event.target.value
-                  .split(/[\s,]+/)
-                  .map((part) => part.trim())
-                  .filter(Boolean);
+                draft.payments.hostNoShowNotifyAdminIds = ids;
               })
             }
-            placeholder="admin@example.com other@example.com"
-            style={{ width: '100%', maxWidth: 480 }}
           />
         </FieldRow>
         <NumericInput
           label="Minutes after slot start to treat as no-show"
-          tooltip="0 means at slot start. Used only when at least one notify email is set."
+          tooltip="0 means at slot start. Used only when at least one Admin is selected."
           min={0}
           value={config.payments.hostNoShowMinutesAfterStart ?? 15}
           onChange={(value) =>

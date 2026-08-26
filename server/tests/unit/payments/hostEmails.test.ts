@@ -2,6 +2,7 @@ jest.mock('../../../src/index', () => ({
   prisma: {
     hostShift: { findMany: jest.fn(), update: jest.fn() },
     clubVisit: { findMany: jest.fn() },
+    member: { findMany: jest.fn() },
   },
 }));
 
@@ -28,9 +29,14 @@ jest.mock('../../../src/utils/clubDate', () => ({
   clubLocalDateTimeUtc: jest.fn((ymd: string, hm: string) => new Date(`${ymd}T${hm}:00.000Z`)),
 }));
 
+jest.mock('../../../src/payments/hostNoShowNotifyAdmins', () => ({
+  resolveHostNoShowNotifyEmails: jest.fn(),
+}));
+
 import { prisma } from '../../../src/index';
 import { getPaymentsConfig } from '../../../src/services/systemConfigService';
 import { sendMail } from '../../../src/services/mailService';
+import { resolveHostNoShowNotifyEmails } from '../../../src/payments/hostNoShowNotifyAdmins';
 import { processHostEmails } from '../../../src/payments/hostEmails';
 
 const hostMember = {
@@ -63,8 +69,12 @@ describe('processHostEmails', () => {
       hostReminderEmailEnabled: true,
       hostReminderMinutesBeforeStart: 60,
       hostNoShowMinutesAfterStart: 15,
-      hostNoShowNotifyEmails: ['admin@example.com', 'other-admin@example.com'],
+      hostNoShowNotifyAdminIds: [1, 2],
     });
+    (resolveHostNoShowNotifyEmails as jest.Mock).mockResolvedValue([
+      'admin@example.com',
+      'other-admin@example.com',
+    ]);
     (prisma.hostShift.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.clubVisit.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.hostShift.update as jest.Mock).mockResolvedValue({});
@@ -74,7 +84,7 @@ describe('processHostEmails', () => {
     (getPaymentsConfig as jest.Mock).mockReturnValue({
       hostReminderEmailEnabled: false,
       hostNoShowEmailEnabled: false,
-      hostNoShowNotifyEmails: [],
+      hostNoShowNotifyAdminIds: [],
     });
     await expect(processHostEmails(new Date('2026-08-25T17:30:00.000Z'))).resolves.toEqual({
       reminderEmailed: 0,
@@ -98,10 +108,11 @@ describe('processHostEmails', () => {
     });
   });
 
-  it('emails configured no-show recipients when the host has not arrived', async () => {
+  it('emails selected Admins when the host has not arrived', async () => {
     (prisma.hostShift.findMany as jest.Mock).mockResolvedValue([assignedShift()]);
     const result = await processHostEmails(new Date('2026-08-25T18:16:00.000Z'));
     expect(result.noShowEmailed).toBe(1);
+    expect(resolveHostNoShowNotifyEmails).toHaveBeenCalled();
     expect(sendMail).toHaveBeenCalledTimes(2);
     expect((sendMail as jest.Mock).mock.calls.map((c) => c[0].to).sort()).toEqual([
       'admin@example.com',
@@ -110,11 +121,11 @@ describe('processHostEmails', () => {
     expect((sendMail as jest.Mock).mock.calls[0][0].subject).toMatch(/Host did not arrive/);
   });
 
-  it('skips no-show mail when the notify list is empty', async () => {
+  it('skips no-show mail when no Admins are selected', async () => {
     (getPaymentsConfig as jest.Mock).mockReturnValue({
       hostReminderEmailEnabled: false,
       hostNoShowMinutesAfterStart: 15,
-      hostNoShowNotifyEmails: [],
+      hostNoShowNotifyAdminIds: [],
     });
     (prisma.hostShift.findMany as jest.Mock).mockResolvedValue([assignedShift()]);
     const result = await processHostEmails(new Date('2026-08-25T18:16:00.000Z'));

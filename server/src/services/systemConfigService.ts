@@ -183,10 +183,10 @@ export type PaymentsConfig = {
   hostNoShowEmailEnabled: boolean;
   hostNoShowMinutesAfterStart: number;
   /**
-   * Addresses that receive host no-show emails.
+   * Active Admin member IDs that receive host no-show emails.
    * Empty means nobody is notified (no separate enable switch).
    */
-  hostNoShowNotifyEmails: string[];
+  hostNoShowNotifyAdminIds: number[];
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */
   providers: {
@@ -386,7 +386,7 @@ export function getDefaultSystemConfig(): SystemConfig {
       hostReminderMinutesBeforeStart: 60,
       hostNoShowEmailEnabled: false,
       hostNoShowMinutesAfterStart: 15,
-      hostNoShowNotifyEmails: [],
+      hostNoShowNotifyAdminIds: [],
       reminders: {
         checkInBannerEnabled: true,
         emailEnabled: true,
@@ -862,19 +862,22 @@ function validatePayments(value: unknown): PaymentsConfig {
     if (!Number.isFinite(raw)) return 15;
     return Math.max(0, Math.floor(raw));
   })();
-  if (!Array.isArray(config.hostNoShowNotifyEmails)) {
-    throw new Error('payments.hostNoShowNotifyEmails must be an array');
+  const rawNotifyIds = (config as { hostNoShowNotifyAdminIds?: unknown; hostNoShowNotifyEmails?: unknown })
+    .hostNoShowNotifyAdminIds;
+  if (rawNotifyIds !== undefined && !Array.isArray(rawNotifyIds)) {
+    throw new Error('payments.hostNoShowNotifyAdminIds must be an array');
   }
-  config.hostNoShowNotifyEmails = [
+  config.hostNoShowNotifyAdminIds = [
     ...new Set(
-      config.hostNoShowNotifyEmails
-        .flatMap((e) => String(e).split(/[\s,]+/))
-        .map((e) => e.trim())
-        .filter((e) => e.includes('@')),
+      (Array.isArray(rawNotifyIds) ? rawNotifyIds : [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
     ),
   ];
-  // No-show delivery is gated by a non-empty notify list only.
-  config.hostNoShowEmailEnabled = config.hostNoShowNotifyEmails.length > 0;
+  // Drop legacy free-form email list if present in stored JSON.
+  delete (config as { hostNoShowNotifyEmails?: unknown }).hostNoShowNotifyEmails;
+  // No-show delivery is gated by a non-empty Admin ID list only.
+  config.hostNoShowEmailEnabled = config.hostNoShowNotifyAdminIds.length > 0;
   config.reminders.checkInBannerEnabled = Boolean(config.reminders.checkInBannerEnabled);
   config.reminders.emailEnabled = Boolean(config.reminders.emailEnabled);
   config.reminders.periodDaysBeforeExpiry = Math.max(

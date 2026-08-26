@@ -9,6 +9,7 @@ import {
   isHostReminderDue,
 } from './hostEmailMath';
 import { hostHasArrivedForSlot } from './hostArrival';
+import { resolveHostNoShowNotifyEmails } from './hostNoShowNotifyAdmins';
 
 const HOST_EMAIL_TICK_MS = 60 * 1000;
 
@@ -42,23 +43,6 @@ async function markShiftEmailed(
   }
 }
 
-type ShiftVisit = {
-  memberId: number;
-  clubDate: string;
-  checkInAt: Date;
-  checkOutAt: Date | null;
-};
-
-function listNoShowNotifyEmails(): string[] {
-  const cfg = getPaymentsConfig();
-  const emails = new Set<string>();
-  for (const raw of cfg.hostNoShowNotifyEmails ?? []) {
-    const email = String(raw).trim();
-    if (email && email.includes('@')) emails.add(email);
-  }
-  return [...emails];
-}
-
 export async function processHostEmails(now: Date = new Date()): Promise<{
   reminderEmailed: number;
   reminderSkippedNoEmail: number;
@@ -67,7 +51,7 @@ export async function processHostEmails(now: Date = new Date()): Promise<{
 }> {
   const cfg = getPaymentsConfig();
   const reminderOn = cfg.hostReminderEmailEnabled;
-  const noShowOn = (cfg.hostNoShowNotifyEmails ?? []).some((e) => String(e).trim().includes('@'));
+  const noShowOn = (cfg.hostNoShowNotifyAdminIds ?? []).length > 0;
   if (!reminderOn && !noShowOn) {
     return {
       reminderEmailed: 0,
@@ -104,106 +88,106 @@ export async function processHostEmails(now: Date = new Date()): Promise<{
 
   for (const shift of shifts) {
     try {
-    if (!shift.member) continue;
-    const startAt = clubLocalDateTimeUtc(shift.clubDate, shift.startTime);
-    const startAtMs = startAt.getTime();
-    const range = slotLabel(shift.startTime, shift.endTime, shift.template?.label);
-    const hostName = memberDisplayName(shift.member);
+      if (!shift.member) continue;
+      const startAt = clubLocalDateTimeUtc(shift.clubDate, shift.startTime);
+      const startAtMs = startAt.getTime();
+      const range = slotLabel(shift.startTime, shift.endTime, shift.template?.label);
+      const hostName = memberDisplayName(shift.member);
 
-    if (
-      reminderOn &&
-      isHostReminderDue({
-        nowMs,
-        startAtMs,
-        minutesBefore: cfg.hostReminderMinutesBeforeStart,
-        alreadySent: shift.reminderEmailedAt != null,
-      })
-    ) {
-      const to = shift.member.email?.trim();
-      if (!to || !to.includes('@')) {
-        await markShiftEmailed(shift.id, { reminderEmailedAt: now });
-        reminderSkippedNoEmail += 1;
-      } else {
-        const subject = `Host reminder: ${range} at ${clubName()}`;
+      if (
+        reminderOn &&
+        isHostReminderDue({
+          nowMs,
+          startAtMs,
+          minutesBefore: cfg.hostReminderMinutesBeforeStart,
+          alreadySent: shift.reminderEmailedAt != null,
+        })
+      ) {
+        const to = shift.member.email?.trim();
+        if (!to || !to.includes('@')) {
+          await markShiftEmailed(shift.id, { reminderEmailedAt: now });
+          reminderSkippedNoEmail += 1;
+        } else {
+          const subject = `Host reminder: ${range} at ${clubName()}`;
+          const text = [
+            `Hi ${shift.member.firstName},`,
+            '',
+            `You are scheduled to host ${range} on ${shift.clubDate}.`,
+            `Please arrive by ${shift.startTime}.`,
+            '',
+            `— ${clubName()}`,
+          ].join('\n');
+          const html = `
+            <p>Hi ${escapeHtml(shift.member.firstName)},</p>
+            <p>You are scheduled to host <strong>${escapeHtml(range)}</strong> on ${escapeHtml(shift.clubDate)}.</p>
+            <p>Please arrive by <strong>${escapeHtml(shift.startTime)}</strong>.</p>
+            <p>— ${escapeHtml(clubName())}</p>
+          `;
+          try {
+            await sendMail({ to, subject, text, html });
+            await markShiftEmailed(shift.id, { reminderEmailedAt: now });
+            reminderEmailed += 1;
+          } catch (err) {
+            logger.warn('Host reminder email failed', {
+              shiftId: shift.id,
+              memberId: shift.member.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
+
+      const arrived = hostHasArrivedForSlot(
+        { claimedAt: shift.claimedAt, memberId: shift.memberId, clubDate: shift.clubDate, startAtMs },
+        visits,
+      );
+      if (
+        noShowOn &&
+        shift.clubDate === todayYmd &&
+        isHostNoShowDue({
+          nowMs,
+          startAtMs,
+          minutesAfter: cfg.hostNoShowMinutesAfterStart,
+          alreadySent: shift.noShowEmailedAt != null,
+          arrived,
+        })
+      ) {
+        if (adminEmails == null) adminEmails = await resolveHostNoShowNotifyEmails();
+        if (adminEmails.length === 0) {
+          noShowSkippedNoAdmins += 1;
+          continue;
+        }
+        const subject = `Host did not arrive: ${hostName} (${range})`;
         const text = [
-          `Hi ${shift.member.firstName},`,
-          '',
-          `You are scheduled to host ${range} on ${shift.clubDate}.`,
-          `Please arrive by ${shift.startTime}.`,
+          `${hostName} is assigned to host ${range} on ${shift.clubDate} and has not checked in.`,
+          `Slot start: ${shift.startTime}.`,
           '',
           `— ${clubName()}`,
         ].join('\n');
         const html = `
-          <p>Hi ${escapeHtml(shift.member.firstName)},</p>
-          <p>You are scheduled to host <strong>${escapeHtml(range)}</strong> on ${escapeHtml(shift.clubDate)}.</p>
-          <p>Please arrive by <strong>${escapeHtml(shift.startTime)}</strong>.</p>
+          <p><strong>${escapeHtml(hostName)}</strong> is assigned to host <strong>${escapeHtml(range)}</strong>
+          on ${escapeHtml(shift.clubDate)} and has not checked in.</p>
+          <p>Slot start: ${escapeHtml(shift.startTime)}.</p>
           <p>— ${escapeHtml(clubName())}</p>
         `;
-        try {
-          await sendMail({ to, subject, text, html });
-          await markShiftEmailed(shift.id, { reminderEmailedAt: now });
-          reminderEmailed += 1;
-        } catch (err) {
-          logger.warn('Host reminder email failed', {
-            shiftId: shift.id,
-            memberId: shift.member.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
+        let sentAny = false;
+        for (const to of adminEmails) {
+          try {
+            await sendMail({ to, subject, text, html });
+            sentAny = true;
+          } catch (err) {
+            logger.warn('Host no-show email failed', {
+              shiftId: shift.id,
+              to,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        if (sentAny) {
+          await markShiftEmailed(shift.id, { noShowEmailedAt: now });
+          noShowEmailed += 1;
         }
       }
-    }
-
-    const arrived = hostHasArrivedForSlot(
-      { claimedAt: shift.claimedAt, memberId: shift.memberId, clubDate: shift.clubDate, startAtMs },
-      visits,
-    );
-    if (
-      noShowOn &&
-      shift.clubDate === todayYmd &&
-      isHostNoShowDue({
-        nowMs,
-        startAtMs,
-        minutesAfter: cfg.hostNoShowMinutesAfterStart,
-        alreadySent: shift.noShowEmailedAt != null,
-        arrived,
-      })
-    ) {
-      if (adminEmails == null) adminEmails = listNoShowNotifyEmails();
-      if (adminEmails.length === 0) {
-        noShowSkippedNoAdmins += 1;
-        continue;
-      }
-      const subject = `Host did not arrive: ${hostName} (${range})`;
-      const text = [
-        `${hostName} is assigned to host ${range} on ${shift.clubDate} and has not checked in.`,
-        `Slot start: ${shift.startTime}.`,
-        '',
-        `— ${clubName()}`,
-      ].join('\n');
-      const html = `
-        <p><strong>${escapeHtml(hostName)}</strong> is assigned to host <strong>${escapeHtml(range)}</strong>
-        on ${escapeHtml(shift.clubDate)} and has not checked in.</p>
-        <p>Slot start: ${escapeHtml(shift.startTime)}.</p>
-        <p>— ${escapeHtml(clubName())}</p>
-      `;
-      let sentAny = false;
-      for (const to of adminEmails) {
-        try {
-          await sendMail({ to, subject, text, html });
-          sentAny = true;
-        } catch (err) {
-          logger.warn('Host no-show email failed', {
-            shiftId: shift.id,
-            to,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-      if (sentAny) {
-        await markShiftEmailed(shift.id, { noShowEmailedAt: now });
-        noShowEmailed += 1;
-      }
-    }
     } catch (err) {
       logger.warn('Host email processing failed for shift', {
         shiftId: shift.id,

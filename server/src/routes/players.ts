@@ -28,6 +28,7 @@ import { isKioskMode } from '../utils/kioskMode';
 import { isAdmin as sharedIsAdmin } from '../utils/adminAccess';
 import { isOrganizer as sharedIsOrganizer } from '../utils/organizerAccess';
 import { getPaymentsConfig } from '../services/systemConfigService';
+import { removeHostNoShowNotifyAdminIfListed } from '../payments/hostNoShowNotifyAdmins';
 import { computePlanIndicator, type PlanIndicator } from '../payments/planIndicator';
 import { resolveNewMemberTrialEndsOn } from '../payments/memberTrial';
 import { invalidateMemberCheckInStub } from '../payments/checkInStateCache';
@@ -1399,6 +1400,8 @@ router.patch('/:id/deactivate', async (req: AuthRequest, res) => {
       details: memberLifecycleIdentityDetails(member),
     });
 
+    await removeHostNoShowNotifyAdminIfListed(member, 'deactivated');
+
     const memberWithoutPassword = stripSensitiveMemberFields(member);
     
     // Emit socket notification for player update
@@ -1486,6 +1489,8 @@ router.delete('/:id', async (req: AuthRequest, res) => {
       summary: `${memberDisplayName(member)} deleted`,
       details: memberLifecycleIdentityDetails(member),
     });
+
+    await removeHostNoShowNotifyAdminIfListed(member, 'deleted');
 
     await prisma.member.delete({
       where: { id: memberId },
@@ -1947,6 +1952,16 @@ router.patch('/:id', [
       where: { id: memberId },
       data: updateData,
     });
+
+    if (updateData.isActive === false && existingMember.isActive !== false) {
+      await removeHostNoShowNotifyAdminIfListed(updatedMember, 'deactivated');
+    } else if (
+      Array.isArray(updateData.roles) &&
+      existingMember.roles.includes('ADMIN') &&
+      !updatedMember.roles.includes('ADMIN')
+    ) {
+      await removeHostNoShowNotifyAdminIfListed(updatedMember, 'admin_role_removed');
+    }
 
     // Kiosk PIN stub fields: name, email, active, trial
     if (
