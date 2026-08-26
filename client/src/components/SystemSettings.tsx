@@ -359,8 +359,10 @@ export default function SystemSettings() {
           hostGraceMinutes: config.payments.hostGraceMinutes ?? 30,
           hostReminderEmailEnabled: config.payments.hostReminderEmailEnabled !== false,
           hostReminderMinutesBeforeStart: config.payments.hostReminderMinutesBeforeStart ?? 60,
-          hostNoShowEmailEnabled: config.payments.hostNoShowEmailEnabled !== false,
           hostNoShowMinutesAfterStart: config.payments.hostNoShowMinutesAfterStart ?? 15,
+          hostNoShowNotifyEmails: Array.isArray(config.payments.hostNoShowNotifyEmails)
+            ? config.payments.hostNoShowNotifyEmails
+            : [],
         },
       });
       setConfig(saved);
@@ -1045,23 +1047,27 @@ export default function SystemSettings() {
           }
         />
         <FieldRow
-          label="Host no-show emails to Admins"
-          tooltip="Email every active registered Admin if the assigned host has not checked in or claimed by the no-show time."
+          label="No-show notify emails (space or comma separated)"
+          tooltip="Who receives host no-show alerts. Leave empty to notify nobody."
         >
           <input
-            type="checkbox"
-            checked={config.payments.hostNoShowEmailEnabled !== false}
+            type="text"
+            value={(config.payments.hostNoShowNotifyEmails ?? []).join(' ')}
             onChange={(event) =>
               updateConfig((draft) => {
-                draft.payments.hostNoShowEmailEnabled = event.target.checked;
+                draft.payments.hostNoShowNotifyEmails = event.target.value
+                  .split(/[\s,]+/)
+                  .map((part) => part.trim())
+                  .filter(Boolean);
               })
             }
-            style={{ transform: 'scale(1.15)', accentColor: '#2d6f8f' }}
+            placeholder="admin@example.com other@example.com"
+            style={{ width: '100%', maxWidth: 480 }}
           />
         </FieldRow>
         <NumericInput
           label="Minutes after slot start to treat as no-show"
-          tooltip="0 means at slot start."
+          tooltip="0 means at slot start. Used only when at least one notify email is set."
           min={0}
           value={config.payments.hostNoShowMinutesAfterStart ?? 15}
           onChange={(value) =>

@@ -49,14 +49,11 @@ type ShiftVisit = {
   checkOutAt: Date | null;
 };
 
-async function listRegisteredAdminEmails(): Promise<string[]> {
-  const admins = await prisma.member.findMany({
-    where: { isActive: true, roles: { has: 'ADMIN' } },
-    select: { email: true },
-  });
+function listNoShowNotifyEmails(): string[] {
+  const cfg = getPaymentsConfig();
   const emails = new Set<string>();
-  for (const admin of admins) {
-    const email = admin.email?.trim();
+  for (const raw of cfg.hostNoShowNotifyEmails ?? []) {
+    const email = String(raw).trim();
     if (email && email.includes('@')) emails.add(email);
   }
   return [...emails];
@@ -70,7 +67,7 @@ export async function processHostEmails(now: Date = new Date()): Promise<{
 }> {
   const cfg = getPaymentsConfig();
   const reminderOn = cfg.hostReminderEmailEnabled;
-  const noShowOn = cfg.hostNoShowEmailEnabled;
+  const noShowOn = (cfg.hostNoShowNotifyEmails ?? []).some((e) => String(e).trim().includes('@'));
   if (!reminderOn && !noShowOn) {
     return {
       reminderEmailed: 0,
@@ -171,7 +168,7 @@ export async function processHostEmails(now: Date = new Date()): Promise<{
         arrived,
       })
     ) {
-      if (adminEmails == null) adminEmails = await listRegisteredAdminEmails();
+      if (adminEmails == null) adminEmails = listNoShowNotifyEmails();
       if (adminEmails.length === 0) {
         noShowSkippedNoAdmins += 1;
         continue;

@@ -55,8 +55,8 @@ const mockConfig = {
     hostGraceMinutes: 30,
     hostReminderEmailEnabled: true,
     hostReminderMinutesBeforeStart: 60,
-    hostNoShowEmailEnabled: true,
     hostNoShowMinutesAfterStart: 15,
+    hostNoShowNotifyEmails: [],
   },
 };
 

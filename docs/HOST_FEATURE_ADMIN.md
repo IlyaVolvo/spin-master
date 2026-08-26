@@ -78,7 +78,7 @@ Each shift is emailed at most once for each kind of message. Reassigning the cel
 |---------|---------|---------|
 | Host reminder emails | on | Send a reminder to the assigned host |
 | Minutes before slot start to email the host | 60 | Reminder window opens this many minutes before start; closes at slot start. **0** ≈ one minute before start |
-| Host no-show emails to Admins | on | Notify Admins if the host has not arrived |
+| No-show notify emails | *(empty)* | Space- or comma-separated recipients. **Empty = nobody is emailed** |
 | Minutes after slot start to treat as no-show | 15 | No-show fires at start + this many minutes. **0** means at slot start |
 
 ### Host reminder
@@ -92,7 +92,7 @@ If enabled, the assigned host is emailed once in the window from (start − minu
 
 ### No-show to Admins
 
-If enabled, every **active member with the Admin role** and an email address is notified when the assigned host has **not arrived** by slot start + no-show minutes.
+Addresses in **No-show notify emails** are notified when the assigned host has **not arrived** by slot start + no-show minutes. Separate with spaces or commas. The list is independent of who has the Admin role: only those addresses receive the message. If the list is **empty**, nobody is emailed.
 
 **Arrival** means any of:
 
@@ -100,7 +100,7 @@ If enabled, every **active member with the Admin role** and an email address is 
 - They have a successful (non-rejected) visit that club day and were still present at slot start (checked in earlier, not checked out before start), or
 - They checked in at or after slot start.
 
-Empty (unassigned) cells do not send this email. If no Admin has an email, the no-show is skipped until one does.
+Empty (unassigned) cells do not send this email. With an empty notify list, the no-show is skipped until recipients are configured.
 
 Subject example: `Host did not arrive: {name} (18:00–21:00)`.
 
@@ -108,9 +108,9 @@ Subject example: `Host did not arrive: {name} (18:00–21:00)`.
 
 **Remind hosts before duty.** Leave reminder emails on; set minutes before start (e.g. 60). Ensure hosts have emails.
 
-**Alert Admins when someone does not show.** Leave no-show emails on; set minutes after start (e.g. 15). Ensure at least one Admin has an email. Have the host check in (or claim) before that cutoff to avoid the alert.
+**Alert designated people when someone does not show.** Add one or more addresses to **No-show notify emails**; set minutes after start (e.g. 15). Have the host check in (or claim) before that cutoff to avoid the alert.
 
-**Turn one off.** Uncheck the matching box under System Configuration → Hosts and Save.
+**Turn no-show off.** Clear the notify list under System Configuration → Hosts and Save. Uncheck reminder emails separately if you want reminders off too.
 
 ## Host Perks
 
@@ -168,7 +168,7 @@ See [Host Perks](#host-perks) for pending vs applied and reassignment rules.
 
 1. Open **System Configuration → Hosts**.
 2. Turn **Host reminder emails** on/off and set minutes before slot start.
-3. Turn **Host no-show emails to Admins** on/off and set minutes after slot start.
+3. Set **No-show notify emails** (space- or comma-separated; empty = nobody) and minutes after slot start.
 4. Ensure SMTP works and that hosts/Admins have emails on their member records.
 5. Save. Each kind of message is sent at most once per shift (reassign clears markers for the new host).
 

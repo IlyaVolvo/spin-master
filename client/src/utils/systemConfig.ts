@@ -128,8 +128,9 @@ export type SystemConfig = {
     hostGraceMinutes: number;
     hostReminderEmailEnabled: boolean;
     hostReminderMinutesBeforeStart: number;
-    hostNoShowEmailEnabled: boolean;
     hostNoShowMinutesAfterStart: number;
+    /** Recipients for host no-show emails; empty = nobody (no separate enable switch). */
+    hostNoShowNotifyEmails: string[];
     reminders: {
       checkInBannerEnabled: boolean;
       emailEnabled: boolean;
@@ -264,8 +265,8 @@ const defaultSystemConfig: SystemConfig = {
     hostGraceMinutes: 30,
     hostReminderEmailEnabled: true,
     hostReminderMinutesBeforeStart: 60,
-    hostNoShowEmailEnabled: true,
     hostNoShowMinutesAfterStart: 15,
+    hostNoShowNotifyEmails: [],
     reminders: {
       checkInBannerEnabled: true,
       emailEnabled: true,

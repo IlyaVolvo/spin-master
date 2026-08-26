@@ -670,6 +670,7 @@ export default function PaymentsAdmin() {
         hostReminderMinutesBeforeStart: _hostReminderMinutesBeforeStart,
         hostNoShowEmailEnabled: _hostNoShowEmailEnabled,
         hostNoShowMinutesAfterStart: _hostNoShowMinutesAfterStart,
+        hostNoShowNotifyEmails: _hostNoShowNotifyEmails,
         ...paymentsRest
       } = config.payments;
       const saved = await saveAdminSystemConfig({

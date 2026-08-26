@@ -182,6 +182,11 @@ export type PaymentsConfig = {
   /** Email registered Admins if the assigned host has not arrived by slot start + these minutes. */
   hostNoShowEmailEnabled: boolean;
   hostNoShowMinutesAfterStart: number;
+  /**
+   * Addresses that receive host no-show emails.
+   * Empty means nobody is notified (no separate enable switch).
+   */
+  hostNoShowNotifyEmails: string[];
   reminders: PaymentsReminderConfig;
   /** Per-provider settings keyed by provider id. */
   providers: {
@@ -379,8 +384,9 @@ export function getDefaultSystemConfig(): SystemConfig {
       hostGraceMinutes: 30,
       hostReminderEmailEnabled: true,
       hostReminderMinutesBeforeStart: 60,
-      hostNoShowEmailEnabled: true,
+      hostNoShowEmailEnabled: false,
       hostNoShowMinutesAfterStart: 15,
+      hostNoShowNotifyEmails: [],
       reminders: {
         checkInBannerEnabled: true,
         emailEnabled: true,
@@ -856,6 +862,19 @@ function validatePayments(value: unknown): PaymentsConfig {
     if (!Number.isFinite(raw)) return 15;
     return Math.max(0, Math.floor(raw));
   })();
+  if (!Array.isArray(config.hostNoShowNotifyEmails)) {
+    throw new Error('payments.hostNoShowNotifyEmails must be an array');
+  }
+  config.hostNoShowNotifyEmails = [
+    ...new Set(
+      config.hostNoShowNotifyEmails
+        .flatMap((e) => String(e).split(/[\s,]+/))
+        .map((e) => e.trim())
+        .filter((e) => e.includes('@')),
+    ),
+  ];
+  // No-show delivery is gated by a non-empty notify list only.
+  config.hostNoShowEmailEnabled = config.hostNoShowNotifyEmails.length > 0;
   config.reminders.checkInBannerEnabled = Boolean(config.reminders.checkInBannerEnabled);
   config.reminders.emailEnabled = Boolean(config.reminders.emailEnabled);
   config.reminders.periodDaysBeforeExpiry = Math.max(
