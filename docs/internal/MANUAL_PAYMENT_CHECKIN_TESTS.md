@@ -256,7 +256,7 @@ Mark each: Pass / Fail / Skip. Prefer **UI** unless the DB recipe is listed.
 | C10 | Low visit pack | Banner “Only N visit(s) remaining” | `visitsRemaining` ≤ threshold |
 | C11 | Banner disabled in Payments settings | No banner | — |
 | C12 | PPV member without today’s per-visit payment | PAYMENT_REQUIRED | Entitlement type `PAY_PER_VISIT_EXTERNAL` |
-| C13 | Auto-checkout cron | After club-local midnight, cron closes open visits with `clubDate < today`, stamping `checkOutAt` at each day’s configured close (`closedBy: AUTO`). See `docs/CLUB_HOURS_AND_AUTO_CHECKOUT.md` | Open visits from prior club days closed at close wall-clock |
+| C13 | Auto-checkout cron | After club-local midnight, cron closes open visits with `clubDate < today`, stamping `checkOutAt` at each day’s configured close (`closedBy: AUTO`). See [CLUB_HOURS_AND_AUTO_CHECKOUT.md](./CLUB_HOURS_AND_AUTO_CHECKOUT.md) | Open visits from prior club days closed at close wall-clock |
 
 ### D. Notifications
 
@@ -338,4 +338,4 @@ POST /api/club/cron/reconcile-payments
 POST /api/club/cron/auto-checkout
 ```
 
-**Auto-checkout:** closes open visits with `clubDate` strictly before today’s club-local date; stamps `checkOutAt` at each day’s configured club close (`closedBy: AUTO`). Body may include `{ "clubDate": "YYYY-MM-DD" }` for a single-day run. See `docs/CLUB_HOURS_AND_AUTO_CHECKOUT.md`. Admin bulk close: `POST /api/club/admin/close-club` with optional `{ "checkOutAt": "<ISO>" }`.
+**Auto-checkout:** closes open visits with `clubDate` strictly before today’s club-local date; stamps `checkOutAt` at each day’s configured club close (`closedBy: AUTO`). Body may include `{ "clubDate": "YYYY-MM-DD" }` for a single-day run. See [CLUB_HOURS_AND_AUTO_CHECKOUT.md](./CLUB_HOURS_AND_AUTO_CHECKOUT.md). Admin bulk close: `POST /api/club/admin/close-club` with optional `{ "checkOutAt": "<ISO>" }`.

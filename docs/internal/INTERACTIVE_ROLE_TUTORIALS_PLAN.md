@@ -324,7 +324,7 @@ Legacy organizer HTML had many tournament scenarios — treat as **content backl
 ### Phase 0 — Prep (docs only; this document)
 
 - [x] Design approved
-- [x] Plan written (`docs/INTERACTIVE_ROLE_TUTORIALS_PLAN.md`)
+- [x] Plan written (`docs/internal/INTERACTIVE_ROLE_TUTORIALS_PLAN.md`)
 - [x] Empty local DB `spin_master_tutorials` created (Postgres); wire `DATABASE_URL_TUTORIAL` in `server/.env` when implementing (not written this session)
 
 ### Phase 1 — Static player (no capture yet)
@@ -351,7 +351,7 @@ Legacy organizer HTML had many tournament scenarios — treat as **content backl
 
 - Implement remaining Player payment + Admin + Organizer scenarios from §8
 - Optional mobile pass if low-cost
-- Short note in `docs/USER_GUIDE.md` or SETUP pointing at `/role-tutorials/` (known URL; no in-app link)
+- Short note in `docs/USER_GUIDE.md` or `docs/internal/SETUP.md` pointing at `/role-tutorials/` (known URL; no in-app link)
 
 ---
 

@@ -16,7 +16,7 @@ Static walkthroughs live at `/role-tutorials/` (no auth). To re-record showcases
 2. Set `DATABASE_URL_TUTORIAL` in `server/.env`.
 3. `cd server && npm run tutorials:recapture-showcases`
 
-See `docs/INTERACTIVE_ROLE_TUTORIALS_PLAN.md`.
+See [INTERACTIVE_ROLE_TUTORIALS_PLAN.md](./INTERACTIVE_ROLE_TUTORIALS_PLAN.md).
 
 ## 1) Install
 

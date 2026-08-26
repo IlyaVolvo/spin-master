@@ -62,8 +62,9 @@ server/   Express API + Prisma + scripts
 ```
 
 ## Key docs
-- Index: `docs/README.md`
-- Setup: `docs/SETUP.md`
+- User-facing index: `docs/README.md`
+- Setup: `docs/internal/SETUP.md`
+- Internal docs: `docs/internal/`
 
 ## Important behavior notes
 
@@ -85,7 +86,7 @@ npm run build --prefix server
 # Client production build
 npm run build --prefix client
 
-# Server tests (requires DATABASE_URL_TEST in server/.env — separate DB from dev; see docs/SETUP.md)
+# Server tests (requires DATABASE_URL_TEST in server/.env — separate DB from dev; see docs/internal/SETUP.md)
 npm test --prefix server
 ```
 
@@ -93,5 +94,5 @@ npm test --prefix server
 - Managed Postgres (Neon works well). Use the **direct** host for `prisma migrate deploy`, pooled for the app.
 - Include `sslmode=require` on Neon/cloud URLs.
 - Set a strong production `JWT_SECRET`.
-- Payments: `PAYMENTS_INSTALL_MODE` on **first** boot; see `docs/PAYMENTS_TEST_TO_PRODUCTION.md`.
+- Payments: `PAYMENTS_INSTALL_MODE` on **first** boot; see `docs/internal/PAYMENTS_TEST_TO_PRODUCTION.md`.
 

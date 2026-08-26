@@ -29,4 +29,4 @@ Plugin-based. Base layer must not import type-specific plugins. Generic match up
 - Mixed inline styles on the client
 
 ## Pointers
-See [README.md](./README.md) in this folder.
+See [README.md](./README.md) in this folder, or [user-facing docs](../README.md).

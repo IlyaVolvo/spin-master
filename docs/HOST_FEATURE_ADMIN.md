@@ -11,7 +11,7 @@ Hosting is a scheduled duty. It does **not** replace regular admission. Host Per
 | Schedule and assign hosts | Admin menu → **Hosts** |
 | Host Perks amounts | Admin menu → **Payment Plans** → edit a plan → **Host perks** |
 | Claim grace + host emails | Admin menu → **System Configuration** → **Hosts** (between Payments and Core Settings) |
-| Today’s hosts (everyone) | Header strip, and the **Me** page |
+| Who is on duty right now | Club header pill, **Me** page label, and (optional) public Present board |
 
 Only Admins can edit the slot catalog, grace minutes, plan perks, host emails, and assignments. The assignee list is **active members**.
 
@@ -143,20 +143,86 @@ Two host shifts the same day can grant twice. Each grant is once per (shift, mem
 
 Replacing a host never reverses the previous member’s perks. The new assignee can still receive their own grant (including for a past slot, even if they were not present).
 
-## Today’s board
-
-The header strip lists today’s catalog and custom slots (including empty). **Me** shows the same list in full. Assigned hosts see **Claim** / **I hosted** only while their slot is claimable.
-
 ## Typical Admin workflows
 
-**Set up weekly coverage.** Add catalog slots. Assign members on the week grid. Use Repeat weeks to fill empty future weeks.
+### How to create the schedule
+
+1. Open **Admin → Hosts**.
+2. **Add catalog slots** (time ranges that repeat every club day). Optional labels help distinguish morning/evening.
+3. On the **week grid**, click a cell and assign an active member (or leave Unassigned).
+4. Use **Repeat weeks** when the same person covers that weekday going forward (later weeks skip cells that already have a host).
+5. Use **Custom time range** for one-off windows that are not in the catalog.
+6. To drop a catalog slot from the board, **Remove** it — it disappears from the catalog and week columns (existing assigned history for past cells is not wiped for perk/history reasons).
+
+Assigning someone does **not** check them in and does **not** claim Host.
+
+### Perks (define amounts)
+
+1. Open **Admin → Payment Plans** → edit the TIME or VISIT plan hosts use.
+2. Set **Host perks**: days for TIME plans, visits for VISIT packs (`1` = one day/visit for that duty; `0` still records applied with no add).
+3. Save the plan. New claims/applies use the current plan value; already-applied grants keep the amount recorded at apply time.
+
+See [Host Perks](#host-perks) for pending vs applied and reassignment rules.
+
+### Notifications (reminders and no-show)
+
+1. Open **System Configuration → Hosts**.
+2. Turn **Host reminder emails** on/off and set minutes before slot start.
+3. Turn **Host no-show emails to Admins** on/off and set minutes after slot start.
+4. Ensure SMTP works and that hosts/Admins have emails on their member records.
+5. Save. Each kind of message is sent at most once per shift (reassign clears markers for the new host).
+
+See [Host emails](#host-emails-reminders-and-no-show) for arrival rules and typical settings.
+
+### Other Admin tasks
 
 **Someone hosted but did not claim in time.** After the claim window closes, assign them on that past cell. Perks apply or bank as pending. Do not expect check-in as host to appear.
 
-**Change perk size.** Edit the payment plan Host perks field. Already-applied grants keep the amounts recorded at apply time. New applies use the plan as it is then.
-
 **Widen the claim window for short slots.** Increase Host grace minutes in System Configuration → Hosts and save. Duty-length slots already stay open until they end.
+
+**Clear or change an assignee.** Open the cell → Unassigned or pick another member. Prior host’s applied perks are never reversed.
+
+## Typical Host workflows
+
+Hosting does **not** replace normal admission. The host still needs a successful visit that club day.
+
+### Before the slot
+
+- Expect a **reminder email** (if enabled) in the window before slot start.
+- Arrive and check in like any other visit (self check-in, kiosk, or Admin check-in).
+
+### Claim Host during the window
+
+While the claim window is open (that club day until the later of slot end and start + grace), if they are assigned and have not claimed yet:
+
+1. Prefer **Check in as host (…)** when it appears at check-in (self or kiosk) — it is listed first when offered.
+2. Or claim after check-in via the host claim path on check-in / PIN kiosk (`Claim` / host claim), while the window is still open.
+
+Claim is **explicit**. Being assigned alone is not a claim.
+
+### After claiming / while on duty
+
+- Status on Admin’s week grid moves to **claimed** (and perk **pending** or **applied** when a grant exists).
+- No-show email to Admins is avoided if they claimed or otherwise **arrived** by the no-show cutoff (see arrival rules under Host emails).
+- Perks apply to their **current** TIME/VISIT plan when one exists; otherwise the grant stays **pending** until they have a current plan.
+
+### Missed the claim window
+
+The member cannot claim from check-in anymore. An Admin must assign (or re-assign) them on that cell for perks.
+
+## User visibility
+
+What different people see:
+
+| Audience | What they see |
+|----------|----------------|
+| **Admin** | Full **Hosts** week grid and catalog; claim/perk status under each name; System Configuration → Hosts; plan Host perks fields. |
+| **Assigned host** | Same on-duty labels as everyone else, plus **Check in as host** (and related claim) while their window is open. Reminder email if configured. |
+| **Any signed-in member** | Compact **Host (…)** pill in the club header (name, Not arrived, or No assignment for the active slot). Same text on the **Me** page near Full app. Hidden when no slot is currently active. |
+| **Public Present board** (if enabled) | **Host on duty** section during an active slot: arrived host name, Not arrived, or No assignment. Arrived hosts are omitted from the present-members list. |
+
+There is no full “today’s schedule strip” for all slots in the main app header. The header and Me surfaces show **current on-duty** status only. The full week schedule and empty/future cells stay on **Admin → Hosts**.
 
 ## Related
 
-- Manual end-to-end checklist: [HOST_FEATURE_USER_TEST_PLAN.md](./HOST_FEATURE_USER_TEST_PLAN.md)
+- Manual end-to-end checklist: [HOST_FEATURE_USER_TEST_PLAN.md](./internal/HOST_FEATURE_USER_TEST_PLAN.md)

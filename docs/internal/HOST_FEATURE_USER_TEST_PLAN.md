@@ -1,6 +1,6 @@
 # Manual test plan: Hosts
 
-End-to-end checks for scheduling, claim, perks, and **host email reminders / no-show**. Use with [HOST_FEATURE_ADMIN.md](./HOST_FEATURE_ADMIN.md). Unit coverage for window and email math lives under `server/tests/unit/payments/` (`hostPerkMath`, `hostEmailMath`, `hostEmails`, `listCheckInOptions`).
+End-to-end checks for scheduling, claim, perks, and **host email reminders / no-show**. Use with [HOST_FEATURE_ADMIN.md](../HOST_FEATURE_ADMIN.md). Unit coverage for window and email math lives under `server/tests/unit/payments/` (`hostPerkMath`, `hostEmailMath`, `hostEmails`, `listCheckInOptions`).
 
 ---
 
