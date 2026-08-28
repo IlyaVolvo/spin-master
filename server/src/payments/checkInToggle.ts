@@ -392,9 +392,6 @@ export async function toggleVisit(
       trialEndsOn: bundle.member?.trialEndsOn,
       memberEmail: bundle.member?.email,
       deferWrites: true,
-      memberName: bundle.member
-        ? { firstName: bundle.member.firstName, lastName: bundle.member.lastName }
-        : null,
     });
 
     if (outcome.kind === 'trial') {

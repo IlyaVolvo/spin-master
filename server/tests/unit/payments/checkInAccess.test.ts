@@ -13,7 +13,6 @@ jest.mock('../../../src/index', () => ({
 jest.mock('../../../src/payments/courtesy', () => ({
   evaluateCourtesy: jest.fn(),
   ensureCourtesyObligation: jest.fn(),
-  notifyAdminsOfCourtesy: jest.fn(),
 }));
 
 jest.mock('../../../src/utils/logger', () => ({
@@ -24,7 +23,6 @@ import { prisma } from '../../../src/index';
 import {
   evaluateCourtesy,
   ensureCourtesyObligation,
-  notifyAdminsOfCourtesy,
 } from '../../../src/payments/courtesy';
 import {
   createTrialVisit,
@@ -45,7 +43,6 @@ describe('resolveFirstVisitOfDay', () => {
       email: 'p@ex.com',
     });
     (ensureCourtesyObligation as jest.Mock).mockResolvedValue({});
-    (notifyAdminsOfCourtesy as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('covers MONTHLY with zero-amount ledger', async () => {
@@ -146,7 +143,6 @@ describe('resolveFirstVisitOfDay', () => {
       paymentInProgress: true,
     });
     expect(ensureCourtesyObligation).toHaveBeenCalledWith(10, 88);
-    expect(notifyAdminsOfCourtesy).toHaveBeenCalled();
   });
 
   it('returns payment_required when courtesy denied', async () => {

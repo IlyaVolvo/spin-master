@@ -158,8 +158,6 @@ export type PaymentsConfig = {
   installMode: PaymentsInstallMode;
   /** Applied when creating new members; consent is OFF by default. */
   defaultOnlinePayConsent: boolean;
-  adminNotifyEmails: string[];
-  notifyAdminsOnCourtesy: boolean;
   courtesyGraceDays: number;
   courtesyExtraVisits: number;
   /** Trial length granted automatically to newly created members; 0 = no trial. */
@@ -374,8 +372,6 @@ export function getDefaultSystemConfig(): SystemConfig {
     payments: {
       installMode: resolvePaymentsInstallModeFromProcess(),
       defaultOnlinePayConsent: false,
-      adminNotifyEmails: [],
-      notifyAdminsOnCourtesy: true,
       courtesyGraceDays: 7,
       courtesyExtraVisits: 3,
       newMemberTrialDays: 7,
@@ -824,15 +820,8 @@ function validatePayments(value: unknown): PaymentsConfig {
   }
 
   config.defaultOnlinePayConsent = Boolean(config.defaultOnlinePayConsent);
-  if (!Array.isArray(config.adminNotifyEmails)) {
-    throw new Error('payments.adminNotifyEmails must be an array');
-  }
-  config.adminNotifyEmails = config.adminNotifyEmails
-    .map((e) => String(e).trim())
-    .filter(Boolean);
-  if (config.notifyAdminsOnCourtesy && config.adminNotifyEmails.length < 1) {
-    // Allow empty during bootstrap; UI should require ≥1 when enabling notify
-  }
+  delete (config as { adminNotifyEmails?: unknown }).adminNotifyEmails;
+  delete (config as { notifyAdminsOnCourtesy?: unknown }).notifyAdminsOnCourtesy;
   config.courtesyGraceDays = Math.max(0, Math.floor(Number(config.courtesyGraceDays) || 0));
   config.courtesyExtraVisits = Math.max(0, Math.floor(Number(config.courtesyExtraVisits) || 0));
   config.newMemberTrialDays = Math.max(0, Math.floor(Number(config.newMemberTrialDays) || 0));
@@ -888,7 +877,6 @@ function validatePayments(value: unknown): PaymentsConfig {
     0,
     Math.floor(Number(config.reminders.visitPackVisitsRemaining) || 0),
   );
-  config.notifyAdminsOnCourtesy = Boolean(config.notifyAdminsOnCourtesy);
 
   if (!isRecord(config.providers)) {
     config.providers = getDefaultSystemConfig().payments.providers;
