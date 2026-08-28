@@ -440,37 +440,6 @@ function PaymentsSettingsEditor({
         }
       />
 
-      <FieldRow label="Notify admins on courtesy">
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-          <input
-            type="checkbox"
-            checked={payments.notifyAdminsOnCourtesy}
-            onChange={(e) =>
-              updateConfig((draft) => {
-                draft.payments.notifyAdminsOnCourtesy = e.target.checked;
-              })
-            }
-          />
-          Email designated administrators
-        </label>
-      </FieldRow>
-      <FieldRow label="Admin notify emails (one or more, comma-separated)">
-        <input
-          type="text"
-          value={payments.adminNotifyEmails.join(', ')}
-          onChange={(e) =>
-            updateConfig((draft) => {
-              draft.payments.adminNotifyEmails = e.target.value
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean);
-            })
-          }
-          style={valueInputStyle}
-          placeholder="admin@club.example"
-        />
-      </FieldRow>
-
       <h4 style={{ margin: '16px 0 8px' }}>Reminders</h4>
       <FieldRow label="Check-in banner reminders">
         <input

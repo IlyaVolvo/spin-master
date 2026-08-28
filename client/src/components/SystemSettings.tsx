@@ -351,15 +351,10 @@ export default function SystemSettings() {
     setError('');
     setMessage('');
     try {
-      // Payment provider/plans settings live on /payments; only sync the Payments section
-      // fields edited here so we do not clobber the rest of payments config.
+      // Payment provider/plans settings live on /payments; omit them so we do not clobber
+      // the rest of payments config.
       const { payments: _payments, clubPlans: _clubPlans, ...systemPatch } = config;
-      const saved = await saveAdminSystemConfig({
-        ...systemPatch,
-        payments: {
-          largeCreditConfirmCents: config.payments.largeCreditConfirmCents ?? 10000,
-        },
-      });
+      const saved = await saveAdminSystemConfig(systemPatch);
       setConfig(saved);
       setDirty(false);
       setMessage('System settings saved');
@@ -954,26 +949,6 @@ export default function SystemSettings() {
             })}
           />
         ))}
-      </Section>
-
-      <Section
-        title="Payments"
-        tooltip="Club payment policy. More payment options live under Payment Plans."
-        sectionId="payments"
-        open={openSectionId === 'payments'}
-        onToggle={toggleSection}
-      >
-        <NumericInput
-          label="Large credit confirmation threshold ($)"
-          tooltip="Adding credit above this amount requires typing the member’s full name to confirm."
-          min={0}
-          value={Math.round((config.payments.largeCreditConfirmCents ?? 10000) / 100)}
-          onChange={(value) =>
-            updateConfig((draft) => {
-              draft.payments.largeCreditConfirmCents = Math.max(0, Math.floor(value) * 100);
-            })
-          }
-        />
       </Section>
 
       <Section

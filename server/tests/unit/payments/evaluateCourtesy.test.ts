@@ -13,14 +13,6 @@ jest.mock('../../../src/services/systemConfigService', () => ({
   getSystemConfig: jest.fn(),
 }));
 
-jest.mock('../../../src/services/mailService', () => ({
-  sendMail: jest.fn(),
-}));
-
-jest.mock('../../../src/utils/logger', () => ({
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
-}));
-
 import { prisma } from '../../../src/index';
 import { getSystemConfig } from '../../../src/services/systemConfigService';
 import { evaluateCourtesy } from '../../../src/payments/courtesy';

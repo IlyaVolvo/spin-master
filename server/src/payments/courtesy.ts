@@ -1,7 +1,5 @@
 import { prisma } from '../index';
 import { getSystemConfig } from '../services/systemConfigService';
-import { sendMail } from '../services/mailService';
-import { logger } from '../utils/logger';
 import type { PaymentMetadata } from './types';
 
 export type CourtesyDecision =
@@ -166,30 +164,4 @@ export async function ensureCourtesyObligation(memberId: number, visitId: number
   });
 
   return payment;
-}
-
-export async function notifyAdminsOfCourtesy(params: {
-  memberName: string;
-  memberId: number;
-  message: string;
-}): Promise<void> {
-  const cfg = getSystemConfig().payments;
-  if (!cfg.notifyAdminsOnCourtesy) return;
-  const emails = cfg.adminNotifyEmails.filter((e) => e && e.includes('@'));
-  if (emails.length === 0) return;
-
-  const subject = `Courtesy check-in: ${params.memberName}`;
-  const text = `Member #${params.memberId} ${params.memberName} used courtesy check-in.\n${params.message}`;
-  const html = `<p>Member #${params.memberId} <strong>${params.memberName}</strong> used courtesy check-in.</p><p>${params.message}</p>`;
-
-  for (const to of emails) {
-    try {
-      await sendMail({ to, subject, text, html });
-    } catch (err) {
-      logger.warn('Failed to notify admin of courtesy check-in', {
-        to,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
 }

@@ -46,7 +46,6 @@ jest.mock('../../../src/payments/checkInReminders', () => ({
 jest.mock('../../../src/payments/courtesy', () => ({
   evaluateCourtesy: jest.fn(),
   ensureCourtesyObligation: jest.fn(),
-  notifyAdminsOfCourtesy: jest.fn(),
 }));
 
 jest.mock('../../../src/payments/eventCheckInWindow', () => ({
