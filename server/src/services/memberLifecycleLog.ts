@@ -64,7 +64,7 @@ export function memberLifecycleUpdateDetails(
     lastName: member.lastName ?? null,
     email: member.email ?? null,
     changes,
-  };
+  } as Prisma.InputJsonValue;
 }
 
 export function memberDisplayName(member: {

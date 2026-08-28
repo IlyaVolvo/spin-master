@@ -145,6 +145,20 @@ export type SystemConfig = {
       [providerId: string]: Record<string, unknown>;
     };
   };
+  lessons: {
+    ratingBands: Array<{ id: string; label: string; min: number | null; max: number | null }>;
+    individualDurations: { allowedMinutes: number[]; defaultMinutes: number };
+    groupDurations: { allowedMinutes: number[]; defaultMinutes: number };
+    horizonMonths: number;
+    busyBufferMinutes: number;
+    studentCancelHours: number;
+    coachCancelHours: number;
+    defaultGroupMinParticipants: number;
+    defaultGroupMaxParticipants: number;
+    defaultOccurrenceDeadlineHours: number;
+    defaultFirstSessionDeadlineHours: number;
+    editSessionMinutes: number;
+  };
 };
 
 export type SystemConfigPatch = Partial<{
@@ -279,6 +293,26 @@ const defaultSystemConfig: SystemConfig = {
         confirmDelayStdDevMs: 800,
       },
     },
+  },
+  lessons: {
+    ratingBands: [
+      { id: 'novice', label: 'Novice', min: null, max: 599 },
+      { id: 'beginner', label: 'Beginner', min: 500, max: 1100 },
+      { id: 'intermediate', label: 'Intermediate', min: 1000, max: 1400 },
+      { id: 'advanced', label: 'Advanced', min: 1300, max: 1600 },
+      { id: 'expert', label: 'Expert', min: 1501, max: null },
+    ],
+    individualDurations: { allowedMinutes: [30, 60, 90, 120], defaultMinutes: 60 },
+    groupDurations: { allowedMinutes: [30, 60, 90, 120], defaultMinutes: 60 },
+    horizonMonths: 3,
+    busyBufferMinutes: 0,
+    studentCancelHours: 24,
+    coachCancelHours: 2,
+    defaultGroupMinParticipants: 2,
+    defaultGroupMaxParticipants: 8,
+    defaultOccurrenceDeadlineHours: 24,
+    defaultFirstSessionDeadlineHours: 48,
+    editSessionMinutes: 10,
   },
 };
 

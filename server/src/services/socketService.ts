@@ -231,3 +231,19 @@ export function emitHostBoardUpdated(payload: { clubDate?: string | null }) {
   });
 }
 
+/** Notify clients that a coach calendar (availability or reservations) changed. */
+export function emitLessonCalendarUpdated(payload: {
+  coachProfileId: number;
+  memberId?: number | null;
+  reason: string;
+  clubDate?: string | null;
+}) {
+  emitToAll('lessons:calendarUpdated', {
+    coachProfileId: payload.coachProfileId,
+    memberId: payload.memberId ?? null,
+    reason: payload.reason,
+    clubDate: payload.clubDate ?? null,
+    timestamp: Date.now(),
+  });
+}
+

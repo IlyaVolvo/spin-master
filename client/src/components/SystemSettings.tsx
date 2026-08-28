@@ -1240,6 +1240,194 @@ export default function SystemSettings() {
       </Section>
 
       <Section
+        title="Lessons"
+        tooltip="Coach availability, booking durations, cancellation windows, and group-class defaults."
+        sectionId="lessons"
+        open={openSectionId === 'lessons'}
+        onToggle={toggleSection}
+      >
+        <NumericInput
+          label="Schedule horizon (months)"
+          min={1}
+          value={config.lessons?.horizonMonths ?? 3}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.horizonMonths = value;
+            })
+          }
+        />
+        <NumericInput
+          label="Busy buffer (minutes each side)"
+          min={0}
+          value={config.lessons?.busyBufferMinutes ?? 0}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.busyBufferMinutes = value;
+            })
+          }
+        />
+        <NumericInput
+          label="Student cancel window (hours before start)"
+          min={0}
+          value={config.lessons?.studentCancelHours ?? 24}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.studentCancelHours = value;
+            })
+          }
+        />
+        <NumericInput
+          label="Coach cancel window (hours before start)"
+          min={0}
+          value={config.lessons?.coachCancelHours ?? 2}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.coachCancelHours = value;
+            })
+          }
+        />
+        <NumericInput
+          label="Coach calendar edit session (minutes)"
+          min={1}
+          max={120}
+          value={config.lessons?.editSessionMinutes ?? 10}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.editSessionMinutes = value;
+            })
+          }
+        />
+        <FieldRow label="Individual durations (minutes, comma-separated)">
+          <input
+            type="text"
+            value={(config.lessons?.individualDurations.allowedMinutes ?? [30, 60, 90, 120]).join(', ')}
+            onChange={(event) =>
+              updateConfig((draft) => {
+                const allowedMinutes = event.target.value
+                  .split(/[\s,]+/)
+                  .map((n) => parseInt(n, 10))
+                  .filter((n) => Number.isFinite(n));
+                draft.lessons.individualDurations.allowedMinutes = allowedMinutes;
+              })
+            }
+          />
+        </FieldRow>
+        <NumericInput
+          label="Default individual duration (minutes)"
+          min={15}
+          value={config.lessons?.individualDurations.defaultMinutes ?? 60}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.individualDurations.defaultMinutes = value;
+            })
+          }
+        />
+        <FieldRow label="Group durations (minutes, comma-separated)">
+          <input
+            type="text"
+            value={(config.lessons?.groupDurations.allowedMinutes ?? [30, 60, 90, 120]).join(', ')}
+            onChange={(event) =>
+              updateConfig((draft) => {
+                const allowedMinutes = event.target.value
+                  .split(/[\s,]+/)
+                  .map((n) => parseInt(n, 10))
+                  .filter((n) => Number.isFinite(n));
+                draft.lessons.groupDurations.allowedMinutes = allowedMinutes;
+              })
+            }
+          />
+        </FieldRow>
+        <NumericInput
+          label="Default group duration (minutes)"
+          min={15}
+          value={config.lessons?.groupDurations.defaultMinutes ?? 60}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.groupDurations.defaultMinutes = value;
+            })
+          }
+        />
+        <NumericInput
+          label="Default group min participants"
+          min={1}
+          value={config.lessons?.defaultGroupMinParticipants ?? 2}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.defaultGroupMinParticipants = value;
+            })
+          }
+        />
+        <NumericInput
+          label="Default group max participants"
+          min={1}
+          value={config.lessons?.defaultGroupMaxParticipants ?? 8}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.defaultGroupMaxParticipants = value;
+            })
+          }
+        />
+        <NumericInput
+          label="Group occurrence drop deadline (hours)"
+          min={0}
+          value={config.lessons?.defaultOccurrenceDeadlineHours ?? 24}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.defaultOccurrenceDeadlineHours = value;
+            })
+          }
+        />
+        <NumericInput
+          label="First-session series drop deadline (hours)"
+          min={0}
+          value={config.lessons?.defaultFirstSessionDeadlineHours ?? 48}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.defaultFirstSessionDeadlineHours = value;
+            })
+          }
+        />
+        {(config.lessons?.ratingBands ?? []).map((band, index) => (
+          <FieldRow key={band.id || index} label={`Rating band ${index + 1}`}>
+            <input
+              type="text"
+              value={band.label}
+              onChange={(event) =>
+                updateConfig((draft) => {
+                  draft.lessons.ratingBands[index].label = event.target.value;
+                })
+              }
+              style={{ width: '8em' }}
+            />
+            <input
+              type="number"
+              placeholder="min"
+              value={band.min ?? ''}
+              onChange={(event) =>
+                updateConfig((draft) => {
+                  const raw = event.target.value;
+                  draft.lessons.ratingBands[index].min = raw === '' ? null : Number(raw);
+                })
+              }
+              style={{ width: '6em' }}
+            />
+            <input
+              type="number"
+              placeholder="max"
+              value={band.max ?? ''}
+              onChange={(event) =>
+                updateConfig((draft) => {
+                  const raw = event.target.value;
+                  draft.lessons.ratingBands[index].max = raw === '' ? null : Number(raw);
+                })
+              }
+              style={{ width: '6em' }}
+            />
+          </FieldRow>
+        ))}
+      </Section>
+
+      <Section
         title="Core Settings"
         tooltip="Authentication, score PIN, privilege auto-relinquish, and rating validation."
         sectionId="core"

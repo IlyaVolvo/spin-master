@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Suspense, useSyncExternalStore, type CSSPr
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
-import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated, subscribeAuthExpired, consumeAuthExpiredMessage, isAdmin, isKioskMode, getKioskKind, getKioskTournamentId, type KioskKind } from './utils/auth';
+import { getToken, setToken, removeToken, getMember, removeMember, setMember, isAuthenticated, subscribeAuthExpired, consumeAuthExpiredMessage, isAdmin, isKioskMode, getKioskKind, getKioskTournamentId, hasMemberRole, type KioskKind } from './utils/auth';
 import { enterKioskMode, defaultKioskKindForRoles } from './utils/kioskEntry';
 import api from './utils/api';
 import { connectSocket } from './utils/socket';
@@ -41,6 +41,9 @@ const PaymentsAdmin = lazyWithReload(() => import('./components/PaymentsAdmin'))
 const AttendanceLogAdmin = lazyWithReload(() => import('./components/AttendanceLogAdmin'));
 const MembershipLogAdmin = lazyWithReload(() => import('./components/MembershipLogAdmin'));
 const HostsAdmin = lazyWithReload(() => import('./components/HostsAdmin'));
+const LessonsPage = lazyWithReload(() => import('./components/lessons/LessonsPage'));
+const PublicCoachPage = lazyWithReload(() => import('./components/lessons/PublicCoachPage'));
+const PublicClassPage = lazyWithReload(() => import('./components/lessons/PublicClassPage'));
 const PaymentReturnPage = lazyWithReload(() => import('./components/PaymentReturnPage'));
 const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
 const PublicResultsLatestPage = lazyWithReload(() =>
@@ -62,11 +65,16 @@ const PublicJoinDenyPage = lazyWithReload(() =>
 );
 const MePage = lazyWithReload(() => import('./components/me/MePage'));
 
+function isLessonPublicPath(pathname: string): boolean {
+  return pathname.startsWith('/coaches/') || pathname.startsWith('/classes/');
+}
+
 function isUnauthenticatedPublicPath(pathname: string): boolean {
   return (
     pathname.startsWith('/tournament-registration/') ||
     pathname === '/public' ||
-    pathname.startsWith('/public/')
+    pathname.startsWith('/public/') ||
+    isLessonPublicPath(pathname)
   );
 }
 
@@ -132,13 +140,16 @@ function AuthRedirect() {
       '/attendance-log',
       '/membership-log',
       '/hosts',
+      '/lessons',
+      '/coach',
     ];
     const isTournamentDetail = /^\/tournaments\/\d+$/.test(location.pathname);
+    const isLessonPublic = isLessonPublicPath(location.pathname);
     if (location.pathname.startsWith('/tournaments/') && !isTournamentDetail) {
       navigate('/tournaments', { replace: true });
       return;
     }
-    if (!validPaths.includes(location.pathname) && !isTournamentDetail) {
+    if (!validPaths.includes(location.pathname) && !isTournamentDetail && !isLessonPublic) {
       navigate(defaultAuthenticatedPath(getMember()), { replace: true });
     }
   }, [location.pathname, navigate]);
@@ -415,7 +426,8 @@ function AppRoutes({
   setMember: (member: any) => void;
 }) {
   const location = useLocation();
-  const publicPath = isUnauthenticatedPublicPath(location.pathname);
+  const lessonPublic = isLessonPublicPath(location.pathname);
+  const publicPath = isUnauthenticatedPublicPath(location.pathname) && !(lessonPublic && isAuthenticated());
 
   if (!publicPath && isCheckingAuth) {
     return (
@@ -425,8 +437,20 @@ function AppRoutes({
     );
   }
 
+  const lessonPublicElement = (page: ReactNode) => (
+    <ErrorBoundary>
+      <Suspense fallback={<div>Loading...</div>}>{page}</Suspense>
+    </ErrorBoundary>
+  );
+
   return (
     <Routes>
+      {!isAuth ? (
+        <Route path="/coaches/:id" element={lessonPublicElement(<PublicCoachPage />)} />
+      ) : null}
+      {!isAuth ? (
+        <Route path="/classes/:code" element={lessonPublicElement(<PublicClassPage />)} />
+      ) : null}
       <Route
         path="/tournament-registration/:code"
         element={
@@ -621,6 +645,10 @@ function AppRoutes({
                         <Route path="/attendance-log" element={<AttendanceLogAdmin />} />
                         <Route path="/membership-log" element={<MembershipLogAdmin />} />
                         <Route path="/hosts" element={<HostsAdmin />} />
+                        <Route path="/lessons" element={<LessonsPage />} />
+                        <Route path="/coach" element={<LessonsPage />} />
+                        <Route path="/coaches/:id" element={<PublicCoachPage />} />
+                        <Route path="/classes/:code" element={<PublicClassPage />} />
                       </Routes>
                     </Suspense>
                   </ErrorBoundary>
@@ -831,6 +859,11 @@ function Header({
   const changesetId = (import.meta.env.VITE_CHANGESET_ID || 'devbuild').slice(0, 7);
   
   const isPlayersActive = location.pathname === '/players';
+  const isLessonsActive =
+    location.pathname === '/lessons' ||
+    location.pathname.startsWith('/coaches/') ||
+    location.pathname.startsWith('/classes/');
+  const isCoachActive = location.pathname === '/coach';
   const isTournamentsActive = location.pathname === '/tournaments' || location.pathname.startsWith('/tournaments/');
   const isSettingsActive = location.pathname === '/system-settings';
   const isPaymentsActive = location.pathname === '/payments';
@@ -1153,7 +1186,23 @@ function Header({
     window.scrollTo(0, 0);
     navigate('/players', { replace: true });
   };
-  
+
+  const handleLessonsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/lessons', { replace: true });
+  };
+
+  const handleCoachClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    navigate('/coach', { replace: true });
+  };
+
   const handleTournamentsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     const lastId = loadLastTournamentId();
@@ -1253,6 +1302,8 @@ function Header({
   const isAdminUser = !kioskMode && isAdmin();
   const showPlayersTab = !kioskMode || kioskKind === 'browse' || kioskKind === 'checkin';
   const showTournamentsTab = !kioskMode || kioskKind === 'browse';
+  const showCoachTab = !kioskMode && (hasMemberRole('COACH') || isAdminUser);
+  const showLessonsTab = !kioskMode && hasMemberRole('PLAYER');
   const kioskBannerText =
     kioskKind === 'checkin'
       ? 'KIOSK MODE — Club check-in / check-out. Find your name, then enter your PIN.'
@@ -1419,12 +1470,16 @@ function Header({
           headerIconControlSize={headerIconControlSize}
           showPlayersTab={showPlayersTab}
           showTournamentsTab={showTournamentsTab}
+          showLessonsTab={showLessonsTab}
+          showCoachTab={showCoachTab}
           isAdminUser={isAdminUser}
           kioskMode={kioskMode}
           userName={userName}
           showMeReturn={showMeReturn}
           showAchievementsLink={showAchievementsLink}
           isPlayersActive={isPlayersActive}
+          isLessonsActive={isLessonsActive}
+          isCoachActive={isCoachActive}
           isTournamentsActive={isTournamentsActive}
           isAdminSectionActive={isAdminSectionActive}
           isAchievementsActive={isAchievementsActive}
@@ -1437,6 +1492,8 @@ function Header({
           adminMenuRef={adminMenuRef}
           adminMenuItems={adminMenuItems}
           onPlayersClick={handlePlayersClick}
+          onLessonsClick={handleLessonsClick}
+          onCoachClick={handleCoachClick}
           onTournamentsClick={handleTournamentsClick}
           onSettingsClick={handleSettingsClick}
           onPaymentsClick={handlePaymentsClick}

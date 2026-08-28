@@ -106,22 +106,77 @@ function PublicFilterNav({
   );
 }
 
+export function PublicClubShell({
+  children,
+  nav,
+}: {
+  children: React.ReactNode;
+  nav?: React.ReactNode;
+}) {
+  const config = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
+  const clubName = config.branding?.clubName || APP_NAME;
+
+  return (
+    <div className="container" style={{ maxWidth: '960px', marginTop: '32px', marginBottom: '48px' }}>
+      <div style={{ fontSize: '28px', fontWeight: 600, color: '#2c3e50', marginBottom: '16px', textAlign: 'center' }}>{clubName}</div>
+      {nav}
+      {children}
+    </div>
+  );
+}
+
+function PublicLessonNav() {
+  const navigate = useNavigate();
+  const authenticated = useSyncExternalStore(subscribeAuthState, getAuthStateSnapshot, () => false);
+  if (authenticated) return null;
+
+  return (
+    <div
+      className="card"
+      style={{ marginBottom: '16px', backgroundColor: '#f5f7fa', border: '1px solid #cfd8dc' }}
+    >
+      <nav
+        aria-label="Account"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '12px',
+          alignItems: 'center',
+        }}
+      >
+        <button type="button" className="button-filter" onClick={() => navigate('/')}>
+          Log in
+        </button>
+        <button
+          type="button"
+          className="button-cta-member"
+          style={{ marginLeft: 'auto' }}
+          onClick={() => navigate('/public/join')}
+        >
+          Become a Member
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+export function PublicLessonShell({ children }: { children: React.ReactNode }) {
+  return <PublicClubShell nav={<PublicLessonNav />}>{children}</PublicClubShell>;
+}
+
 export function PublicResultsShell({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const config = useSyncExternalStore(subscribeToSystemConfig, getSystemConfig, getSystemConfig);
-  const clubName = config.branding?.clubName || APP_NAME;
   const showAchievements = hasAnyPublicAchievementEnabled(config);
   const showPresentBoard = isPublicPresentBoardEnabled(config);
 
   return (
-    <div className="container" style={{ maxWidth: '960px', marginTop: '32px', marginBottom: '48px' }}>
-      <div style={{ fontSize: '28px', fontWeight: 600, color: '#2c3e50', marginBottom: '16px', textAlign: 'center' }}>{clubName}</div>
-      <PublicFilterNav showAchievements={showAchievements} showPresentBoard={showPresentBoard} />
+    <PublicClubShell nav={<PublicFilterNav showAchievements={showAchievements} showPresentBoard={showPresentBoard} />}>
       {children}
-    </div>
+    </PublicClubShell>
   );
 }
 

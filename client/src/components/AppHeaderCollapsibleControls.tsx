@@ -20,12 +20,16 @@ export type AppHeaderCollapsibleControlsProps = {
   headerIconControlSize: CSSProperties;
   showPlayersTab: boolean;
   showTournamentsTab: boolean;
+  showLessonsTab: boolean;
+  showCoachTab: boolean;
   isAdminUser: boolean;
   kioskMode: boolean;
   userName: string;
   showMeReturn: boolean;
   showAchievementsLink: boolean;
   isPlayersActive: boolean;
+  isLessonsActive: boolean;
+  isCoachActive: boolean;
   isTournamentsActive: boolean;
   isAdminSectionActive: boolean;
   isAchievementsActive: boolean;
@@ -38,6 +42,8 @@ export type AppHeaderCollapsibleControlsProps = {
   adminMenuRef: React.MutableRefObject<HTMLDivElement | null>;
   adminMenuItems: readonly AdminMenuItem[];
   onPlayersClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
+  onLessonsClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
+  onCoachClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onTournamentsClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onSettingsClick: (e?: React.MouseEvent) => void;
   onPaymentsClick: (e?: React.MouseEvent, tab?: 'payments' | 'plans') => void;
@@ -60,12 +66,16 @@ export function AppHeaderCollapsibleControls({
   headerIconControlSize,
   showPlayersTab,
   showTournamentsTab,
+  showLessonsTab,
+  showCoachTab,
   isAdminUser,
   kioskMode,
   userName,
   showMeReturn,
   showAchievementsLink,
   isPlayersActive,
+  isLessonsActive,
+  isCoachActive,
   isTournamentsActive,
   isAdminSectionActive,
   isAchievementsActive,
@@ -78,6 +88,8 @@ export function AppHeaderCollapsibleControls({
   adminMenuRef,
   adminMenuItems,
   onPlayersClick,
+  onLessonsClick,
+  onCoachClick,
   onTournamentsClick,
   onSettingsClick,
   onPaymentsClick,
@@ -172,6 +184,32 @@ export function AppHeaderCollapsibleControls({
         },
       });
     }
+    if (showLessonsTab) {
+      menu.push({
+        key: 'nav-lessons',
+        label: 'Lessons',
+        active: isLessonsActive,
+        onClick: () => {
+          clearAllScrollPositions();
+          clearAllUIStates();
+          window.scrollTo(0, 0);
+          navigate('/lessons', { replace: true });
+        },
+      });
+    }
+    if (showCoachTab) {
+      menu.push({
+        key: 'nav-coach',
+        label: 'Coach',
+        active: isCoachActive,
+        onClick: () => {
+          clearAllScrollPositions();
+          clearAllUIStates();
+          window.scrollTo(0, 0);
+          navigate('/coach', { replace: true });
+        },
+      });
+    }
     if (showTournamentsTab) {
       menu.push({
         key: 'nav-tournaments',
@@ -209,11 +247,15 @@ export function AppHeaderCollapsibleControls({
   }, [
     showPlayersTab,
     showTournamentsTab,
+    showLessonsTab,
+    showCoachTab,
     isAdminUser,
     adminMenuItems,
     hasPendingPreregistrations,
     pendingPreregistrationCount,
     isPlayersActive,
+    isLessonsActive,
+    isCoachActive,
     isTournamentsActive,
     navigate,
     onSettingsClick,
@@ -225,7 +267,11 @@ export function AppHeaderCollapsibleControls({
 
   const headerActionsLabel = isPlayersActive
     ? 'Players'
-    : isTournamentsActive
+    : isCoachActive
+      ? 'Coach'
+      : isLessonsActive
+      ? 'Lessons'
+      : isTournamentsActive
       ? (hasPendingPreregistrations
         ? `Tournaments (${pendingPreregistrationCount})`
         : 'Tournaments')
@@ -242,6 +288,16 @@ export function AppHeaderCollapsibleControls({
           Players
         </button>
       ) : null}
+      {showLessonsTab ? (
+        <button type="button" className="app-header-tab" style={tabStyle(isLessonsActive)} disabled tabIndex={-1} aria-hidden="true">
+          Lessons
+        </button>
+      ) : null}
+      {showCoachTab ? (
+        <button type="button" className="app-header-tab" style={tabStyle(isCoachActive)} disabled tabIndex={-1} aria-hidden="true">
+          Coach
+        </button>
+      ) : null}
       {showTournamentsTab ? (
         <button type="button" className="app-header-tab" style={tabStyle(isTournamentsActive, hasPendingPreregistrations)} disabled tabIndex={-1} aria-hidden="true">
           Tournaments{hasPendingPreregistrations ? ` (${pendingPreregistrationCount})` : ''}
@@ -256,8 +312,12 @@ export function AppHeaderCollapsibleControls({
   ), [
     showPlayersTab,
     showTournamentsTab,
+    showLessonsTab,
+    showCoachTab,
     isAdminUser,
     isPlayersActive,
+    isLessonsActive,
+    isCoachActive,
     isTournamentsActive,
     isAdminSectionActive,
     hasPendingPreregistrations,
@@ -293,6 +353,16 @@ export function AppHeaderCollapsibleControls({
             {showPlayersTab ? (
               <a className="app-header-tab" href="/players" onClick={onPlayersClick} style={tabStyle(isPlayersActive)}>
                 Players
+              </a>
+            ) : null}
+            {showLessonsTab ? (
+              <a className="app-header-tab" href="/lessons" onClick={onLessonsClick} style={tabStyle(isLessonsActive)}>
+                Lessons
+              </a>
+            ) : null}
+            {showCoachTab ? (
+              <a className="app-header-tab" href="/coach" onClick={onCoachClick} style={tabStyle(isCoachActive)}>
+                Coach
               </a>
             ) : null}
             {showTournamentsTab ? (

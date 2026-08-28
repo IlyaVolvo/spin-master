@@ -417,6 +417,27 @@ router.post('/cron/payment-reminders', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/club/cron/lesson-reminders — optional individual-lesson reminder emails
+ */
+router.post('/cron/lesson-reminders', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+    const { processLessonReminders } = await import('../services/lessonReminderService');
+    const result = await processLessonReminders();
+    res.json(result);
+  } catch (error) {
+    logger.error('Error sending lesson reminders', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * POST /api/club/cron/host-emails — host reminder and no-show admin emails
  */
 router.post('/cron/host-emails', async (req: Request, res: Response) => {

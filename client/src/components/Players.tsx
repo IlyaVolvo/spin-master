@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import api from '../utils/api';
@@ -7053,7 +7053,13 @@ const Players: React.FC = () => {
                           REG
                         </span>
                       )}
-                      {formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}
+                      {Array.isArray(player.roles) && player.roles.includes('COACH') ? (
+                        <Link to={`/coaches/${player.id}`} onClick={(e) => e.stopPropagation()}>
+                          {formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)}
+                        </Link>
+                      ) : (
+                        formatPlayerName(player.firstName, player.lastName, nameDisplayOrder)
+                      )}
                       {isSelectingForStats && player.rating !== null && (
                         <span style={{ fontSize: '0.85em', color: '#666', marginLeft: '2px' }}>
                           ({player.rating})

@@ -84,6 +84,12 @@ export async function resolvePlanLabelForProduct(
       planSegment: null,
     };
   }
+  if (product.kind === 'lesson_individual') {
+    return { planLabel: 'Individual lesson', planSegment: null };
+  }
+  if (product.kind === 'lesson_group') {
+    return { planLabel: 'Group class', planSegment: null };
+  }
   try {
     const { prisma } = await import('../index');
     const plan = await prisma.clubPlan.findUnique({

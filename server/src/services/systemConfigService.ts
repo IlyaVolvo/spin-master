@@ -195,6 +195,33 @@ export type PaymentsConfig = {
   };
 };
 
+export type LessonRatingBand = {
+  id: string;
+  label: string;
+  min: number | null;
+  max: number | null;
+};
+
+export type LessonsDurationConfig = {
+  allowedMinutes: number[];
+  defaultMinutes: number;
+};
+
+export type LessonsConfig = {
+  ratingBands: LessonRatingBand[];
+  individualDurations: LessonsDurationConfig;
+  groupDurations: LessonsDurationConfig;
+  horizonMonths: number;
+  busyBufferMinutes: number;
+  studentCancelHours: number;
+  coachCancelHours: number;
+  defaultGroupMinParticipants: number;
+  defaultGroupMaxParticipants: number;
+  defaultOccurrenceDeadlineHours: number;
+  defaultFirstSessionDeadlineHours: number;
+  editSessionMinutes: number;
+};
+
 export type AchievementsPublicAccessConfig = Record<AchievementCategoryId, number>;
 
 export type PublicAccessConfig = {
@@ -213,6 +240,7 @@ export type SystemConfig = {
   clubPlans: ClubPlansConfig;
   publicAccess: PublicAccessConfig;
   payments: PaymentsConfig;
+  lessons: LessonsConfig;
 };
 
 export type SystemConfigPatch = Partial<{
@@ -280,6 +308,29 @@ function getDefaultWeeklyHours(): Record<ClubWeekday, ClubDayHours> {
     fri: openDay,
     sat: closedDay,
     sun: closedDay,
+  };
+}
+
+function getDefaultLessonsConfig(): LessonsConfig {
+  return {
+    ratingBands: [
+      { id: 'novice', label: 'Novice', min: null, max: 599 },
+      { id: 'beginner', label: 'Beginner', min: 500, max: 1100 },
+      { id: 'intermediate', label: 'Intermediate', min: 1000, max: 1400 },
+      { id: 'advanced', label: 'Advanced', min: 1300, max: 1600 },
+      { id: 'expert', label: 'Expert', min: 1501, max: null },
+    ],
+    individualDurations: { allowedMinutes: [30, 60, 90, 120], defaultMinutes: 60 },
+    groupDurations: { allowedMinutes: [30, 60, 90, 120], defaultMinutes: 60 },
+    horizonMonths: 3,
+    busyBufferMinutes: 0,
+    studentCancelHours: 24,
+    coachCancelHours: 2,
+    defaultGroupMinParticipants: 2,
+    defaultGroupMaxParticipants: 8,
+    defaultOccurrenceDeadlineHours: 24,
+    defaultFirstSessionDeadlineHours: 48,
+    editSessionMinutes: 10,
   };
 }
 
@@ -400,6 +451,7 @@ export function getDefaultSystemConfig(): SystemConfig {
         },
       },
     },
+    lessons: getDefaultLessonsConfig(),
   };
 }
 
@@ -812,6 +864,76 @@ function validatePublicAccess(value: unknown): PublicAccessConfig {
   };
 }
 
+function validateDurationConfig(value: unknown, field: string, fallback: LessonsDurationConfig): LessonsDurationConfig {
+  const raw = isRecord(value) ? value : {};
+  const allowedRaw = Array.isArray(raw.allowedMinutes) ? raw.allowedMinutes : fallback.allowedMinutes;
+  const allowedMinutes = [
+    ...new Set(
+      allowedRaw
+        .map((n) => Math.floor(Number(n)))
+        .filter((n) => Number.isFinite(n) && n >= 15 && n <= 240 && n % 15 === 0),
+    ),
+  ].sort((a, b) => a - b);
+  if (allowedMinutes.length < 1) {
+    throw new Error(`${field}.allowedMinutes must contain at least one 15-minute duration`);
+  }
+  let defaultMinutes = Math.floor(Number(raw.defaultMinutes ?? fallback.defaultMinutes));
+  if (!allowedMinutes.includes(defaultMinutes)) {
+    defaultMinutes = allowedMinutes.includes(fallback.defaultMinutes)
+      ? fallback.defaultMinutes
+      : allowedMinutes[0];
+  }
+  return { allowedMinutes, defaultMinutes };
+}
+
+function validateLessons(value: unknown): LessonsConfig {
+  const defaults = getDefaultLessonsConfig();
+  const config = deepMerge(defaults, value);
+  const bandsRaw = Array.isArray(config.ratingBands) ? config.ratingBands : defaults.ratingBands;
+  const ratingBands: LessonRatingBand[] = bandsRaw.map((band, index) => {
+    const rec: Record<string, unknown> = isRecord(band) ? band : {};
+    const id = String(rec.id || `band-${index + 1}`).trim() || `band-${index + 1}`;
+    const label = String(rec.label || id).trim() || id;
+    const min = rec.min == null || rec.min === '' ? null : Math.floor(Number(rec.min));
+    const max = rec.max == null || rec.max === '' ? null : Math.floor(Number(rec.max));
+    if (min != null && (!Number.isFinite(min) || min < 0)) {
+      throw new Error(`lessons.ratingBands[${index}].min is invalid`);
+    }
+    if (max != null && (!Number.isFinite(max) || max < 0)) {
+      throw new Error(`lessons.ratingBands[${index}].max is invalid`);
+    }
+    if (min != null && max != null && min > max) {
+      throw new Error(`lessons.ratingBands[${index}] min cannot exceed max`);
+    }
+    return { id, label, min, max };
+  });
+  if (ratingBands.length < 1) {
+    throw new Error('lessons.ratingBands must not be empty');
+  }
+  return {
+    ratingBands,
+    individualDurations: validateDurationConfig(
+      config.individualDurations,
+      'lessons.individualDurations',
+      defaults.individualDurations,
+    ),
+    groupDurations: validateDurationConfig(
+      config.groupDurations,
+      'lessons.groupDurations',
+      defaults.groupDurations,
+    ),
+    horizonMonths: Math.max(1, Math.min(24, Math.floor(Number(config.horizonMonths) || defaults.horizonMonths))),
+    busyBufferMinutes: Math.max(0, Math.min(60, Math.floor(Number(config.busyBufferMinutes) || 0))),
+    studentCancelHours: Math.max(0, Math.floor(Number(config.studentCancelHours) || 0)),
+    coachCancelHours: Math.max(0, Math.floor(Number(config.coachCancelHours) || 0)),
+    defaultGroupMinParticipants: Math.max(1, Math.floor(Number(config.defaultGroupMinParticipants) || 1)),
+    defaultGroupMaxParticipants: Math.max(1, Math.floor(Number(config.defaultGroupMaxParticipants) || 1)),
+    defaultOccurrenceDeadlineHours: Math.max(0, Math.floor(Number(config.defaultOccurrenceDeadlineHours) || 0)),
+    defaultFirstSessionDeadlineHours: Math.max(0, Math.floor(Number(config.defaultFirstSessionDeadlineHours) || 0)),
+    editSessionMinutes: Math.max(1, Math.min(120, Math.floor(Number(config.editSessionMinutes) || defaults.editSessionMinutes))),
+  };
+}
+
 function validatePayments(value: unknown): PaymentsConfig {
   const config = deepMerge(getDefaultSystemConfig().payments, value);
   // Drop legacy global providerId if present in stored JSON.
@@ -929,6 +1051,7 @@ export function validateSystemConfig(input: unknown): SystemConfig {
     clubPlans: validateClubPlans(merged.clubPlans),
     publicAccess: validatePublicAccess(merged.publicAccess),
     payments: validatePayments(merged.payments),
+    lessons: validateLessons(merged.lessons),
   };
 }
 
@@ -950,6 +1073,7 @@ async function persistConfig(config: SystemConfig): Promise<void> {
       clubPlans: toPrismaJson(config.clubPlans),
       publicAccess: toPrismaJson(config.publicAccess),
       payments: toPrismaJson(config.payments),
+      lessons: toPrismaJson(config.lessons),
     },
     update: {
       branding: toPrismaJson(config.branding),
@@ -961,6 +1085,7 @@ async function persistConfig(config: SystemConfig): Promise<void> {
       clubPlans: toPrismaJson(config.clubPlans),
       publicAccess: toPrismaJson(config.publicAccess),
       payments: toPrismaJson(config.payments),
+      lessons: toPrismaJson(config.lessons),
     },
   });
 }
@@ -978,6 +1103,7 @@ export async function initializeSystemConfig(): Promise<SystemConfig> {
         clubPlans: row.clubPlans,
         publicAccess: (row as { publicAccess?: unknown }).publicAccess,
         payments: (row as { payments?: unknown }).payments,
+        lessons: (row as { lessons?: unknown }).lessons,
       }
     : undefined;
 
@@ -1045,6 +1171,10 @@ export function getClubPlansConfig(): ClubPlansConfig {
 
 export function getPaymentsConfig(): PaymentsConfig {
   return getSystemConfig().payments;
+}
+
+export function getLessonsConfig(): LessonsConfig {
+  return getSystemConfig().lessons;
 }
 
 export function getPublicAccessConfig(): PublicAccessConfig {

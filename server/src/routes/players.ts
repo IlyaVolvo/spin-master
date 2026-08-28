@@ -29,6 +29,7 @@ import { isAdmin as sharedIsAdmin } from '../utils/adminAccess';
 import { isOrganizer as sharedIsOrganizer } from '../utils/organizerAccess';
 import { getPaymentsConfig } from '../services/systemConfigService';
 import { removeHostNoShowNotifyAdminIfListed } from '../payments/hostNoShowNotifyAdmins';
+import { syncCoachProfileForRoles } from '../services/coachProfileService';
 import { computePlanIndicator, type PlanIndicator } from '../payments/planIndicator';
 import { resolveNewMemberTrialEndsOn } from '../payments/memberTrial';
 import { invalidateMemberCheckInStub } from '../payments/checkInStateCache';
@@ -1182,6 +1183,8 @@ router.post('/', [
       } as any,
     });
 
+    await syncCoachProfileForRoles(member.id, finalRoles);
+
     try {
       await sendPasswordResetEmail({
         toEmail: finalEmail,
@@ -1961,6 +1964,9 @@ router.patch('/:id', [
       !updatedMember.roles.includes('ADMIN')
     ) {
       await removeHostNoShowNotifyAdminIfListed(updatedMember, 'admin_role_removed');
+    }
+    if (updateData.roles) {
+      await syncCoachProfileForRoles(memberId, updatedMember.roles);
     }
 
     // Kiosk PIN stub fields: name, email, active, trial

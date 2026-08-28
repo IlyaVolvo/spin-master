@@ -61,6 +61,7 @@ async function createEntitlementFromProduct(
 ): Promise<void> {
   if (!product) return;
   if (product.kind === 'event') return;
+  if (product.kind === 'lesson_individual' || product.kind === 'lesson_group') return;
 
   if (product.kind === 'pay_per_visit') {
     // PPV remains out of queue redesign scope; grant CURRENT coverage marker

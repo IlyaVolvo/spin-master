@@ -21,6 +21,8 @@ import publicResultsRoutes from './routes/publicResults';
 import publicAchievementsRoutes from './routes/publicAchievements';
 import publicPresenceRoutes from './routes/publicPresence';
 import publicMembershipRoutes from './routes/publicMembership';
+import lessonRoutes from './routes/lessons';
+import publicLessonRoutes from './routes/publicLessons';
 import paymentCheckoutRoutes from './payments/routes/checkout';
 import paymentWebhookRoutes from './payments/routes/webhook';
 import { initializeCache } from './services/cacheService';
@@ -162,6 +164,8 @@ app.use('/api/public/results', publicResultsRoutes);
 app.use('/api/public/achievements', publicAchievementsRoutes);
 app.use('/api/public/present', publicPresenceRoutes);
 app.use('/api/public/membership', publicMembershipRoutes);
+app.use('/api/lessons', lessonRoutes);
+app.use('/api/public/lessons', publicLessonRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -257,6 +261,13 @@ if (require.main === module) {
       .then(({ startHostEmailScheduler }) => startHostEmailScheduler())
       .catch((error) => {
         logger.warn('Host email scheduler failed to start', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    void import('./services/lessonReminderService')
+      .then(({ startLessonReminderScheduler }) => startLessonReminderScheduler())
+      .catch((error) => {
+        logger.warn('Lesson reminder scheduler failed to start', {
           error: error instanceof Error ? error.message : String(error),
         });
       });

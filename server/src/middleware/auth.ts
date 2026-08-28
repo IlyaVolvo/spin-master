@@ -167,4 +167,38 @@ export const authenticateSession = async (req: Request, res: Response, next: Nex
 };
 
 // Legacy authenticate function (for backward compatibility)
+export const optionalAuthenticate = async (req: Request, res: Response, next: NextFunction) => {
+  if (req.session && req.session.member) {
+    const member = req.session.member;
+    (req as AuthRequest).memberId = member.id;
+    (req as AuthRequest).member = member;
+    return next();
+  }
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return next();
+  try {
+    const jwtSecret = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'secret';
+    const decoded = jwt.verify(token, jwtSecret) as { memberId?: number; type?: string };
+    if (decoded.type === 'member' && decoded.memberId) {
+      (req as AuthRequest).memberId = decoded.memberId;
+      const member = await prisma.member.findUnique({
+        where: { id: decoded.memberId },
+        select: { id: true, email: true, firstName: true, lastName: true, roles: true },
+      });
+      if (member) {
+        (req as AuthRequest).member = {
+          id: member.id,
+          email: member.email,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          roles: member.roles as string[],
+        };
+      }
+    }
+  } catch {
+    // Public page: ignore invalid tokens and continue anonymous.
+  }
+  return next();
+};
+
 export const authenticate = authenticateSession;

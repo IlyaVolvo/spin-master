@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { logger } from '../utils/logger';
 
 function asBool(value: string | undefined, fallback = false): boolean {
   if (value === undefined) return fallback;
@@ -87,7 +88,6 @@ export async function sendMail(params: {
   }
 
   const transporter = params.transporter ?? createSmtpTransporter();
-  await transporter.verify();
   const info = await transporter.sendMail({
     from,
     to: params.to,
@@ -242,5 +242,156 @@ export async function sendMembershipApplicationEmail(params: {
   `;
   return sendMail({ to: params.toEmail, subject, text, html, transporter: params.transporter });
 }
+
+async function sendLessonMail(params: {
+  toEmail?: string | null;
+  subject: string;
+  firstName: string;
+  body: string;
+}): Promise<void> {
+  const to = params.toEmail?.trim();
+  if (!to) return;
+  const text = `Hi ${params.firstName},\n\n${params.body}`;
+  const html = `<p>Hi ${escapeHtml(params.firstName)},</p><p>${escapeHtml(params.body)}</p>`;
+  try {
+    await sendMail({ to, subject: params.subject, text, html });
+  } catch (error) {
+    logger.warn('Lesson email failed', {
+      to,
+      subject: params.subject,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+}
+
+export async function sendIndividualLessonBookedEmail(params: {
+  playerEmail: string | null;
+  playerFirstName: string;
+  playerName?: string;
+  coachEmail: string | null;
+  coachFirstName: string;
+  whenLabel: string;
+}): Promise<void> {
+  await Promise.all([
+    sendLessonMail({
+      toEmail: params.playerEmail,
+      firstName: params.playerFirstName,
+      subject: `Lesson booked: ${params.whenLabel}`,
+      body: `Your individual lesson is confirmed for ${params.whenLabel}.`,
+    }),
+    sendLessonMail({
+      toEmail: params.coachEmail,
+      firstName: params.coachFirstName,
+      subject: `Lesson booked: ${params.whenLabel}`,
+      body: `${params.playerName?.trim() || 'A player'} booked an individual lesson for ${params.whenLabel}.`,
+    }),
+  ]);
+}
+
+export async function sendIndividualLessonCancelledEmail(params: {
+  playerEmail: string | null;
+  playerFirstName: string;
+  playerName?: string;
+  coachEmail: string | null;
+  coachFirstName: string;
+  whenLabel: string;
+  reason?: string | null;
+}): Promise<void> {
+  const reason = params.reason?.trim();
+  const reasonLine = reason ? ` Reason: ${reason}` : '';
+  const playerBody = `The individual lesson on ${params.whenLabel} was cancelled.${reasonLine}`;
+  await sendLessonMail({
+    toEmail: params.playerEmail,
+    firstName: params.playerFirstName,
+    subject: `Lesson cancelled: ${params.whenLabel}`,
+    body: playerBody,
+  });
+  const who = params.playerName?.trim();
+  await sendLessonMail({
+    toEmail: params.coachEmail,
+    firstName: params.coachFirstName,
+    subject: `Lesson cancelled: ${params.whenLabel}`,
+    body: who
+      ? `The individual lesson with ${who} on ${params.whenLabel} was cancelled.${reasonLine}`
+      : playerBody,
+  });
+}
+
+export async function sendIndividualLessonReminderEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  coachName: string;
+  whenLabel: string;
+  hours: number;
+}): Promise<void> {
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: `Lesson reminder: ${params.whenLabel}`,
+    body: `Reminder: your lesson with ${params.coachName} is at ${params.whenLabel} (in ${params.hours} hour${params.hours === 1 ? '' : 's'}).`,
+  });
+}
+
+export async function sendGroupClassRegisteredEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  title: string;
+  whenLabel: string;
+  waitlisted?: boolean;
+}): Promise<void> {
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: params.waitlisted ? `Waitlisted: ${params.title}` : `Registered: ${params.title}`,
+    body: params.waitlisted
+      ? `You are on the waitlist for ${params.title} (${params.whenLabel}).`
+      : `You are registered for ${params.title} (${params.whenLabel}).`,
+  });
+}
+
+export async function sendGroupWaitlistPromotedEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  title: string;
+  whenLabel: string;
+}): Promise<void> {
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: `A spot opened: ${params.title}`,
+    body: `You were added to ${params.title} (${params.whenLabel}) from the waitlist.`,
+  });
+}
+
+export async function sendGroupOccurrenceCancelledEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  title: string;
+  whenLabel: string;
+}): Promise<void> {
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: `Class cancelled: ${params.title}`,
+    body: `${params.title} on ${params.whenLabel} was cancelled.`,
+  });
+}
+
+export async function sendGroupBelowMinEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  title: string;
+  whenLabel: string;
+  registered: number;
+  min: number;
+}): Promise<void> {
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: `Below minimum: ${params.title}`,
+    body: `${params.title} on ${params.whenLabel} has ${params.registered} of ${params.min} required players. Cancel the occurrence or run it anyway from Lessons.`,
+  });
+}
+
 
 

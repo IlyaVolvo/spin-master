@@ -124,6 +124,12 @@ model Member {
   hostShifts       HostShift[]
   hostPerkGrants   HostPerkGrant[]
 
+  coachProfile                 CoachProfile?
+  individualLessonsAsPlayer    IndividualLesson[]       @relation("IndividualLessonPlayer")
+  individualSeriesAsPlayer     IndividualLessonSeries[] @relation("IndividualLessonSeriesPlayer")
+  groupClassRegistrations      GroupClassRegistration[]
+  lessonLifecycleEventsAsActor LessonLifecycleEvent[]   @relation("LessonLifecycleActor")
+
   // Discount percentage for next plan purchase (0-100)
   clubDiscount     Int @default(0)
 
@@ -409,6 +415,7 @@ model SystemConfig {
   clubPlans         Json     @default("{}")
   publicAccess      Json     @default("{}")
   payments          Json     @default("{}")
+  lessons           Json     @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -586,9 +593,11 @@ model ClubPayment {
   metadata           Json?
   recordedAt         DateTime          @default(now())
 
-  member                 Member                   @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  courtesyVisits         ClubVisit[]              @relation("VisitObligationPayment")
-  eventRegistrations     TournamentRegistration[]
+  member                   Member                    @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  courtesyVisits           ClubVisit[]               @relation("VisitObligationPayment")
+  eventRegistrations       TournamentRegistration[]
+  individualLessons        IndividualLesson[]
+  groupClassRegistrations  GroupClassRegistration[]
 
   @@index([memberId])
   @@index([externalRef])
@@ -695,6 +704,293 @@ model HostPerkGrant {
   @@index([memberId, status])
   @@index([entitlementId])
   @@map("host_perk_grants")
+}
+
+enum IndividualLessonStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+enum GroupRegistrationStatus {
+  REGISTERED
+  WAITLIST
+  DROPPED
+}
+
+enum LessonLifecycleActorType {
+  ADMIN
+  COACH
+  PLAYER
+  SYSTEM
+}
+
+enum LessonLifecycleAction {
+  PLACE
+  REGISTER
+  WAITLIST
+  DROP
+  CANCEL
+  PROMOTE
+  RATE_REDUCE
+  CLASS_CREATE
+  CLASS_RUN_BELOW_MIN
+  AVAILABILITY_CANCEL
+}
+
+model CoachProfile {
+  id               Int       @id @default(autoincrement())
+  memberId         Int       @unique
+  hourlyRateCents  Int       @default(0)
+  bio              String    @default("")
+  teachingActive   Boolean   @default(true)
+  studentRatingMin Int?
+  studentRatingMax Int?
+  editSessionUntil DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  member                   Member                    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  availabilitySeries       CoachAvailabilitySeries[]
+  individualLessonsAsCoach IndividualLesson[]        @relation("IndividualLessonCoach")
+  individualSeriesAsCoach  IndividualLessonSeries[]  @relation("IndividualLessonSeriesCoach")
+  createdGroupClasses      GroupClass[]              @relation("GroupClassCreator")
+  groupClassCoaches        GroupClassCoach[]
+  rateHistory              CoachRateHistory[]
+
+  @@map("coach_profiles")
+}
+
+model CoachRateHistory {
+  id              Int      @id @default(autoincrement())
+  coachProfileId  Int
+  hourlyRateCents Int
+  effectiveFrom   DateTime @default(now())
+  actorMemberId   Int?
+  createdAt       DateTime @default(now())
+
+  coach CoachProfile @relation(fields: [coachProfileId], references: [id], onDelete: Cascade)
+
+  @@index([coachProfileId, effectiveFrom])
+  @@map("coach_rate_history")
+}
+
+model CoachAvailabilitySeries {
+  id              Int       @id @default(autoincrement())
+  coachProfileId  Int
+  startTime       String
+  endTime         String
+  weekdays        String[]
+  intervalWeeks   Int       @default(1)
+  startsOn        String
+  untilOn         String?
+  ratingMin       Int?
+  ratingMax       Int?
+  ageMin          Int?
+  ageMax          Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  coach        CoachProfile                   @relation(fields: [coachProfileId], references: [id], onDelete: Cascade)
+  occurrences  CoachAvailabilityOccurrence[]
+
+  @@index([coachProfileId])
+  @@map("coach_availability_series")
+}
+
+model CoachAvailabilityOccurrence {
+  id         Int      @id @default(autoincrement())
+  seriesId   Int
+  clubDate   String
+  startTime  String
+  endTime    String
+  cancelled  Boolean  @default(false)
+  ratingMin  Int?
+  ratingMax  Int?
+  ageMin     Int?
+  ageMax     Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  series            CoachAvailabilitySeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  individualLessons IndividualLesson[]
+
+  @@unique([seriesId, clubDate])
+  @@index([clubDate])
+  @@index([seriesId, cancelled])
+  @@map("coach_availability_occurrences")
+}
+
+model IndividualLessonSeries {
+  id               Int       @id @default(autoincrement())
+  coachProfileId   Int
+  playerMemberId   Int
+  durationMinutes  Int
+  hourlyRateCents  Int
+  startTime        String
+  weekdays         String[]
+  intervalWeeks    Int       @default(1)
+  startsOn         String
+  untilOn          String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  coach   CoachProfile       @relation("IndividualLessonSeriesCoach", fields: [coachProfileId], references: [id], onDelete: Restrict)
+  player  Member             @relation("IndividualLessonSeriesPlayer", fields: [playerMemberId], references: [id], onDelete: Restrict)
+  lessons IndividualLesson[]
+
+  @@index([coachProfileId])
+  @@index([playerMemberId])
+  @@map("individual_lesson_series")
+}
+
+model IndividualLesson {
+  id                           Int                     @id @default(autoincrement())
+  seriesId                     Int?
+  coachProfileId               Int
+  playerMemberId               Int
+  availabilityOccurrenceId     Int?
+  clubDate                     String
+  startTime                    String
+  endTime                      String
+  durationMinutes              Int
+  priceCents                   Int
+  hourlyRateCents              Int
+  studentCancelHoursOverride   Int?
+  reminderHours                Int                     @default(0)
+  reminderSentAt               DateTime?
+  status                       IndividualLessonStatus  @default(CONFIRMED)
+  cancelledAt                  DateTime?
+  cancelledByMemberId          Int?
+  cancelReason                 String?
+  paymentId                    Int?
+  createdAt                    DateTime                @default(now())
+  updatedAt                    DateTime                @updatedAt
+
+  series                   IndividualLessonSeries?       @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  coach                    CoachProfile                  @relation("IndividualLessonCoach", fields: [coachProfileId], references: [id], onDelete: Restrict)
+  player                   Member                        @relation("IndividualLessonPlayer", fields: [playerMemberId], references: [id], onDelete: Restrict)
+  availabilityOccurrence   CoachAvailabilityOccurrence?  @relation(fields: [availabilityOccurrenceId], references: [id], onDelete: SetNull)
+  payment                  ClubPayment?                  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([coachProfileId, clubDate, status])
+  @@index([playerMemberId, clubDate, status])
+  @@index([paymentId])
+  @@map("individual_lessons")
+}
+
+model GroupClass {
+  id                          Int      @id @default(autoincrement())
+  creatorCoachProfileId       Int
+  publicCode                  String   @unique
+  title                       String   @default("")
+  durationMinutes             Int
+  pricePerOccurrenceCents     Int
+  minParticipants             Int
+  maxParticipants             Int
+  ratingMin                   Int?
+  ratingMax                   Int?
+  ageMin                      Int?
+  ageMax                      Int?
+  intervalWeeks               Int      @default(1)
+  startsOn                    String
+  untilOn                     String?
+  firstSessionDeadlineHours   Int      @default(24)
+  occurrenceDeadlineHours     Int      @default(24)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  creator     CoachProfile           @relation("GroupClassCreator", fields: [creatorCoachProfileId], references: [id], onDelete: Restrict)
+  slots       GroupClassSlot[]
+  coaches     GroupClassCoach[]
+  occurrences GroupClassOccurrence[]
+
+  @@index([creatorCoachProfileId])
+  @@index([publicCode])
+  @@map("group_classes")
+}
+
+model GroupClassSlot {
+  id         Int    @id @default(autoincrement())
+  classId    Int
+  weekday    String
+  startTime  String
+
+  groupClass GroupClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, weekday])
+  @@map("group_class_slots")
+}
+
+model GroupClassCoach {
+  id             Int @id @default(autoincrement())
+  classId        Int
+  coachProfileId Int
+  splitPercent   Int
+
+  groupClass   GroupClass   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  coachProfile CoachProfile @relation(fields: [coachProfileId], references: [id], onDelete: Restrict)
+
+  @@unique([classId, coachProfileId])
+  @@index([coachProfileId])
+  @@map("group_class_coaches")
+}
+
+model GroupClassOccurrence {
+  id            Int      @id @default(autoincrement())
+  classId       Int
+  clubDate      String
+  startTime     String
+  endTime       String
+  cancelled     Boolean  @default(false)
+  runBelowMin   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  groupClass     GroupClass               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  registrations  GroupClassRegistration[]
+
+  @@unique([classId, clubDate, startTime])
+  @@index([clubDate])
+  @@map("group_class_occurrences")
+}
+
+model GroupClassRegistration {
+  id                 Int                     @id @default(autoincrement())
+  occurrenceId       Int
+  memberId           Int
+  status             GroupRegistrationStatus @default(REGISTERED)
+  waitlistPosition   Int?
+  priceCents         Int
+  paymentId          Int?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  occurrence GroupClassOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  member     Member               @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  payment    ClubPayment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([occurrenceId, memberId])
+  @@index([memberId, status])
+  @@index([paymentId])
+  @@map("group_class_registrations")
+}
+
+model LessonLifecycleEvent {
+  id            Int                      @id @default(autoincrement())
+  occurredAt    DateTime                 @default(now())
+  action        LessonLifecycleAction
+  actorType     LessonLifecycleActorType
+  actorMemberId Int?
+  entityType    String
+  entityId      Int
+  details       Json?
+
+  actor Member? @relation("LessonLifecycleActor", fields: [actorMemberId], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt])
+  @@index([entityType, entityId])
+  @@index([actorMemberId])
+  @@map("lesson_lifecycle_events")
 }
 
 // SwissTournamentData: Configuration for SWISS tournaments

@@ -5,7 +5,9 @@ export type PaymentInitiatedBy = 'MEMBER' | 'ADMIN';
 export type CheckoutProduct =
   | { kind: 'plan'; familyKey: string; planId: number; planSegment: string }
   | { kind: 'pay_per_visit'; amountCents: number; clubDate: string }
-  | { kind: 'event'; tournamentId: number; registrationId: number; amountCents: number };
+  | { kind: 'event'; tournamentId: number; registrationId: number; amountCents: number }
+  | { kind: 'lesson_individual'; lessonId: number; amountCents: number }
+  | { kind: 'lesson_group'; registrationId: number; occurrenceId: number; amountCents: number };
 
 export type StartCheckoutInput = {
   memberId: number;
