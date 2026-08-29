@@ -504,37 +504,6 @@ function PaymentsSettingsEditor({
           })
         }
       />
-
-      <FieldRow label="Notify admins on courtesy">
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-          <input
-            type="checkbox"
-            checked={payments.notifyAdminsOnCourtesy}
-            onChange={(e) =>
-              updateConfig((draft) => {
-                draft.payments.notifyAdminsOnCourtesy = e.target.checked;
-              })
-            }
-          />
-          Email designated administrators
-        </label>
-      </FieldRow>
-      <FieldRow label="Admin notify emails (one or more, comma-separated)">
-        <input
-          type="text"
-          value={payments.adminNotifyEmails.join(', ')}
-          onChange={(e) =>
-            updateConfig((draft) => {
-              draft.payments.adminNotifyEmails = e.target.value
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean);
-            })
-          }
-          style={valueInputStyle}
-          placeholder="admin@club.example"
-        />
-      </FieldRow>
       </CollapsibleBlock>
 
       <CollapsibleBlock
@@ -668,10 +637,8 @@ export default function PaymentsAdmin() {
         hostGraceMinutes: _hostGraceMinutes,
         hostReminderEmailEnabled: _hostReminderEmailEnabled,
         hostReminderMinutesBeforeStart: _hostReminderMinutesBeforeStart,
-        hostNoShowEmailEnabled: _hostNoShowEmailEnabled,
         hostNoShowMinutesAfterStart: _hostNoShowMinutesAfterStart,
         hostNoShowNotifyAdminIds: _hostNoShowNotifyAdminIds,
-        hostNoShowNotifyEmails: _hostNoShowNotifyEmails,
         ...paymentsRest
       } = config.payments;
       const saved = await saveAdminSystemConfig({

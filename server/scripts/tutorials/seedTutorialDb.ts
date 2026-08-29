@@ -163,8 +163,6 @@ async function main() {
         payments: toJson({
           installMode: 'test',
           defaultOnlinePayConsent: true,
-          adminNotifyEmails: [],
-          notifyAdminsOnCourtesy: true,
           courtesyGraceDays: 7,
           courtesyExtraVisits: 3,
           newMemberTrialDays: 0,

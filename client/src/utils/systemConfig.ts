@@ -115,8 +115,6 @@ export type SystemConfig = {
   payments: {
     installMode: 'test' | 'production';
     defaultOnlinePayConsent: boolean;
-    adminNotifyEmails: string[];
-    notifyAdminsOnCourtesy: boolean;
     courtesyGraceDays: number;
     courtesyExtraVisits: number;
     newMemberTrialDays: number;
@@ -269,8 +267,6 @@ const defaultSystemConfig: SystemConfig = {
   payments: {
     installMode: 'test',
     defaultOnlinePayConsent: false,
-    adminNotifyEmails: [],
-    notifyAdminsOnCourtesy: true,
     courtesyGraceDays: 7,
     courtesyExtraVisits: 3,
     newMemberTrialDays: 7,

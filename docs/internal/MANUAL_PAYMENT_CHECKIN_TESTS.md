@@ -263,7 +263,6 @@ Mark each: Pass / Fail / Skip. Prefer **UI** unless the DB recipe is listed.
 | ID | Steps | Expected | DB shortcut |
 |----|-------|----------|-------------|
 | D1 | Clear cash / succeed online with email | Receipt: list, credit, charged | — |
-| D2 | Courtesy check-in with admin notify on | Admin email if configured | — |
 | D3 | `POST /cron/payment-reminders` with near-expiry CURRENT | Member reminder email | Near-expiry entitlement + email |
 | D4 | `POST /cron/midnight` after trial end | Trial-ended email once; `trialExpiryNotifiedAt` set | Trial ended yesterday; notified null |
 | D5 | Midnight promote FUTURE | FUTURE → CURRENT when eligible | FUTURE `validFrom` ≤ now; no CURRENT |

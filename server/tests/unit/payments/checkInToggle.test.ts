@@ -45,7 +45,6 @@ jest.mock('../../../src/payments/checkInReminders', () => ({
 jest.mock('../../../src/payments/courtesy', () => ({
   evaluateCourtesy: jest.fn(),
   ensureCourtesyObligation: jest.fn(),
-  notifyAdminsOfCourtesy: jest.fn(),
 }));
 
 import { prisma } from '../../../src/index';

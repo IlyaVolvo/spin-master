@@ -1,6 +1,6 @@
 import { prisma } from '../index';
 import type { Prisma } from '@prisma/client';
-import { evaluateCourtesy, ensureCourtesyObligation, notifyAdminsOfCourtesy } from './courtesy';
+import { evaluateCourtesy, ensureCourtesyObligation } from './courtesy';
 import { isMemberInTrialPeriod, trialEndsOnToYmd } from './memberTrial';
 import { clubLocalDayRangeUtc } from '../utils/clubDate';
 import { formatCourtesyAdmissionBasis, formatTrialAdmissionBasis } from './visitAdmissionBasis';
@@ -82,8 +82,6 @@ export async function resolveFirstVisitOfDay(opts: {
   memberEmail: string | null | undefined;
   /** When true, covered paths do not write; caller must apply CoveredWritePlan. */
   deferWrites?: boolean;
-  /** Preloaded member display fields for courtesy (skips member findUnique). */
-  memberName?: { firstName: string; lastName: string } | null;
 }): Promise<FirstVisitOutcome> {
   const { memberId, clubDate, entitlement } = opts;
   const deferWrites = opts.deferWrites === true;
@@ -99,7 +97,6 @@ export async function resolveFirstVisitOfDay(opts: {
       clubDate,
       'No active plan. Please purchase a plan or contact staff.',
       opts.memberEmail,
-      opts.memberName,
     );
   }
 
@@ -137,7 +134,6 @@ export async function resolveFirstVisitOfDay(opts: {
         clubDate,
         'Visit pack exhausted. Please purchase a new plan.',
         opts.memberEmail,
-        opts.memberName,
       );
     }
 
@@ -174,7 +170,6 @@ export async function resolveFirstVisitOfDay(opts: {
         clubDate,
         'No active plan. Please purchase a plan or contact staff.',
         opts.memberEmail,
-        opts.memberName,
       );
   }
 }
@@ -193,18 +188,13 @@ async function courtesyOrPayment(
   clubDate: string,
   paymentRequiredMessage: string,
   memberEmail?: string | null,
-  memberName?: { firstName: string; lastName: string } | null,
 ): Promise<FirstVisitOutcome> {
-  let firstName = memberName?.firstName;
-  let lastName = memberName?.lastName;
   let email = memberEmail;
-  if (firstName === undefined || lastName === undefined || email === undefined) {
+  if (email === undefined) {
     const member = await prisma.member.findUnique({
       where: { id: memberId },
-      select: { firstName: true, lastName: true, email: true },
+      select: { email: true },
     });
-    firstName = member?.firstName;
-    lastName = member?.lastName;
     email = member?.email;
   }
   const canPay = Boolean(email?.trim());
@@ -228,16 +218,6 @@ async function courtesyOrPayment(
     },
   });
   await ensureCourtesyObligation(memberId, visit.id);
-
-  const displayName =
-    firstName != null || lastName != null
-      ? `${firstName || ''} ${lastName || ''}`.trim()
-      : `Member ${memberId}`;
-  await notifyAdminsOfCourtesy({
-    memberId,
-    memberName: displayName || `Member ${memberId}`,
-    message: courtesy.message,
-  });
 
   const pending = await prisma.clubPayment.findFirst({
     where: { memberId, status: 'PENDING' },
