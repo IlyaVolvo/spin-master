@@ -20,6 +20,7 @@ import { loadLastTournamentId, loadShouldRestoreDetail, saveShouldRestoreDetail 
 import { lazyWithReload } from './utils/lazyWithReload';
 import { SmashWhizzLogo } from './components/SmashWhizzLogo';
 import { AppHeaderCollapsibleControls } from './components/AppHeaderCollapsibleControls';
+import { allowedLessonsViews } from './components/lessons/lessonsNav';
 import { AppHeaderHostOnDuty } from './components/AppHeaderHostOnDuty';
 import { LandscapeRequiredOverlay } from './components/LandscapeRequiredOverlay';
 import { APP_NAME_TM } from './brand';
@@ -646,7 +647,7 @@ function AppRoutes({
                         <Route path="/membership-log" element={<MembershipLogAdmin />} />
                         <Route path="/hosts" element={<HostsAdmin />} />
                         <Route path="/lessons" element={<LessonsPage />} />
-                        <Route path="/coach" element={<LessonsPage />} />
+                        <Route path="/coach" element={<Navigate to="/lessons?view=calendar" replace />} />
                         <Route path="/coaches/:id" element={<PublicCoachPage />} />
                         <Route path="/classes/:code" element={<PublicClassPage />} />
                       </Routes>
@@ -859,11 +860,6 @@ function Header({
   const changesetId = (import.meta.env.VITE_CHANGESET_ID || 'devbuild').slice(0, 7);
   
   const isPlayersActive = location.pathname === '/players';
-  const isLessonsActive =
-    location.pathname === '/lessons' ||
-    location.pathname.startsWith('/coaches/') ||
-    location.pathname.startsWith('/classes/');
-  const isCoachActive = location.pathname === '/coach';
   const isTournamentsActive = location.pathname === '/tournaments' || location.pathname.startsWith('/tournaments/');
   const isSettingsActive = location.pathname === '/system-settings';
   const isPaymentsActive = location.pathname === '/payments';
@@ -1187,22 +1183,6 @@ function Header({
     navigate('/players', { replace: true });
   };
 
-  const handleLessonsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    clearAllScrollPositions();
-    clearAllUIStates();
-    window.scrollTo(0, 0);
-    navigate('/lessons', { replace: true });
-  };
-
-  const handleCoachClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    clearAllScrollPositions();
-    clearAllUIStates();
-    window.scrollTo(0, 0);
-    navigate('/coach', { replace: true });
-  };
-
   const handleTournamentsClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     const lastId = loadLastTournamentId();
@@ -1302,8 +1282,11 @@ function Header({
   const isAdminUser = !kioskMode && isAdmin();
   const showPlayersTab = !kioskMode || kioskKind === 'browse' || kioskKind === 'checkin';
   const showTournamentsTab = !kioskMode || kioskKind === 'browse';
-  const showCoachTab = !kioskMode && (hasMemberRole('COACH') || isAdminUser);
-  const showLessonsTab = !kioskMode && hasMemberRole('PLAYER');
+  const showInstructions = !kioskMode && allowedLessonsViews({
+    coach: hasMemberRole('COACH'),
+    player: hasMemberRole('PLAYER'),
+    admin: isAdmin(),
+  }).length > 0;
   const kioskBannerText =
     kioskKind === 'checkin'
       ? 'KIOSK MODE — Club check-in / check-out. Find your name, then enter your PIN.'
@@ -1470,16 +1453,13 @@ function Header({
           headerIconControlSize={headerIconControlSize}
           showPlayersTab={showPlayersTab}
           showTournamentsTab={showTournamentsTab}
-          showLessonsTab={showLessonsTab}
-          showCoachTab={showCoachTab}
+          showInstructions={showInstructions}
           isAdminUser={isAdminUser}
           kioskMode={kioskMode}
           userName={userName}
           showMeReturn={showMeReturn}
           showAchievementsLink={showAchievementsLink}
           isPlayersActive={isPlayersActive}
-          isLessonsActive={isLessonsActive}
-          isCoachActive={isCoachActive}
           isTournamentsActive={isTournamentsActive}
           isAdminSectionActive={isAdminSectionActive}
           isAchievementsActive={isAchievementsActive}
@@ -1492,8 +1472,6 @@ function Header({
           adminMenuRef={adminMenuRef}
           adminMenuItems={adminMenuItems}
           onPlayersClick={handlePlayersClick}
-          onLessonsClick={handleLessonsClick}
-          onCoachClick={handleCoachClick}
           onTournamentsClick={handleTournamentsClick}
           onSettingsClick={handleSettingsClick}
           onPaymentsClick={handlePaymentsClick}

@@ -305,7 +305,7 @@ function CoachPageBody({ canBook }: { canBook: boolean }) {
                 {data.bio ? <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{data.bio}</p> : <p style={{ margin: 0 }}>No bio yet.</p>}
                 {ownPage ? (
                   <p style={{ margin: '12px 0 0', fontSize: '13px', color: '#546e7a' }}>
-                    This is your public page. <Link to="/coach">Edit on Coach</Link>
+                    This is your public page. <Link to="/lessons?view=calendar">Edit on Coach</Link>
                   </p>
                 ) : null}
               </div>

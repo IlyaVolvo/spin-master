@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../../utils/api';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { getMember, hasMemberRole, isAdmin } from '../../utils/auth';
@@ -24,8 +24,7 @@ import {
   startOfWeekMonday,
   windowsFromPublished,
 } from './availabilityDraft';
-
-type Tab = 'find' | 'mine' | 'calendar' | 'classes' | 'log';
+import { allowedLessonsViews, resolveLessonsView } from './lessonsNav';
 
 const RATING_RANGE_TIP =
   'Leave blank for no limit. Players outside this range will not see your times.';
@@ -182,78 +181,35 @@ function RatingLabel() {
 }
 
 export default function LessonsPage() {
-  const location = useLocation();
-  const coach = hasMemberRole('COACH') || isAdmin();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const coach = hasMemberRole('COACH');
+  const player = hasMemberRole('PLAYER');
   const admin = isAdmin();
-  const coachWorkspace = location.pathname.startsWith('/coach');
-  const [tab, setTab] = useState<Tab>(coachWorkspace && coach ? 'calendar' : 'find');
+  const roles = { coach, player, admin };
+  const allowed = allowedLessonsViews(roles);
+  const rawView = searchParams.get('view');
+  const view = resolveLessonsView(rawView, roles);
   const [error, setError] = useState<string | null>(null);
 
-  const coachTabs: Array<{ id: Tab; label: string }> = coach
-    ? [
-        { id: 'calendar', label: 'Calendar' },
-        { id: 'classes', label: 'Group classes' },
-      ]
-    : [];
-  const playerTabs: Array<{ id: Tab; label: string }> = [
-    { id: 'find', label: 'Find a lesson' },
-    { id: 'mine', label: 'My lessons' },
-  ];
-  const extraTabs: Array<{ id: Tab; label: string }> = admin ? [{ id: 'log', label: 'Log' }] : [];
+  useEffect(() => {
+    if (!view) return;
+    if (rawView !== view) {
+      setSearchParams({ view }, { replace: true });
+    }
+  }, [rawView, view, setSearchParams]);
 
-  const tabBtn = (t: { id: Tab; label: string }) => (
-    <button
-      key={t.id}
-      type="button"
-      onClick={() => setTab(t.id)}
-      style={{
-        padding: '6px 12px',
-        borderRadius: '6px',
-        border: tab === t.id ? '1px solid #2d6f8f' : '1px solid #cfd8dc',
-        background: tab === t.id ? '#e8f4f8' : 'white',
-        color: '#111',
-        cursor: 'pointer',
-      }}
-    >
-      {t.label}
-    </button>
-  );
+  if (allowed.length === 0 || !view) {
+    return <p>This page is not available for your role.</p>;
+  }
 
   return (
     <div>
-      {!coachWorkspace ? (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-          {coachTabs.map(tabBtn)}
-          {coachTabs.length > 0 ? (
-            <span
-              aria-hidden="true"
-              style={{
-                width: 1,
-                height: 22,
-                background: '#c5d0da',
-                margin: '0 10px',
-                flexShrink: 0,
-              }}
-            />
-          ) : null}
-          {playerTabs.map(tabBtn)}
-          {extraTabs.length > 0 ? (
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>{extraTabs.map(tabBtn)}</span>
-          ) : null}
-        </div>
-      ) : null}
       {error ? <p style={{ color: '#c0392b' }}>{error}</p> : null}
-      {coachWorkspace ? (
-        coach ? <CoachCalendar onError={setError} /> : <p>This page is for coaches.</p>
-      ) : (
-        <>
-          {tab === 'find' ? <StudentLessonCalendar onError={setError} /> : null}
-          {tab === 'mine' ? <MyLessons onError={setError} /> : null}
-          {tab === 'calendar' && coach ? <CoachCalendar onError={setError} /> : null}
-          {tab === 'classes' && coach ? <CoachGroupCalendar onError={setError} /> : null}
-          {tab === 'log' && admin ? <LifecycleLog onError={setError} /> : null}
-        </>
-      )}
+      {view === 'find' ? <StudentLessonCalendar onError={setError} /> : null}
+      {view === 'mine' ? <MyLessons onError={setError} /> : null}
+      {view === 'calendar' && coach ? <CoachCalendar onError={setError} /> : null}
+      {view === 'classes' && coach ? <CoachGroupCalendar onError={setError} /> : null}
+      {view === 'log' && admin ? <LifecycleLog onError={setError} /> : null}
     </div>
   );
 }

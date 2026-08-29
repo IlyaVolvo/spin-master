@@ -1,12 +1,18 @@
-import { useLayoutEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
-import { getMember } from '../utils/auth';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { getMember, hasMemberRole, isAdmin } from '../utils/auth';
 import { clearAllScrollPositions, clearAllUIStates } from '../utils/scrollPosition';
-import { CollapsibleActions, type CollapsibleActionButton } from './CollapsibleActions';
+import { CollapsibleActions, type CollapsibleMenuItem } from './CollapsibleActions';
 import { HeaderSelfCheckinButton } from './HeaderSelfCheckinButton';
 import { PlayersKioskEntryButton } from './PlayersKioskEntryButton';
 import { canEnterBrowseKiosk, canEnterCheckinKiosk } from '../utils/auth';
+import {
+  instructionMenuEntries,
+  lessonsViewLabel,
+  resolveLessonsView,
+  type LessonsView,
+} from './lessons/lessonsNav';
 
 type AdminMenuItem =
   | { id: 'separator'; label: string; active: false }
@@ -20,16 +26,13 @@ export type AppHeaderCollapsibleControlsProps = {
   headerIconControlSize: CSSProperties;
   showPlayersTab: boolean;
   showTournamentsTab: boolean;
-  showLessonsTab: boolean;
-  showCoachTab: boolean;
+  showInstructions: boolean;
   isAdminUser: boolean;
   kioskMode: boolean;
   userName: string;
   showMeReturn: boolean;
   showAchievementsLink: boolean;
   isPlayersActive: boolean;
-  isLessonsActive: boolean;
-  isCoachActive: boolean;
   isTournamentsActive: boolean;
   isAdminSectionActive: boolean;
   isAchievementsActive: boolean;
@@ -42,8 +45,6 @@ export type AppHeaderCollapsibleControlsProps = {
   adminMenuRef: React.MutableRefObject<HTMLDivElement | null>;
   adminMenuItems: readonly AdminMenuItem[];
   onPlayersClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
-  onLessonsClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
-  onCoachClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onTournamentsClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onSettingsClick: (e?: React.MouseEvent) => void;
   onPaymentsClick: (e?: React.MouseEvent, tab?: 'payments' | 'plans') => void;
@@ -62,20 +63,48 @@ const headerLinkMeasureStyle: CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+const headerMenuPanelStyle = (position: { top: number; left: number }, width: string): CSSProperties => ({
+  position: 'fixed',
+  top: position.top,
+  left: position.left,
+  width,
+  minWidth: width,
+  background: 'white',
+  border: '1px solid rgba(0, 0, 0, 0.12)',
+  borderRadius: '8px',
+  boxShadow: '0 8px 20px rgba(0, 0, 0, 0.18)',
+  zIndex: 10050,
+  overflow: 'hidden',
+  padding: '4px 0',
+  boxSizing: 'border-box',
+});
+
+const headerMenuItemStyle = (active: boolean): CSSProperties => ({
+  display: 'block',
+  width: '100%',
+  boxSizing: 'border-box',
+  textAlign: 'left',
+  padding: '10px 14px',
+  border: 'none',
+  background: active ? '#eaf4fb' : 'transparent',
+  color: active ? '#155b78' : '#17324d',
+  fontWeight: active ? 700 : 600,
+  fontSize: '14px',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+});
+
 export function AppHeaderCollapsibleControls({
   headerIconControlSize,
   showPlayersTab,
   showTournamentsTab,
-  showLessonsTab,
-  showCoachTab,
+  showInstructions,
   isAdminUser,
   kioskMode,
   userName,
   showMeReturn,
   showAchievementsLink,
   isPlayersActive,
-  isLessonsActive,
-  isCoachActive,
   isTournamentsActive,
   isAdminSectionActive,
   isAchievementsActive,
@@ -88,8 +117,6 @@ export function AppHeaderCollapsibleControls({
   adminMenuRef,
   adminMenuItems,
   onPlayersClick,
-  onLessonsClick,
-  onCoachClick,
   onTournamentsClick,
   onSettingsClick,
   onPaymentsClick,
@@ -99,7 +126,38 @@ export function AppHeaderCollapsibleControls({
   onLogout,
 }: AppHeaderCollapsibleControlsProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [adminMenuPosition, setAdminMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [instructionsMenuOpen, setInstructionsMenuOpen] = useState(false);
+  const [instructionsMenuPosition, setInstructionsMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const instructionsMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const instructionRoles = useMemo(() => ({
+    coach: hasMemberRole('COACH'),
+    player: hasMemberRole('PLAYER'),
+    admin: isAdmin(),
+  }), [userName]);
+
+  const isLessonsPage = location.pathname === '/lessons';
+  const isInstructionsActive =
+    isLessonsPage ||
+    location.pathname.startsWith('/coaches/') ||
+    location.pathname.startsWith('/classes/');
+  const currentLessonsView = isLessonsPage
+    ? resolveLessonsView(new URLSearchParams(location.search).get('view'), instructionRoles)
+    : null;
+  const instructionEntries = useMemo(
+    () => instructionMenuEntries(instructionRoles),
+    [instructionRoles],
+  );
+  const instructionMenuLabel = currentLessonsView
+    ? lessonsViewLabel(currentLessonsView)
+    : 'Instructions';
+  const instructionLongestLabel = instructionEntries.reduce((longest, entry) => {
+    if (entry.type === 'separator') return longest;
+    return entry.label.length > longest.length ? entry.label : longest;
+  }, instructionMenuLabel.length > 'Instructions'.length ? instructionMenuLabel : 'Instructions');
+  const instructionMenuWidth = `calc(${instructionLongestLabel.length + 2}ch + 24px)`;
 
   useLayoutEffect(() => {
     if (!adminMenuOpen) {
@@ -119,6 +177,52 @@ export function AppHeaderCollapsibleControls({
       window.removeEventListener('scroll', updatePosition, true);
     };
   }, [adminMenuOpen, adminMenuRef]);
+
+  useLayoutEffect(() => {
+    if (!instructionsMenuOpen) {
+      setInstructionsMenuPosition(null);
+      return;
+    }
+    const updatePosition = () => {
+      const rect = instructionsMenuRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setInstructionsMenuPosition({ top: rect.bottom + 4, left: rect.left });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [instructionsMenuOpen]);
+
+  useEffect(() => {
+    if (adminMenuOpen) setInstructionsMenuOpen(false);
+  }, [adminMenuOpen]);
+
+  useEffect(() => {
+    if (!instructionsMenuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        (instructionsMenuRef.current && target && instructionsMenuRef.current.contains(target)) ||
+        (target instanceof Element && target.closest('[data-instructions-menu]'))
+      ) {
+        return;
+      }
+      setInstructionsMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setInstructionsMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [instructionsMenuOpen]);
 
   const tabStyle = (active: boolean, pending = false): CSSProperties => ({
     ...headerIconControlSize,
@@ -169,10 +273,29 @@ export function AppHeaderCollapsibleControls({
     });
   };
 
+  const goToLessonsView = (view: LessonsView) => {
+    clearAllScrollPositions();
+    clearAllUIStates();
+    window.scrollTo(0, 0);
+    setInstructionsMenuOpen(false);
+    setAdminMenuOpen(false);
+    navigate(`/lessons?view=${view}`, { replace: true });
+  };
+
+  const runAdminItem = (id: Exclude<AdminMenuItem['id'], 'separator'>) => {
+    if (id === 'settings') onSettingsClick();
+    else if (id === 'attendance-log') onAttendanceClick();
+    else if (id === 'hosts') onHostsClick();
+    else if (id === 'membership-log') onMembershipLogClick();
+    else if (id === 'plans') onPaymentsClick(undefined, 'plans');
+    else onPaymentsClick(undefined, 'payments');
+  };
+
   const allMenuItems = useMemo(() => {
-    const menu: CollapsibleActionButton[] = [];
+    const menu: CollapsibleMenuItem[] = [];
+    const general: CollapsibleMenuItem[] = [];
     if (showPlayersTab) {
-      menu.push({
+      general.push({
         key: 'nav-players',
         label: 'Players',
         active: isPlayersActive,
@@ -184,34 +307,8 @@ export function AppHeaderCollapsibleControls({
         },
       });
     }
-    if (showLessonsTab) {
-      menu.push({
-        key: 'nav-lessons',
-        label: 'Lessons',
-        active: isLessonsActive,
-        onClick: () => {
-          clearAllScrollPositions();
-          clearAllUIStates();
-          window.scrollTo(0, 0);
-          navigate('/lessons', { replace: true });
-        },
-      });
-    }
-    if (showCoachTab) {
-      menu.push({
-        key: 'nav-coach',
-        label: 'Coach',
-        active: isCoachActive,
-        onClick: () => {
-          clearAllScrollPositions();
-          clearAllUIStates();
-          window.scrollTo(0, 0);
-          navigate('/coach', { replace: true });
-        },
-      });
-    }
     if (showTournamentsTab) {
-      menu.push({
+      general.push({
         key: 'nav-tournaments',
         label: hasPendingPreregistrations
           ? `Tournaments (${pendingPreregistrationCount})`
@@ -225,21 +322,37 @@ export function AppHeaderCollapsibleControls({
         },
       });
     }
+    if (general.length > 0) {
+      menu.push({ type: 'section', key: 'sec-general', label: 'General' });
+      menu.push(...general);
+    }
+    if (showInstructions && instructionEntries.length > 0) {
+      menu.push({ type: 'section', key: 'sec-instructions', label: 'Instructions' });
+      for (const entry of instructionEntries) {
+        if (entry.type === 'separator') {
+          menu.push({ type: 'separator', key: entry.key });
+          continue;
+        }
+        menu.push({
+          key: `instr-${entry.id}`,
+          label: entry.label,
+          active: isLessonsPage && currentLessonsView === entry.id,
+          onClick: () => goToLessonsView(entry.id),
+        });
+      }
+    }
     if (isAdminUser) {
+      menu.push({ type: 'section', key: 'sec-admin', label: 'Admin' });
       for (const item of adminMenuItems) {
-        if (item.id === 'separator') continue;
+        if (item.id === 'separator') {
+          menu.push({ type: 'separator', key: 'admin-separator' });
+          continue;
+        }
         menu.push({
           key: `admin-${item.id}`,
           label: item.label,
           active: item.active,
-          onClick: () => {
-            if (item.id === 'settings') onSettingsClick();
-            else if (item.id === 'attendance-log') onAttendanceClick();
-            else if (item.id === 'hosts') onHostsClick();
-            else if (item.id === 'membership-log') onMembershipLogClick();
-            else if (item.id === 'plans') onPaymentsClick(undefined, 'plans');
-            else onPaymentsClick(undefined, 'payments');
-          },
+          onClick: () => runAdminItem(item.id),
         });
       }
     }
@@ -247,16 +360,16 @@ export function AppHeaderCollapsibleControls({
   }, [
     showPlayersTab,
     showTournamentsTab,
-    showLessonsTab,
-    showCoachTab,
+    showInstructions,
+    instructionEntries,
     isAdminUser,
     adminMenuItems,
     hasPendingPreregistrations,
     pendingPreregistrationCount,
     isPlayersActive,
-    isLessonsActive,
-    isCoachActive,
     isTournamentsActive,
+    isLessonsPage,
+    currentLessonsView,
     navigate,
     onSettingsClick,
     onAttendanceClick,
@@ -267,19 +380,28 @@ export function AppHeaderCollapsibleControls({
 
   const headerActionsLabel = isPlayersActive
     ? 'Players'
-    : isCoachActive
-      ? 'Coach'
-      : isLessonsActive
-      ? 'Lessons'
-      : isTournamentsActive
+    : isTournamentsActive
       ? (hasPendingPreregistrations
         ? `Tournaments (${pendingPreregistrationCount})`
         : 'Tournaments')
-      : isAdminSectionActive
-        ? adminMenuLabel
-        : isAchievementsActive
-          ? 'Achievements'
-          : 'Actions';
+      : isInstructionsActive
+        ? instructionMenuLabel
+        : isAdminSectionActive
+          ? adminMenuLabel
+          : isAchievementsActive
+            ? 'Achievements'
+            : 'Actions';
+
+  const dropdownTriggerStyle = (active: boolean, width: string): CSSProperties => ({
+    ...tabStyle(active),
+    display: 'inline-flex',
+    alignItems: 'center',
+    minWidth: width,
+    width,
+    padding: '10px 12px 12px 12px',
+    justifyContent: 'space-between',
+    gap: '6px',
+  });
 
   const measureSlot = useMemo(() => (
     <div className="collapsible-actions__row app-header-measure-row">
@@ -288,19 +410,14 @@ export function AppHeaderCollapsibleControls({
           Players
         </button>
       ) : null}
-      {showLessonsTab ? (
-        <button type="button" className="app-header-tab" style={tabStyle(isLessonsActive)} disabled tabIndex={-1} aria-hidden="true">
-          Lessons
-        </button>
-      ) : null}
-      {showCoachTab ? (
-        <button type="button" className="app-header-tab" style={tabStyle(isCoachActive)} disabled tabIndex={-1} aria-hidden="true">
-          Coach
-        </button>
-      ) : null}
       {showTournamentsTab ? (
         <button type="button" className="app-header-tab" style={tabStyle(isTournamentsActive, hasPendingPreregistrations)} disabled tabIndex={-1} aria-hidden="true">
           Tournaments{hasPendingPreregistrations ? ` (${pendingPreregistrationCount})` : ''}
+        </button>
+      ) : null}
+      {showInstructions ? (
+        <button type="button" className="app-header-tab" style={{ ...tabStyle(isInstructionsActive), minWidth: instructionMenuWidth, width: instructionMenuWidth }} disabled tabIndex={-1} aria-hidden="true">
+          {instructionMenuLabel} ▾
         </button>
       ) : null}
       {isAdminUser ? (
@@ -312,16 +429,16 @@ export function AppHeaderCollapsibleControls({
   ), [
     showPlayersTab,
     showTournamentsTab,
-    showLessonsTab,
-    showCoachTab,
+    showInstructions,
     isAdminUser,
     isPlayersActive,
-    isLessonsActive,
-    isCoachActive,
     isTournamentsActive,
+    isInstructionsActive,
     isAdminSectionActive,
     hasPendingPreregistrations,
     pendingPreregistrationCount,
+    instructionMenuLabel,
+    instructionMenuWidth,
     adminMenuLabel,
     adminMenuWidth,
     headerIconControlSize,
@@ -355,16 +472,6 @@ export function AppHeaderCollapsibleControls({
                 Players
               </a>
             ) : null}
-            {showLessonsTab ? (
-              <a className="app-header-tab" href="/lessons" onClick={onLessonsClick} style={tabStyle(isLessonsActive)}>
-                Lessons
-              </a>
-            ) : null}
-            {showCoachTab ? (
-              <a className="app-header-tab" href="/coach" onClick={onCoachClick} style={tabStyle(isCoachActive)}>
-                Coach
-              </a>
-            ) : null}
             {showTournamentsTab ? (
               <a className="app-header-tab" href="/tournaments" onClick={onTournamentsClick} style={tabStyle(isTournamentsActive, hasPendingPreregistrations)}>
                 Tournaments
@@ -375,6 +482,57 @@ export function AppHeaderCollapsibleControls({
                 ) : null}
               </a>
             ) : null}
+            {showInstructions ? (
+              <div ref={instructionsMenuRef} style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className="app-header-tab"
+                  aria-haspopup="menu"
+                  aria-expanded={instructionsMenuOpen}
+                  onClick={() => {
+                    setAdminMenuOpen(false);
+                    setInstructionsMenuOpen((open) => !open);
+                  }}
+                  style={dropdownTriggerStyle(isInstructionsActive, instructionMenuWidth)}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{instructionMenuLabel}</span>
+                  <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>▾</span>
+                </button>
+                {instructionsMenuOpen && instructionsMenuPosition ? createPortal(
+                  <div
+                    role="menu"
+                    aria-label="Instruction pages"
+                    data-instructions-menu
+                    style={headerMenuPanelStyle(instructionsMenuPosition, instructionMenuWidth)}
+                  >
+                    {instructionEntries.map((entry) => {
+                      if (entry.type === 'separator') {
+                        return (
+                          <div
+                            key={entry.key}
+                            role="separator"
+                            style={{ height: '1px', background: '#d8e8f0', margin: '6px 10px' }}
+                          />
+                        );
+                      }
+                      const active = isLessonsPage && currentLessonsView === entry.id;
+                      return (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => goToLessonsView(entry.id)}
+                          style={headerMenuItemStyle(active)}
+                        >
+                          {entry.label}
+                        </button>
+                      );
+                    })}
+                  </div>,
+                  document.body,
+                ) : null}
+              </div>
+            ) : null}
             {isAdminUser ? (
               <div ref={adminMenuRef} style={{ position: 'relative', marginLeft: '8px' }}>
                 <button
@@ -382,15 +540,11 @@ export function AppHeaderCollapsibleControls({
                   className="app-header-tab"
                   aria-haspopup="menu"
                   aria-expanded={adminMenuOpen}
-                  onClick={() => setAdminMenuOpen((open) => !open)}
-                  style={{
-                    ...tabStyle(isAdminSectionActive),
-                    minWidth: adminMenuWidth,
-                    width: adminMenuWidth,
-                    padding: '10px 12px 12px 12px',
-                    justifyContent: 'space-between',
-                    gap: '6px',
+                  onClick={() => {
+                    setInstructionsMenuOpen(false);
+                    setAdminMenuOpen((open) => !open);
                   }}
+                  style={dropdownTriggerStyle(isAdminSectionActive, adminMenuWidth)}
                 >
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{adminMenuLabel}</span>
                   <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>▾</span>
@@ -400,21 +554,7 @@ export function AppHeaderCollapsibleControls({
                     role="menu"
                     aria-label="Admin pages"
                     data-admin-menu
-                    style={{
-                      position: 'fixed',
-                      top: adminMenuPosition.top,
-                      left: adminMenuPosition.left,
-                      width: adminMenuWidth,
-                      minWidth: adminMenuWidth,
-                      background: 'white',
-                      border: '1px solid rgba(0, 0, 0, 0.12)',
-                      borderRadius: '8px',
-                      boxShadow: '0 8px 20px rgba(0, 0, 0, 0.18)',
-                      zIndex: 10050,
-                      overflow: 'hidden',
-                      padding: '4px 0',
-                      boxSizing: 'border-box',
-                    }}
+                    style={headerMenuPanelStyle(adminMenuPosition, adminMenuWidth)}
                   >
                     {adminMenuItems.map((item) => {
                       if (item.id === 'separator') {
@@ -431,28 +571,8 @@ export function AppHeaderCollapsibleControls({
                           key={item.id}
                           type="button"
                           role="menuitem"
-                          onClick={() => {
-                            if (item.id === 'settings') onSettingsClick();
-                            else if (item.id === 'attendance-log') onAttendanceClick();
-                            else if (item.id === 'hosts') onHostsClick();
-                            else if (item.id === 'membership-log') onMembershipLogClick();
-                            else if (item.id === 'plans') onPaymentsClick(undefined, 'plans');
-                            else onPaymentsClick(undefined, 'payments');
-                          }}
-                          style={{
-                            display: 'block',
-                            width: '100%',
-                            boxSizing: 'border-box',
-                            textAlign: 'left',
-                            padding: '10px 14px',
-                            border: 'none',
-                            background: item.active ? '#eaf4fb' : 'transparent',
-                            color: item.active ? '#155b78' : '#17324d',
-                            fontWeight: item.active ? 700 : 600,
-                            fontSize: '14px',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                          }}
+                          onClick={() => runAdminItem(item.id)}
+                          style={headerMenuItemStyle(item.active)}
                         >
                           {item.label}
                         </button>

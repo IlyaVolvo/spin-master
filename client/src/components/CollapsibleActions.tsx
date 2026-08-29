@@ -25,6 +25,18 @@ export type CollapsibleAction =
       key: string;
     };
 
+export type CollapsibleMenuItem =
+  | CollapsibleActionButton
+  | {
+      type: 'separator';
+      key: string;
+    }
+  | {
+      type: 'section';
+      key: string;
+      label: string;
+    };
+
 type CollapsibleActionsProps = {
   items?: CollapsibleAction[];
   endSlot?: ReactNode;
@@ -34,7 +46,7 @@ type CollapsibleActionsProps = {
   /** Hidden row used for width measurement when visibleSlot is set. */
   measureSlot?: ReactNode;
   /** Menu entries when collapsed; defaults to items + endMenuItems. */
-  allMenuItems?: CollapsibleActionButton[];
+  allMenuItems?: CollapsibleMenuItem[];
   menuLabel?: string;
   menuButtonRef?: React.MutableRefObject<HTMLButtonElement | null>;
   variant?: 'default' | 'header';
@@ -314,25 +326,46 @@ export function CollapsibleActions({
             right: menuPosition.right,
           }}
         >
-          {collapsedMenuItems.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              role="menuitem"
-              className={[
-                'collapsible-actions__menu-item',
-                item.active ? 'collapsible-actions__menu-item--active' : '',
-              ].filter(Boolean).join(' ')}
-              title={item.title}
-              aria-current={item.active ? 'page' : undefined}
-              onClick={() => {
-                item.onClick();
-                setMenuOpen(false);
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
+          {collapsedMenuItems.map((item) => {
+            if (item.type === 'separator') {
+              return (
+                <div
+                  key={item.key}
+                  role="separator"
+                  className="collapsible-actions__menu-rule"
+                />
+              );
+            }
+            if (item.type === 'section') {
+              return (
+                <div
+                  key={item.key}
+                  className="collapsible-actions__menu-section"
+                >
+                  {item.label}
+                </div>
+              );
+            }
+            return (
+              <button
+                key={item.key}
+                type="button"
+                role="menuitem"
+                className={[
+                  'collapsible-actions__menu-item',
+                  item.active ? 'collapsible-actions__menu-item--active' : '',
+                ].filter(Boolean).join(' ')}
+                title={item.title}
+                aria-current={item.active ? 'page' : undefined}
+                onClick={() => {
+                  item.onClick();
+                  setMenuOpen(false);
+                }}
+              >
+                {item.label}
+              </button>
+            );
+          })}
         </div>,
         document.body,
       )}
