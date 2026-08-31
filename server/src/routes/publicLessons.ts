@@ -1,7 +1,7 @@
 import express from 'express';
 import { optionalAuthenticate, type AuthRequest } from '../middleware/auth';
 import { getPublicCoachCalendar } from '../services/coachCalendarService';
-import { getGroupClassByCode } from '../services/groupClassService';
+import { acceptCoachInviteByToken, acceptDesignatedSeat, denyCoachInviteByToken, getCoachInviteByToken, getGroupClassByCode } from '../services/groupClassService';
 import { listTeachingCoaches } from '../services/coachProfileService';
 
 const router = express.Router();
@@ -40,11 +40,13 @@ router.get('/coaches/:id', optionalAuthenticate, async (req: AuthRequest, res) =
 
 router.get('/classes/:code', async (req, res) => {
   const cls = await getGroupClassByCode(String(req.params.code || ''));
-  if (!cls) return res.status(404).json({ error: 'Class not found' });
+  if (!cls || cls.status !== 'ACCEPTING') return res.status(404).json({ error: 'Class not found' });
+  const acceptedCoaches = cls.coaches.filter((c) => c.inviteStatus === 'ACCEPTED');
   res.json({
     id: cls.id,
     publicCode: cls.publicCode,
     title: cls.title,
+    status: cls.status,
     durationMinutes: cls.durationMinutes,
     pricePerOccurrenceCents: cls.pricePerOccurrenceCents,
     minParticipants: cls.minParticipants,
@@ -56,7 +58,7 @@ router.get('/classes/:code', async (req, res) => {
     intervalWeeks: cls.intervalWeeks,
     startsOn: cls.startsOn,
     untilOn: cls.untilOn,
-    coaches: cls.coaches.map((c) => ({
+    coaches: acceptedCoaches.map((c) => ({
       coachProfileId: c.coachProfileId,
       firstName: c.coachProfile.member.firstName,
       lastName: c.coachProfile.member.lastName,
@@ -68,14 +70,73 @@ router.get('/classes/:code', async (req, res) => {
       clubDate: o.clubDate,
       startTime: o.startTime,
       endTime: o.endTime,
-      registered: o.registrations.filter((r) => r.status === 'REGISTERED').map((r) => ({
-        id: r.member.id,
-        firstName: r.member.firstName,
-        lastName: r.member.lastName,
-      })),
-      waitlistCount: o.registrations.filter((r) => r.status === 'WAITLIST').length,
+      registered: o.registrations
+        .filter((r) => r.status === 'ACCEPTED')
+        .map((r) => ({
+          id: r.member.id,
+          firstName: r.member.firstName,
+          lastName: r.member.lastName,
+        })),
+      designatedPending: o.registrations
+        .filter((r) => r.status === 'PENDING')
+        .map((r) => ({
+          id: r.member.id,
+          firstName: r.member.firstName,
+          lastName: r.member.lastName,
+        })),
+      waitlistCount: o.registrations.filter((r) => r.status === 'WAITING').length,
     })),
   });
+});
+
+router.get('/group-coach-invites/:token', async (req, res) => {
+  const row = await getCoachInviteByToken(String(req.params.token || ''));
+  if (!row) return res.status(404).json({ error: 'Invitation not found' });
+  res.json({
+    id: row.id,
+    inviteStatus: row.inviteStatus,
+    conflict: row.conflict,
+    conflictMessage: row.conflictMessage,
+    title: row.groupClass.title,
+    startsOn: row.groupClass.startsOn,
+    slots: row.groupClass.slots,
+    occurrences: row.groupClass.occurrences.map((o) => ({
+      clubDate: o.clubDate,
+      startTime: o.startTime,
+      endTime: o.endTime,
+    })),
+    creator: row.groupClass.creator.member,
+  });
+});
+
+router.post('/group-coach-invites/:token/accept', async (req, res) => {
+  try {
+    const updated = await acceptCoachInviteByToken(String(req.params.token || ''));
+    res.json({ ok: true, status: updated.status });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Could not accept' });
+  }
+});
+
+router.post('/group-coach-invites/:token/deny', async (req, res) => {
+  try {
+    const updated = await denyCoachInviteByToken(String(req.params.token || ''));
+    res.json({ ok: true, status: updated.status });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Could not decline' });
+  }
+});
+
+router.post('/group-designated/:token/accept', async (req, res) => {
+  try {
+    const result = await acceptDesignatedSeat({
+      token: String(req.params.token || ''),
+      initiatedBy: 'MEMBER',
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Could not accept seat' });
+  }
 });
 
 export default router;

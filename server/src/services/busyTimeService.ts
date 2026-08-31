@@ -36,7 +36,7 @@ export async function coachBusyIntervals(
       where: {
         cancelled: false,
         clubDate: { gte: from, lte: to },
-        groupClass: { coaches: { some: { coachProfileId } } },
+        groupClass: { coaches: { some: { coachProfileId, inviteStatus: 'ACCEPTED' } } },
       },
       select: { id: true, clubDate: true, startTime: true, endTime: true },
     }),
@@ -72,7 +72,7 @@ export async function playerBusyIntervals(
     prisma.groupClassRegistration.findMany({
       where: {
         memberId,
-        status: 'REGISTERED',
+        status: { in: ['ACCEPTED', 'PENDING'] as Array<'ACCEPTED' | 'PENDING'> },
         occurrence: { cancelled: false, clubDate: { gte: from, lte: to } },
       },
       select: {

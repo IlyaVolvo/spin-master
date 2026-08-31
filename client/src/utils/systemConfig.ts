@@ -155,6 +155,7 @@ export type SystemConfig = {
     defaultGroupMaxParticipants: number;
     defaultOccurrenceDeadlineHours: number;
     defaultFirstSessionDeadlineHours: number;
+    designatedAcceptDaysBeforeFirst: number;
     editSessionMinutes: number;
   };
 };
@@ -308,6 +309,7 @@ const defaultSystemConfig: SystemConfig = {
     defaultGroupMaxParticipants: 8,
     defaultOccurrenceDeadlineHours: 24,
     defaultFirstSessionDeadlineHours: 48,
+    designatedAcceptDaysBeforeFirst: 3,
     editSessionMinutes: 10,
   },
 };

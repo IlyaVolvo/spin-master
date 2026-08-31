@@ -3,6 +3,7 @@ import api from '../../utils/api';
 import { addDaysToYmd } from '../../utils/clubDateTime';
 import { getErrorMessage } from '../../utils/errorHandler';
 import { formatPlayerName, getNameDisplayOrder } from '../../utils/nameFormatter';
+import HoverTimeHint from './HoverTimeHint';
 import LessonSlotCaption from './LessonSlotCaption';
 import {
   absorbTouching,
@@ -112,6 +113,7 @@ export default function CoachEditorCalendar(props: {
   const { week, windows, reserved, hoursByDate, editing, onWindowsChange, onMergeWeek, onError } = props;
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [hoverTime, setHoverTime] = useState<{ clubDate: string; time: string } | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [repeatWeeks, setRepeatWeeks] = useState(1);
@@ -132,6 +134,7 @@ export default function CoachEditorCalendar(props: {
 
   useEffect(() => {
     setMenu(null);
+    setHoverTime(null);
   }, [week.from, editing]);
 
   useEffect(() => {
@@ -270,6 +273,7 @@ export default function CoachEditorCalendar(props: {
     const maxEnd = maxCreateEnd(startTime, hours, reservedOnDay(reserved, clubDate));
     if (!maxEnd) return;
     setMenu(null);
+    setHoverTime(null);
     setDrag({
       kind: 'create',
       clubDate,
@@ -394,6 +398,39 @@ export default function CoachEditorCalendar(props: {
                   ref={(el) => {
                     columnRefs.current[day.clubDate] = el;
                   }}
+                  onPointerMove={(e) => {
+                    if (!editing || drag) {
+                      if (hoverTime?.clubDate === day.clubDate) setHoverTime(null);
+                      return;
+                    }
+                    const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
+                    const time = timeFromOffset(axis.start, y);
+                    if (cellIsClosed(hours, time)) {
+                      if (hoverTime?.clubDate === day.clubDate) setHoverTime(null);
+                      return;
+                    }
+                    const coveringReserved = reservedOnDay(reserved, day.clubDate).some(
+                      (r) =>
+                        parseMinutes(r.startTime) <= parseMinutes(time) &&
+                        parseMinutes(time) < parseMinutes(r.endTime),
+                    );
+                    const coveringWindow = windows.some(
+                      (w) =>
+                        w.clubDate === day.clubDate &&
+                        parseMinutes(w.startTime) <= parseMinutes(time) &&
+                        parseMinutes(time) < parseMinutes(w.endTime),
+                    );
+                    if (coveringReserved || coveringWindow) {
+                      if (hoverTime?.clubDate === day.clubDate) setHoverTime(null);
+                      return;
+                    }
+                    if (hoverTime?.clubDate !== day.clubDate || hoverTime.time !== time) {
+                      setHoverTime({ clubDate: day.clubDate, time });
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    setHoverTime((cur) => (cur?.clubDate === day.clubDate ? null : cur));
+                  }}
                   style={{ position: 'relative', height: times.length * CELL_H }}
                 >
                   {times.map((time) => {
@@ -507,6 +544,12 @@ export default function CoachEditorCalendar(props: {
                       </div>
                     );
                   })}
+                  {editing && hoverTime?.clubDate === day.clubDate && !drag ? (
+                    <HoverTimeHint
+                      time={hoverTime.time}
+                      offsetMinutes={parseMinutes(hoverTime.time) - parseMinutes(axis.start)}
+                    />
+                  ) : null}
                 </div>
               </div>
             );

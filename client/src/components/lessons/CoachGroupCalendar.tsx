@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../utils/api';
 import { addDaysToYmd, clubTodayYmd } from '../../utils/clubDateTime';
 import { getErrorMessage } from '../../utils/errorHandler';
-import { isAdmin } from '../../utils/auth';
+import { isAdmin, getMember } from '../../utils/auth';
 import { getSystemConfig } from '../../utils/systemConfig';
 import { formatMoney } from '../../utils/formatMoney';
 import { formatPlayerName, getNameDisplayOrder } from '../../utils/nameFormatter';
@@ -76,24 +76,49 @@ const sectionBar: CSSProperties = {
   gap: 10,
 };
 
-type MemberLite = { id: number; firstName: string; lastName: string };
+const WEEKDAY_OPTIONS = [
+  { id: 'mon', label: 'Mon' },
+  { id: 'tue', label: 'Tue' },
+  { id: 'wed', label: 'Wed' },
+  { id: 'thu', label: 'Thu' },
+  { id: 'fri', label: 'Fri' },
+  { id: 'sat', label: 'Sat' },
+  { id: 'sun', label: 'Sun' },
+] as const;
+
+type MemberLite = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  rating?: number | null;
+  birthDate?: string | null;
+};
+type CoachLite = { id: number; memberId: number; member: { firstName: string; lastName: string } };
 type Registration = { id: number; status: string; member?: MemberLite };
 type Occurrence = {
   id: number;
   clubDate: string;
   startTime: string;
   endTime: string;
-  runBelowMin?: boolean;
   registrations?: Registration[];
+};
+type GroupCoach = {
+  coachProfileId: number;
+  inviteStatus?: string;
+  coachProfile?: { member?: { id: number; firstName: string; lastName: string } };
 };
 type GroupClass = {
   id: number;
   title: string;
   publicCode: string;
+  status?: string;
   durationMinutes: number;
   pricePerOccurrenceCents?: number;
   minParticipants: number;
   maxParticipants: number;
+  creatorCoachProfileId?: number;
+  creator?: { member?: { id: number } };
+  coaches?: GroupCoach[];
   occurrences?: Occurrence[];
 };
 
@@ -121,6 +146,18 @@ function axisTimes(axis: { start: string; end: string }): string[] {
 function timeFromOffset(axisStart: string, offsetY: number): string {
   const row = Math.max(0, Math.floor(offsetY / CELL_H));
   return addMinutes(axisStart, row * 15);
+}
+
+function ageOnYmd(birthDate: string | null | undefined, ymd: string): number | null {
+  if (!birthDate) return null;
+  const birth = new Date(birthDate);
+  if (Number.isNaN(birth.getTime())) return null;
+  const [y, m, d] = ymd.split('-').map(Number);
+  let age = y - birth.getUTCFullYear();
+  const month = birth.getUTCMonth() + 1;
+  const day = birth.getUTCDate();
+  if (m < month || (m === month && d < day)) age -= 1;
+  return age;
 }
 
 function colorForClass(id: number): string {
@@ -240,9 +277,18 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
   const [minP, setMinP] = useState(cfg?.defaultGroupMinParticipants ?? 2);
   const [maxP, setMaxP] = useState(cfg?.defaultGroupMaxParticipants ?? 8);
   const [intervalWeeks, setIntervalWeeks] = useState(1);
-  const [repeatCount, setRepeatCount] = useState(8);
+  const [durationMode, setDurationMode] = useState<'1' | '2' | '4' | 'custom'>('4');
+  const [customWeeks, setCustomWeeks] = useState(6);
   const [bandId, setBandId] = useState('');
+  const [ageMin, setAgeMin] = useState('');
+  const [ageMax, setAgeMax] = useState('');
+  const [deadlineHours, setDeadlineHours] = useState(cfg?.defaultOccurrenceDeadlineHours ?? 24);
+  const [extraDays, setExtraDays] = useState<string[]>([]);
+  const [extraCoachIds, setExtraCoachIds] = useState<number[]>([]);
+  const [designeeIds, setDesigneeIds] = useState<number[]>([]);
+  const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [placeMemberId, setPlaceMemberId] = useState('');
+  const [replaceCoachId, setReplaceCoachId] = useState('');
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const dragRef = useRef(drag);
   dragRef.current = drag;
@@ -309,6 +355,10 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
     api
       .get('/players')
       .then((res) => setPlayers(Array.isArray(res.data) ? res.data : res.data.members || res.data.players || []))
+      .catch(() => undefined);
+    api
+      .get('/lessons/coaches')
+      .then((res) => setCoaches(Array.isArray(res.data) ? res.data : []))
       .catch(() => undefined);
   }, []);
 
@@ -398,13 +448,37 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
   const durationMinutes = draft
     ? parseMinutes(draft.endTime) - parseMinutes(draft.startTime)
     : defaultMinutes;
+  const durationWeeks = durationMode === 'custom' ? customWeeks : Number(durationMode);
+  const me = getMember();
+  const firstWeekday = draft ? weekdayKey(draft.clubDate) : null;
+  const eligibleDesignees = players.filter((p) => {
+    if (band) {
+      if (p.rating == null) return false;
+      if (band.min != null && p.rating < band.min) return false;
+      if (band.max != null && p.rating > band.max) return false;
+    }
+    const minA = ageMin === '' ? null : Number(ageMin);
+    const maxA = ageMax === '' ? null : Number(ageMax);
+    if (minA != null || maxA != null) {
+      const age = ageOnYmd(p.birthDate, draft?.clubDate || clubTodayYmd());
+      if (age == null) return false;
+      if (minA != null && age < minA) return false;
+      if (maxA != null && age > maxA) return false;
+    }
+    return true;
+  });
 
   const create = async () => {
     if (!draft) return;
     onError(null);
     setBusy(true);
     try {
-      const untilOn = addDaysToYmd(draft.clubDate, 7 * intervalWeeks * Math.max(0, repeatCount - 1));
+      const slots = [
+        { weekday: weekdayKey(draft.clubDate), startTime: draft.startTime },
+        ...extraDays
+          .filter((d) => d !== weekdayKey(draft.clubDate))
+          .map((weekday) => ({ weekday, startTime: draft.startTime })),
+      ];
       await api.post('/lessons/group-classes', {
         title,
         durationMinutes,
@@ -412,14 +486,22 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
         minParticipants: minP,
         maxParticipants: maxP,
         startsOn: draft.clubDate,
-        untilOn,
-        slots: [{ weekday: weekdayKey(draft.clubDate), startTime: draft.startTime }],
+        durationWeeks,
+        slots,
         intervalWeeks,
         ratingMin: band?.min ?? null,
         ratingMax: band?.max ?? null,
+        ageMin: ageMin === '' ? null : Number(ageMin),
+        ageMax: ageMax === '' ? null : Number(ageMax),
+        occurrenceDeadlineHours: deadlineHours,
+        additionalCoachProfileIds: extraCoachIds,
+        designeeMemberIds: designeeIds.slice(0, maxP),
       });
       setDraft(null);
       setTitle('');
+      setExtraDays([]);
+      setExtraCoachIds([]);
+      setDesigneeIds([]);
       load(weekStart);
     } catch (err) {
       onError(getErrorMessage(err, 'Could not create class'));
@@ -438,9 +520,11 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
   };
 
   const registered = (occ: Occurrence) =>
-    (occ.registrations || []).filter((r) => r.status === 'REGISTERED');
+    (occ.registrations || []).filter((r) => r.status === 'ACCEPTED');
+  const pendingSeats = (occ: Occurrence) =>
+    (occ.registrations || []).filter((r) => r.status === 'PENDING');
   const waitlisted = (occ: Occurrence) =>
-    (occ.registrations || []).filter((r) => r.status === 'WAITLIST');
+    (occ.registrations || []).filter((r) => r.status === 'WAITING');
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -723,17 +807,26 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
               <option value={1}>Every week</option>
               <option value={2}>Every 2 weeks</option>
             </select>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
-              Sessions
+            <select
+              value={durationMode}
+              onChange={(e) => setDurationMode(e.target.value as '1' | '2' | '4' | 'custom')}
+              style={{ ...field, width: 150 }}
+            >
+              <option value="1">1 week</option>
+              <option value="2">2 weeks</option>
+              <option value="4">4 weeks</option>
+              <option value="custom">Custom weeks</option>
+            </select>
+            {durationMode === 'custom' ? (
               <input
                 type="number"
                 min={1}
                 max={40}
-                value={repeatCount}
-                onChange={(e) => setRepeatCount(Math.max(1, Math.min(40, Number(e.target.value) || 1)))}
+                value={customWeeks}
+                onChange={(e) => setCustomWeeks(Math.max(1, Math.min(40, Number(e.target.value) || 1)))}
                 style={{ ...field, width: 64, textAlign: 'center' }}
               />
-            </label>
+            ) : null}
             <select value={bandId} onChange={(e) => setBandId(e.target.value)} style={{ ...field, width: 140 }}>
               <option value="">Any rating</option>
               {(cfg?.ratingBands || []).map((b) => (
@@ -742,6 +835,32 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
                 </option>
               ))}
             </select>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
+              Age
+              <input
+                placeholder="min"
+                value={ageMin}
+                onChange={(e) => setAgeMin(e.target.value)}
+                style={{ ...field, width: 48, textAlign: 'center' }}
+              />
+              –
+              <input
+                placeholder="max"
+                value={ageMax}
+                onChange={(e) => setAgeMax(e.target.value)}
+                style={{ ...field, width: 48, textAlign: 'center' }}
+              />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
+              Cancel hrs
+              <input
+                type="number"
+                min={0}
+                value={deadlineHours}
+                onChange={(e) => setDeadlineHours(Math.max(0, Number(e.target.value) || 0))}
+                style={{ ...field, width: 56, textAlign: 'center' }}
+              />
+            </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
               $
               <input value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...field, width: 72, textAlign: 'center' }} />
@@ -764,6 +883,69 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
                 style={{ ...field, width: 56, textAlign: 'center' }}
               />
             </label>
+            {firstWeekday ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155' }}>
+                Extra days
+                {WEEKDAY_OPTIONS.filter((d) => d.id !== firstWeekday).map((d) => {
+                  const on = extraDays.includes(d.id);
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      style={{
+                        ...ghostBtn,
+                        padding: '4px 8px',
+                        background: on ? '#dbeafe' : '#fff',
+                      }}
+                      onClick={() =>
+                        setExtraDays((cur) => (on ? cur.filter((x) => x !== d.id) : [...cur, d.id]))
+                      }
+                    >
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </span>
+            ) : null}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
+              Extra coaches
+              <select
+              multiple
+              title="Extra coaches"
+              value={extraCoachIds.map(String)}
+              onChange={(e) =>
+                setExtraCoachIds(Array.from(e.target.selectedOptions).map((o) => Number(o.value)))
+              }
+              style={{ ...field, minWidth: 180, height: 72 }}
+            >
+              {coaches
+                .filter((c) => c.memberId !== me?.id)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {formatPlayerName(c.member.firstName, c.member.lastName, getNameDisplayOrder())}
+                  </option>
+                ))}
+            </select>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
+              Designated
+              <select
+              multiple
+              title="Designated players"
+              value={designeeIds.map(String)}
+              onChange={(e) => {
+                const next = Array.from(e.target.selectedOptions).map((o) => Number(o.value));
+                setDesigneeIds(next.slice(0, maxP));
+              }}
+              style={{ ...field, minWidth: 180, height: 72 }}
+            >
+              {eligibleDesignees.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {formatPlayerName(p.firstName, p.lastName, getNameDisplayOrder())}
+                </option>
+              ))}
+            </select>
+            </label>
             <button type="button" disabled={busy} onClick={() => void create()}>
               {busy ? 'Creating…' : 'Create class'}
             </button>
@@ -778,21 +960,50 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
               {selected.title} · {formatClubDay(selected.clubDate)}{' '}
               {formatSlotRange(selected.startTime, selected.endTime)}
             </span>
-            <Link to={`/classes/${selected.publicCode}`} className="lesson-name-link" style={{ color: '#fff', background: 'rgba(255,255,255,0.14)', textDecoration: 'none', fontWeight: 650, padding: '3px 10px', borderRadius: 6 }}>
+            <Link
+              to={`/classes/${selected.publicCode}`}
+              className="lesson-name-link"
+              style={{
+                color: '#fff',
+                background: 'rgba(255,255,255,0.14)',
+                textDecoration: 'none',
+                fontWeight: 650,
+                padding: '3px 10px',
+                borderRadius: 6,
+                visibility: selectedClass.status === 'PENDING' ? 'hidden' : 'visible',
+              }}
+            >
               Public page
             </Link>
           </div>
           <div style={{ padding: '14px 16px 16px', background: '#f8fafc' }}>
             <p style={{ margin: '0 0 10px', fontSize: 13, color: '#334155' }}>
+              {selectedClass.status === 'PENDING' ? 'Waiting on coaches · ' : ''}
               {registered(selected).length}/{selected.maxParticipants} registered
+              {pendingSeats(selected).length ? ` · ${pendingSeats(selected).length} reserved` : ''}
               {waitlisted(selected).length ? ` · ${waitlisted(selected).length} waitlist` : ''}
-              {registered(selected).length < selected.minParticipants && !selected.runBelowMin
-                ? ' · below minimum'
-                : ''}
+              {registered(selected).length < selected.minParticipants ? ' · below minimum' : ''}
               {selectedClass.pricePerOccurrenceCents != null
                 ? ` · ${formatMoney(selectedClass.pricePerOccurrenceCents)}`
                 : ''}
             </p>
+            {(selectedClass.coaches || []).length ? (
+              <p style={{ margin: '0 0 10px', fontSize: 13, color: '#334155' }}>
+                {(selectedClass.coaches || [])
+                  .map((c) => {
+                    const name = c.coachProfile?.member
+                      ? formatPlayerName(
+                          c.coachProfile.member.firstName,
+                          c.coachProfile.member.lastName,
+                          getNameDisplayOrder(),
+                        )
+                      : 'Coach';
+                    const st = (c.inviteStatus || 'ACCEPTED').toLowerCase();
+                    return `${name} (${st})`;
+                  })
+                  .join(', ')}
+              </p>
+            ) : null}
             {registered(selected).length > 0 ? (
               <p style={{ margin: '0 0 10px', fontSize: 13, color: '#0f172a' }}>
                 {registered(selected)
@@ -836,17 +1047,58 @@ export default function CoachGroupCalendar({ onError }: { onError: (m: string | 
               >
                 Place
               </button>
-              {registered(selected).length < selected.minParticipants && !selected.runBelowMin ? (
-                <button
-                  type="button"
-                  style={ghostBtn}
-                  disabled={busy}
-                  onClick={() =>
-                    act(api.post(`/lessons/group-occurrences/${selected.id}/run-below-min`), 'Could not run')
-                  }
-                >
-                  Run anyway
-                </button>
+              {selectedClass.status === 'PENDING' && selectedClass.creator?.member?.id === me?.id ? (
+                <>
+                  <select
+                    value={replaceCoachId}
+                    onChange={(e) => setReplaceCoachId(e.target.value)}
+                    style={{ ...field, minWidth: 160 }}
+                  >
+                    <option value="">Add a coach</option>
+                    {coaches
+                      .filter((c) => c.memberId !== me?.id)
+                      .filter(
+                        (c) =>
+                          !(selectedClass.coaches || []).some(
+                            (row) =>
+                              row.coachProfileId === c.id &&
+                              (row.inviteStatus === 'INVITED' || row.inviteStatus === 'ACCEPTED'),
+                          ),
+                      )
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {formatPlayerName(c.member.firstName, c.member.lastName, getNameDisplayOrder())}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    style={ghostBtn}
+                    disabled={!replaceCoachId || busy}
+                    onClick={() => {
+                      if (!replaceCoachId) return;
+                      act(
+                        api.post(`/lessons/group-classes/${selected.classId}/coaches`, {
+                          coachProfileId: Number(replaceCoachId),
+                        }),
+                        'Could not invite coach',
+                      );
+                      setReplaceCoachId('');
+                    }}
+                  >
+                    Invite
+                  </button>
+                  <button
+                    type="button"
+                    style={ghostBtn}
+                    disabled={busy}
+                    onClick={() =>
+                      act(api.post(`/lessons/group-classes/${selected.classId}/finalize`), 'Could not finalize')
+                    }
+                  >
+                    Finalize
+                  </button>
+                </>
               ) : null}
               <button
                 type="button"

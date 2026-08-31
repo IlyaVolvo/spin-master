@@ -29,14 +29,19 @@ import {
 import { commitAvailabilityWindows } from '../services/availabilityCommit';
 import { getCoachEditorWeek, getStudentFreeWindows, getStudentLessonWeek } from '../services/coachCalendarService';
 import {
+  acceptCoachInvite,
+  acceptDesignatedSeat,
+  addReplacementCoach,
   cancelGroupOccurrence,
   cancelRemainingGroupOccurrences,
   createGroupClass,
+  denyCoachInvite,
   dropGroupRegistration,
+  finalizeGroupClass,
   listCoachGroupClasses,
+  listMyCoachInvites,
   listPlayerGroupRegistrations,
   registerForOccurrence,
-  runGroupOccurrenceBelowMin,
 } from '../services/groupClassService';
 import { recordLessonLifecycle } from '../services/lessonLifecycle';
 import { logger } from '../utils/logger';
@@ -417,12 +422,16 @@ router.post('/individual/:id/reduce-rate', requireCoachOrAdmin, async (req: Auth
 });
 
 router.get('/mine', async (req: AuthRequest, res) => {
-  if (!req.memberId) return res.status(401).json({ error: 'Not authenticated' });
-  const [lessons, classes] = await Promise.all([
-    listPlayerLessons(req.memberId),
-    listPlayerGroupRegistrations(req.memberId),
-  ]);
-  res.json({ lessons, classes });
+  try {
+    if (!req.memberId) return res.status(401).json({ error: 'Not authenticated' });
+    const [lessons, classes] = await Promise.all([
+      listPlayerLessons(req.memberId),
+      listPlayerGroupRegistrations(req.memberId),
+    ]);
+    res.json({ lessons, classes });
+  } catch (error) {
+    res.status(400).json({ error: getErrorMessage(error, 'Could not load lessons') });
+  }
 });
 
 router.get('/teaching', requireCoachOrAdmin, async (req: AuthRequest, res) => {
@@ -454,11 +463,14 @@ router.post('/group-classes', requireCoachOrAdmin, async (req: AuthRequest, res)
       ageMin: req.body?.ageMin,
       ageMax: req.body?.ageMax,
       intervalWeeks: req.body?.intervalWeeks,
+      durationWeeks: req.body?.durationWeeks,
       startsOn: String(req.body?.startsOn),
       untilOn: req.body?.untilOn,
+      occurrenceDeadlineHours: req.body?.occurrenceDeadlineHours,
       slots: Array.isArray(req.body?.slots) ? req.body.slots : [],
       additionalCoachProfileIds: req.body?.additionalCoachProfileIds,
       splitPercents: req.body?.splitPercents,
+      designeeMemberIds: req.body?.designeeMemberIds,
     });
     res.status(201).json(created);
   } catch (error) {
@@ -479,7 +491,10 @@ router.post('/group-occurrences/:id/register', async (req: AuthRequest, res) => 
         where: { id },
         include: { groupClass: { include: { coaches: { include: { coachProfile: true } } } } },
       });
-      const coachMemberIds = occ?.groupClass.coaches.map((c) => c.coachProfile.memberId) || [];
+      const coachMemberIds =
+        occ?.groupClass.coaches
+          .filter((c) => c.inviteStatus === 'ACCEPTED')
+          .map((c) => c.coachProfile.memberId) || [];
       const allowed = admin || (req.memberId != null && coachMemberIds.includes(req.memberId));
       if (!allowed) return res.status(403).json({ error: 'Not allowed to place this player' });
     }
@@ -531,20 +546,86 @@ router.post('/group-occurrences/:id/cancel', requireCoachOrAdmin, async (req: Au
   }
 });
 
-router.post('/group-occurrences/:id/run-below-min', requireCoachOrAdmin, async (req: AuthRequest, res) => {
+router.get('/group-invites', requireCoachOrAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { profile } = await resolveManagedCoach(req, req.query.memberId);
+    const rows = await listMyCoachInvites(profile.id);
+    res.json(rows);
+  } catch (error) {
+    res.status(400).json({ error: getErrorMessage(error, 'Could not load invitations') });
+  }
+});
+
+router.post('/group-invites/:id/accept', requireCoachOrAdmin, async (req: AuthRequest, res) => {
   try {
     const id = asInt(req.params.id);
-    if (!id || !req.memberId) return res.status(400).json({ error: 'Invalid occurrence' });
+    if (!id || !req.memberId) return res.status(400).json({ error: 'Invalid invitation' });
+    const updated = await acceptCoachInvite({ coachRowId: id, actorMemberId: req.memberId });
+    res.json(updated);
+  } catch (error) {
+    res.status(400).json({ error: getErrorMessage(error, 'Could not accept invitation') });
+  }
+});
+
+router.post('/group-invites/:id/deny', requireCoachOrAdmin, async (req: AuthRequest, res) => {
+  try {
+    const id = asInt(req.params.id);
+    if (!id || !req.memberId) return res.status(400).json({ error: 'Invalid invitation' });
+    const updated = await denyCoachInvite({ coachRowId: id, actorMemberId: req.memberId });
+    res.json(updated);
+  } catch (error) {
+    res.status(400).json({ error: getErrorMessage(error, 'Could not decline invitation') });
+  }
+});
+
+router.post('/group-classes/:id/finalize', requireCoachOrAdmin, async (req: AuthRequest, res) => {
+  try {
+    const id = asInt(req.params.id);
+    if (!id || !req.memberId) return res.status(400).json({ error: 'Invalid class' });
     const profile = await getCoachProfileByMemberId(req.memberId);
-    const updated = await runGroupOccurrenceBelowMin({
-      occurrenceId: id,
+    const updated = await finalizeGroupClass({
+      classId: id,
       actorMemberId: req.memberId,
+      actorCoachProfileId: profile?.id ?? 0,
       isAdmin: await isAdmin(req),
-      actorCoachProfileId: profile?.id ?? null,
     });
     res.json(updated);
   } catch (error) {
-    res.status(400).json({ error: getErrorMessage(error, 'Could not confirm class') });
+    res.status(400).json({ error: getErrorMessage(error, 'Could not finalize class') });
+  }
+});
+
+router.post('/group-classes/:id/coaches', requireCoachOrAdmin, async (req: AuthRequest, res) => {
+  try {
+    const id = asInt(req.params.id);
+    const coachProfileId = asInt(req.body?.coachProfileId);
+    if (!id || !coachProfileId || !req.memberId) return res.status(400).json({ error: 'Class and coach are required' });
+    const profile = await getCoachProfileByMemberId(req.memberId);
+    const updated = await addReplacementCoach({
+      classId: id,
+      coachProfileId,
+      actorMemberId: req.memberId,
+      actorCoachProfileId: profile?.id ?? 0,
+      isAdmin: await isAdmin(req),
+    });
+    res.json(updated);
+  } catch (error) {
+    res.status(400).json({ error: getErrorMessage(error, 'Could not invite coach') });
+  }
+});
+
+router.post('/group-classes/:id/designated/accept', async (req: AuthRequest, res) => {
+  try {
+    const id = asInt(req.params.id);
+    if (!id || !req.memberId) return res.status(400).json({ error: 'Invalid class' });
+    const result = await acceptDesignatedSeat({
+      classId: id,
+      actorMemberId: req.memberId,
+      initiatedBy: (await isAdmin(req)) ? 'ADMIN' : 'MEMBER',
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: getErrorMessage(error, 'Could not accept seat') });
   }
 });
 

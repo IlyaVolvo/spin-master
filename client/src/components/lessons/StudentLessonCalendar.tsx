@@ -8,6 +8,7 @@ import { formatPlayerName, getNameDisplayOrder } from '../../utils/nameFormatter
 import { hasMemberRole } from '../../utils/auth';
 import { weekdayForYmd } from '../../utils/clubHoursDisplay';
 import CancelLessonDialog from './CancelLessonDialog';
+import HoverTimeHint from './HoverTimeHint';
 import LessonSlotCaption from './LessonSlotCaption';
 import ReserveLessonDialog from './ReserveLessonDialog';
 import { useLessonCalendarUpdated } from './useLessonCalendarUpdated';
@@ -276,6 +277,11 @@ export default function StudentLessonCalendar({ onError }: { onError: (m: string
   const [notice, setNotice] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [hoverTime, setHoverTime] = useState<{
+    clubDate: string;
+    time: string;
+    coachProfileId: number;
+  } | null>(null);
   const [reserveOpen, setReserveOpen] = useState(false);
   const [horizonWindows, setHorizonWindows] = useState<FreeWindow[] | null>(null);
   const [cancelIds, setCancelIds] = useState<number[] | null>(null);
@@ -374,6 +380,7 @@ export default function StudentLessonCalendar({ onError }: { onError: (m: string
     if (busy || reserveOpen) return;
     const cell = clampToWindow(startTime, addMinutes(startTime, 15), window.startTime, window.endTime);
     if (!cell) return;
+    setHoverTime(null);
     setReserveOpen(false);
     setSelection({
       coachProfileId: window.coachProfileId,
@@ -734,6 +741,27 @@ export default function StudentLessonCalendar({ onError }: { onError: (m: string
                               const startTime = timeFromOffset(slot.startTime, localY);
                               beginCreate(slot, startTime, e.clientY);
                             }}
+                            onPointerMove={(e) => {
+                              if (drag || busy || reserveOpen) return;
+                              const localY = e.clientY - e.currentTarget.getBoundingClientRect().top;
+                              let time = timeFromOffset(slot.startTime, localY);
+                              if (parseMinutes(time) < parseMinutes(slot.startTime)) time = slot.startTime;
+                              if (parseMinutes(time) >= parseMinutes(slot.endTime)) {
+                                time = addMinutes(slot.endTime, -15);
+                              }
+                              if (
+                                hoverTime?.clubDate !== day.clubDate ||
+                                hoverTime.time !== time ||
+                                hoverTime.coachProfileId !== coach.id
+                              ) {
+                                setHoverTime({ clubDate: day.clubDate, time, coachProfileId: coach.id });
+                              }
+                            }}
+                            onPointerLeave={() => {
+                              setHoverTime((cur) =>
+                                cur?.clubDate === day.clubDate && cur.coachProfileId === coach.id ? null : cur,
+                              );
+                            }}
                             style={{
                               position: 'absolute',
                               left: `calc(${leftPct}% + 1px)`,
@@ -874,6 +902,17 @@ export default function StudentLessonCalendar({ onError }: { onError: (m: string
                       </div>
                     );
                   })}
+                  {hoverTime && hoverTime.clubDate === day.clubDate && !drag && !reserveOpen ? (
+                    <HoverTimeHint
+                      time={hoverTime.time}
+                      offsetMinutes={parseMinutes(hoverTime.time) - parseMinutes(axis.start)}
+                      style={{
+                        left: `calc(${(Math.max(0, coaches.findIndex((c) => c.id === hoverTime.coachProfileId)) / laneCount) * 100}% + 1px)`,
+                        right: 'auto',
+                        width: `calc(${100 / laneCount}% - 2px)`,
+                      }}
+                    />
+                  ) : null}
                 </div>
               </div>
             );

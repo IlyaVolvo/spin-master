@@ -45,6 +45,7 @@ const HostsAdmin = lazyWithReload(() => import('./components/HostsAdmin'));
 const LessonsPage = lazyWithReload(() => import('./components/lessons/LessonsPage'));
 const PublicCoachPage = lazyWithReload(() => import('./components/lessons/PublicCoachPage'));
 const PublicClassPage = lazyWithReload(() => import('./components/lessons/PublicClassPage'));
+const GroupCoachInvitePage = lazyWithReload(() => import('./components/lessons/GroupCoachInvitePage'));
 const PaymentReturnPage = lazyWithReload(() => import('./components/PaymentReturnPage'));
 const PublicResultsListPage = lazyWithReload(() => import('./components/public/PublicResultsListPage'));
 const PublicResultsLatestPage = lazyWithReload(() =>
@@ -67,7 +68,11 @@ const PublicJoinDenyPage = lazyWithReload(() =>
 const MePage = lazyWithReload(() => import('./components/me/MePage'));
 
 function isLessonPublicPath(pathname: string): boolean {
-  return pathname.startsWith('/coaches/') || pathname.startsWith('/classes/');
+  return (
+    pathname.startsWith('/coaches/') ||
+    pathname.startsWith('/classes/') ||
+    pathname.startsWith('/group-invites/')
+  );
 }
 
 function isUnauthenticatedPublicPath(pathname: string): boolean {
@@ -452,6 +457,9 @@ function AppRoutes({
       {!isAuth ? (
         <Route path="/classes/:code" element={lessonPublicElement(<PublicClassPage />)} />
       ) : null}
+      {!isAuth ? (
+        <Route path="/group-invites/:token" element={lessonPublicElement(<GroupCoachInvitePage />)} />
+      ) : null}
       <Route
         path="/tournament-registration/:code"
         element={
@@ -650,6 +658,7 @@ function AppRoutes({
                         <Route path="/coach" element={<Navigate to="/lessons?view=calendar" replace />} />
                         <Route path="/coaches/:id" element={<PublicCoachPage />} />
                         <Route path="/classes/:code" element={<PublicClassPage />} />
+                        <Route path="/group-invites/:token" element={<GroupCoachInvitePage />} />
                       </Routes>
                     </Suspense>
                   </ErrorBoundary>

@@ -128,6 +128,7 @@ model Member {
   individualLessonsAsPlayer    IndividualLesson[]       @relation("IndividualLessonPlayer")
   individualSeriesAsPlayer     IndividualLessonSeries[] @relation("IndividualLessonSeriesPlayer")
   groupClassRegistrations      GroupClassRegistration[]
+  groupClassDesignees          GroupClassDesignee[]
   lessonLifecycleEventsAsActor LessonLifecycleEvent[]   @relation("LessonLifecycleActor")
 
   // Discount percentage for next plan purchase (0-100)
@@ -711,9 +712,21 @@ enum IndividualLessonStatus {
   CANCELLED
 }
 
+enum GroupClassStatus {
+  PENDING
+  ACCEPTING
+}
+
+enum GroupCoachInviteStatus {
+  INVITED
+  ACCEPTED
+  DECLINED
+}
+
 enum GroupRegistrationStatus {
-  REGISTERED
-  WAITLIST
+  PENDING
+  ACCEPTED
+  WAITING
   DROPPED
 }
 
@@ -734,6 +747,13 @@ enum LessonLifecycleAction {
   RATE_REDUCE
   CLASS_CREATE
   CLASS_RUN_BELOW_MIN
+  CLASS_INVITE
+  CLASS_INVITE_ACCEPT
+  CLASS_INVITE_DENY
+  CLASS_FINALIZE
+  DESIGNATED_ACCEPT
+  DESIGNATED_EXPIRE
+  CLASS_AUTO_CANCEL
   AVAILABILITY_CANCEL
 }
 
@@ -879,10 +899,11 @@ model IndividualLesson {
 }
 
 model GroupClass {
-  id                          Int      @id @default(autoincrement())
+  id                          Int             @id @default(autoincrement())
   creatorCoachProfileId       Int
-  publicCode                  String   @unique
-  title                       String   @default("")
+  publicCode                  String          @unique
+  title                       String          @default("")
+  status                      GroupClassStatus @default(PENDING)
   durationMinutes             Int
   pricePerOccurrenceCents     Int
   minParticipants             Int
@@ -891,21 +912,23 @@ model GroupClass {
   ratingMax                   Int?
   ageMin                      Int?
   ageMax                      Int?
-  intervalWeeks               Int      @default(1)
+  intervalWeeks               Int             @default(1)
   startsOn                    String
   untilOn                     String?
-  firstSessionDeadlineHours   Int      @default(24)
-  occurrenceDeadlineHours     Int      @default(24)
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
+  firstSessionDeadlineHours   Int             @default(24)
+  occurrenceDeadlineHours     Int             @default(24)
+  createdAt                   DateTime        @default(now())
+  updatedAt                   DateTime        @updatedAt
 
   creator     CoachProfile           @relation("GroupClassCreator", fields: [creatorCoachProfileId], references: [id], onDelete: Restrict)
   slots       GroupClassSlot[]
   coaches     GroupClassCoach[]
   occurrences GroupClassOccurrence[]
+  designees   GroupClassDesignee[]
 
   @@index([creatorCoachProfileId])
   @@index([publicCode])
+  @@index([status])
   @@map("group_classes")
 }
 
@@ -922,16 +945,19 @@ model GroupClassSlot {
 }
 
 model GroupClassCoach {
-  id             Int @id @default(autoincrement())
+  id             Int                     @id @default(autoincrement())
   classId        Int
   coachProfileId Int
   splitPercent   Int
+  inviteStatus   GroupCoachInviteStatus  @default(INVITED)
+  inviteToken    String                  @unique
+  respondedAt    DateTime?
 
   groupClass   GroupClass   @relation(fields: [classId], references: [id], onDelete: Cascade)
   coachProfile CoachProfile @relation(fields: [coachProfileId], references: [id], onDelete: Restrict)
 
   @@unique([classId, coachProfileId])
-  @@index([coachProfileId])
+  @@index([coachProfileId, inviteStatus])
   @@map("group_class_coaches")
 }
 
@@ -942,7 +968,6 @@ model GroupClassOccurrence {
   startTime     String
   endTime       String
   cancelled     Boolean  @default(false)
-  runBelowMin   Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -958,7 +983,7 @@ model GroupClassRegistration {
   id                 Int                     @id @default(autoincrement())
   occurrenceId       Int
   memberId           Int
-  status             GroupRegistrationStatus @default(REGISTERED)
+  status             GroupRegistrationStatus @default(PENDING)
   waitlistPosition   Int?
   priceCents         Int
   paymentId          Int?
@@ -973,6 +998,21 @@ model GroupClassRegistration {
   @@index([memberId, status])
   @@index([paymentId])
   @@map("group_class_registrations")
+}
+
+model GroupClassDesignee {
+  id          Int      @id @default(autoincrement())
+  classId     Int
+  memberId    Int
+  acceptToken String   @unique
+  createdAt   DateTime @default(now())
+
+  groupClass GroupClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  member     Member     @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([classId, memberId])
+  @@index([memberId])
+  @@map("group_class_designees")
 }
 
 model LessonLifecycleEvent {

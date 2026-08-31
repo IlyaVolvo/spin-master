@@ -217,6 +217,7 @@ export type LessonsConfig = {
   defaultGroupMaxParticipants: number;
   defaultOccurrenceDeadlineHours: number;
   defaultFirstSessionDeadlineHours: number;
+  designatedAcceptDaysBeforeFirst: number;
   editSessionMinutes: number;
 };
 
@@ -328,6 +329,7 @@ function getDefaultLessonsConfig(): LessonsConfig {
     defaultGroupMaxParticipants: 8,
     defaultOccurrenceDeadlineHours: 24,
     defaultFirstSessionDeadlineHours: 48,
+    designatedAcceptDaysBeforeFirst: 3,
     editSessionMinutes: 10,
   };
 }
@@ -926,6 +928,7 @@ function validateLessons(value: unknown): LessonsConfig {
     defaultGroupMaxParticipants: Math.max(1, Math.floor(Number(config.defaultGroupMaxParticipants) || 1)),
     defaultOccurrenceDeadlineHours: Math.max(0, Math.floor(Number(config.defaultOccurrenceDeadlineHours) || 0)),
     defaultFirstSessionDeadlineHours: Math.max(0, Math.floor(Number(config.defaultFirstSessionDeadlineHours) || 0)),
+    designatedAcceptDaysBeforeFirst: Math.max(0, Math.floor(Number(config.designatedAcceptDaysBeforeFirst) || 0)),
     editSessionMinutes: Math.max(1, Math.min(120, Math.floor(Number(config.editSessionMinutes) || defaults.editSessionMinutes))),
   };
 }

@@ -438,6 +438,28 @@ router.post('/cron/lesson-reminders', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/club/cron/group-class-jobs — designated hold expiry + below-min auto-cancel
+ */
+router.post('/cron/group-class-jobs', async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CLUB_CRON_SECRET;
+    const providedSecret = req.headers['x-club-cron-secret'];
+    if (cronSecret && providedSecret !== cronSecret) {
+      return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+    const { expireDesignatedHolds, autoCancelBelowMinOccurrences } = await import('../services/groupClassService');
+    const expired = await expireDesignatedHolds();
+    const cancelled = await autoCancelBelowMinOccurrences();
+    res.json({ ...expired, ...cancelled });
+  } catch (error) {
+    logger.error('Error running group class jobs', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * POST /api/club/cron/host-emails — host reminder and no-show admin emails
  */
 router.post('/cron/host-emails', async (req: Request, res: Response) => {

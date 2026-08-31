@@ -50,6 +50,7 @@ describe('systemConfigService', () => {
     expect(config.publicAccess.achievements.most_wins).toBe(0);
     expect(config.lessons.horizonMonths).toBe(3);
     expect(config.lessons.editSessionMinutes).toBe(10);
+    expect(config.lessons.designatedAcceptDaysBeforeFirst).toBe(3);
     expect(config.lessons.individualDurations.allowedMinutes).toEqual([30, 60, 90, 120]);
   });
 

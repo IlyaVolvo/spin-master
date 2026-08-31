@@ -9,6 +9,7 @@ import { formatMoney } from '../../utils/formatMoney';
 import { formatPlayerName, getNameDisplayOrder } from '../../utils/nameFormatter';
 import CoachEditorCalendar from './CoachEditorCalendar';
 import CoachGroupCalendar from './CoachGroupCalendar';
+import CoachInvitations from './CoachInvitations';
 import StudentLessonCalendar from './StudentLessonCalendar';
 import CancelLessonDialog from './CancelLessonDialog';
 import { printCoachSchedule } from './printCoachSchedule';
@@ -209,6 +210,7 @@ export default function LessonsPage() {
       {view === 'mine' ? <MyLessons onError={setError} /> : null}
       {view === 'calendar' && coach ? <CoachCalendar onError={setError} /> : null}
       {view === 'classes' && coach ? <CoachGroupCalendar onError={setError} /> : null}
+      {view === 'invitations' && coach ? <CoachInvitations onError={setError} /> : null}
       {view === 'log' && admin ? <LifecycleLog onError={setError} /> : null}
     </div>
   );
@@ -343,7 +345,7 @@ function MyLessons({ onError }: { onError: (m: string | null) => void }) {
                 clubDate: string;
                 startTime: string;
                 endTime: string;
-                groupClass?: { title: string; publicCode: string };
+                groupClass?: { id: number; title: string; publicCode: string };
               };
               const clubDate = String(occ?.clubDate || '');
               const prevDate =
@@ -353,6 +355,7 @@ function MyLessons({ onError }: { onError: (m: string | null) => void }) {
               const stripe = i % 2 === 0 ? '#fff' : '#f4f7fa';
               const weekLine = weekBoundaryStyle(clubDate, prevDate);
               const title = occ?.groupClass?.title || 'Class';
+              const classId = occ?.groupClass?.id;
               return (
                 <tr key={String(row.id)} style={{ background: stripe }}>
                   <td style={{ ...lessonTdDate, ...weekLine }}>{clubDate ? formatClubDay(clubDate) : '—'}</td>
@@ -368,8 +371,32 @@ function MyLessons({ onError }: { onError: (m: string | null) => void }) {
                       title
                     )}
                   </td>
-                  <td style={{ ...lessonTd, ...weekLine, whiteSpace: 'nowrap' }}>{String(row.status)}</td>
-                  <td style={{ ...lessonTd, ...weekLine, textAlign: 'center', width: 40 }}>
+                  <td style={{ ...lessonTd, ...weekLine, whiteSpace: 'nowrap' }}>
+                    {row.status === 'PENDING'
+                      ? 'Reserved'
+                      : row.status === 'ACCEPTED'
+                        ? 'Registered'
+                        : row.status === 'WAITING'
+                          ? 'Waitlist'
+                          : String(row.status)}
+                  </td>
+                  <td style={{ ...lessonTd, ...weekLine, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    {row.status === 'PENDING' && classId ? (
+                      <button
+                        type="button"
+                        style={lessonRemoveBtn}
+                        title="Accept reserved seat"
+                        aria-label="Accept reserved seat"
+                        onClick={() => {
+                          api
+                            .post(`/lessons/group-classes/${classId}/designated/accept`)
+                            .then(() => load())
+                            .catch((err) => onError(getErrorMessage(err, 'Could not accept seat')));
+                        }}
+                      >
+                        ✓
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="danger"
@@ -1159,6 +1186,13 @@ const LOG_ACTION_LABEL: Record<string, string> = {
   RATE_REDUCE: 'Reduce rate',
   CLASS_CREATE: 'Create class',
   CLASS_RUN_BELOW_MIN: 'Run below min',
+  CLASS_INVITE: 'Invite coach',
+  CLASS_INVITE_ACCEPT: 'Accept invite',
+  CLASS_INVITE_DENY: 'Decline invite',
+  CLASS_FINALIZE: 'Finalize class',
+  DESIGNATED_ACCEPT: 'Accept seat',
+  DESIGNATED_EXPIRE: 'Seat expired',
+  CLASS_AUTO_CANCEL: 'Auto-cancel',
   AVAILABILITY_CANCEL: 'Cancel slot',
 };
 

@@ -1368,6 +1368,16 @@ export default function SystemSettings() {
             })
           }
         />
+        <NumericInput
+          label="Designated seat hold (days before first session)"
+          min={0}
+          value={config.lessons?.designatedAcceptDaysBeforeFirst ?? 3}
+          onChange={(value) =>
+            updateConfig((draft) => {
+              draft.lessons.designatedAcceptDaysBeforeFirst = value;
+            })
+          }
+        />
         {(config.lessons?.ratingBands ?? []).map((band, index) => (
           <FieldRow key={band.id || index} label={`Rating band ${index + 1}`}>
             <input

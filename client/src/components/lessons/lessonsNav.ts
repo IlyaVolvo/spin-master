@@ -1,4 +1,4 @@
-export type LessonsView = 'calendar' | 'classes' | 'find' | 'mine' | 'log';
+export type LessonsView = 'calendar' | 'classes' | 'invitations' | 'find' | 'mine' | 'log';
 export type LessonsViewGroup = 'coach' | 'player' | 'admin';
 
 export type LessonsNavRoles = {
@@ -12,8 +12,9 @@ export const LESSONS_VIEWS: Array<{
   label: string;
   group: LessonsViewGroup;
 }> = [
-  { id: 'calendar', label: 'Calendar', group: 'coach' },
+  { id: 'calendar', label: 'Teaching', group: 'coach' },
   { id: 'classes', label: 'Group classes', group: 'coach' },
+  { id: 'invitations', label: 'Invitations', group: 'coach' },
   { id: 'find', label: 'Find a lesson', group: 'player' },
   { id: 'mine', label: 'My lessons', group: 'player' },
   { id: 'log', label: 'Log', group: 'admin' },

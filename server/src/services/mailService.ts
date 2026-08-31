@@ -332,6 +332,85 @@ export async function sendIndividualLessonReminderEmail(params: {
   });
 }
 
+export function buildGroupCoachInviteAcceptLink(token: string): string {
+  return `${getClientBaseUrl()}/group-invites/${encodeURIComponent(token)}?action=accept`;
+}
+
+export function buildGroupCoachInviteDenyLink(token: string): string {
+  return `${getClientBaseUrl()}/group-invites/${encodeURIComponent(token)}?action=deny`;
+}
+
+export function buildGroupClassPublicLink(code: string): string {
+  return `${getClientBaseUrl()}/classes/${encodeURIComponent(code)}`;
+}
+
+export function buildGroupDesignatedAcceptLink(code: string, token: string): string {
+  return `${getClientBaseUrl()}/classes/${encodeURIComponent(code)}?seat=${encodeURIComponent(token)}`;
+}
+
+export async function sendGroupCoachInviteEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  title: string;
+  whenLabel: string;
+  token: string;
+}): Promise<void> {
+  const accept = buildGroupCoachInviteAcceptLink(params.token);
+  const deny = buildGroupCoachInviteDenyLink(params.token);
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: `Invite to teach: ${params.title}`,
+    body: `You are invited to teach ${params.title} (${params.whenLabel}).\nAccept: ${accept}\nDecline: ${deny}`,
+  });
+}
+
+export async function sendGroupDesignatedSeatEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  title: string;
+  whenLabel: string;
+  code: string;
+  token: string;
+}): Promise<void> {
+  const link = buildGroupDesignatedAcceptLink(params.code, params.token);
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: `A seat is reserved: ${params.title}`,
+    body: `A seat is reserved for you in ${params.title} (${params.whenLabel}). Accept it here: ${link}`,
+  });
+}
+
+export async function sendGroupClassBlastEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  title: string;
+  whenLabel: string;
+  code: string;
+}): Promise<void> {
+  const link = buildGroupClassPublicLink(params.code);
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: `New class: ${params.title}`,
+    body: `${params.title} is open for signup (${params.whenLabel}). Register here: ${link}`,
+  });
+}
+
+export async function sendGroupDesignatedExpiredEmail(params: {
+  toEmail: string | null;
+  firstName: string;
+  title: string;
+}): Promise<void> {
+  await sendLessonMail({
+    toEmail: params.toEmail,
+    firstName: params.firstName,
+    subject: `Reserved seat expired: ${params.title}`,
+    body: `Your reserved seat in ${params.title} has expired. You can still register if a spot is open.`,
+  });
+}
+
 export async function sendGroupClassRegisteredEmail(params: {
   toEmail: string | null;
   firstName: string;
@@ -389,7 +468,7 @@ export async function sendGroupBelowMinEmail(params: {
     toEmail: params.toEmail,
     firstName: params.firstName,
     subject: `Below minimum: ${params.title}`,
-    body: `${params.title} on ${params.whenLabel} has ${params.registered} of ${params.min} required players. Cancel the occurrence or run it anyway from Lessons.`,
+    body: `${params.title} on ${params.whenLabel} has ${params.registered} of ${params.min} required players and will be cancelled if it stays below minimum.`,
   });
 }
 
