@@ -94,6 +94,73 @@ const headerMenuItemStyle = (active: boolean): CSSProperties => ({
   whiteSpace: 'nowrap',
 });
 
+function HeaderDropdownTriggerLabel({
+  tree,
+  selection,
+}: {
+  tree: string;
+  selection: string | null;
+}) {
+  if (!selection) {
+    return (
+      <span
+        style={{
+          minWidth: 0,
+          flex: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          textAlign: 'left',
+        }}
+      >
+        {tree}
+      </span>
+    );
+  }
+  return (
+    <span
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        minWidth: 0,
+        flex: 1,
+        overflow: 'hidden',
+        textAlign: 'left',
+        lineHeight: 1.15,
+      }}
+    >
+      <span
+        style={{
+          fontSize: '10px',
+          fontWeight: 500,
+          letterSpacing: '0.02em',
+          opacity: 0.88,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          maxWidth: '100%',
+        }}
+      >
+        {tree}
+      </span>
+      <span
+        style={{
+          fontSize: '14px',
+          fontWeight: 650,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          maxWidth: '100%',
+        }}
+      >
+        {selection}
+      </span>
+    </span>
+  );
+}
+
 export function AppHeaderCollapsibleControls({
   headerIconControlSize,
   showPlayersTab,
@@ -150,13 +217,12 @@ export function AppHeaderCollapsibleControls({
     () => instructionMenuEntries(instructionRoles),
     [instructionRoles],
   );
-  const instructionMenuLabel = currentLessonsView
-    ? lessonsViewLabel(currentLessonsView)
-    : 'Instructions';
+  const instructionSelection = currentLessonsView ? lessonsViewLabel(currentLessonsView) : null;
+  const adminSelection = isAdminSectionActive && adminMenuLabel !== 'Admin' ? adminMenuLabel : null;
   const instructionLongestLabel = instructionEntries.reduce((longest, entry) => {
     if (entry.type === 'separator') return longest;
     return entry.label.length > longest.length ? entry.label : longest;
-  }, instructionMenuLabel.length > 'Instructions'.length ? instructionMenuLabel : 'Instructions');
+  }, 'Instructions');
   const instructionMenuWidth = `calc(${instructionLongestLabel.length + 2}ch + 24px)`;
 
   useLayoutEffect(() => {
@@ -385,22 +451,26 @@ export function AppHeaderCollapsibleControls({
         ? `Tournaments (${pendingPreregistrationCount})`
         : 'Tournaments')
       : isInstructionsActive
-        ? instructionMenuLabel
+        ? (instructionSelection || 'Instructions')
         : isAdminSectionActive
           ? adminMenuLabel
           : isAchievementsActive
             ? 'Achievements'
             : 'Actions';
 
-  const dropdownTriggerStyle = (active: boolean, width: string): CSSProperties => ({
+  const dropdownTriggerStyle = (active: boolean, width: string, hasSelection: boolean): CSSProperties => ({
     ...tabStyle(active),
     display: 'inline-flex',
     alignItems: 'center',
     minWidth: width,
     width,
-    padding: '10px 12px 12px 12px',
+    height: '44px',
+    ...(hasSelection
+      ? { padding: '3px 8px 3px 10px', fontSize: 'inherit', lineHeight: 1.15 }
+      : {}),
     justifyContent: 'space-between',
     gap: '6px',
+    overflow: 'hidden',
   });
 
   const measureSlot = useMemo(() => (
@@ -416,13 +486,15 @@ export function AppHeaderCollapsibleControls({
         </button>
       ) : null}
       {showInstructions ? (
-        <button type="button" className="app-header-tab" style={{ ...tabStyle(isInstructionsActive), minWidth: instructionMenuWidth, width: instructionMenuWidth }} disabled tabIndex={-1} aria-hidden="true">
-          {instructionMenuLabel} ▾
+        <button type="button" className="app-header-tab app-header-tab--tree" style={{ ...tabStyle(isInstructionsActive), ...dropdownTriggerStyle(isInstructionsActive, instructionMenuWidth, true) }} disabled tabIndex={-1} aria-hidden="true">
+          <HeaderDropdownTriggerLabel tree="Instructions" selection={instructionLongestLabel} />
+          <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>▾</span>
         </button>
       ) : null}
       {isAdminUser ? (
-        <button type="button" className="app-header-tab" style={{ ...tabStyle(isAdminSectionActive), minWidth: adminMenuWidth, width: adminMenuWidth }} disabled tabIndex={-1} aria-hidden="true">
-          {adminMenuLabel} ▾
+        <button type="button" className="app-header-tab app-header-tab--tree" style={{ ...tabStyle(isAdminSectionActive), ...dropdownTriggerStyle(isAdminSectionActive, adminMenuWidth, true) }} disabled tabIndex={-1} aria-hidden="true">
+          <HeaderDropdownTriggerLabel tree="Admin" selection="System Configuration" />
+          <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>▾</span>
         </button>
       ) : null}
     </div>
@@ -437,7 +509,7 @@ export function AppHeaderCollapsibleControls({
     isAdminSectionActive,
     hasPendingPreregistrations,
     pendingPreregistrationCount,
-    instructionMenuLabel,
+    instructionLongestLabel,
     instructionMenuWidth,
     adminMenuLabel,
     adminMenuWidth,
@@ -486,16 +558,17 @@ export function AppHeaderCollapsibleControls({
               <div ref={instructionsMenuRef} style={{ position: 'relative' }}>
                 <button
                   type="button"
-                  className="app-header-tab"
+                  className={instructionSelection ? 'app-header-tab app-header-tab--tree' : 'app-header-tab'}
                   aria-haspopup="menu"
                   aria-expanded={instructionsMenuOpen}
+                  aria-label={instructionSelection ? `Instructions, ${instructionSelection}` : 'Instructions'}
                   onClick={() => {
                     setAdminMenuOpen(false);
                     setInstructionsMenuOpen((open) => !open);
                   }}
-                  style={dropdownTriggerStyle(isInstructionsActive, instructionMenuWidth)}
+                  style={dropdownTriggerStyle(isInstructionsActive, instructionMenuWidth, Boolean(instructionSelection))}
                 >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{instructionMenuLabel}</span>
+                  <HeaderDropdownTriggerLabel tree="Instructions" selection={instructionSelection} />
                   <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>▾</span>
                 </button>
                 {instructionsMenuOpen && instructionsMenuPosition ? createPortal(
@@ -537,16 +610,20 @@ export function AppHeaderCollapsibleControls({
               <div ref={adminMenuRef} style={{ position: 'relative', marginLeft: '8px' }}>
                 <button
                   type="button"
-                  className="app-header-tab"
+                  className={adminSelection ? 'app-header-tab app-header-tab--tree' : 'app-header-tab'}
                   aria-haspopup="menu"
                   aria-expanded={adminMenuOpen}
+                  aria-label={adminSelection ? `Admin, ${adminSelection}` : 'Admin'}
                   onClick={() => {
                     setInstructionsMenuOpen(false);
                     setAdminMenuOpen((open) => !open);
                   }}
-                  style={dropdownTriggerStyle(isAdminSectionActive, adminMenuWidth)}
+                  style={dropdownTriggerStyle(isAdminSectionActive, adminMenuWidth, Boolean(adminSelection))}
                 >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{adminMenuLabel}</span>
+                  <HeaderDropdownTriggerLabel
+                    tree="Admin"
+                    selection={adminSelection}
+                  />
                   <span aria-hidden="true" style={{ fontSize: '12px', flexShrink: 0 }}>▾</span>
                 </button>
                 {adminMenuOpen && adminMenuPosition ? createPortal(

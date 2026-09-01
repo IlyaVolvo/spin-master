@@ -93,6 +93,11 @@ html {
   min-width: 0;
 }
 
+.app-header-tab--tree {
+  height: 44px;
+  padding: 3px 8px 3px 10px;
+}
+
 .app-header-title {
   min-width: 0;
 }
@@ -162,6 +167,11 @@ html {
   .collapsible-actions__menu-btn--header {
     padding: 8px 14px 10px !important;
     font-size: 14px !important;
+  }
+
+  .app-header-tab--tree {
+    padding: 3px 8px 3px 10px !important;
+    font-size: inherit !important;
   }
 
   .app-header-paddle {
