@@ -13,6 +13,7 @@
 | [STRIPE_TEST_MODE_INTEGRATION.md](./STRIPE_TEST_MODE_INTEGRATION.md) | Stripe **test** keys |
 | [PAYMENTS_TEST_TO_PRODUCTION.md](./PAYMENTS_TEST_TO_PRODUCTION.md) | Switch install to **live** Stripe |
 | [MANUAL_PAYMENT_CHECKIN_TESTS.md](./MANUAL_PAYMENT_CHECKIN_TESTS.md) | Manual check-in / pay tests |
+| [MANUAL_LESSONS_TESTS.md](./MANUAL_LESSONS_TESTS.md) | Manual private / group lesson tests (Ilya, Demi, Polly, Amy) |
 | [CLUB_HOURS_AND_AUTO_CHECKOUT.md](./CLUB_HOURS_AND_AUTO_CHECKOUT.md) | Club hours, cron |
 | [INTERACTIVE_ROLE_TUTORIALS_PLAN.md](./INTERACTIVE_ROLE_TUTORIALS_PLAN.md) | `/role-tutorials/` |
 | [PROJECT_KNOWLEDGE.md](./PROJECT_KNOWLEDGE.md) | Project knowledge notes |
