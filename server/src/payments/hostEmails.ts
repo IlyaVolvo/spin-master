@@ -11,8 +11,6 @@ import {
 import { hostHasArrivedForSlot } from './hostArrival';
 import { resolveHostNoShowNotifyEmails } from './hostNoShowNotifyAdmins';
 
-const HOST_EMAIL_TICK_MS = 60 * 1000;
-
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -197,17 +195,4 @@ export async function processHostEmails(now: Date = new Date()): Promise<{
   }
 
   return { reminderEmailed, reminderSkippedNoEmail, noShowEmailed, noShowSkippedNoAdmins };
-}
-
-export function startHostEmailScheduler(): void {
-  if (process.env.HOST_EMAIL_SCHEDULER === '0') return;
-  const tick = () => {
-    void processHostEmails().catch((err) => {
-      logger.warn('Host email tick failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-  };
-  tick();
-  setInterval(tick, HOST_EMAIL_TICK_MS);
 }

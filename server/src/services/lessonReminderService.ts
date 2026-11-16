@@ -2,9 +2,6 @@ import { prisma } from '../index';
 import { clubLocalDateTimeUtc, getClubTimezone } from '../utils/clubDate';
 import { reminderIsDue } from './coachCalendarGrid';
 import { sendIndividualLessonReminderEmail } from './mailService';
-import { logger } from '../utils/logger';
-
-const LESSON_REMINDER_TICK_MS = 60 * 1000;
 
 export async function processLessonReminders(now: Date = new Date()): Promise<{ sent: number }> {
   const lessons = await prisma.individualLesson.findMany({
@@ -47,17 +44,4 @@ export async function processLessonReminders(now: Date = new Date()): Promise<{ 
     sent += 1;
   }
   return { sent };
-}
-
-export function startLessonReminderScheduler(): void {
-  if (process.env.LESSON_REMINDER_SCHEDULER === '0') return;
-  const tick = () => {
-    void processLessonReminders().catch((err) => {
-      logger.warn('Lesson reminder tick failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-  };
-  tick();
-  setInterval(tick, LESSON_REMINDER_TICK_MS);
 }

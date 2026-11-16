@@ -11,8 +11,7 @@ End-to-end checks for scheduling, claim, perks, and **host email reminders / no-
 | Client / API | Local Vite + `tsx watch` (or your usual ports) |
 | Club date / timezone | **System Configuration** → Club Timezone; slots use club-local wall times |
 | SMTP | Required for email cases (`SMTP_HOST`, `SMTP_FROM` or `SMTP_USER`, etc.) |
-| Cron (optional) | `POST /api/club/cron/host-emails` with `x-club-cron-secret` if `CLUB_CRON_SECRET` is set |
-| In-process tick | About once per minute; disable with `HOST_EMAIL_SCHEDULER=0` |
+| Cron | `POST /api/club/cron/host-emails` with `x-club-cron-secret` if `CLUB_CRON_SECRET` is set |
 
 Prefer a dedicated test host member with a real inbox you can read, plus at least one **Admin** with email.
 

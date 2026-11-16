@@ -68,7 +68,7 @@ PIN kiosk can claim with the member’s score PIN (`pin-host-claim`).
 
 ## Host emails (reminders and no-show)
 
-Configured under **System Configuration** → **Hosts**. SMTP must be working (`SMTP_HOST`, `SMTP_FROM` / `SMTP_USER`, etc.). The server checks about once a minute while it is running. External cron can also call `POST /api/club/cron/host-emails` (same `x-club-cron-secret` as other club crons when `CLUB_CRON_SECRET` is set). Set `HOST_EMAIL_SCHEDULER=0` to disable the in-process minute tick.
+Configured under **System Configuration** → **Hosts**. SMTP must be working (`SMTP_HOST`, `SMTP_FROM` / `SMTP_USER`, etc.). Send mail by calling `POST /api/club/cron/host-emails` (same `x-club-cron-secret` as other club crons when `CLUB_CRON_SECRET` is set). The API does not poll for these emails on its own.
 
 Each shift is emailed at most once for each kind of message. Reassigning the cell clears those markers so the new host can be reminded and a new no-show can fire if needed.
 
