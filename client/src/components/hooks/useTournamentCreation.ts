@@ -18,6 +18,7 @@ interface TournamentCreationMember {
   id: number;
   isActive: boolean;
   roles: string[];
+  rating?: number | null;
 }
 
 interface UseTournamentCreationParams {
@@ -235,6 +236,11 @@ export function useTournamentCreation({
       setError('Only active players can be selected for tournaments or matches.');
       return;
     }
+    const adding = !selectedPlayersForTournament.includes(playerId);
+    if (adding && player.rating == null && !existingParticipantIds.has(playerId)) {
+      setError('Unrated players cannot be added to a tournament.');
+      return;
+    }
 
     const rangeSlice = getShiftRangeSlice(
       shiftKey,
@@ -245,7 +251,9 @@ export function useTournamentCreation({
     if (rangeSlice) {
       const canAddId = (id: number) => {
         const p = members.find((m) => m.id === id);
-        return Boolean(p && p.isActive);
+        if (!p || !p.isActive) return false;
+        if (p.rating == null && !existingParticipantIds.has(id)) return false;
+        return true;
       };
       setSelectedPlayersForTournament(
         toggleRangeInSelectionWithAddGate(
@@ -279,6 +287,15 @@ export function useTournamentCreation({
 
     if (maxPlayers > 0 && selectedPlayersForTournament.length > maxPlayers) {
       setError(`Select at most ${maxPlayers} players`);
+      return;
+    }
+
+    const blockedUnrated = selectedPlayersForTournament.some((id) => {
+      const player = members.find((m) => m.id === id);
+      return player?.rating == null && !existingParticipantIds.has(id);
+    });
+    if (blockedUnrated) {
+      setError('Unrated players cannot be added to a tournament.');
       return;
     }
 

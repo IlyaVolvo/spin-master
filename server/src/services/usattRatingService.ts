@@ -638,9 +638,6 @@ export async function getPostTournamentRating(tournamentId: number, memberId: nu
   }
 
   const playerRatingAtTime = participant.playerRatingAtTime;
-  if (playerRatingAtTime === null) {
-    return null;
-  }
 
   /**
    * Some types (e.g. round robin) always resolve from DB (rating_history), not from
@@ -777,10 +774,6 @@ export async function getPostTournamentRatingsBatch(
     const participant = tournamentInfo.participants.find((p) => p.memberId === pair.memberId);
     if (!participant) {
       result.set(key, undefined);
-      continue;
-    }
-    if (participant.playerRatingAtTime === null) {
-      result.set(key, null);
       continue;
     }
 
@@ -1174,11 +1167,15 @@ export async function createRatingHistoryForRoundRobinTournament(
     const ratingAfter = appliedNewRatings.get(participant.memberId);
     if (ratingAfter === undefined) continue;
 
-    const priorRating = participant.member.rating ?? participant.playerRatingAtTime ?? 1200;
-    const ratingChange = ratingAfter - priorRating;
-    
-    // Only create history entry if rating changed
-    if (ratingChange !== 0) {
+    const wasUnrated = participant.playerRatingAtTime == null;
+    // Unrated enrollment is an assignment, not a delta from a placeholder rating.
+    const priorRating = wasUnrated
+      ? null
+      : (participant.member.rating ?? participant.playerRatingAtTime ?? 1200);
+    const ratingChange = wasUnrated || priorRating == null ? null : ratingAfter - priorRating;
+
+    // Rated players: skip a zero delta. Unrated players: always record the assigned rating.
+    if (wasUnrated || ratingChange !== 0) {
       // Check if rating history entry already exists for this tournament+player
       const existingEntry = await (prisma as any).ratingHistory.findFirst({
         where: {
@@ -1273,8 +1270,8 @@ export async function adjustRatingsForSingleMatch(
 
   const useCurrent = options?.useCurrentMemberRatings === true;
 
-  let rating1Before: number;
-  let rating2Before: number;
+  let rating1Before: number | null;
+  let rating2Before: number | null;
 
   if (
     options?.rating1BeforeOverride !== undefined &&
@@ -1290,13 +1287,17 @@ export async function adjustRatingsForSingleMatch(
     if (!m1 || !m2) {
       throw new Error('Player not found');
     }
-    rating1Before = m1.rating ?? 1200;
-    rating2Before = m2.rating ?? 1200;
+    rating1Before = m1.rating;
+    rating2Before = m2.rating;
   } else {
     // Use playerRatingAtTime (rating when tournament was created), not current rating
-    // This ensures we calculate based on ratings at the time of the match
-    rating1Before = participant1.playerRatingAtTime ?? 1200; // Default to 1200 if unrated
-    rating2Before = participant2.playerRatingAtTime ?? 1200;
+    rating1Before = participant1.playerRatingAtTime;
+    rating2Before = participant2.playerRatingAtTime;
+  }
+
+  // A match involving an unrated player does not change either rating.
+  if (rating1Before == null || rating2Before == null) {
+    return;
   }
 
   // Calculate rating difference

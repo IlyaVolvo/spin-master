@@ -452,7 +452,7 @@ const History: React.FC = () => {
                                 getNameDisplayOrder()
                               )}
                               {/* Show rating AFTER match, with change if available */}
-                              {match.opponentRatingAfter !== null && (
+                              {match.opponentRatingAfter !== null ? (
                                 <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>
                                   ({match.opponentRatingAfter}
                                   {match.opponentRatingChange !== null ? (
@@ -465,6 +465,8 @@ const History: React.FC = () => {
                                   ) : null}
                                   )
                                 </span>
+                              ) : (
+                                <span style={{ marginLeft: '8px', fontSize: '12px', color: '#999' }}>-</span>
                               )}
                             </td>
                             <td style={{ 
@@ -494,7 +496,7 @@ const History: React.FC = () => {
                                   ) : null}
                                 </span>
                               ) : (
-                                <span style={{ fontSize: '12px', color: '#999' }}>N/A</span>
+                                <span style={{ fontSize: '12px', color: '#999' }}>-</span>
                               )}
                             </td>
                           </tr>

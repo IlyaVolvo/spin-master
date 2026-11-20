@@ -23,7 +23,7 @@ import {
 } from '../utils/tournamentEventUtils';
 import { isDateInRange } from '../utils/dateFormatter';
 import { addDaysToYmd, clubTodayYmd } from '../utils/clubDateTime';
-import { formatActiveTournamentRating } from '../utils/ratingFormatter';
+import { formatActiveTournamentRating, formatMatchResultRating } from '../utils/ratingFormatter';
 import { PlayoffBracket } from './tournaments/plugins/PlayoffBracket';
 import { MatchEntryPopup } from './MatchEntryPopup';
 import { connectSocket } from '../utils/socket';
@@ -3285,13 +3285,8 @@ const TournamentDetailPage: React.FC = () => {
                       const p1Won = m.player1Forfeit ? false : (m.player2Forfeit ? true : p1Sets > p2Sets);
                       const p2Won = m.player2Forfeit ? false : (m.player1Forfeit ? true : p2Sets > p1Sets);
 
-                      // Rating data from standalone match API
-                      const p1Pre = m.player1RatingBefore;
-                      const p1Change = m.player1RatingChange;
-                      const p1Post = (p1Pre !== null && p1Change !== null) ? p1Pre + p1Change : null;
-                      const p2Pre = m.player2RatingBefore;
-                      const p2Change = m.player2RatingChange;
-                      const p2Post = (p2Pre !== null && p2Change !== null) ? p2Pre + p2Change : null;
+                      const p1RatingLabel = formatMatchResultRating(m.player1RatingBefore, m.player1RatingChange);
+                      const p2RatingLabel = formatMatchResultRating(m.player2RatingBefore, m.player2RatingChange);
 
                       return (
                         <div
@@ -3325,11 +3320,9 @@ const TournamentDetailPage: React.FC = () => {
                               <span style={{ fontSize: '14px', fontWeight: 'bold', color: p1Won ? '#27ae60' : p2Won ? '#e74c3c' : '#333' }}>
                                 {p1Name}
                               </span>
-                              {p1Change !== null && p1Post !== null && (
-                                <span style={{ fontSize: '11px', fontWeight: 'bold', marginLeft: '4px', color: p1Change >= 0 ? '#27ae60' : '#e74c3c' }}>
-                                  ({p1Post}/{p1Change >= 0 ? `+${p1Change}` : p1Change})
-                                </span>
-                              )}
+                              <span style={{ fontSize: '11px', fontWeight: 'bold', marginLeft: '4px', color: p1RatingLabel === '-' ? '#888' : (m.player1RatingChange != null && m.player1RatingChange < 0 ? '#e74c3c' : '#27ae60') }}>
+                                {p1RatingLabel}
+                              </span>
                             </div>
 
                             {/* Score */}
@@ -3341,11 +3334,9 @@ const TournamentDetailPage: React.FC = () => {
 
                             {/* Player 2 name + rating */}
                             <div style={{ textAlign: 'left' }}>
-                              {p2Change !== null && p2Post !== null && (
-                                <span style={{ fontSize: '11px', fontWeight: 'bold', marginRight: '4px', color: p2Change >= 0 ? '#27ae60' : '#e74c3c' }}>
-                                  ({p2Post}/{p2Change >= 0 ? `+${p2Change}` : p2Change})
-                                </span>
-                              )}
+                              <span style={{ fontSize: '11px', fontWeight: 'bold', marginRight: '4px', color: p2RatingLabel === '-' ? '#888' : (m.player2RatingChange != null && m.player2RatingChange < 0 ? '#e74c3c' : '#27ae60') }}>
+                                {p2RatingLabel}
+                              </span>
                               <span style={{ fontSize: '14px', fontWeight: 'bold', color: p2Won ? '#27ae60' : p1Won ? '#e74c3c' : '#333' }}>
                                 {p2Name}
                               </span>

@@ -92,7 +92,12 @@ export function formatRrCompletedRatingLine(participant: {
   // Prefer this tournament's completion rating over live member rating
   const afterEvent =
     rAfterTournament ?? participant?.postRatingAtTime ?? participant?.member?.rating ?? null;
-  if (before == null || afterEvent == null || isLikelyRanking(before)) {
+  // Unrated at signup: the event assigns a rating, with no before/delta.
+  if (before == null) {
+    if (afterEvent == null) return null;
+    return `(${Math.round(afterEvent)}) (-/-)`;
+  }
+  if (afterEvent == null || isLikelyRanking(before)) {
     return null;
   }
   const cur = Math.round(afterEvent);
@@ -107,5 +112,19 @@ export function formatRrCompletedRatingLine(participant: {
 
   const net = cur - bef;
   return `(${cur}) (${bef}/(${formatSignedDelta(net)}))`;
+}
+
+/**
+ * Standalone or per-match result annotation.
+ * Rated matches: (rating after/±change). No rating change: `-`.
+ */
+export function formatMatchResultRating(
+  ratingBefore: number | null | undefined,
+  ratingChange: number | null | undefined,
+): string {
+  if (ratingBefore == null || ratingChange == null) return '-';
+  const post = ratingBefore + ratingChange;
+  const delta = ratingChange >= 0 ? `+${ratingChange}` : `${ratingChange}`;
+  return `(${post}/${delta})`;
 }
 

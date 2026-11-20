@@ -95,6 +95,18 @@ function parseOptionalInteger(value: unknown): number | null {
   return Number.isInteger(num) ? num : null;
 }
 
+function unratedPlayersError(
+  players: Array<{ id: number; firstName?: string | null; lastName?: string | null; rating: number | null }>,
+): string | null {
+  const unrated = players.filter((player) => player.rating == null);
+  if (unrated.length === 0) return null;
+  const names = unrated.map((player) => {
+    const name = `${player.firstName ?? ''} ${player.lastName ?? ''}`.trim();
+    return name || `Player ${player.id}`;
+  });
+  return `Unrated players cannot be added to a tournament: ${names.join(', ')}`;
+}
+
 function validateTournamentRuleRequest(type: string, participantCount: number, data: any): string | null {
   if (!tournamentPluginRegistry.isRegistered(type)) {
     return null;
@@ -239,6 +251,9 @@ function registrationEligibilityFailure(params: {
   const { member, tournament, heldCount, alreadyHolding } = params;
   if (!memberCanSelfRegister(member)) {
     return 'Only active members can register for tournaments.';
+  }
+  if (!alreadyHolding && member.rating == null) {
+    return 'Unrated players cannot be added to a tournament.';
   }
   if (tournament.status !== 'PRE_REGISTRATION') {
     return 'Registration is closed for this tournament.';
@@ -1389,6 +1404,11 @@ router.post('/:id/finalize-registration', [
       return res.status(400).json({ error: 'Some participants are not active or not found' });
     }
 
+    const unratedError = unratedPlayersError(players);
+    if (unratedError) {
+      return res.status(400).json({ error: unratedError });
+    }
+
     const ruleError = validateTournamentRuleRequest(type, participantIds.length, req.body);
     if (ruleError) {
       return res.status(400).json({ error: ruleError });
@@ -1878,6 +1898,11 @@ router.post('/', [
       return res.status(400).json({ error: 'Some participants are not active or not found' });
     }
 
+    const unratedError = unratedPlayersError(players);
+    if (unratedError) {
+      return res.status(400).json({ error: unratedError });
+    }
+
     const ruleError = validateTournamentRuleRequest(type, participantIds.length, req.body);
     if (ruleError) {
       return res.status(400).json({ error: ruleError });
@@ -2027,6 +2052,12 @@ router.patch('/:id', [
       return res.status(400).json({ error: 'Some participants are not active or not found' });
     }
 
+    const alreadyIn = new Set(existingTournament.participants.map((p) => p.memberId));
+    const unratedError = unratedPlayersError(players.filter((player) => !alreadyIn.has(player.id)));
+    if (unratedError) {
+      return res.status(400).json({ error: unratedError });
+    }
+
     const ruleError = validateTournamentRuleRequest(existingTournament.type, participantIds.length, {
       ...req.body,
       additionalData,
@@ -2106,6 +2137,11 @@ router.post('/bulk', [
       return res.status(400).json({ 
         error: `Some participants are not active or not found: ${missingIds.join(', ')}` 
       });
+    }
+
+    const unratedError = unratedPlayersError(players);
+    if (unratedError) {
+      return res.status(400).json({ error: unratedError });
     }
 
     for (const tournamentData of tournaments as Array<{ participantIds: number[]; type: string }>) {
@@ -3731,8 +3767,13 @@ router.patch('/:id/participants', [
       return res.status(400).json({ error: 'Some participants are not active or not found' });
     }
 
-    // Get current participant IDs
     const currentParticipantIds = tournament.participants.map(p => p.memberId);
+    const alreadyIn = new Set(currentParticipantIds);
+    const unratedError = unratedPlayersError(players.filter((player) => !alreadyIn.has(player.id)));
+    if (unratedError) {
+      return res.status(400).json({ error: unratedError });
+    }
+
     const newParticipantIds = new Set(participantIds);
     const participantsChanged = 
       currentParticipantIds.length !== participantIds.length ||

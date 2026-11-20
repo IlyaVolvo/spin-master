@@ -457,6 +457,51 @@ describe('usattRatingService recalculation flows', () => {
       expect(mockPrisma.ratingHistory.create).not.toHaveBeenCalled();
     });
 
+    it('assigns an absolute rating to an unrated player without a signup delta', async () => {
+      const recordedAt = new Date('2026-03-01T13:00:00.000Z');
+      const tournament = {
+        id: 37,
+        type: 'ROUND_ROBIN',
+        createdAt: new Date('2026-03-01T12:00:00.000Z'),
+        recordedAt,
+        participants: [
+          { memberId: 1, playerRatingAtTime: null, member: { id: 1, rating: null } },
+          makeParticipant(2, 1500),
+        ],
+        matches: [
+          {
+            member1Id: 1,
+            member2Id: 2,
+            player1Sets: 3,
+            player2Sets: 1,
+            player1Forfeit: false,
+            player2Forfeit: false,
+          },
+        ],
+      };
+
+      mockPrisma.tournament.findUnique.mockResolvedValue(tournament);
+      mockPrisma.ratingHistory.findFirst.mockResolvedValue(null);
+      mockPrisma.ratingHistory.findMany.mockResolvedValue([]);
+
+      await createRatingHistoryForRoundRobinTournament(37);
+
+      const unratedUpdate = mockPrisma.member.update.mock.calls.find((call: any[]) => call[0].where.id === 1);
+      expect(unratedUpdate).toBeDefined();
+      expect(unratedUpdate[0].data.rating).toEqual(expect.any(Number));
+      expect(mockPrisma.ratingHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          memberId: 1,
+          rating: unratedUpdate[0].data.rating,
+          ratingChange: null,
+          reason: 'TOURNAMENT_COMPLETED',
+          tournamentId: 37,
+          matchId: null,
+          timestamp: recordedAt,
+        }),
+      });
+    });
+
     it('recreates 5-player RR upset scenario and computes completion-time ratings', async () => {
       const tournament = {
         id: 34,
@@ -674,6 +719,30 @@ describe('usattRatingService recalculation flows', () => {
       // Diff 1200 - 1195 = 5 → 0–12 bucket, upset (lower-rated player 1 wins) → 8 points
       expect(mockPrisma.member.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { rating: 1203 } });
       expect(mockPrisma.member.update).toHaveBeenCalledWith({ where: { id: 2 }, data: { rating: 1192 } });
+    });
+
+    it('does not change ratings when either player is unrated', async () => {
+      const tournament = {
+        id: 43,
+        type: 'PLAYOFF',
+        participants: [
+          { memberId: 1, playerRatingAtTime: null, member: { id: 1, rating: null } },
+          { memberId: 2, playerRatingAtTime: 1500, member: { id: 2, rating: 1500 } },
+        ],
+      };
+
+      mockPrisma.tournament.findUnique.mockResolvedValue(tournament);
+      mockPrisma.member.findUnique.mockImplementation(({ where }: any) => {
+        if (where.id === 1) return { rating: null };
+        if (where.id === 2) return { rating: 1500 };
+        return null;
+      });
+
+      await adjustRatingsForSingleMatch(1, 2, true, 43, 403);
+      await adjustRatingsForSingleMatch(1, 2, true, 43, 404, { useCurrentMemberRatings: true });
+
+      expect(mockPrisma.member.update).not.toHaveBeenCalled();
+      expect(mockPrisma.ratingHistory.create).not.toHaveBeenCalled();
     });
   });
 });

@@ -182,6 +182,35 @@ describe('resultsPrintUtils', () => {
     expect(html).not.toMatch(/1\.\s*Alice[\s\S]*?rating-line[\s\S]*?<\/td>/);
   });
 
+  it('shows an assigned rating with (-/-) for an unrated round robin player', () => {
+    const tournament = makeRrTournament({
+      participants: [
+        {
+          id: 101,
+          memberId: 1,
+          member: { id: 1, firstName: 'Jeff', lastName: 'Bennet', rating: 1375, birthDate: null, isActive: true },
+          playerRatingAtTime: null,
+          postRatingAtTime: 1375,
+          rrCompletionRating: 1375,
+          rrCompletionRatingChange: null,
+        } as any,
+        {
+          id: 102,
+          memberId: 2,
+          member: { id: 2, firstName: 'Cory', lastName: 'Lu', rating: 1676, birthDate: null, isActive: true },
+          playerRatingAtTime: 1674,
+          postRatingAtTime: 1676,
+          rrCompletionRating: 1676,
+          rrCompletionRatingChange: 2,
+        } as any,
+      ],
+    });
+    const html = buildAbbreviatedStandingsTableHtml(tournament);
+    expect(html).toContain('Jeff Bennet');
+    expect(html).toContain('(1375) (-/-)');
+    expect(html).toContain('(1676) (1674/(+2))');
+  });
+
   it('standard RR results include abbreviated grid plus W/L/WG/LG', () => {
     const html = buildStandardRoundRobinResultsHtml(makeRrTournament());
     expect(html).toContain('standard-standings');

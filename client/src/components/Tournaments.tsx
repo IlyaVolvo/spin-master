@@ -10,6 +10,7 @@ import {
   withWindowScrollPreserved,
 } from '../utils/scrollPosition';
 import { formatPlayerName, getNameDisplayOrder } from '../utils/nameFormatter';
+import { formatMatchResultRating } from '../utils/ratingFormatter';
 import { isDateInRange } from '../utils/dateFormatter';
 import { addDaysToYmd, clubTodayYmd, endOfMonthYmd, startOfMonthYmd } from '../utils/clubDateTime';
 import { EmptyState } from './EmptyState';
@@ -548,10 +549,8 @@ const Tournaments: React.FC = () => {
                 const p2Sets = m.player2Sets ?? 0;
                 const p1Won = m.player1Forfeit ? false : (m.player2Forfeit ? true : p1Sets > p2Sets);
                 const p2Won = m.player2Forfeit ? false : (m.player1Forfeit ? true : p2Sets > p1Sets);
-                const p1Change = m.player1RatingChange;
-                const p2Change = m.player2RatingChange;
-                const p1Post = (m.player1RatingBefore !== null && p1Change !== null) ? m.player1RatingBefore + p1Change : null;
-                const p2Post = (m.player2RatingBefore !== null && p2Change !== null) ? m.player2RatingBefore + p2Change : null;
+                const p1RatingLabel = formatMatchResultRating(m.player1RatingBefore, m.player1RatingChange);
+                const p2RatingLabel = formatMatchResultRating(m.player2RatingBefore, m.player2RatingChange);
 
                 return (
                   <div
@@ -580,17 +579,13 @@ const Tournaments: React.FC = () => {
                       📊
                     </button>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: p1Won ? '#27ae60' : p2Won ? '#e74c3c' : '#333' }}>{p1Name}</span>
-                    {p1Change !== null && p1Post !== null && (
-                      <span style={{ fontSize: '11px', fontWeight: 600, color: p1Change >= 0 ? '#27ae60' : '#e74c3c' }}>
-                        ({p1Post}/{p1Change >= 0 ? `+${p1Change}` : p1Change})
-                      </span>
-                    )}
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: p1RatingLabel === '-' ? '#888' : (m.player1RatingChange != null && m.player1RatingChange < 0 ? '#e74c3c' : '#27ae60') }}>
+                      {p1RatingLabel}
+                    </span>
                     <span style={{ fontSize: '14px', fontWeight: 700, color: '#2c3e50' }}>{p1Sets} : {p2Sets}</span>
-                    {p2Change !== null && p2Post !== null && (
-                      <span style={{ fontSize: '11px', fontWeight: 600, color: p2Change >= 0 ? '#27ae60' : '#e74c3c' }}>
-                        ({p2Post}/{p2Change >= 0 ? `+${p2Change}` : p2Change})
-                      </span>
-                    )}
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: p2RatingLabel === '-' ? '#888' : (m.player2RatingChange != null && m.player2RatingChange < 0 ? '#e74c3c' : '#27ae60') }}>
+                      {p2RatingLabel}
+                    </span>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: p2Won ? '#27ae60' : p1Won ? '#e74c3c' : '#333' }}>{p2Name}</span>
                     <span style={{ fontSize: '12px', color: '#888', marginLeft: 'auto' }}>
                       {new Date(m.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}

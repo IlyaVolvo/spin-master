@@ -6965,16 +6965,24 @@ const Players: React.FC = () => {
                       }}
                       disabled={
                         (isRecordingMatch && !isUserOrganizer && player.id === currentMember?.id) ||
-                        (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id))
+                        (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id)) ||
+                        (isCreatingTournament && player.rating == null && !selectedPlayersForTournament.includes(player.id) && !existingParticipantIds.has(player.id))
+                      }
+                      title={
+                        isCreatingTournament && player.rating == null && !existingParticipantIds.has(player.id)
+                          ? 'Unrated players cannot be added to a tournament'
+                          : undefined
                       }
                       style={{ 
                         cursor: (
                           (isRecordingMatch && !isUserOrganizer && player.id === currentMember?.id) ||
-                          (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id))
+                          (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id)) ||
+                          (isCreatingTournament && player.rating == null && !selectedPlayersForTournament.includes(player.id) && !existingParticipantIds.has(player.id))
                         ) ? 'not-allowed' : 'pointer',
                         opacity: (
                           (isRecordingMatch && !isUserOrganizer && player.id === currentMember?.id) ||
-                          (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id))
+                          (isRecordingMatch && selectedPlayersForMatch.length >= 2 && !selectedPlayersForMatch.includes(player.id)) ||
+                          (isCreatingTournament && player.rating == null && !selectedPlayersForTournament.includes(player.id) && !existingParticipantIds.has(player.id))
                         ) ? PLAYERS_DISABLED_OPACITY : 1
                       }}
                     />

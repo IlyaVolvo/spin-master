@@ -310,7 +310,7 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
             </tbody>
           </table>
           <p style={{ marginTop: '8px', fontSize: '11px', color: '#666', maxWidth: '720px' }}>
-            Rating: (after this event) (at signup / (this event&apos;s adjustment)).
+            Rating: (after this event) (at signup / (this event&apos;s adjustment)). Unrated players: (assigned rating) (-/-).
           </p>
         </div>
 
@@ -372,7 +372,11 @@ export const RoundRobinCompletedPanel: React.FC<TournamentCompletedProps> = ({
                       }}
                     >
                       {formatPlayerName(p1.member.firstName, p1.member.lastName, getNameDisplayOrder())}
-                      <span style={{ fontSize: '10px', fontWeight: 'normal', opacity: 0.8, marginLeft: '4px' }}>({p1.playerRatingAtTime ?? p1.member.rating ?? '—'})</span>
+                      <span style={{ fontSize: '10px', fontWeight: 'normal', opacity: 0.8, marginLeft: '4px' }}>
+                        {p1.playerRatingAtTime == null
+                          ? (formatRrCompletedRatingLine(p1) ?? '(-/-)')
+                          : `(${p1.playerRatingAtTime ?? p1.member.rating ?? '—'})`}
+                      </span>
                     </td>
                     {participantData.map((p2: any) => {
                       const cellValue = matrix[p1.member.id][p2.member.id];

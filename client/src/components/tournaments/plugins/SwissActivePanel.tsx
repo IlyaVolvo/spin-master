@@ -743,15 +743,15 @@ export const SwissActivePanel: React.FC<TournamentActiveProps> = ({
                         <span style={{ color: result.won ? '#27ae60' : '#e74c3c', fontWeight: result.won ? 600 : 400 }}>
                           {scoreText}
                         </span>
-                        {result.playerRatingChange != null && (
-                          <span style={{
-                            fontSize: '10px', marginLeft: '3px',
-                            color: result.playerRatingChange > 0 ? '#27ae60' : result.playerRatingChange < 0 ? '#e74c3c' : '#888',
-                            fontWeight: 500,
-                          }}>
-                            {result.playerRatingChange > 0 ? '+' : ''}{result.playerRatingChange}
-                          </span>
-                        )}
+                        <span style={{
+                          fontSize: '10px', marginLeft: '3px',
+                          color: result.playerRatingChange == null ? '#888' : result.playerRatingChange > 0 ? '#27ae60' : result.playerRatingChange < 0 ? '#e74c3c' : '#888',
+                          fontWeight: 500,
+                        }}>
+                          {result.playerRatingChange == null
+                            ? '-'
+                            : `${result.playerRatingChange > 0 ? '+' : ''}${result.playerRatingChange}`}
+                        </span>
                       </td>
                     );
                   })}

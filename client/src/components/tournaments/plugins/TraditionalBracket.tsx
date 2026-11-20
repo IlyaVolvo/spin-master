@@ -1495,7 +1495,10 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                 hasResult && player1RatingBefore !== null
                   ? player1RatingBefore
                   : (player1?.member?.rating ?? player1?.playerRatingAtTime ?? null);
-              if (ratingBefore === null) return null;
+              if (ratingBefore === null) {
+                if (!hasResult) return null;
+                return <span style={{ fontSize: '9px', color: '#888', fontWeight: '400' }}>-</span>;
+              }
               return (
                 <span style={{ fontSize: '9px', color: '#666', fontWeight: '400' }}>
                   ({ratingBefore})
@@ -1503,6 +1506,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                     <span style={{ color: player1RatingChange >= 0 ? '#27ae60' : '#e74c3c', marginLeft: '2px' }}>
                       {formatRatingChange(player1RatingChange)}
                     </span>
+                  )}
+                  {hasResult && player1RatingChange === null && (
+                    <span style={{ color: '#888', marginLeft: '2px' }}>-</span>
                   )}
                 </span>
               );
@@ -1685,7 +1691,10 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                 hasResult && player2RatingBefore !== null
                   ? player2RatingBefore
                   : (player2?.member?.rating ?? player2?.playerRatingAtTime ?? null);
-              if (ratingBefore === null) return null;
+              if (ratingBefore === null) {
+                if (!hasResult) return null;
+                return <span style={{ fontSize: '9px', color: '#888', fontWeight: '400' }}>-</span>;
+              }
               return (
                 <span style={{ fontSize: '9px', color: '#666', fontWeight: '400' }}>
                   ({ratingBefore})
@@ -1693,6 +1702,9 @@ export const TraditionalBracket: React.FC<TraditionalBracketProps> = ({
                     <span style={{ color: player2RatingChange >= 0 ? '#27ae60' : '#e74c3c', marginLeft: '2px' }}>
                       {formatRatingChange(player2RatingChange)}
                     </span>
+                  )}
+                  {hasResult && player2RatingChange === null && (
+                    <span style={{ color: '#888', marginLeft: '2px' }}>-</span>
                   )}
                 </span>
               );

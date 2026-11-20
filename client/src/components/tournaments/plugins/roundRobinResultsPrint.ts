@@ -4,6 +4,19 @@ import type { Tournament } from '../../../types/tournament';
 import { buildResultsMatrix, calculateStandings } from './roundRobinUtils';
 import type { ResultsPrintMode } from '../utils/resultsPrintModes';
 
+function completedNameRating(
+  participant: { playerRatingAtTime?: number | null; member?: { rating?: number | null } | null; postRatingAtTime?: number | null; rrCompletionRating?: number | null; rrCompletionRatingChange?: number | null } | undefined,
+  memberRating: number | null | undefined,
+): string | null {
+  if (participant && participant.playerRatingAtTime == null) {
+    return formatRrCompletedRatingLine({
+      ...participant,
+      member: participant.member ?? { rating: memberRating ?? null },
+    });
+  }
+  return formatCompletedTournamentRating(participant?.playerRatingAtTime, memberRating);
+}
+
 function posBgColor(position: number): string {
   if (position === 1) return '#fff3cd';
   if (position === 2) return '#e9ecef';
@@ -271,7 +284,7 @@ export function buildFullRoundRobinResultsHtml(tournament: Tournament): string {
 
   standings.forEach(({ member, stats, position }) => {
     const participant = participantData.find((p) => p.memberId === member.id);
-    const ratingDisplay = formatCompletedTournamentRating(participant?.playerRatingAtTime, member.rating);
+    const ratingDisplay = completedNameRating(participant, member.rating);
     const setDiff = stats.setsWon - stats.setsLost;
     const playerName = formatPlayerName(member.firstName, member.lastName, nameOrder);
     const diffColor = setDiff > 0 ? '#28a745' : setDiff < 0 ? '#dc3545' : '#666';
@@ -314,7 +327,7 @@ export function buildFullRoundRobinResultsHtml(tournament: Tournament): string {
 
   participants.forEach((participant1) => {
     const participantData1 = participantData.find((p) => p.memberId === participant1.member.id);
-    const ratingDisplay1 = formatCompletedTournamentRating(participantData1?.playerRatingAtTime, participant1.member.rating);
+    const ratingDisplay1 = completedNameRating(participantData1, participant1.member.rating);
     const ranking1 = standings.find((s) => s.member.id === participant1.member.id)?.position;
     const player1Name = formatPlayerName(participant1.member.firstName, participant1.member.lastName, nameOrder);
 
@@ -385,7 +398,7 @@ export function buildFullCompoundRoundRobinChildHtml(child: Tournament): string 
 
   standings.forEach(({ member, stats, position }) => {
     const participant = participantData.find((p) => p.memberId === member.id);
-    const ratingDisplay = formatCompletedTournamentRating(participant?.playerRatingAtTime, member.rating);
+    const ratingDisplay = completedNameRating(participant, member.rating);
     const setDiff = stats.setsWon - stats.setsLost;
     const playerName = formatPlayerName(member.firstName, member.lastName, nameOrder);
     const diffColor = setDiff > 0 ? '#28a745' : setDiff < 0 ? '#dc3545' : '#666';

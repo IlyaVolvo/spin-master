@@ -141,9 +141,13 @@ export async function processMatchRating(
     rating2 = participant2.playerRatingAtTime;
   }
 
-  // Unrated players default to 1200 for single-match processing.
-  const rating1Before = rating1 ?? 1200;
-  const rating2Before = rating2 ?? 1200;
+  // A match involving an unrated player does not change either rating.
+  if (rating1 == null || rating2 == null) {
+    return null;
+  }
+
+  const rating1Before = rating1;
+  const rating2Before = rating2;
 
   // Store ratings before changes
   const player1RatingBefore = rating1;
