@@ -1,9 +1,16 @@
 /**
- * Club archive (v1): members + completed tournaments for Admin export/import.
+ * Club archive: members, tournaments, and rating history for Admin export/import.
  * Readable JSON; IDs are stable references within the file (remapped on import).
+ *
+ * Version 1: members, standalone matches, and completed tournaments. Import sets a
+ * single trusted rating and does not restore rating history.
+ * Version 2: every tournament status, full rating history, and point-exchange rules.
  */
 
-export const CLUB_ARCHIVE_VERSION = 1 as const;
+export const CLUB_ARCHIVE_VERSION = 2 as const;
+export const CLUB_ARCHIVE_VERSIONS = [1, 2] as const;
+
+export type ClubArchiveVersion = (typeof CLUB_ARCHIVE_VERSIONS)[number];
 
 export type ClubArchiveMemberRole = 'PLAYER' | 'COACH' | 'ADMIN' | 'ORGANIZER';
 export type ClubArchiveGender = 'MALE' | 'FEMALE' | 'NOT_SPECIFIED';
@@ -15,6 +22,15 @@ export type ClubArchiveTournamentType =
   | 'PRELIMINARY_WITH_FINAL_PLAYOFF'
   | 'PRELIMINARY_WITH_FINAL_ROUND_ROBIN';
 
+export type ClubArchiveTournamentStatus = 'PRE_REGISTRATION' | 'ACTIVE' | 'COMPLETED';
+
+export type ClubArchiveRatingReason =
+  | 'TOURNAMENT_COMPLETED'
+  | 'MATCH_COMPLETED'
+  | 'RESULT_CORRECTED'
+  | 'MANUAL_ADJUSTMENT'
+  | 'INITIAL_RATING';
+
 export interface ClubArchiveMember {
   id: number;
   firstName: string;
@@ -23,7 +39,7 @@ export interface ClubArchiveMember {
   gender: ClubArchiveGender;
   birthDate: string | null; // YYYY-MM-DD
   roles: ClubArchiveMemberRole[];
-  rating: number | null; // trusted club rating after import
+  rating: number | null;
   phone: string | null;
   address: string | null;
   isActive: boolean;
@@ -46,6 +62,8 @@ export interface ClubArchiveMatch {
   player2Forfeit: boolean;
   notPlayed: boolean;
   round: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface ClubArchiveBracketMatch {
@@ -69,14 +87,17 @@ export interface ClubArchivePreliminaryConfig {
   finalSize: number;
   autoQualifiedCount: number;
   autoQualifiedMemberIds: number[];
+  qualifiersPerGroup: number;
 }
 
 export interface ClubArchiveTournament {
   id: number;
   name: string | null;
   type: ClubArchiveTournamentType;
-  status: 'COMPLETED';
+  status: ClubArchiveTournamentStatus;
   cancelled: boolean;
+  createdAt: string | null;
+  recordedAt: string | null;
   tournamentDate: string | null; // ISO
   minRating: number | null;
   maxRating: number | null;
@@ -100,14 +121,37 @@ export interface ClubArchiveStandaloneMatch {
   player2Forfeit: boolean;
   notPlayed: boolean;
   createdAt: string; // ISO — ordering hint
+  updatedAt?: string | null;
+}
+
+export interface ClubArchiveRatingHistoryEntry {
+  memberId: number;
+  rating: number | null;
+  ratingChange: number | null;
+  timestamp: string;
+  reason: ClubArchiveRatingReason;
+  tournamentId: number | null;
+  matchId: number | null;
+}
+
+export interface ClubArchivePointExchangeRule {
+  minDiff: number;
+  maxDiff: number;
+  expectedPoints: number;
+  upsetPoints: number;
+  effectiveFrom: string;
 }
 
 export interface ClubArchiveDocument {
-  version: typeof CLUB_ARCHIVE_VERSION;
+  version: ClubArchiveVersion;
   exportedAt: string;
   members: ClubArchiveMember[];
   standaloneMatches: ClubArchiveStandaloneMatch[];
   tournaments: ClubArchiveTournament[];
+  /** Empty for version 1. */
+  ratingHistory: ClubArchiveRatingHistoryEntry[];
+  /** Empty for version 1. */
+  pointExchangeRules: ClubArchivePointExchangeRule[];
 }
 
 export interface ClubArchiveImportResult {
@@ -116,4 +160,5 @@ export interface ClubArchiveImportResult {
   tournamentsCreated: number;
   matchesCreated: number;
   standaloneMatchesCreated: number;
+  ratingHistoryCreated: number;
 }

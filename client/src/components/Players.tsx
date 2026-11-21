@@ -2066,7 +2066,7 @@ const Players: React.FC = () => {
       const tournamentCount = Array.isArray(archive?.tournaments) ? archive.tournaments.length : 0;
       const memberCount = Array.isArray(archive?.members) ? archive.members.length : 0;
       setSuccess(
-        `Exported club archive (${memberCount} members, ${tournamentCount} completed tournament(s))`,
+        `Exported club archive (${memberCount} members, ${tournamentCount} tournament(s))`,
       );
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Failed to export club archive');
@@ -2080,7 +2080,7 @@ const Players: React.FC = () => {
     const confirmed = window.confirm(
       'Import club archive into this database?\n\n' +
         'Requires no existing tournaments or matches. Members are created or matched by email. ' +
-        'Ratings from the archive become the trusted club ratings. Passwords are not restored.',
+        'The archive restores tournaments and rating history. Passwords are not restored.',
     );
     if (!confirmed) {
       event.target.value = '';
@@ -2100,7 +2100,8 @@ const Players: React.FC = () => {
         setSuccess(
           `Club archive imported: ${r.membersCreated} members created, ${r.membersUpdated} updated, ` +
             `${r.tournamentsCreated} tournaments, ${r.matchesCreated} matches` +
-            (r.standaloneMatchesCreated ? `, ${r.standaloneMatchesCreated} standalone matches` : ''),
+            (r.standaloneMatchesCreated ? `, ${r.standaloneMatchesCreated} standalone matches` : '') +
+            (r.ratingHistoryCreated ? `, ${r.ratingHistoryCreated} rating history rows` : ''),
         );
         await fetchMembers();
         event.target.value = '';

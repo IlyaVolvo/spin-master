@@ -20,7 +20,7 @@ type UploadedArchiveFile = {
 router.use(authenticate);
 router.use(requireAdmin);
 
-/** Export members + completed tournaments as a club archive JSON document. */
+/** Export members, tournaments, and rating history as a club archive JSON document. */
 router.get('/export', async (req: AuthRequest, res: Response) => {
   try {
     const archive = await buildClubArchive(prisma);

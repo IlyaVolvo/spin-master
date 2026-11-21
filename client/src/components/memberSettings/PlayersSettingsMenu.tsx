@@ -328,7 +328,7 @@ export const PlayersSettingsMenu: React.FC<PlayersSettingsMenuProps> = ({
                   </label>
                   <div style={{ borderTop: '1px solid #ddd', marginTop: '4px', paddingTop: '6px' }}>
                     <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px', lineHeight: 1.3 }}>
-                      Club archive (members + completed tournaments)
+                      Club archive (members, tournaments, and rating history)
                     </div>
                     <button
                       type="button"

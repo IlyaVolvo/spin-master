@@ -1,5 +1,12 @@
 import { createHash, randomBytes } from 'crypto';
-import type { Gender, MemberRole, Prisma, PrismaClient, TournamentType } from '@prisma/client';
+import type {
+  Gender,
+  MemberRole,
+  Prisma,
+  PrismaClient,
+  TournamentStatus,
+  TournamentType,
+} from '@prisma/client';
 import { RatingChangeReason } from '@prisma/client';
 import { generateScorePin } from '../utils/scorePin';
 import {
@@ -11,9 +18,14 @@ import {
   type ClubArchiveMatch,
   type ClubArchiveMember,
   type ClubArchiveMemberRole,
+  type ClubArchivePointExchangeRule,
+  type ClubArchiveRatingHistoryEntry,
+  type ClubArchiveRatingReason,
   type ClubArchiveStandaloneMatch,
   type ClubArchiveTournament,
+  type ClubArchiveTournamentStatus,
   type ClubArchiveTournamentType,
+  type ClubArchiveVersion,
 } from './clubArchiveTypes';
 
 function generateQrTokenHash(): string {
@@ -53,15 +65,28 @@ const TOURNAMENT_TYPES = new Set<string>([
   'PRELIMINARY_WITH_FINAL_ROUND_ROBIN',
 ]);
 
+const TOURNAMENT_STATUSES = new Set<string>(['PRE_REGISTRATION', 'ACTIVE', 'COMPLETED']);
+const RATING_REASONS = new Set<string>([
+  'TOURNAMENT_COMPLETED',
+  'MATCH_COMPLETED',
+  'RESULT_CORRECTED',
+  'MANUAL_ADJUSTMENT',
+  'INITIAL_RATING',
+]);
+
 const MEMBER_ROLES = new Set<string>(['PLAYER', 'COACH', 'ADMIN', 'ORGANIZER']);
 const GENDERS = new Set<string>(['MALE', 'FEMALE', 'NOT_SPECIFIED']);
+const IMPORT_TRANSACTION_TIMEOUT_MS = 300_000;
 
 type TournamentDumpRow = {
   id: number;
+  parentTournamentId: number | null;
   name: string | null;
   type: TournamentType;
-  status: string;
+  status: TournamentStatus;
   cancelled: boolean;
+  createdAt: Date;
+  recordedAt: Date;
   tournamentDate: Date | null;
   minRating: number | null;
   maxRating: number | null;
@@ -78,6 +103,8 @@ type TournamentDumpRow = {
     player2Forfeit: boolean;
     notPlayed: boolean;
     round: number | null;
+    createdAt: Date;
+    updatedAt: Date;
   }>;
   bracketMatches: Array<{
     id: number;
@@ -98,49 +125,26 @@ type TournamentDumpRow = {
     finalSize: number;
     autoQualifiedCount: number;
     autoQualifiedMemberIds: number[];
+    qualifiersPerGroup: number;
   } | null;
-  childTournaments: TournamentDumpRow[];
 };
 
-function archiveTournamentInclude() {
-  return {
-    participants: {
-      select: { memberId: true, playerRatingAtTime: true },
-      orderBy: { id: 'asc' as const },
-    },
-    matches: { orderBy: { id: 'asc' as const } },
-    bracketMatches: { orderBy: [{ round: 'asc' as const }, { position: 'asc' as const }] },
-    swissData: true,
-    preliminaryConfig: true,
-    childTournaments: {
-      orderBy: [{ groupNumber: 'asc' as const }, { id: 'asc' as const }],
-      include: {
-        participants: {
-          select: { memberId: true, playerRatingAtTime: true },
-          orderBy: { id: 'asc' as const },
-        },
-        matches: { orderBy: { id: 'asc' as const } },
-        bracketMatches: { orderBy: [{ round: 'asc' as const }, { position: 'asc' as const }] },
-        swissData: true,
-        preliminaryConfig: true,
-        childTournaments: {
-          orderBy: [{ groupNumber: 'asc' as const }, { id: 'asc' as const }],
-          include: {
-            participants: {
-              select: { memberId: true, playerRatingAtTime: true },
-              orderBy: { id: 'asc' as const },
-            },
-            matches: { orderBy: { id: 'asc' as const } },
-            bracketMatches: {
-              orderBy: [{ round: 'asc' as const }, { position: 'asc' as const }],
-            },
-            swissData: true,
-            preliminaryConfig: true,
-          },
-        },
-      },
-    },
-  };
+const tournamentExportInclude = {
+  participants: {
+    select: { memberId: true, playerRatingAtTime: true },
+    orderBy: { id: 'asc' as const },
+  },
+  matches: { orderBy: { id: 'asc' as const } },
+  bracketMatches: { orderBy: [{ round: 'asc' as const }, { position: 'asc' as const }] },
+  swissData: true,
+  preliminaryConfig: true,
+};
+
+function compareChildTournaments(a: TournamentDumpRow, b: TournamentDumpRow): number {
+  const groupA = a.groupNumber ?? 0;
+  const groupB = b.groupNumber ?? 0;
+  if (groupA !== groupB) return groupA - groupB;
+  return a.id - b.id;
 }
 
 function serializeMatch(m: TournamentDumpRow['matches'][number]): ClubArchiveMatch {
@@ -154,6 +158,8 @@ function serializeMatch(m: TournamentDumpRow['matches'][number]): ClubArchiveMat
     player2Forfeit: m.player2Forfeit,
     notPlayed: m.notPlayed,
     round: m.round,
+    createdAt: m.createdAt.toISOString(),
+    updatedAt: m.updatedAt.toISOString(),
   };
 }
 
@@ -169,13 +175,19 @@ function serializeBracket(b: TournamentDumpRow['bracketMatches'][number]): ClubA
   };
 }
 
-function serializeTournament(t: TournamentDumpRow): ClubArchiveTournament {
+function serializeTournament(
+  t: TournamentDumpRow,
+  childrenByParent: Map<number, TournamentDumpRow[]>,
+): ClubArchiveTournament {
+  const children = (childrenByParent.get(t.id) ?? []).slice().sort(compareChildTournaments);
   return {
     id: t.id,
     name: t.name,
     type: t.type as ClubArchiveTournamentType,
-    status: 'COMPLETED',
+    status: t.status,
     cancelled: Boolean(t.cancelled),
+    createdAt: toIso(t.createdAt),
+    recordedAt: toIso(t.recordedAt),
     tournamentDate: toIso(t.tournamentDate),
     minRating: t.minRating,
     maxRating: t.maxRating,
@@ -200,9 +212,10 @@ function serializeTournament(t: TournamentDumpRow): ClubArchiveTournament {
           finalSize: t.preliminaryConfig.finalSize,
           autoQualifiedCount: t.preliminaryConfig.autoQualifiedCount,
           autoQualifiedMemberIds: [...t.preliminaryConfig.autoQualifiedMemberIds],
+          qualifiersPerGroup: t.preliminaryConfig.qualifiersPerGroup,
         }
       : null,
-    children: (t.childTournaments || []).map(serializeTournament),
+    children: children.map((child) => serializeTournament(child, childrenByParent)),
   };
 }
 
@@ -258,14 +271,23 @@ export async function buildClubArchive(prisma: PrismaClient): Promise<ClubArchiv
     },
   });
 
-  const roots = (await prisma.tournament.findMany({
-    where: {
-      status: 'COMPLETED',
-      parentTournamentId: null,
-    },
+  const tournamentRows = (await prisma.tournament.findMany({
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    include: archiveTournamentInclude(),
+    include: tournamentExportInclude,
   })) as unknown as TournamentDumpRow[];
+
+  const byId = new Map(tournamentRows.map((row) => [row.id, row]));
+  const childrenByParent = new Map<number, TournamentDumpRow[]>();
+  const roots: TournamentDumpRow[] = [];
+  for (const row of tournamentRows) {
+    if (row.parentTournamentId != null && byId.has(row.parentTournamentId)) {
+      const siblings = childrenByParent.get(row.parentTournamentId) ?? [];
+      siblings.push(row);
+      childrenByParent.set(row.parentTournamentId, siblings);
+    } else {
+      roots.push(row);
+    }
+  }
 
   const standaloneRows = await prisma.match.findMany({
     where: { tournamentId: null },
@@ -282,6 +304,31 @@ export async function buildClubArchive(prisma: PrismaClient): Promise<ClubArchiv
     player2Forfeit: m.player2Forfeit,
     notPlayed: m.notPlayed,
     createdAt: m.createdAt.toISOString(),
+    updatedAt: m.updatedAt.toISOString(),
+  }));
+
+  const ratingRows = await prisma.ratingHistory.findMany({
+    orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
+  });
+  const ratingHistory: ClubArchiveRatingHistoryEntry[] = ratingRows.map((row) => ({
+    memberId: row.memberId,
+    rating: row.rating,
+    ratingChange: row.ratingChange,
+    timestamp: row.timestamp.toISOString(),
+    reason: row.reason,
+    tournamentId: row.tournamentId,
+    matchId: row.matchId,
+  }));
+
+  const ruleRows = await prisma.pointExchangeRule.findMany({
+    orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
+  });
+  const pointExchangeRules: ClubArchivePointExchangeRule[] = ruleRows.map((row) => ({
+    minDiff: row.minDiff,
+    maxDiff: row.maxDiff,
+    expectedPoints: row.expectedPoints,
+    upsetPoints: row.upsetPoints,
+    effectiveFrom: row.effectiveFrom.toISOString(),
   }));
 
   return {
@@ -289,8 +336,15 @@ export async function buildClubArchive(prisma: PrismaClient): Promise<ClubArchiv
     exportedAt: new Date().toISOString(),
     members: members.map(serializeMember),
     standaloneMatches,
-    tournaments: roots.map(serializeTournament),
+    tournaments: roots.map((root) => serializeTournament(root, childrenByParent)),
+    ratingHistory,
+    pointExchangeRules,
   };
+}
+
+function parseArchiveVersion(value: unknown): ClubArchiveVersion {
+  if (value === 1 || value === 2) return value;
+  throw new Error('Unsupported archive version (expected 1 or 2)');
 }
 
 export function parseClubArchive(raw: unknown): ClubArchiveDocument {
@@ -298,29 +352,40 @@ export function parseClubArchive(raw: unknown): ClubArchiveDocument {
     throw new Error('Archive must be a JSON object');
   }
   const doc = raw as Record<string, unknown>;
-  if (doc.version !== CLUB_ARCHIVE_VERSION) {
-    throw new Error(`Unsupported archive version (expected ${CLUB_ARCHIVE_VERSION})`);
-  }
+  const version = parseArchiveVersion(doc.version);
   if (!Array.isArray(doc.members)) {
     throw new Error('Archive missing members array');
   }
   if (!Array.isArray(doc.tournaments)) {
     throw new Error('Archive missing tournaments array');
   }
+  if (version === 2 && !Array.isArray(doc.ratingHistory)) {
+    throw new Error('Archive missing ratingHistory array');
+  }
+  if (version === 2 && !Array.isArray(doc.pointExchangeRules)) {
+    throw new Error('Archive missing pointExchangeRules array');
+  }
   const standaloneMatches = Array.isArray(doc.standaloneMatches) ? doc.standaloneMatches : [];
+  const ratingHistory = version === 2 && Array.isArray(doc.ratingHistory) ? doc.ratingHistory : [];
+  const pointExchangeRules =
+    version === 2 && Array.isArray(doc.pointExchangeRules) ? doc.pointExchangeRules : [];
 
   const members = doc.members.map((m, index) => validateMember(m, index));
-  const tournaments = doc.tournaments.map((t, index) => validateTournament(t, `tournaments[${index}]`));
+  const tournaments = doc.tournaments.map((t, index) =>
+    validateTournament(t, `tournaments[${index}]`, version),
+  );
   const standalones = standaloneMatches.map((m, index) =>
     validateStandaloneMatch(m, `standaloneMatches[${index}]`),
   );
 
   return {
-    version: CLUB_ARCHIVE_VERSION,
+    version,
     exportedAt: typeof doc.exportedAt === 'string' ? doc.exportedAt : new Date().toISOString(),
     members,
     standaloneMatches: standalones,
     tournaments,
+    ratingHistory: ratingHistory.map((row, index) => validateRatingHistory(row, index)),
+    pointExchangeRules: pointExchangeRules.map((row, index) => validatePointExchangeRule(row, index)),
   };
 }
 
@@ -343,6 +408,20 @@ function optionalNumber(value: unknown): number | null {
     throw new Error('Expected number or null');
   }
   return value;
+}
+
+function optionalIso(value: unknown, label: string): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) {
+    throw new Error(`${label} must be an ISO date string`);
+  }
+  return value;
+}
+
+function requireIso(value: unknown, label: string): string {
+  const parsed = optionalIso(value, label);
+  if (!parsed) throw new Error(`${label} must be an ISO date string`);
+  return parsed;
 }
 
 function validateMember(raw: unknown, index: number): ClubArchiveMember {
@@ -395,6 +474,8 @@ function validateMatch(raw: unknown, label: string): ClubArchiveMatch {
     player2Forfeit: requireBoolean(m.player2Forfeit, `${label}.player2Forfeit`, false),
     notPlayed: requireBoolean(m.notPlayed, `${label}.notPlayed`, false),
     round: m.round === null || m.round === undefined ? null : requireNumber(m.round, `${label}.round`),
+    createdAt: optionalIso(m.createdAt, `${label}.createdAt`),
+    updatedAt: optionalIso(m.updatedAt, `${label}.updatedAt`),
   };
 }
 
@@ -404,6 +485,7 @@ function validateStandaloneMatch(raw: unknown, label: string): ClubArchiveStanda
   return {
     ...base,
     createdAt: typeof m.createdAt === 'string' ? m.createdAt : new Date().toISOString(),
+    updatedAt: optionalIso(m.updatedAt, `${label}.updatedAt`),
   };
 }
 
@@ -431,15 +513,29 @@ function validateBracket(raw: unknown, label: string): ClubArchiveBracketMatch {
   };
 }
 
-function validateTournament(raw: unknown, label: string): ClubArchiveTournament {
+function validateTournament(
+  raw: unknown,
+  label: string,
+  version: ClubArchiveVersion,
+): ClubArchiveTournament {
   if (!raw || typeof raw !== 'object') throw new Error(`${label} must be an object`);
   const t = raw as Record<string, unknown>;
   const type = String(t.type || '');
   if (!TOURNAMENT_TYPES.has(type)) {
     throw new Error(`${label}.type is invalid`);
   }
-  if (t.status !== 'COMPLETED') {
-    throw new Error(`${label}.status must be COMPLETED`);
+  let status: ClubArchiveTournamentStatus;
+  if (version === 1) {
+    if (t.status !== 'COMPLETED') {
+      throw new Error(`${label}.status must be COMPLETED`);
+    }
+    status = 'COMPLETED';
+  } else {
+    const rawStatus = String(t.status || '');
+    if (!TOURNAMENT_STATUSES.has(rawStatus)) {
+      throw new Error(`${label}.status is invalid`);
+    }
+    status = rawStatus as ClubArchiveTournamentStatus;
   }
   const participants = Array.isArray(t.participants) ? t.participants : [];
   const matches = Array.isArray(t.matches) ? t.matches : [];
@@ -467,6 +563,10 @@ function validateTournament(raw: unknown, label: string): ClubArchiveTournament 
       autoQualifiedMemberIds: ids.map((id, i) =>
         requireNumber(id, `${label}.preliminaryConfig.autoQualifiedMemberIds[${i}]`),
       ),
+      qualifiersPerGroup:
+        p.qualifiersPerGroup === null || p.qualifiersPerGroup === undefined
+          ? 1
+          : requireNumber(p.qualifiersPerGroup, `${label}.preliminaryConfig.qualifiersPerGroup`),
     };
   }
 
@@ -474,8 +574,10 @@ function validateTournament(raw: unknown, label: string): ClubArchiveTournament 
     id: requireNumber(t.id, `${label}.id`),
     name: t.name === null || t.name === undefined ? null : String(t.name),
     type: type as ClubArchiveTournamentType,
-    status: 'COMPLETED',
+    status,
     cancelled: requireBoolean(t.cancelled, `${label}.cancelled`, false),
+    createdAt: optionalIso(t.createdAt, `${label}.createdAt`),
+    recordedAt: optionalIso(t.recordedAt, `${label}.recordedAt`),
     tournamentDate: t.tournamentDate === null || t.tournamentDate === undefined ? null : String(t.tournamentDate),
     minRating: optionalNumber(t.minRating),
     maxRating: optionalNumber(t.maxRating),
@@ -493,7 +595,47 @@ function validateTournament(raw: unknown, label: string): ClubArchiveTournament 
     bracketMatches: bracketMatches.map((b, i) => validateBracket(b, `${label}.bracketMatches[${i}]`)),
     swissData,
     preliminaryConfig,
-    children: children.map((c, i) => validateTournament(c, `${label}.children[${i}]`)),
+    children: children.map((c, i) => validateTournament(c, `${label}.children[${i}]`, version)),
+  };
+}
+
+function validateRatingHistory(raw: unknown, index: number): ClubArchiveRatingHistoryEntry {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error(`ratingHistory[${index}] must be an object`);
+  }
+  const row = raw as Record<string, unknown>;
+  const reason = String(row.reason || '');
+  if (!RATING_REASONS.has(reason)) {
+    throw new Error(`ratingHistory[${index}].reason is invalid`);
+  }
+  return {
+    memberId: requireNumber(row.memberId, `ratingHistory[${index}].memberId`),
+    rating: optionalNumber(row.rating),
+    ratingChange: optionalNumber(row.ratingChange),
+    timestamp: requireIso(row.timestamp, `ratingHistory[${index}].timestamp`),
+    reason: reason as ClubArchiveRatingReason,
+    tournamentId:
+      row.tournamentId === null || row.tournamentId === undefined
+        ? null
+        : requireNumber(row.tournamentId, `ratingHistory[${index}].tournamentId`),
+    matchId:
+      row.matchId === null || row.matchId === undefined
+        ? null
+        : requireNumber(row.matchId, `ratingHistory[${index}].matchId`),
+  };
+}
+
+function validatePointExchangeRule(raw: unknown, index: number): ClubArchivePointExchangeRule {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error(`pointExchangeRules[${index}] must be an object`);
+  }
+  const row = raw as Record<string, unknown>;
+  return {
+    minDiff: requireNumber(row.minDiff, `pointExchangeRules[${index}].minDiff`),
+    maxDiff: requireNumber(row.maxDiff, `pointExchangeRules[${index}].maxDiff`),
+    expectedPoints: requireNumber(row.expectedPoints, `pointExchangeRules[${index}].expectedPoints`),
+    upsetPoints: requireNumber(row.upsetPoints, `pointExchangeRules[${index}].upsetPoints`),
+    effectiveFrom: requireIso(row.effectiveFrom, `pointExchangeRules[${index}].effectiveFrom`),
   };
 }
 
@@ -502,7 +644,7 @@ async function setTrustedRating(
   memberId: number,
   rating: number | null,
   reason: RatingChangeReason,
-): Promise<void> {
+): Promise<number> {
   await prisma.ratingHistory.deleteMany({ where: { memberId } });
   await prisma.member.update({
     where: { id: memberId },
@@ -519,7 +661,9 @@ async function setTrustedRating(
         matchId: null,
       },
     });
+    return 1;
   }
+  return 0;
 }
 
 function mapMemberId(map: Map<number, number>, archiveId: number | null | undefined): number | null {
@@ -541,19 +685,39 @@ function requireMappedMember(map: Map<number, number>, archiveId: number): numbe
   return mapped;
 }
 
+function requireMappedId(map: Map<number, number>, archiveId: number, label: string): number {
+  const mapped = map.get(archiveId);
+  if (mapped === undefined) {
+    throw new Error(`Unknown ${label} id in archive: ${archiveId}`);
+  }
+  return mapped;
+}
+
+function dateField(value: string | null | undefined): Date | undefined {
+  return parseIsoDate(value) ?? undefined;
+}
+
+type ArchiveIdMaps = {
+  tournaments: Map<number, number>;
+  matches: Map<number, number>;
+};
+
 async function importTournamentTree(
   prisma: PrismaClient,
   tournament: ClubArchiveTournament,
   memberMap: Map<number, number>,
   parentId: number | null,
   counters: { tournaments: number; matches: number },
+  idMaps: ArchiveIdMaps,
 ): Promise<void> {
   const created = await prisma.tournament.create({
     data: {
       name: tournament.name,
       type: tournament.type as TournamentType,
-      status: 'COMPLETED',
+      status: tournament.status as TournamentStatus,
       cancelled: tournament.cancelled,
+      createdAt: dateField(tournament.createdAt),
+      recordedAt: dateField(tournament.recordedAt),
       tournamentDate: parseIsoDate(tournament.tournamentDate),
       minRating: tournament.minRating,
       maxRating: tournament.maxRating,
@@ -562,6 +726,7 @@ async function importTournamentTree(
       parentTournamentId: parentId,
     },
   });
+  idMaps.tournaments.set(tournament.id, created.id);
   counters.tournaments += 1;
 
   if (tournament.participants.length > 0) {
@@ -574,7 +739,6 @@ async function importTournamentTree(
     });
   }
 
-  const matchIdMap = new Map<number, number>();
   for (const match of tournament.matches) {
     const row = await prisma.match.create({
       data: {
@@ -587,9 +751,11 @@ async function importTournamentTree(
         player2Forfeit: match.player2Forfeit,
         notPlayed: match.notPlayed,
         round: match.round,
+        createdAt: dateField(match.createdAt),
+        updatedAt: dateField(match.updatedAt),
       },
     });
-    matchIdMap.set(match.id, row.id);
+    idMaps.matches.set(match.id, row.id);
     counters.matches += 1;
   }
 
@@ -614,6 +780,7 @@ async function importTournamentTree(
         autoQualifiedMemberIds: tournament.preliminaryConfig.autoQualifiedMemberIds.map((id) =>
           requireMappedMember(memberMap, id),
         ),
+        qualifiersPerGroup: tournament.preliminaryConfig.qualifiersPerGroup,
       },
     });
   }
@@ -629,12 +796,7 @@ async function importTournamentTree(
         member2Id: mapMemberId(memberMap, bracket.member2Id),
         nextMatchId: null,
         matchId:
-          bracket.matchId == null
-            ? null
-            : matchIdMap.get(bracket.matchId) ??
-              (() => {
-                throw new Error(`Unknown match id ${bracket.matchId} for bracket ${bracket.id}`);
-              })(),
+          bracket.matchId == null ? null : requireMappedId(idMaps.matches, bracket.matchId, 'match'),
       },
     });
     bracketIdMap.set(bracket.id, row.id);
@@ -654,16 +816,65 @@ async function importTournamentTree(
   }
 
   for (const child of tournament.children) {
-    await importTournamentTree(prisma, child, memberMap, created.id, counters);
+    await importTournamentTree(prisma, child, memberMap, created.id, counters, idMaps);
   }
+}
+
+async function replacePointExchangeRules(
+  prisma: PrismaClient,
+  rules: ClubArchivePointExchangeRule[],
+): Promise<void> {
+  await prisma.pointExchangeRule.deleteMany();
+  if (rules.length === 0) return;
+  await prisma.pointExchangeRule.createMany({
+    data: rules.map((rule) => ({
+      minDiff: rule.minDiff,
+      maxDiff: rule.maxDiff,
+      expectedPoints: rule.expectedPoints,
+      upsetPoints: rule.upsetPoints,
+      effectiveFrom: parseIsoDate(rule.effectiveFrom) ?? new Date(),
+    })),
+  });
+}
+
+async function importRatingHistory(
+  prisma: PrismaClient,
+  archive: ClubArchiveDocument,
+  memberMap: Map<number, number>,
+  idMaps: ArchiveIdMaps,
+): Promise<number> {
+  const ordered = archive.ratingHistory
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const left = Date.parse(a.row.timestamp);
+      const right = Date.parse(b.row.timestamp);
+      if (left !== right) return left - right;
+      return a.index - b.index;
+    });
+
+  for (const { row } of ordered) {
+    await prisma.ratingHistory.create({
+      data: {
+        memberId: requireMappedMember(memberMap, row.memberId),
+        rating: row.rating,
+        ratingChange: row.ratingChange,
+        timestamp: parseIsoDate(row.timestamp) ?? new Date(),
+        reason: row.reason,
+        tournamentId:
+          row.tournamentId == null ? null : requireMappedId(idMaps.tournaments, row.tournamentId, 'tournament'),
+        matchId: row.matchId == null ? null : requireMappedId(idMaps.matches, row.matchId, 'match'),
+      },
+    });
+  }
+  return ordered.length;
 }
 
 /**
  * Import a club archive into a DB with no tournaments/matches.
  * Existing members are matched by email when present; otherwise created.
- * Ratings are set from the archive as trusted (no match/tournament rating history).
+ * Version 1 sets a trusted rating. Version 2 restores rating history and point-exchange rules.
  */
-export async function importClubArchive(
+async function importClubArchiveBody(
   prisma: PrismaClient,
   archive: ClubArchiveDocument,
 ): Promise<ClubArchiveImportResult> {
@@ -677,9 +888,15 @@ export async function importClubArchive(
     );
   }
 
+  if (archive.version === 2) {
+    await replacePointExchangeRules(prisma, archive.pointExchangeRules);
+  }
+
   const memberMap = new Map<number, number>();
   let membersCreated = 0;
   let membersUpdated = 0;
+  let ratingHistoryCreated = 0;
+  const restoreHistory = archive.version === 2;
 
   const existingByEmail = new Map<string, number>();
   const existingMembers = await prisma.member.findMany({
@@ -713,9 +930,19 @@ export async function importClubArchive(
           isActive: member.isActive,
           tournamentNotificationsEnabled: member.tournamentNotificationsEnabled,
           autoRelinquishPrivileges: member.autoRelinquishPrivileges,
+          ...(restoreHistory ? { rating: member.rating } : {}),
         },
       });
-      await setTrustedRating(prisma, existingId, member.rating, RatingChangeReason.MANUAL_ADJUSTMENT);
+      if (restoreHistory) {
+        await prisma.ratingHistory.deleteMany({ where: { memberId: existingId } });
+      } else {
+        ratingHistoryCreated += await setTrustedRating(
+          prisma,
+          existingId,
+          member.rating,
+          RatingChangeReason.MANUAL_ADJUSTMENT,
+        );
+      }
       memberMap.set(member.id, existingId);
       membersUpdated += 1;
       continue;
@@ -744,7 +971,16 @@ export async function importClubArchive(
         emailConfirmedAt: null,
       } as Prisma.MemberCreateInput,
     });
-    await setTrustedRating(prisma, created.id, member.rating, RatingChangeReason.INITIAL_RATING);
+    if (restoreHistory) {
+      await prisma.ratingHistory.deleteMany({ where: { memberId: created.id } });
+    } else {
+      ratingHistoryCreated += await setTrustedRating(
+        prisma,
+        created.id,
+        member.rating,
+        RatingChangeReason.INITIAL_RATING,
+      );
+    }
     memberMap.set(member.id, created.id);
     if (created.email) {
       existingByEmail.set(created.email.toLowerCase(), created.id);
@@ -753,13 +989,14 @@ export async function importClubArchive(
   }
 
   const counters = { tournaments: 0, matches: 0 };
+  const idMaps: ArchiveIdMaps = { tournaments: new Map(), matches: new Map() };
   for (const tournament of archive.tournaments) {
-    await importTournamentTree(prisma, tournament, memberMap, null, counters);
+    await importTournamentTree(prisma, tournament, memberMap, null, counters, idMaps);
   }
 
   let standaloneMatchesCreated = 0;
   for (const match of archive.standaloneMatches) {
-    await prisma.match.create({
+    const row = await prisma.match.create({
       data: {
         tournamentId: null,
         member1Id: requireMappedMember(memberMap, match.member1Id),
@@ -769,10 +1006,16 @@ export async function importClubArchive(
         player1Forfeit: match.player1Forfeit,
         player2Forfeit: match.player2Forfeit,
         notPlayed: match.notPlayed,
-        createdAt: parseIsoDate(match.createdAt) ?? undefined,
+        createdAt: dateField(match.createdAt),
+        updatedAt: dateField(match.updatedAt),
       },
     });
+    idMaps.matches.set(match.id, row.id);
     standaloneMatchesCreated += 1;
+  }
+
+  if (restoreHistory) {
+    ratingHistoryCreated = await importRatingHistory(prisma, archive, memberMap, idMaps);
   }
 
   return {
@@ -781,5 +1024,16 @@ export async function importClubArchive(
     tournamentsCreated: counters.tournaments,
     matchesCreated: counters.matches,
     standaloneMatchesCreated,
+    ratingHistoryCreated,
   };
+}
+
+export async function importClubArchive(
+  prisma: PrismaClient,
+  archive: ClubArchiveDocument,
+): Promise<ClubArchiveImportResult> {
+  return prisma.$transaction(
+    (tx) => importClubArchiveBody(tx as PrismaClient, archive),
+    { timeout: IMPORT_TRANSACTION_TIMEOUT_MS, maxWait: 10_000 },
+  );
 }
